@@ -58,12 +58,14 @@ skipped: 1
 ## Gaps
 
 - truth: "Organization name in the list is a clickable link to /organizations/[id]"
-  status: failed
+  status: fixed
   reason: "User reported: the name is not clickable i see the pop up when clicking the edit icon only"
   severity: major
   test: 5
-  root_cause: ""
-  artifacts: []
+  root_cause: "src/app/organizations/columns.tsx name cell used a plain <span> instead of <Link>. Detail page exists at /organizations/[id]/page.tsx."
+  artifacts:
+    - path: "src/app/organizations/columns.tsx"
+      issue: "Name cell rendered plain <span>, no navigation. Fixed: replaced with <Link href=/organizations/${row.original.id}>"
   missing: []
   debug_session: ""
 

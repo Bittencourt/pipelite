@@ -1,6 +1,7 @@
 "use client"
 
 import { ColumnDef } from "@tanstack/react-table"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Building2, ExternalLink, Pencil, Trash2 } from "lucide-react"
 
@@ -23,7 +24,12 @@ export const columns: ColumnDef<Organization, unknown>[] = [
       return (
         <div className="flex items-center gap-2">
           <Building2 className="h-4 w-4 text-muted-foreground" />
-          <span className="font-medium">{name}</span>
+          <Link
+            href={`/organizations/${row.original.id}`}
+            className="font-medium hover:underline"
+          >
+            {name}
+          </Link>
         </div>
       )
     },
