@@ -73,10 +73,12 @@ Plans:
   3. User can view a paginated list of all people
   4. User can view person details including their linked organization
   5. User can edit and delete people records
-**Plans**: TBD
+**Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] 03-01: People CRUD with organization linking
+- [ ] 03-01-PLAN.md — People schema, relations, and CRUD server actions
+- [ ] 03-02-PLAN.md — People list page, navigation, and shadcn Select component
+- [ ] 03-03-PLAN.md — Person CRUD dialogs, detail page, and linked people on org detail
 
 ### Phase 4: Pipelines & Stages
 **Goal**: Admins can configure sales pipelines with stages for deal progression
