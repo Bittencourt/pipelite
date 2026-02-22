@@ -76,16 +76,26 @@ export const config = {
           email: user.email,
           name: user.name,
           role: user.role,
+          // Pass rememberMe flag to jwt callback for session duration control
+          rememberMe: rememberMe === "on",
         }
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
-      // On sign in, persist user id and role into the JWT
+      // On sign in, persist user id, role, and rememberMe preference into the JWT
       if (user) {
         token.id = user.id as string
         token.role = (user as { role: string }).role
+
+        // Set custom token expiry based on rememberMe preference
+        // 30 days for "remember me", 7 days default
+        const rememberMe = (user as { rememberMe?: boolean }).rememberMe
+        if (rememberMe) {
+          token.rememberMe = true
+          token.exp = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
+        }
       }
       return token
     },
