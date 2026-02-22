@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import {
   ColumnDef,
   flexRender,
@@ -17,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Organization } from "./columns"
 import { Plus } from "lucide-react"
+import { OrganizationDialog } from "./organization-dialog"
 
 interface DataTableProps {
   columns: ColumnDef<Organization, unknown>[]
@@ -25,24 +27,45 @@ interface DataTableProps {
 }
 
 export function DataTable({ columns, data, refresh }: DataTableProps) {
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingOrg, setEditingOrg] = useState<Organization | null>(null)
+
+  const handleAddNew = () => {
+    setEditingOrg(null)
+    setDialogOpen(true)
+  }
+
+  const handleEdit = (org: Organization) => {
+    setEditingOrg(org)
+    setDialogOpen(true)
+  }
+
+  const handleDelete = (org: Organization) => {
+    // Will be wired in Task 2
+    console.log("Delete organization:", org.id)
+  }
+
+  const handleSuccess = () => {
+    setDialogOpen(false)
+    setEditingOrg(null)
+    refresh?.()
+  }
+
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
     meta: {
       refresh: refresh || (() => {}),
+      onEdit: handleEdit,
+      onDelete: handleDelete,
     },
   })
 
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button
-          onClick={() => {
-            // Add organization functionality will be wired in Plan 02-03
-            console.log("Add organization")
-          }}
-        >
+        <Button onClick={handleAddNew}>
           <Plus className="h-4 w-4 mr-2" />
           Add Organization
         </Button>
@@ -97,6 +120,13 @@ export function DataTable({ columns, data, refresh }: DataTableProps) {
           </TableBody>
         </Table>
       </div>
+
+      <OrganizationDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        organization={editingOrg}
+        onSuccess={handleSuccess}
+      />
     </div>
   )
 }

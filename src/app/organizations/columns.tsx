@@ -9,6 +9,7 @@ export type Organization = {
   name: string
   website: string | null
   industry: string | null
+  notes: string | null
   ownerName: string | null
   createdAt: Date
 }
@@ -77,8 +78,10 @@ export const columns: ColumnDef<Organization, unknown>[] = [
     header: "",
     cell: ({ row, table }) => {
       const organization = row.original
-      // @ts-expect-error - meta.refresh is passed via table options
-      const refresh = table.options.meta?.refresh
+      // @ts-expect-error - meta callbacks are passed via table options
+      const onEdit = table.options.meta?.onEdit
+      // @ts-expect-error - meta callbacks are passed via table options
+      const onDelete = table.options.meta?.onDelete
 
       return (
         <div className="flex items-center justify-end gap-1">
@@ -86,10 +89,7 @@ export const columns: ColumnDef<Organization, unknown>[] = [
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            onClick={() => {
-              // Edit functionality will be wired in Plan 02-03
-              console.log("Edit organization:", organization.id)
-            }}
+            onClick={() => onEdit?.(organization)}
           >
             <Pencil className="h-4 w-4" />
             <span className="sr-only">Edit</span>
@@ -98,10 +98,7 @@ export const columns: ColumnDef<Organization, unknown>[] = [
             variant="ghost"
             size="icon"
             className="h-8 w-8 text-destructive hover:text-destructive"
-            onClick={() => {
-              // Delete functionality will be wired in Plan 02-03
-              console.log("Delete organization:", organization.id)
-            }}
+            onClick={() => onDelete?.(organization)}
           >
             <Trash2 className="h-4 w-4" />
             <span className="sr-only">Delete</span>

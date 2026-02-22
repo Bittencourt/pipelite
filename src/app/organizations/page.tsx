@@ -19,6 +19,7 @@ async function getOrganizations() {
       name: organizations.name,
       website: organizations.website,
       industry: organizations.industry,
+      notes: organizations.notes,
       createdAt: organizations.createdAt,
       ownerName: users.name,
     })
