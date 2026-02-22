@@ -13,7 +13,7 @@ Build a lightweight, self-hostable CRM with kanban-style pipeline management. St
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation & Authentication** - User accounts with admin approval workflow ✅
-- [ ] **Phase 2: Organizations** - Company management for B2B sales tracking
+- [x] **Phase 2: Organizations** - Company management for B2B sales tracking ✅
 - [ ] **Phase 3: People** - Contact management linked to organizations
 - [ ] **Phase 4: Pipelines & Stages** - Sales pipeline configuration
 - [ ] **Phase 5: Deals & Kanban** - Deal management with visual pipeline board
@@ -59,9 +59,9 @@ Plans:
 **Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] 02-01-PLAN.md — Organizations schema and server actions
-- [ ] 02-02-PLAN.md — Organizations list page and navigation
-- [ ] 02-03-PLAN.md — Organization detail, create/edit dialog, delete
+- [x] 02-01-PLAN.md — Organizations schema and server actions ✅
+- [x] 02-02-PLAN.md — Organizations list page and navigation ✅
+- [x] 02-03-PLAN.md — Organization detail, create/edit dialog, delete ✅
 
 ### Phase 3: People
 **Goal**: Users can manage contacts and link them to organizations
@@ -204,7 +204,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Authentication | 6/6 | Complete | 2026-02-22 |
-| 2. Organizations | 0/3 | Not started | - |
+| 2. Organizations | 3/3 | Complete | 2026-02-22 |
 | 3. People | 0/TBD | Not started | - |
 | 4. Pipelines & Stages | 0/TBD | Not started | - |
 | 5. Deals & Kanban | 0/TBD | Not started | - |
