@@ -10,28 +10,29 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 1 of 10 (Foundation & Authentication)
-Plan: 2 of 6 in current phase
+Plan: 3 of 6 in current phase
 Status: Executing
-Last activity: 2026-02-22 — Completed 01-02 (Auth.js Config & Core Utilities)
+Last activity: 2026-02-22 — Completed 01-03 (Signup & Email Verification)
 
-Progress: [██░░░░░░░░] 20%
+Progress: [███░░░░░░░] 30%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
-- Average duration: 7min
-- Total execution time: 0.23 hours
+- Total plans completed: 3
+- Average duration: 6min
+- Total execution time: 0.28 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-foundation-authentication | 2/6 | 14min | 7min |
+| 01-foundation-authentication | 3/6 | 17min | 6min |
 
 **Recent Trend:**
 - 01-01: 9min (3 tasks, 41 files)
 - 01-02: 5min (3 tasks, 13 files)
+- 01-03: 3min (3 tasks, 6 files)
 
 *Updated after each plan completion*
 
@@ -48,6 +49,10 @@ Recent decisions affecting current work:
 - [01-02] JWT strategy instead of database sessions -- Credentials provider always uses JWT; session callback fetches fresh DB user data for mutable state
 - [01-02] Adapter type cast to resolve @auth/core version mismatch between @auth/drizzle-adapter and next-auth
 - [01-02] Fire-and-forget lastUsedAt update in API key validation to avoid blocking on non-critical write
+- [01-03] Domain whitelist checked BEFORE user existence check to prevent email enumeration
+- [01-03] First user auto-promoted to admin role (self-hosted bootstrapping pattern)
+- [01-03] Verification tokens stored as SHA-256 hash; raw token sent via email
+- [01-03] Anti-enumeration: same response message whether email exists or not
 
 ### Pending Todos
 
@@ -62,7 +67,7 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 01-02-PLAN.md
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None
 
 ---
