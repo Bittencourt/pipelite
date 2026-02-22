@@ -146,54 +146,54 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
-| AUTH-03 | — | Pending |
-| AUTH-04 | — | Pending |
-| AUTH-05 | — | Pending |
-| AUTH-06 | — | Pending |
-| ORG-01 | — | Pending |
-| ORG-02 | — | Pending |
-| ORG-03 | — | Pending |
-| PPL-01 | — | Pending |
-| PPL-02 | — | Pending |
-| PPL-03 | — | Pending |
-| PPL-04 | — | Pending |
-| PIPE-01 | — | Pending |
-| PIPE-02 | — | Pending |
-| PIPE-03 | — | Pending |
-| DEAL-01 | — | Pending |
-| DEAL-02 | — | Pending |
-| DEAL-03 | — | Pending |
-| DEAL-04 | — | Pending |
-| DEAL-05 | — | Pending |
-| DEAL-06 | — | Pending |
-| ACT-01 | — | Pending |
-| ACT-02 | — | Pending |
-| ACT-03 | — | Pending |
-| ACT-04 | — | Pending |
-| ACT-05 | — | Pending |
-| CF-01 | — | Pending |
-| CF-02 | — | Pending |
-| CF-03 | — | Pending |
-| CF-04 | — | Pending |
-| CF-05 | — | Pending |
-| CF-06 | — | Pending |
-| SRCH-01 | — | Pending |
-| SRCH-02 | — | Pending |
-| IMP-01 | — | Pending |
-| IMP-02 | — | Pending |
-| IMP-03 | — | Pending |
-| IMP-04 | — | Pending |
-| API-01 | — | Pending |
-| API-02 | — | Pending |
-| API-03 | — | Pending |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Pending |
+| AUTH-05 | Phase 1 | Pending |
+| AUTH-06 | Phase 1 | Pending |
+| ORG-01 | Phase 2 | Pending |
+| ORG-02 | Phase 2 | Pending |
+| ORG-03 | Phase 7 | Pending |
+| PPL-01 | Phase 3 | Pending |
+| PPL-02 | Phase 3 | Pending |
+| PPL-03 | Phase 3 | Pending |
+| PPL-04 | Phase 7 | Pending |
+| PIPE-01 | Phase 4 | Pending |
+| PIPE-02 | Phase 5 | Pending |
+| PIPE-03 | Phase 4 | Pending |
+| DEAL-01 | Phase 5 | Pending |
+| DEAL-02 | Phase 5 | Pending |
+| DEAL-03 | Phase 5 | Pending |
+| DEAL-04 | Phase 5 | Pending |
+| DEAL-05 | Phase 5 | Pending |
+| DEAL-06 | Phase 7 | Pending |
+| ACT-01 | Phase 6 | Pending |
+| ACT-02 | Phase 6 | Pending |
+| ACT-03 | Phase 6 | Pending |
+| ACT-04 | Phase 6 | Pending |
+| ACT-05 | Phase 7 | Pending |
+| CF-01 | Phase 7 | Pending |
+| CF-02 | Phase 7 | Pending |
+| CF-03 | Phase 7 | Pending |
+| CF-04 | Phase 7 | Pending |
+| CF-05 | Phase 7 | Pending |
+| CF-06 | Phase 7 | Pending |
+| SRCH-01 | Phase 8 | Pending |
+| SRCH-02 | Phase 8 | Pending |
+| IMP-01 | Phase 9 | Pending |
+| IMP-02 | Phase 9 | Pending |
+| IMP-03 | Phase 9 | Pending |
+| IMP-04 | Phase 9 | Pending |
+| API-01 | Phase 10 | Pending |
+| API-02 | Phase 10 | Pending |
+| API-03 | Phase 10 | Pending |
 
 **Coverage:**
-- v1 requirements: 41 total
-- Mapped to phases: 0
-- Unmapped: 41 ⚠️
+- v1 requirements: 42 total
+- Mapped to phases: 42
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-02-22*
-*Last updated: 2026-02-22 after initial definition*
+*Last updated: 2026-02-22 after roadmap creation*
