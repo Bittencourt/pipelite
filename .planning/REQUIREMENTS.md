@@ -9,17 +9,17 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Authentication & Users
 
-- [ ] **AUTH-01**: User can sign up with email/password (pending admin approval)
-- [ ] **AUTH-02**: Admin can approve or reject pending user signups
-- [ ] **AUTH-03**: User can log in (only after approval) and stay logged in across sessions
-- [ ] **AUTH-04**: User can log out
-- [ ] **AUTH-05**: Admin and member roles with different permissions
-- [ ] **AUTH-06**: User can generate API key for external API access
+- [x] **AUTH-01**: User can sign up with email/password (pending admin approval) ✓
+- [x] **AUTH-02**: Admin can approve or reject pending user signups ✓
+- [x] **AUTH-03**: User can log in (only after approval) and stay logged in across sessions ✓
+- [x] **AUTH-04**: User can log out ✓
+- [x] **AUTH-05**: Admin and member roles with different permissions ✓
+- [x] **AUTH-06**: User can generate API key for external API access ✓
 
 ### Organizations
 
-- [ ] **ORG-01**: User can create, edit, and delete organizations
-- [ ] **ORG-02**: User can view organization list and single organization detail
+- [x] **ORG-01**: User can create, edit, and delete organizations ✓
+- [x] **ORG-02**: User can view organization list and single organization detail ✓
 - [ ] **ORG-03**: User can add custom fields to organizations
 
 ### People
@@ -146,14 +146,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 1 | Pending |
-| AUTH-02 | Phase 1 | Pending |
-| AUTH-03 | Phase 1 | Pending |
-| AUTH-04 | Phase 1 | Pending |
-| AUTH-05 | Phase 1 | Pending |
-| AUTH-06 | Phase 1 | Pending |
-| ORG-01 | Phase 2 | Pending |
-| ORG-02 | Phase 2 | Pending |
+| AUTH-01 | Phase 1 | Complete ✓ |
+| AUTH-02 | Phase 1 | Complete ✓ |
+| AUTH-03 | Phase 1 | Complete ✓ |
+| AUTH-04 | Phase 1 | Complete ✓ |
+| AUTH-05 | Phase 1 | Complete ✓ |
+| AUTH-06 | Phase 1 | Complete ✓ |
+| ORG-01 | Phase 2 | Complete ✓ |
+| ORG-02 | Phase 2 | Complete ✓ |
 | ORG-03 | Phase 7 | Pending |
 | PPL-01 | Phase 3 | Pending |
 | PPL-02 | Phase 3 | Pending |
