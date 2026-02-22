@@ -67,9 +67,8 @@ function LoginForm() {
         // Map Auth.js errors to user-friendly messages
         const errorMessages: Record<string, string> = {
           CredentialsSignin: "Invalid email or password",
-          "Account pending approval or rejected": "Your account is pending approval or has been rejected",
-          "Email not verified. Please check your inbox.": "Please verify your email before logging in",
-          "Account not found": "Account not found",
+          pending_approval: "Your account is pending approval or has been rejected",
+          email_not_verified: "Please verify your email before logging in",
         }
         setError(errorMessages[result.error] || result.error)
         return

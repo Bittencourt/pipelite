@@ -17,13 +17,20 @@ export async function sendVerificationEmail(
   const template = getVerifyEmailTemplate(verificationUrl, host)
 
   const transporter = getEmailTransporter()
-  await transporter.sendMail({
-    from: fromEmail,
-    to: email,
-    subject: template.subject,
-    html: template.html,
-    text: template.text,
-  })
+  console.log("[email] Sending verification email to:", email)
+  try {
+    const info = await transporter.sendMail({
+      from: fromEmail,
+      to: email,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    })
+    console.log("[email] Verification email sent:", info.messageId)
+  } catch (error) {
+    console.error("[email] Failed to send verification email:", error)
+    throw error
+  }
 }
 
 export async function sendApprovalEmail(email: string): Promise<void> {

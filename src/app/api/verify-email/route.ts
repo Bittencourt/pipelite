@@ -45,12 +45,15 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Update user status to pending_approval
+    // First user (admin) gets auto-approved, others need admin approval
+    const newStatus = user.role === "admin" ? "approved" : "pending_approval"
+
+    // Update user status
     await db
       .update(users)
       .set({
         emailVerified: new Date(),
-        status: "pending_approval",
+        status: newStatus,
         updatedAt: new Date(),
       })
       .where(eq(users.id, user.id))
@@ -60,9 +63,12 @@ export async function GET(request: NextRequest) {
       .delete(verificationTokens)
       .where(eq(verificationTokens.token, tokenHash))
 
-    return NextResponse.json({
-      message: "Your email has been verified. An administrator will review your signup.",
-    })
+    const message =
+      newStatus === "approved"
+        ? "Your email has been verified. You can now log in."
+        : "Your email has been verified. An administrator will review your signup."
+
+    return NextResponse.json({ message })
   } catch (error) {
     console.error("Email verification error:", error)
     return NextResponse.json(

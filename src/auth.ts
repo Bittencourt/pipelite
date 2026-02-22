@@ -1,4 +1,4 @@
-import NextAuth from "next-auth"
+import NextAuth, { CredentialsSignin } from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import { DrizzleAdapter } from "@auth/drizzle-adapter"
 import { db } from "@/db"
@@ -7,6 +7,15 @@ import { users } from "@/db/schema/users"
 import { eq } from "drizzle-orm"
 import type { NextAuthConfig } from "next-auth"
 import { authConfig } from "@/auth.config"
+
+// Auth.js v5 requires CredentialsSignin subclasses for user-facing errors.
+// Plain Error objects are masked as "Configuration" in production mode.
+class PendingApprovalError extends CredentialsSignin {
+  code = "pending_approval"
+}
+class EmailNotVerifiedError extends CredentialsSignin {
+  code = "email_not_verified"
+}
 
 /**
  * Auth.js v5 configuration for Pipelite.
@@ -59,12 +68,12 @@ export const config = {
 
         // CRITICAL: Check approval status BEFORE password verification
         if (user.status !== "approved") {
-          throw new Error("Account pending approval or rejected")
+          throw new PendingApprovalError()
         }
 
         // Check email verified
         if (!user.emailVerified) {
-          throw new Error("Email not verified. Please check your inbox.")
+          throw new EmailNotVerifiedError()
         }
 
         const valid = await verifyPassword(password, user.passwordHash)
