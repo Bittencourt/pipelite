@@ -36,10 +36,15 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. User can log out from any page in the application
   5. Admin and member roles show different available actions in the UI
   6. User can generate, view, and regenerate their API key for external access
-**Plans**: TBD
+**Plans**: 6 plans in 4 waves
 
 Plans:
-- [ ] 01-01: Project scaffolding, database schema, and authentication
+- [ ] 01-01-PLAN.md — Project scaffolding, dependencies, and database schema
+- [ ] 01-02-PLAN.md — Auth.js configuration and core utilities
+- [ ] 01-03-PLAN.md — Signup flow with email verification
+- [ ] 01-04-PLAN.md — Login, session management, and password reset
+- [ ] 01-05-PLAN.md — Admin approval workflow
+- [ ] 01-06-PLAN.md — API key management
 
 ### Phase 2: Organizations
 **Goal**: Users can manage the companies they sell to
@@ -196,7 +201,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Authentication | 0/TBD | Not started | - |
+| 1. Foundation & Authentication | 0/6 | Ready to execute | - |
 | 2. Organizations | 0/TBD | Not started | - |
 | 3. People | 0/TBD | Not started | - |
 | 4. Pipelines & Stages | 0/TBD | Not started | - |
