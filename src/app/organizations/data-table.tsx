@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import {
   ColumnDef,
   flexRender,
@@ -19,6 +20,9 @@ import { Button } from "@/components/ui/button"
 import { Organization } from "./columns"
 import { Plus } from "lucide-react"
 import { OrganizationDialog } from "./organization-dialog"
+import { DeleteDialog } from "./delete-dialog"
+import { deleteOrganization } from "./actions"
+import { toast } from "sonner"
 
 interface DataTableProps {
   columns: ColumnDef<Organization, unknown>[]
@@ -27,8 +31,12 @@ interface DataTableProps {
 }
 
 export function DataTable({ columns, data, refresh }: DataTableProps) {
+  const router = useRouter()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [orgToDelete, setOrgToDelete] = useState<Organization | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const handleAddNew = () => {
     setEditingOrg(null)
@@ -40,9 +48,31 @@ export function DataTable({ columns, data, refresh }: DataTableProps) {
     setDialogOpen(true)
   }
 
-  const handleDelete = (org: Organization) => {
-    // Will be wired in Task 2
-    console.log("Delete organization:", org.id)
+  const handleDeleteClick = (org: Organization) => {
+    setOrgToDelete(org)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!orgToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const result = await deleteOrganization(orgToDelete.id)
+      if (!result.success) {
+        toast.error(result.error)
+        return
+      }
+      toast.success("Organization deleted")
+      setDeleteDialogOpen(false)
+      setOrgToDelete(null)
+      refresh?.()
+      router.refresh()
+    } catch {
+      toast.error("An unexpected error occurred")
+    } finally {
+      setIsDeleting(false)
+    }
   }
 
   const handleSuccess = () => {
@@ -58,7 +88,7 @@ export function DataTable({ columns, data, refresh }: DataTableProps) {
     meta: {
       refresh: refresh || (() => {}),
       onEdit: handleEdit,
-      onDelete: handleDelete,
+      onDelete: handleDeleteClick,
     },
   })
 
@@ -126,6 +156,14 @@ export function DataTable({ columns, data, refresh }: DataTableProps) {
         onOpenChange={setDialogOpen}
         organization={editingOrg}
         onSuccess={handleSuccess}
+      />
+
+      <DeleteDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        organizationName={orgToDelete?.name || ""}
+        onConfirm={handleDeleteConfirm}
+        isLoading={isDeleting}
       />
     </div>
   )
