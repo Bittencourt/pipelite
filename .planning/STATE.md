@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 2 - Organizations (Complete)
+**Current focus:** Phase 3 - People (In Progress)
 
 ## Current Position
 
-Phase: 2 of 10 (Organizations)
-Plan: 3 of 3 in current phase
-Status: Phase complete
-Last activity: 2026-02-22 — Completed 02-03 (Organization CRUD Dialogs)
+Phase: 3 of 10 (People)
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-02-22 — Completed 03-01 (People Schema & Actions)
 
-Progress: [█████████░] 90% (9/10 plans in current roadmap)
+Progress: [██████████] 100% (10/13 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
+- Total plans completed: 10
 - Average duration: 5min
 - Total execution time: 1.1 hours
 
@@ -29,11 +29,12 @@ Progress: [█████████░] 90% (9/10 plans in current roadmap)
 |-------|-------|-------|----------|
 | 01-foundation-authentication | 6/6 | 30min | 5min |
 | 02-organizations | 3/3 | 34min | 11min |
+| 03-people | 1/3 | 2min | 2min |
 
 **Recent Trend:**
+- 03-01: 2min (2 tasks, 4 files)
 - 02-03: 15min (2 tasks, 9 files)
 - 02-02: 6min (2 tasks, 5 files)
-- 02-01: 13min (2 tasks, 4 files)
 
 *Updated after each plan completion*
 
@@ -68,6 +69,10 @@ Recent decisions affecting current work:
 - [02-02] Owner name fetched via left join in server component
 - [02-03] Separate client component for detail page dialog state
 - [02-03] table.meta pattern for passing callbacks to column cells
+- [03-01] Nullable organizationId FK -- people can exist without an organization
+- [03-01] No unique constraint on people email -- contacts can share emails
+- [03-01] Empty strings converted to null for optional fields in server actions
+- [03-01] Cross-entity revalidation: mutating person revalidates linked org paths
 
 ### Pending Todos
 
@@ -81,11 +86,11 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-22 20:27 UTC
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-02-22 22:57 UTC
+Stopped at: Completed 03-01-PLAN.md
 Resume file: None
 
-**Phase 2 complete.** Ready for next phase transition.
+**Phase 3 in progress.** People schema and actions complete, UI layers next.
 
 ---
 *State initialized: 2026-02-22*
