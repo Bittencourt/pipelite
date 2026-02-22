@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 3 of 10 (People)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-22 — Completed 03-01 (People Schema & Actions)
+Last activity: 2026-02-22 — Completed 03-02 (People List Page & Navigation)
 
-Progress: [██████████] 100% (10/13 plans in current roadmap)
+Progress: [██████████] 100% (11/13 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 10
+- Total plans completed: 11
 - Average duration: 5min
 - Total execution time: 1.1 hours
 
@@ -29,12 +29,12 @@ Progress: [██████████] 100% (10/13 plans in current roadmap)
 |-------|-------|-------|----------|
 | 01-foundation-authentication | 6/6 | 30min | 5min |
 | 02-organizations | 3/3 | 34min | 11min |
-| 03-people | 1/3 | 2min | 2min |
+| 03-people | 2/3 | 4min | 2min |
 
 **Recent Trend:**
+- 03-02: 2min (2 tasks, 8 files)
 - 03-01: 2min (2 tasks, 4 files)
 - 02-03: 15min (2 tasks, 9 files)
-- 02-02: 6min (2 tasks, 5 files)
 
 *Updated after each plan completion*
 
@@ -73,6 +73,9 @@ Recent decisions affecting current work:
 - [03-01] No unique constraint on people email -- contacts can share emails
 - [03-01] Empty strings converted to null for optional fields in server actions
 - [03-01] Cross-entity revalidation: mutating person revalidates linked org paths
+- [03-02] Org join filtered by deletedAt in join condition to hide soft-deleted orgs from people list
+- [03-02] Stub dialogs with typed props for compilation; Plan 03 replaces with real implementations
+- [03-02] Organizations passed as prop to DataTable for future person dialog dropdown
 
 ### Pending Todos
 
@@ -86,11 +89,11 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-22 22:57 UTC
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-02-22 23:02 UTC
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
 
-**Phase 3 in progress.** People schema and actions complete, UI layers next.
+**Phase 3 in progress.** People list page and navigation complete, dialogs and detail page next (Plan 03).
 
 ---
 *State initialized: 2026-02-22*
