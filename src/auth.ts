@@ -6,6 +6,7 @@ import { verifyPassword } from "@/lib/password"
 import { users } from "@/db/schema/users"
 import { eq } from "drizzle-orm"
 import type { NextAuthConfig } from "next-auth"
+import { authConfig } from "@/auth.config"
 
 /**
  * Auth.js v5 configuration for Pipelite.
@@ -15,16 +16,16 @@ import type { NextAuthConfig } from "next-auth"
  * (checking approval status on every request), the session callback
  * fetches fresh user data from the database on each session access.
  * This gives us the same security guarantees as database sessions.
+ *
+ * NOTE: This file must NOT be imported from middleware.ts — it uses
+ * argon2 (native module) which cannot run in the Edge runtime.
+ * Middleware uses auth.config.ts instead.
  */
 export const config = {
+  ...authConfig,
   // Cast needed: @auth/drizzle-adapter and next-auth bundle separate @auth/core copies
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   adapter: DrizzleAdapter(db) as any,
-  session: {
-    strategy: "jwt",
-    maxAge: 7 * 24 * 60 * 60, // 7 days default (without "remember me")
-    updateAge: 24 * 60 * 60, // Update session once per day
-  },
   providers: [
     Credentials({
       credentials: {
