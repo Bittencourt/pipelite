@@ -1,6 +1,8 @@
 import { auth } from "@/auth"
 import { UserMenu } from "./user-menu"
 import { Button } from "@/components/ui/button"
+import { Building2 } from "lucide-react"
+import Link from "next/link"
 
 export async function NavHeader() {
   const session = await auth()
@@ -14,7 +16,13 @@ export async function NavHeader() {
           </a>
           {session?.user && (
             <nav className="hidden md:flex items-center gap-4">
-              {/* Main nav items will be added in later phases */}
+              <Link
+                href="/organizations"
+                className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Building2 className="h-4 w-4" />
+                Organizations
+              </Link>
             </nav>
           )}
         </div>

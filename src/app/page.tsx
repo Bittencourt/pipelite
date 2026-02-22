@@ -1,5 +1,6 @@
 import { auth } from "@/auth"
 import { Button } from "@/components/ui/button"
+import Link from "next/link"
 
 export default async function HomePage() {
   const session = await auth()
@@ -43,10 +44,13 @@ export default async function HomePage() {
         )}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {/* Dashboard cards will be added in later phases */}
-          <div className="p-6 border rounded-lg">
+          <Link
+            href="/organizations"
+            className="p-6 border rounded-lg hover:border-primary transition-colors"
+          >
             <h3 className="font-semibold">Organizations</h3>
-            <p className="text-sm text-muted-foreground">Coming in Phase 2</p>
-          </div>
+            <p className="text-sm text-muted-foreground">Manage your organizations</p>
+          </Link>
           <div className="p-6 border rounded-lg">
             <h3 className="font-semibold">People</h3>
             <p className="text-sm text-muted-foreground">Coming in Phase 3</p>
