@@ -1,7 +1,7 @@
 import { auth } from "@/auth"
 import { UserMenu } from "./user-menu"
 import { Button } from "@/components/ui/button"
-import { Building2 } from "lucide-react"
+import { Building2, Users } from "lucide-react"
 import Link from "next/link"
 
 export async function NavHeader() {
@@ -22,6 +22,13 @@ export async function NavHeader() {
               >
                 <Building2 className="h-4 w-4" />
                 Organizations
+              </Link>
+              <Link
+                href="/people"
+                className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Users className="h-4 w-4" />
+                People
               </Link>
             </nav>
           )}

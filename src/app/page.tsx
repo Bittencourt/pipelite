@@ -51,10 +51,13 @@ export default async function HomePage() {
             <h3 className="font-semibold">Organizations</h3>
             <p className="text-sm text-muted-foreground">Manage your organizations</p>
           </Link>
-          <div className="p-6 border rounded-lg">
+          <Link
+            href="/people"
+            className="p-6 border rounded-lg hover:border-primary transition-colors"
+          >
             <h3 className="font-semibold">People</h3>
-            <p className="text-sm text-muted-foreground">Coming in Phase 3</p>
-          </div>
+            <p className="text-sm text-muted-foreground">Manage your contacts</p>
+          </Link>
           <div className="p-6 border rounded-lg">
             <h3 className="font-semibold">Pipelines</h3>
             <p className="text-sm text-muted-foreground">Coming in Phase 4</p>
