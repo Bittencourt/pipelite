@@ -10,29 +10,30 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 1 of 10 (Foundation & Authentication)
-Plan: 3 of 6 in current phase
+Plan: 4 of 6 in current phase
 Status: Executing
-Last activity: 2026-02-22 — Completed 01-03 (Signup & Email Verification)
+Last activity: 2026-02-22 — Completed 01-04 (Login, Password Reset & Logout)
 
-Progress: [███░░░░░░░] 30%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 6min
-- Total execution time: 0.28 hours
+- Total execution time: 0.37 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-foundation-authentication | 3/6 | 17min | 6min |
+| 01-foundation-authentication | 4/6 | 22min | 6min |
 
 **Recent Trend:**
 - 01-01: 9min (3 tasks, 41 files)
 - 01-02: 5min (3 tasks, 13 files)
 - 01-03: 3min (3 tasks, 6 files)
+- 01-04: 5min (3 tasks, 15 files)
 
 *Updated after each plan completion*
 
@@ -53,6 +54,9 @@ Recent decisions affecting current work:
 - [01-03] First user auto-promoted to admin role (self-hosted bootstrapping pattern)
 - [01-03] Verification tokens stored as SHA-256 hash; raw token sent via email
 - [01-03] Anti-enumeration: same response message whether email exists or not
+- [01-04] Remember me implemented via custom JWT expiry (30 days) set in jwt callback
+- [01-04] Kept Geist fonts from scaffold instead of switching to Inter
+- [01-04] Auth layout min-height adjusted for NavHeader (calc(100vh-3.5rem))
 
 ### Pending Todos
 
@@ -67,7 +71,7 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 01-03-PLAN.md
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
 
 ---
