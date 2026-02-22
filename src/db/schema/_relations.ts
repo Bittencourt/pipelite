@@ -5,6 +5,7 @@ import { accounts } from "./accounts"
 import { apiKeys } from "./api-keys"
 import { rejectedSignups } from "./rejected-signups"
 import { organizations } from "./organizations"
+import { people } from "./people"
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
@@ -12,6 +13,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   apiKeys: many(apiKeys),
   rejectedSignups: many(rejectedSignups),
   organizations: many(organizations),
+  people: many(people),
 }))
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -42,9 +44,21 @@ export const rejectedSignupsRelations = relations(rejectedSignups, ({ one }) => 
   }),
 }))
 
-export const organizationsRelations = relations(organizations, ({ one }) => ({
+export const organizationsRelations = relations(organizations, ({ one, many }) => ({
   owner: one(users, {
     fields: [organizations.ownerId],
+    references: [users.id],
+  }),
+  people: many(people),
+}))
+
+export const peopleRelations = relations(people, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [people.organizationId],
+    references: [organizations.id],
+  }),
+  owner: one(users, {
+    fields: [people.ownerId],
     references: [users.id],
   }),
 }))
