@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation & Authentication** - User accounts with admin approval workflow ✅
 - [x] **Phase 2: Organizations** - Company management for B2B sales tracking ✅
-- [ ] **Phase 3: People** - Contact management linked to organizations
+- [x] **Phase 3: People** - Contact management linked to organizations ✅
 - [ ] **Phase 4: Pipelines & Stages** - Sales pipeline configuration
 - [ ] **Phase 5: Deals & Kanban** - Deal management with visual pipeline board
 - [ ] **Phase 6: Activities** - Follow-up tracking with calendar view
@@ -76,9 +76,9 @@ Plans:
 **Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] 03-01-PLAN.md — People schema, relations, and CRUD server actions
-- [ ] 03-02-PLAN.md — People list page, navigation, and shadcn Select component
-- [ ] 03-03-PLAN.md — Person CRUD dialogs, detail page, and linked people on org detail
+- [x] 03-01-PLAN.md — People schema, relations, and CRUD server actions ✅
+- [x] 03-02-PLAN.md — People list page, navigation, and shadcn Select component ✅
+- [x] 03-03-PLAN.md — Person CRUD dialogs, detail page, and linked people on org detail ✅
 
 ### Phase 4: Pipelines & Stages
 **Goal**: Admins can configure sales pipelines with stages for deal progression
@@ -207,7 +207,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Foundation & Authentication | 6/6 | Complete | 2026-02-22 |
 | 2. Organizations | 3/3 | Complete | 2026-02-22 |
-| 3. People | 0/TBD | Not started | - |
+| 3. People | 3/3 | Complete | 2026-02-22 |
 | 4. Pipelines & Stages | 0/TBD | Not started | - |
 | 5. Deals & Kanban | 0/TBD | Not started | - |
 | 6. Activities | 0/TBD | Not started | - |
