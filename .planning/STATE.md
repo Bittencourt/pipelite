@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 3 - People (In Progress)
+**Current focus:** Phase 3 - People (Complete)
 
 ## Current Position
 
-Phase: 3 of 10 (People)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-02-22 — Completed 03-02 (People List Page & Navigation)
+Phase: 3 of 10 (People) -- COMPLETE
+Plan: 3 of 3 in current phase
+Status: Phase complete
+Last activity: 2026-02-22 — Completed 03-03 (Person CRUD Dialogs & Detail Page)
 
-Progress: [██████████] 100% (11/13 plans in current roadmap)
+Progress: [██████████] 100% (12/13 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
+- Total plans completed: 12
 - Average duration: 5min
 - Total execution time: 1.1 hours
 
@@ -29,12 +29,12 @@ Progress: [██████████] 100% (11/13 plans in current roadmap)
 |-------|-------|-------|----------|
 | 01-foundation-authentication | 6/6 | 30min | 5min |
 | 02-organizations | 3/3 | 34min | 11min |
-| 03-people | 2/3 | 4min | 2min |
+| 03-people | 3/3 | 6min | 2min |
 
 **Recent Trend:**
+- 03-03: 2min (2 tasks, 5 files)
 - 03-02: 2min (2 tasks, 8 files)
 - 03-01: 2min (2 tasks, 4 files)
-- 02-03: 15min (2 tasks, 9 files)
 
 *Updated after each plan completion*
 
@@ -76,6 +76,8 @@ Recent decisions affecting current work:
 - [03-02] Org join filtered by deletedAt in join condition to hide soft-deleted orgs from people list
 - [03-02] Stub dialogs with typed props for compilation; Plan 03 replaces with real implementations
 - [03-02] Organizations passed as prop to DataTable for future person dialog dropdown
+- [03-03] Select dropdown uses watch/setValue instead of Controller for simpler radix integration
+- [03-03] Linked people on org detail shown as bordered rows with name links and email
 
 ### Pending Todos
 
@@ -89,11 +91,11 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-22 23:02 UTC
-Stopped at: Completed 03-02-PLAN.md
+Last session: 2026-02-22 23:07 UTC
+Stopped at: Completed 03-03-PLAN.md
 Resume file: None
 
-**Phase 3 in progress.** People list page and navigation complete, dialogs and detail page next (Plan 03).
+**Phase 3 complete.** People CRUD fully implemented -- list, create, edit, delete, detail page, and linked people on org detail. Ready for Phase 4 (Deals).
 
 ---
 *State initialized: 2026-02-22*
