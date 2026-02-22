@@ -12,7 +12,7 @@ Build a lightweight, self-hostable CRM with kanban-style pipeline management. St
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation & Authentication** - User accounts with admin approval workflow
+- [x] **Phase 1: Foundation & Authentication** - User accounts with admin approval workflow ✅
 - [ ] **Phase 2: Organizations** - Company management for B2B sales tracking
 - [ ] **Phase 3: People** - Contact management linked to organizations
 - [ ] **Phase 4: Pipelines & Stages** - Sales pipeline configuration
@@ -39,12 +39,12 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 6 plans in 4 waves
 
 Plans:
-- [ ] 01-01-PLAN.md — Project scaffolding, dependencies, and database schema
-- [ ] 01-02-PLAN.md — Auth.js configuration and core utilities
-- [ ] 01-03-PLAN.md — Signup flow with email verification
-- [ ] 01-04-PLAN.md — Login, session management, and password reset
-- [ ] 01-05-PLAN.md — Admin approval workflow
-- [ ] 01-06-PLAN.md — API key management
+- [x] 01-01-PLAN.md — Project scaffolding, dependencies, and database schema ✅
+- [x] 01-02-PLAN.md — Auth.js configuration and core utilities ✅
+- [x] 01-03-PLAN.md — Signup flow with email verification ✅
+- [x] 01-04-PLAN.md — Login, session management, and password reset ✅
+- [x] 01-05-PLAN.md — Admin approval workflow ✅
+- [x] 01-06-PLAN.md — API key management ✅
 
 ### Phase 2: Organizations
 **Goal**: Users can manage the companies they sell to
@@ -56,10 +56,12 @@ Plans:
   3. User can view full details of a single organization
   4. User can edit organization details
   5. User can delete an organization with confirmation dialog
-**Plans**: TBD
+**Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] 02-01: Organizations CRUD and list views
+- [ ] 02-01-PLAN.md — Organizations schema and server actions
+- [ ] 02-02-PLAN.md — Organizations list page and navigation
+- [ ] 02-03-PLAN.md — Organization detail, create/edit dialog, delete
 
 ### Phase 3: People
 **Goal**: Users can manage contacts and link them to organizations
@@ -201,8 +203,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Authentication | 0/6 | Ready to execute | - |
-| 2. Organizations | 0/TBD | Not started | - |
+| 1. Foundation & Authentication | 6/6 | Complete | 2026-02-22 |
+| 2. Organizations | 0/3 | Not started | - |
 | 3. People | 0/TBD | Not started | - |
 | 4. Pipelines & Stages | 0/TBD | Not started | - |
 | 5. Deals & Kanban | 0/TBD | Not started | - |
