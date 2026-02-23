@@ -90,10 +90,13 @@ Plans:
   3. Admin can rename and delete stages within a pipeline
   4. User can view a list of all configured pipelines
   5. User can see all stages within each pipeline
-**Plans**: TBD
+**Plans**: 4 plans in 4 waves
 
 Plans:
-- [ ] 04-01: Pipeline and stage management
+- [ ] 04-01-PLAN.md — Database schema, relations, and stage colors utility
+- [ ] 04-02-PLAN.md — Server actions for pipeline and stage CRUD
+- [ ] 04-03-PLAN.md — Pipeline list page with create/edit/delete dialogs
+- [ ] 04-04-PLAN.md — Pipeline detail and drag-drop stage configurator
 
 ### Phase 5: Deals & Kanban
 **Goal**: Users can manage deals through a visual pipeline board with drag-and-drop
@@ -208,7 +211,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Foundation & Authentication | 6/6 | Complete | 2026-02-22 |
 | 2. Organizations | 3/3 | Complete | 2026-02-22 |
 | 3. People | 3/3 | Complete | 2026-02-22 |
-| 4. Pipelines & Stages | 0/TBD | Not started | - |
+| 4. Pipelines & Stages | 0/4 | Not started | - |
 | 5. Deals & Kanban | 0/TBD | Not started | - |
 | 6. Activities | 0/TBD | Not started | - |
 | 7. Custom Fields & Formulas | 0/TBD | Not started | - |
