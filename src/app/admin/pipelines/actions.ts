@@ -498,3 +498,83 @@ export async function deleteStage(
     return { success: false, error: "Failed to delete stage" }
   }
 }
+
+/**
+ * Reorder a stage within a pipeline using gap-based positioning
+ * - Validates user is authenticated AND is admin
+ * - Uses fractional positioning to avoid full renumbering
+ * - Returns success or error
+ */
+export async function reorderStages(
+  pipelineId: string,
+  stageId: string,
+  newIndex: number
+): Promise<{ success: true } | { success: false; error: string }> {
+  const session = await auth()
+
+  // Verify admin role
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, error: "Unauthorized: Admin access required" }
+  }
+
+  try {
+    // Fetch all stages for pipeline, ordered by position
+    const allStages = await db.query.stages.findMany({
+      where: eq(stages.pipelineId, pipelineId),
+      orderBy: [sql`${stages.position} ASC`],
+    })
+
+    // Find the stage being moved
+    const currentIndex = allStages.findIndex(s => s.id === stageId)
+    if (currentIndex === -1) {
+      return { success: false, error: "Stage not found in pipeline" }
+    }
+
+    // Clamp newIndex to valid range
+    const clampedIndex = Math.max(0, Math.min(newIndex, allStages.length - 1))
+
+    // If no change needed, return success
+    if (clampedIndex === currentIndex) {
+      return { success: true }
+    }
+
+    // Calculate new position using gap-based approach
+    let newPosition: number
+
+    if (clampedIndex === 0) {
+      // Moving to first position: halve the first stage's position
+      newPosition = allStages[0].position / 2
+    } else if (clampedIndex >= allStages.length - 1) {
+      // Moving to last position: add 10 to last stage's position
+      newPosition = allStages[allStages.length - 1].position + 10
+    } else {
+      // Moving somewhere in between: average neighbors
+      // When moving forward, use positions at newIndex-1 and newIndex
+      // When moving backward, use positions at newIndex-1 and newIndex
+      const prevIndex = clampedIndex > currentIndex ? clampedIndex : clampedIndex - 1
+      const nextIndex = clampedIndex > currentIndex ? clampedIndex + 1 : clampedIndex
+      
+      // Ensure indices are valid
+      const prevPos = allStages[Math.max(0, prevIndex)]?.position ?? 0
+      const nextPos = allStages[Math.min(allStages.length - 1, nextIndex)]?.position ?? prevPos + 10
+      
+      newPosition = (prevPos + nextPos) / 2
+    }
+
+    // Update the stage with new position
+    await db
+      .update(stages)
+      .set({
+        position: newPosition,
+        updatedAt: new Date(),
+      })
+      .where(eq(stages.id, stageId))
+
+    revalidatePath(`/admin/pipelines/${pipelineId}`)
+
+    return { success: true }
+  } catch (error) {
+    console.error("Failed to reorder stages:", error)
+    return { success: false, error: "Failed to reorder stages" }
+  }
+}
