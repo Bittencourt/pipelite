@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 3 - People (Complete)
+**Current focus:** Phase 4 - Pipelines & Stages (In Progress)
 
 ## Current Position
 
-Phase: 3 of 10 (People) -- COMPLETE
-Plan: 3 of 3 in current phase
-Status: Phase complete
-Last activity: 2026-02-22 — Completed 03-03 (Person CRUD Dialogs & Detail Page)
+Phase: 4 of 10 (Pipelines & Stages)
+Plan: 2 of 4 in current phase
+Status: In progress
+Last activity: 2026-02-23 — Completed 04-02 (Pipeline & Stage Server Actions)
 
-Progress: [██████████] 100% (12/13 plans in current roadmap)
+Progress: [██████████░] 88% (14/16 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
+- Total plans completed: 14
 - Average duration: 5min
-- Total execution time: 1.1 hours
+- Total execution time: 1.4 hours
 
 **By Phase:**
 
@@ -30,8 +30,11 @@ Progress: [██████████] 100% (12/13 plans in current roadmap)
 | 01-foundation-authentication | 6/6 | 30min | 5min |
 | 02-organizations | 3/3 | 34min | 11min |
 | 03-people | 3/3 | 6min | 2min |
+| 04-pipelines-stages | 2/4 | 18min | 9min |
 
 **Recent Trend:**
+- 04-02: 16min (3 tasks, 1 file)
+- 04-01: 2min (2 tasks, 2 files)
 - 03-03: 2min (2 tasks, 5 files)
 - 03-02: 2min (2 tasks, 8 files)
 - 03-01: 2min (2 tasks, 4 files)
@@ -78,10 +81,12 @@ Recent decisions affecting current work:
 - [03-02] Organizations passed as prop to DataTable for future person dialog dropdown
 - [03-03] Select dropdown uses watch/setValue instead of Controller for simpler radix integration
 - [03-03] Linked people on org detail shown as bordered rows with name links and email
+- [04-02] Gap-based positioning for stage reordering (averages neighbors, avoids full renumbering)
+- [04-02] Won/lost stage uniqueness constraint (exactly one terminal stage per type per pipeline)
 
 ### Pending Todos
 
-None yet.
+- [Phase 5] Implement deal existence check in deleteStage action
 
 ### Blockers/Concerns
 
@@ -91,11 +96,11 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-22 23:07 UTC
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-02-23 01:39 UTC
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None
 
-**Phase 3 complete.** People CRUD fully implemented -- list, create, edit, delete, detail page, and linked people on org detail. Ready for Phase 4 (Deals).
+**Phase 4 in progress.** Pipeline/stage server actions complete with CRUD, gap-based reordering, admin authorization. Ready for Plan 03 (Pipeline list UI).
 
 ---
 *State initialized: 2026-02-22*
