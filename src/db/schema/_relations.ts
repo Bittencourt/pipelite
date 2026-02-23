@@ -6,6 +6,8 @@ import { apiKeys } from "./api-keys"
 import { rejectedSignups } from "./rejected-signups"
 import { organizations } from "./organizations"
 import { people } from "./people"
+import { pipelines } from "./pipelines"
+import { stages } from "./pipelines"
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
@@ -60,5 +62,20 @@ export const peopleRelations = relations(people, ({ one }) => ({
   owner: one(users, {
     fields: [people.ownerId],
     references: [users.id],
+  }),
+}))
+
+export const pipelinesRelations = relations(pipelines, ({ one, many }) => ({
+  owner: one(users, {
+    fields: [pipelines.ownerId],
+    references: [users.id],
+  }),
+  stages: many(stages),
+}))
+
+export const stagesRelations = relations(stages, ({ one }) => ({
+  pipeline: one(pipelines, {
+    fields: [stages.pipelineId],
+    references: [pipelines.id],
   }),
 }))
