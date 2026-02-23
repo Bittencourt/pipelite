@@ -13,27 +13,13 @@ export const authConfig = {
   },
   providers: [],
   callbacks: {
-    jwt({ token, user }) {
-      if (user) {
-        token.id = user.id
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        token.role = (user as any).role
-      }
-      return token
-    },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    session({ session, token }: any) {
-      if (token.id) {
-        session.user.id = token.id
-      }
-      if (token.role) {
-        session.user.role = token.role
-      }
-      return session
-    },
     authorized({ auth, request: { nextUrl } }) {
-      const isLoggedIn = !!auth?.user
-      const isAdmin = auth?.user?.role === "admin"
+      // With JWT strategy, auth contains the decoded JWT claims directly
+      // The role is set by auth.ts jwt callback as token.role
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const jwtPayload = auth as any
+      const isLoggedIn = !!jwtPayload?.user?.email
+      const isAdmin = jwtPayload?.role === "admin"
 
       const protectedPaths = ["/settings", "/admin"]
       const adminPaths = ["/admin"]
