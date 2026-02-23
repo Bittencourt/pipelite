@@ -13,11 +13,27 @@ export const authConfig = {
   },
   providers: [],
   callbacks: {
+    jwt({ token, user }) {
+      if (user) {
+        token.id = user.id
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        token.role = (user as any).role
+      }
+      return token
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    session({ session, token }: any) {
+      if (token.id) {
+        session.user.id = token.id
+      }
+      if (token.role) {
+        session.user.role = token.role
+      }
+      return session
+    },
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user
-      // In middleware with JWT strategy, role is at JWT top level, not session.user
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const isAdmin = (auth as any)?.role === "admin"
+      const isAdmin = auth?.user?.role === "admin"
 
       const protectedPaths = ["/settings", "/admin"]
       const adminPaths = ["/admin"]
