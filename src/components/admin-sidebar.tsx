@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Users, Home } from "lucide-react"
+import { Users, Home, Layers } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
@@ -16,6 +16,11 @@ const sidebarItems = [
     title: "User Management",
     href: "/admin/users",
     icon: Users,
+  },
+  {
+    title: "Pipelines",
+    href: "/admin/pipelines",
+    icon: Layers,
   },
 ]
 
