@@ -15,7 +15,9 @@ export const authConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user
-      const isAdmin = auth?.user?.role === "admin"
+      // In middleware with JWT strategy, role is at JWT top level, not session.user
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const isAdmin = (auth as any)?.role === "admin"
 
       const protectedPaths = ["/settings", "/admin"]
       const adminPaths = ["/admin"]
