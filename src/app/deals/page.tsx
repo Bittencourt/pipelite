@@ -146,6 +146,7 @@ export default async function DealsPage() {
         stages={pipelineStages.map(s => ({
           id: s.id,
           name: s.name,
+          pipelineId: s.pipelineId,
           color: s.color as 'slate' | 'blue' | 'emerald' | 'amber' | 'rose' | 'violet' | 'cyan' | 'orange',
           type: s.type,
         }))}
