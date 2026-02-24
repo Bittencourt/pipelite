@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 5 of 10 (Deals & Kanban)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-24 — Completed 05-01 (Deals Data Layer)
+Last activity: 2026-02-24 — Completed 05-02 (Deal Dialog)
 
-Progress: [█████████████░] 89% (17/19 plans in current roadmap)
+Progress: [██████████████] 95% (18/19 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 17
+- Total plans completed: 18
 - Average duration: 5min
-- Total execution time: 1.6 hours
+- Total execution time: 1.7 hours
 
 **By Phase:**
 
@@ -31,11 +31,11 @@ Progress: [█████████████░] 89% (17/19 plans in curre
 | 02-organizations | 3/3 | 34min | 11min |
 | 03-people | 3/3 | 6min | 2min |
 | 04-pipelines-stages | 4/4 | 35min | 9min |
-| 05-deals-kanban | 1/3 | 10min | 10min |
+| 05-deals-kanban | 2/3 | 15min | 8min |
 
 **Recent Trend:**
+- 05-02: 5min (1 task, 1 file)
 - 05-01: 10min (5 tasks, 5 files)
-- 04-04: 10min (4 tasks, 5 files)
 - 04-03: 7min (3 tasks, 6 files)
 - 04-02: 16min (3 tasks, 1 file)
 - 04-01: 2min (2 tasks, 2 files)
@@ -91,6 +91,7 @@ Recent decisions affecting current work:
 - [05-01] Numeric position field for deals (vs integer for stages) for more precise gap-based positioning
 - [05-01] At least one of org/person constraint enforced in action validation, not DB constraint
 - [05-01] Position defaults to 10000 for new deals, increments by 10000
+- [05-02] DealDialog uses watch/setValue for Select components (same pattern as people dialogs)
 
 ### Pending Todos
 
@@ -104,11 +105,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-02-24 12:01 UTC
-Stopped at: Completed 05-01-PLAN.md (Deals Data Layer)
+Last session: 2026-02-24 12:15 UTC
+Stopped at: Completed 05-02-PLAN.md (Deal Dialog)
 Resume file: None
 
-**Phase 5 in progress.** Deals data layer complete with schema, relations, and actions. Ready for 05-02 (Kanban UI).
+**Phase 5 in progress.** Deal dialog complete with create/edit modes, form validation, and delete confirmation. Ready for 05-03 (Kanban Board).
 
 ---
 *State initialized: 2026-02-22*
