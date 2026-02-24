@@ -2,8 +2,8 @@
 
 import { auth } from "@/auth"
 import { db } from "@/db"
-import { pipelines, stages } from "@/db/schema"
-import { eq, and, isNull, sql, desc } from "drizzle-orm"
+import { pipelines, stages, deals } from "@/db/schema"
+import { eq, and, isNull, sql, desc, isNotNull } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { STAGE_COLORS, getNextColor, type StageColor } from "@/lib/stage-colors"
@@ -455,7 +455,7 @@ export async function updateStage(
 /**
  * Delete a stage
  * - Validates user is authenticated AND is admin
- * - TODO: Check for existing deals before deletion (Phase 5)
+ * - Checks for existing deals before deletion
  * - Hard deletes the stage
  * - Returns success or error
  */
@@ -479,13 +479,18 @@ export async function deleteStage(
       return { success: false, error: "Stage not found" }
     }
 
-    // TODO: Check for existing deals in Phase 5
-    // const deals = await db.query.deals.findMany({
-    //   where: eq(deals.stageId, id),
-    // })
-    // if (deals.length > 0) {
-    //   return { success: false, error: "Cannot delete stage with existing deals. Reassign deals first." }
-    // }
+    // Check for existing deals in this stage
+    const existingDeals = await db.query.deals.findMany({
+      where: and(
+        eq(deals.stageId, id),
+        isNotNull(deals.id)
+      ),
+      limit: 1,
+    })
+
+    if (existingDeals.length > 0) {
+      return { success: false, error: "Cannot delete stage with existing deals. Reassign deals first." }
+    }
 
     // Hard delete the stage
     await db.delete(stages).where(eq(stages.id, id))
