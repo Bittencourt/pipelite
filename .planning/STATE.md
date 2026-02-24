@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 4 - Pipelines & Stages (In Progress)
+**Current focus:** Phase 5 - Deals & Kanban (In Progress)
 
 ## Current Position
 
-Phase: 4 of 10 (Pipelines & Stages)
-Plan: 4 of 4 in current phase
-Status: Phase complete
-Last activity: 2026-02-23 — Completed 04-04 (Pipeline Detail & Stage Configurator)
+Phase: 5 of 10 (Deals & Kanban)
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-02-24 — Completed 05-01 (Deals Data Layer)
 
-Progress: [███████████] 100% (16/16 plans in current roadmap)
+Progress: [█████████████░] 89% (17/19 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 16
+- Total plans completed: 17
 - Average duration: 5min
-- Total execution time: 1.5 hours
+- Total execution time: 1.6 hours
 
 **By Phase:**
 
@@ -31,13 +31,14 @@ Progress: [███████████] 100% (16/16 plans in current roadm
 | 02-organizations | 3/3 | 34min | 11min |
 | 03-people | 3/3 | 6min | 2min |
 | 04-pipelines-stages | 4/4 | 35min | 9min |
+| 05-deals-kanban | 1/3 | 10min | 10min |
 
 **Recent Trend:**
+- 05-01: 10min (5 tasks, 5 files)
 - 04-04: 10min (4 tasks, 5 files)
 - 04-03: 7min (3 tasks, 6 files)
 - 04-02: 16min (3 tasks, 1 file)
 - 04-01: 2min (2 tasks, 2 files)
-- 03-03: 2min (2 tasks, 5 files)
 
 *Updated after each plan completion*
 
@@ -87,24 +88,27 @@ Recent decisions affecting current work:
 - [04-03] Set-as-default action without confirmation (non-destructive, easily reversible)
 - [04-04] @dnd-kit/react for drag-and-drop with optimistic updates
 - [04-04] Inline ColorPicker as button grid (simple, accessible)
+- [05-01] Numeric position field for deals (vs integer for stages) for more precise gap-based positioning
+- [05-01] At least one of org/person constraint enforced in action validation, not DB constraint
+- [05-01] Position defaults to 10000 for new deals, increments by 10000
 
 ### Pending Todos
 
-- [Phase 5] Implement deal existence check in deleteStage action
+None yet.
 
 ### Blockers/Concerns
 
 Issues that affect future work:
 
-None yet.
+- Database migration needs to be run when PostgreSQL is available: `npx drizzle-kit migrate`
 
 ## Session Continuity
 
-Last session: 2026-02-23 09:10 UTC
-Stopped at: Completed 04-04-PLAN.md (Phase 4 Complete)
+Last session: 2026-02-24 12:01 UTC
+Stopped at: Completed 05-01-PLAN.md (Deals Data Layer)
 Resume file: None
 
-**Phase 4 complete.** Pipelines and stages management fully functional. Ready for Phase 5 (Deals).
+**Phase 5 in progress.** Deals data layer complete with schema, relations, and actions. Ready for 05-02 (Kanban UI).
 
 ---
 *State initialized: 2026-02-22*
