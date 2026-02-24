@@ -159,9 +159,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PPL-02 | Phase 3 | Pending |
 | PPL-03 | Phase 3 | Pending |
 | PPL-04 | Phase 7 | Pending |
-| PIPE-01 | Phase 4 | Pending |
+| PIPE-01 | Phase 4 | Complete ✓ |
 | PIPE-02 | Phase 5 | Pending |
-| PIPE-03 | Phase 4 | Pending |
+| PIPE-03 | Phase 4 | Complete ✓ |
 | DEAL-01 | Phase 5 | Pending |
 | DEAL-02 | Phase 5 | Pending |
 | DEAL-03 | Phase 5 | Pending |
