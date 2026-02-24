@@ -109,11 +109,12 @@ Plans:
   4. Kanban board shows deal counts and total values per stage
   5. User can click a deal card to view and edit its full details
   6. User can delete a deal with confirmation
-**Plans**: TBD
+**Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] 05-01: Deals CRUD and entity linking
-- [ ] 05-02: Kanban board with drag-drop interaction
+- [ ] 05-01-PLAN.md — Deals schema, server actions, and currency utility
+- [ ] 05-02-PLAN.md — Deal create/edit dialog with delete confirmation
+- [ ] 05-03-PLAN.md — Kanban board with drag-drop and inline expansion
 
 ### Phase 6: Activities
 **Goal**: Users can track follow-up activities with a calendar view
