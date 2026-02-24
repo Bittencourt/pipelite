@@ -4,8 +4,7 @@ import { deals, stages, pipelines, organizations, people } from "@/db/schema"
 import { eq, and, isNull, asc, sql } from "drizzle-orm"
 import { redirect } from "next/navigation"
 import { KanbanBoard } from "./kanban-board"
-import { Button } from "@/components/ui/button"
-import { Plus } from "lucide-react"
+
 
 interface DealWithRelations {
   id: string
@@ -132,12 +131,6 @@ export default async function DealsPage() {
     <div className="container mx-auto py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold">Deals</h1>
-        {firstOpenStage && (
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Deal
-          </Button>
-        )}
       </div>
 
       <KanbanBoard

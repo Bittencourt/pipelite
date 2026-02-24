@@ -68,6 +68,7 @@ export function KanbanBoard({
   const [activeDeal, setActiveDeal] = useState<Deal | null>(null)
   const [dealDialogOpen, setDealDialogOpen] = useState(false)
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
 
   // Separate open stages from won/lost
   const openStages = stages.filter(s => s.type === 'open')
@@ -224,26 +225,41 @@ export function KanbanBoard({
     router.refresh()
   }
 
+  const handleCreateDialogSuccess = () => {
+    setCreateDialogOpen(false)
+    router.refresh()
+  }
+
   return (
     <div className="space-y-6">
       {/* Pipeline Selector */}
-      {pipelines.length > 1 && (
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Pipeline:</span>
-          <Select value={selectedPipelineId} onValueChange={handlePipelineChange}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Select pipeline" />
-            </SelectTrigger>
-            <SelectContent>
-              {pipelines.map(pipeline => (
-                <SelectItem key={pipeline.id} value={pipeline.id}>
-                  {pipeline.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+      <div className="flex items-center justify-between">
+        {pipelines.length > 1 ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Pipeline:</span>
+            <Select value={selectedPipelineId} onValueChange={handlePipelineChange}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Select pipeline" />
+              </SelectTrigger>
+              <SelectContent>
+                {pipelines.map(pipeline => (
+                  <SelectItem key={pipeline.id} value={pipeline.id}>
+                    {pipeline.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div />
+        )}
+        {defaultStageId && (
+          <Button onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Deal
+          </Button>
+        )}
+      </div>
 
       {/* Kanban Board */}
       <DndContext
@@ -349,6 +365,18 @@ export function KanbanBoard({
           onSuccess={handleDealDialogSuccess}
         />
       )}
+
+      {/* Deal Dialog for Create */}
+      <DealDialog
+        mode="create"
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        organizations={organizations}
+        people={people}
+        stages={stages}
+        defaultStageId={defaultStageId}
+        onSuccess={handleCreateDialogSuccess}
+      />
     </div>
   )
 }
