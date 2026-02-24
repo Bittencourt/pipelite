@@ -1,21 +1,21 @@
 # Phase 5: Deals & Kanban - Research
 
-**Researched:** 2026-02-23
+**Researched:** 2026-02-24
 **Domain:** Kanban board with drag-drop, deal management with entity relationships
 **Confidence:** HIGH
 
 ## Summary
 
-This phase implements a kanban board for deal management with drag-and-drop between pipeline stages. The project already has @dnd-kit/core and @dnd-kit/sortable installed and uses them in Phase 4 for stage reordering. The key challenge is extending this to multi-column kanban with cross-column drag-drop.
+This phase implements a kanban board for deal management with drag-and-drop between pipeline stages. The project already has @dnd-kit/core (^6.3.1), @dnd-kit/sortable (^10.0.0), and @dnd-kit/utilities (^3.2.2) installed and used in Phase 4 for stage reordering. The key technical challenge is extending the existing single-list sortable pattern to multi-column kanban with cross-column drag-drop.
 
-**Primary recommendation:** Use the existing @dnd-kit packages with `closestCorners` collision detection for kanban, wrap each column with `useDroppable` for empty column support, and use gap-based positioning for deal ordering within stages.
+**Primary recommendation:** Use existing @dnd-kit packages with `closestCorners` collision detection (explicitly recommended in @dnd-kit docs for kanban), wrap each column with `useDroppable` for empty column support, and use gap-based positioning for deal ordering within stages (same pattern as stages).
 
 ## Standard Stack
 
 ### Core
 | Library | Version | Purpose | Why Standard |
 |---------|---------|---------|--------------|
-| @dnd-kit/core | ^6.3.1 | Core drag-drop primitives | Already installed, used in Phase 4 |
+| @dnd-kit/core | ^6.3.1 | Core drag-drop primitives | Already installed, Phase 4 |
 | @dnd-kit/sortable | ^10.0.0 | Sortable list functionality | Already installed, extends core |
 | @dnd-kit/utilities | ^3.2.2 | CSS transform utilities | Already installed |
 | Intl.NumberFormat | Native | Currency formatting | Browser-native, locale-aware |
@@ -26,8 +26,9 @@ This phase implements a kanban board for deal management with drag-and-drop betw
 |---------|---------|---------|-------------|
 | Zod | ^4.3.6 | Validation schemas | All server actions |
 | shadcn/ui Dialog | Existing | Deal form dialog | Create/edit deal |
+| shadcn/ui AlertDialog | Existing | Delete confirmation | Destructive actions |
 
-### Already Installed (Phase 4)
+### Already Installed (from package.json)
 ```json
 "@dnd-kit/core": "^6.3.1",
 "@dnd-kit/sortable": "^10.0.0",
@@ -37,6 +38,8 @@ This phase implements a kanban board for deal management with drag-and-drop betw
 ## Architecture Patterns
 
 ### Database Schema: Deals Table
+
+Based on existing patterns from `people.ts` and `pipelines.ts`:
 
 ```typescript
 // src/db/schema/deals.ts
@@ -59,23 +62,23 @@ export const deals = pgTable('deals', {
   personId: text('person_id').references(() => people.id),
   ownerId: text('owner_id').notNull().references(() => users.id),
   
-  // Position for ordering within stage (gap-based)
+  // Position for ordering within stage (gap-based, same as stages)
   position: integer('position').notNull(),
   
-  // Timestamps
+  // Timestamps (consistent with existing tables)
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   deletedAt: timestamp('deleted_at'),
 })
 ```
 
-**Key schema decisions:**
-- Both `organizationId` and `personId` are nullable, but at least one must be set (enforced in action validation)
-- `value` is nullable integer (cents or base currency units) for "No Value" deals
-- `position` uses gap-based ordering (same pattern as stages)
-- Soft delete with `deletedAt` (consistent with organizations, people)
+**Schema decisions (from CONTEXT.md + existing patterns):**
+- Both `organizationId` and `personId` nullable — at least one required (validation in action)
+- `value` nullable integer for "No Value" deals
+- `position` uses gap-based ordering (pattern from `reorderStages` action)
+- Soft delete with `deletedAt` (consistent with organizations, pipelines)
 
-### Relations Addition
+### Relations Addition (add to _relations.ts)
 
 ```typescript
 // Add to src/db/schema/_relations.ts
@@ -100,7 +103,7 @@ export const dealsRelations = relations(deals, ({ one }) => ({
   }),
 }))
 
-// Also add to stagesRelations:
+// Update stagesRelations to include deals:
 export const stagesRelations = relations(stages, ({ one, many }) => ({
   pipeline: one(pipelines, {
     fields: [stages.pipelineId],
@@ -115,26 +118,30 @@ export const stagesRelations = relations(stages, ({ one, many }) => ({
 ```
 src/
 ├── app/
-│   └── deals/
-│       ├── page.tsx           # Kanban board page (server component)
-│       ├── kanban-board.tsx   # Client component for board
-│       ├── kanban-column.tsx  # Single column component
-│       ├── deal-card.tsx      # Deal card with inline expansion
-│       ├── deal-dialog.tsx    # Create/edit dialog
-│       └── actions.ts         # Server actions for deals
+│   └── (main)/                    # or appropriate layout group
+│       └── deals/
+│           ├── page.tsx           # Kanban board page (server component)
+│           ├── kanban-board.tsx   # Client component for DndContext
+│           ├── kanban-column.tsx  # Single column with useDroppable
+│           ├── deal-card.tsx      # Deal card with useSortable + inline expansion
+│           ├── deal-dialog.tsx    # Create/edit dialog (form)
+│           ├── delete-deal-dialog.tsx  # Delete confirmation
+│           └── actions.ts         # Server actions for deals
 ├── db/schema/
-│   ├── deals.ts               # Deals table definition
-│   └── _relations.ts          # Updated with deals relations
+│   ├── deals.ts                   # Deals table definition (NEW)
+│   └── _relations.ts              # Updated with deals relations
 └── lib/
-    └── currency.ts            # Currency formatting utilities
+    └── currency.ts                # Currency formatting utilities
 ```
 
-### Pattern 1: Kanban Board with @dnd-kit
+### Pattern 1: Kanban Board with @dnd-kit (Multi-Column)
 
-**What:** Multi-column kanban with drag-drop between stages
-**When to use:** This is the core UI for deals
+**CRITICAL: Use `closestCorners` for kanban, NOT `closestCenter`**
 
-**Key @dnd-kit setup for kanban:**
+From official @dnd-kit docs:
+> "When building interfaces where droppable containers are stacked on top of one another, for example, when building a Kanban, the closest center algorithm can sometimes return the underlying droppable of the entire Kanban column rather than the droppable areas within that column. In those situations, the **closest corners** algorithm is preferred."
+
+**Source:** https://docs.dndkit.com/api-documentation/context-provider/collision-detection-algorithms
 
 ```typescript
 // kanban-board.tsx
@@ -144,7 +151,7 @@ import { useState } from "react"
 import {
   DndContext,
   DragOverlay,
-  closestCorners,
+  closestCorners,  // IMPORTANT: Use closestCorners for kanban
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -159,11 +166,9 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable"
 
-export function KanbanBoard({ stages, dealsByStage }) {
+export function KanbanBoard({ stages, deals, onDealMove }) {
   const [activeDeal, setActiveDeal] = useState<Deal | null>(null)
 
-  // Use closestCorners for kanban (better than closestCenter for stacked columns)
-  // See: https://docs.dndkit.com/api-documentation/context-provider/collision-detection-algorithms
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 5 }, // Prevent accidental drags
@@ -173,22 +178,37 @@ export function KanbanBoard({ stages, dealsByStage }) {
     })
   )
 
+  // Group deals by stage
+  const dealsByStage = useMemo(() => {
+    const grouped: Record<string, Deal[]> = {}
+    for (const stage of stages) {
+      grouped[stage.id] = deals
+        .filter(d => d.stageId === stage.id)
+        .sort((a, b) => a.position - b.position)
+    }
+    return grouped
+  }, [stages, deals])
+
   const handleDragStart = (event: DragStartEvent) => {
-    const deal = findDealById(event.active.id)
-    setActiveDeal(deal)
+    const deal = deals.find(d => d.id === event.active.id)
+    setActiveDeal(deal || null)
   }
 
   const handleDragOver = (event: DragOverEvent) => {
-    // When dragging over a different column, optimistically update
+    // When dragging over a different column, update optimistically
     const { active, over } = event
     if (!over) return
 
-    const activeStageId = getStageId(active.id)
-    const overStageId = getStageId(over.id)
+    // Determine if over a column or a deal card
+    const overId = over.id as string
+    const overStageId = over.data.current?.type === 'column' 
+      ? overId 
+      : deals.find(d => d.id === overId)?.stageId
 
-    if (activeStageId !== overStageId) {
-      // Move deal to new stage optimistically
-      setDealsByStage((prev) => moveDealBetweenStages(prev, active, over))
+    const activeDeal = deals.find(d => d.id === active.id)
+    if (activeDeal && activeDeal.stageId !== overStageId) {
+      // Optimistic update - move deal to new stage
+      onDealMove(active.id as string, overStageId, null)
     }
   }
 
@@ -196,33 +216,25 @@ export function KanbanBoard({ stages, dealsByStage }) {
     const { active, over } = event
     setActiveDeal(null)
 
-    if (!over || active.id === over.id) return
+    if (!over) return
 
-    // Persist the change to server
-    const result = await updateDealStage(active.id as string, {
-      stageId: overStageId,
-      position: newPosition,
-    })
-
-    if (!result.success) {
-      // Revert optimistic update
-      toast.error(result.error)
-    }
+    // Calculate final position and persist
+    // ... persist to server action
   }
 
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={closestCorners}  // MUST be closestCorners for kanban
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
       <div className="flex gap-4 overflow-x-auto pb-4">
         {stages.map((stage) => (
-          <KanbanColumn key={stage.id} stage={stage}>
+          <KanbanColumn key={stage.id} stage={stage} deals={dealsByStage[stage.id]}>
             <SortableContext
-              items={dealsByStage[stage.id] || []}
+              items={dealsByStage[stage.id]?.map(d => d.id) || []}
               strategy={verticalListSortingStrategy}
             >
               {dealsByStage[stage.id]?.map((deal) => (
@@ -233,7 +245,7 @@ export function KanbanBoard({ stages, dealsByStage }) {
         ))}
       </div>
       <DragOverlay>
-        {activeDeal && <DealCard deal={activeDeal} isOverlay />}
+        {activeDeal && <DealCardOverlay deal={activeDeal} />}
       </DragOverlay>
     </DndContext>
   )
@@ -242,18 +254,29 @@ export function KanbanBoard({ stages, dealsByStage }) {
 
 ### Pattern 2: Droppable Column (Empty Column Support)
 
-**What:** Each column is a droppable zone to handle empty stages
-**Why:** Without this, you can't drag deals back into empty columns
+**What:** Each column must be a droppable zone to handle empty stages.
+**Why:** Without this, you can't drag deals back into empty columns.
+
+From @dnd-kit Sortable docs:
+> "If you move all sortable items from one column into the other, you will need a droppable zone for the empty column so that you may drag sortable items back into that empty column."
 
 ```typescript
 // kanban-column.tsx
 import { useDroppable } from "@dnd-kit/core"
 
-export function KanbanColumn({ stage, children }) {
+interface KanbanColumnProps {
+  stage: Stage
+  deals: Deal[]
+  children: React.ReactNode
+}
+
+export function KanbanColumn({ stage, deals, children }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: stage.id,
     data: { type: 'column', stage },
   })
+
+  const totalValue = deals.reduce((sum, d) => sum + (d.value || 0), 0)
 
   return (
     <div
@@ -263,15 +286,15 @@ export function KanbanColumn({ stage, children }) {
         isOver && "ring-2 ring-primary"
       )}
     >
-      {/* Stage header */}
+      {/* Stage header - shows count and total */}
       <div className="p-3 border-b">
         <div className="font-medium">{stage.name}</div>
         <div className="text-sm text-muted-foreground">
-          {dealCount} deals · {formatCurrency(totalValue)}
+          {deals.length} deal{deals.length !== 1 ? 's' : ''} · {formatCurrency(totalValue)}
         </div>
       </div>
       
-      {/* Deal cards container */}
+      {/* Deal cards container - must have min-height for empty columns */}
       <div className="flex-1 p-2 space-y-2 min-h-[200px]">
         {children}
       </div>
@@ -280,10 +303,10 @@ export function KanbanColumn({ stage, children }) {
 }
 ```
 
-### Pattern 3: Inline Card Expansion
+### Pattern 3: Deal Card with useSortable
 
-**What:** Clicking a card shows inline quick view, with edit button opening form
-**Implementation:**
+**What:** Card uses `useSortable` (combines draggable + droppable)
+**Why:** Cards can be dragged and also act as drop targets for reordering
 
 ```typescript
 // deal-card.tsx
@@ -291,9 +314,12 @@ import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { useState } from "react"
 
-export function DealCard({ deal, isOverlay = false }) {
+interface DealCardProps {
+  deal: Deal
+}
+
+export function DealCard({ deal }: DealCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-  const [editDialogOpen, setEditDialogOpen] = useState(false)
 
   const {
     attributes,
@@ -310,145 +336,98 @@ export function DealCard({ deal, isOverlay = false }) {
   }
 
   return (
-    <>
-      <div
-        ref={setNodeRef}
-        style={style}
-        className={cn(
-          "bg-card border rounded-lg p-3 cursor-pointer",
-          isDragging && "opacity-50",
-          isExpanded && "ring-2 ring-primary"
-        )}
-        onClick={() => setIsExpanded(!isExpanded)}
-        {...attributes}
-        {...listeners}
-      >
-        <div className="font-medium truncate">{deal.title}</div>
-        <div className="flex justify-between items-center mt-2 text-sm">
-          <span className="text-muted-foreground">
-            {deal.organization?.name || deal.person?.firstName || "No contact"}
-          </span>
-          <span className="font-medium">
-            {deal.value ? formatCurrency(deal.value) : "No Value"}
-          </span>
-        </div>
-        
-        {/* Inline expansion */}
-        {isExpanded && (
-          <div className="mt-3 pt-3 border-t">
-            <div className="text-sm text-muted-foreground space-y-1">
-              {deal.expectedCloseDate && (
-                <div>Close: {formatDate(deal.expectedCloseDate)}</div>
-              )}
-              {deal.notes && <div className="line-clamp-2">{deal.notes}</div>}
-            </div>
-            <div className="flex gap-2 mt-3">
-              <Button size="sm" onClick={(e) => {
-                e.stopPropagation()
-                setEditDialogOpen(true)
-              }}>
-                Edit
-              </Button>
-              <Button size="sm" variant="outline" onClick={(e) => {
-                e.stopPropagation()
-                // Delete confirmation
-              }}>
-                Delete
-              </Button>
-            </div>
-          </div>
-        )}
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "bg-card border rounded-lg p-3 cursor-pointer",
+        isDragging && "opacity-50",
+        isExpanded && "ring-2 ring-primary"
+      )}
+      onClick={() => setIsExpanded(!isExpanded)}
+      {...attributes}
+      {...listeners}
+    >
+      <div className="font-medium truncate">{deal.title}</div>
+      <div className="flex justify-between items-center mt-2 text-sm">
+        <span className="text-muted-foreground truncate">
+          {deal.organization?.name || deal.person?.firstName || "No contact"}
+        </span>
+        <span className="font-medium shrink-0 ml-2">
+          {deal.value ? formatCurrency(deal.value) : "—"}
+        </span>
       </div>
-
-      <DealDialog
-        deal={deal}
-        open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
-        onSuccess={() => {
-          setEditDialogOpen(false)
-          setIsExpanded(false)
-        }}
-      />
-    </>
+      
+      {/* Inline expansion - from CONTEXT.md: click expands inline */}
+      {isExpanded && (
+        <div className="mt-3 pt-3 border-t">
+          <div className="text-sm text-muted-foreground space-y-1">
+            {deal.expectedCloseDate && (
+              <div>Close: {formatDate(deal.expectedCloseDate)}</div>
+            )}
+            {deal.notes && (
+              <div className="line-clamp-2">{deal.notes}</div>
+            )}
+          </div>
+          <div className="flex gap-2 mt-3">
+            <Button size="sm" onClick={(e) => {
+              e.stopPropagation()
+              // Open edit dialog
+            }}>
+              Edit
+            </Button>
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={(e) => {
+                e.stopPropagation()
+                // Open delete confirmation
+              }}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 ```
 
-### Pattern 4: Mobile Swipe Navigation
+### Pattern 4: DragOverlay Component (CRITICAL)
 
-**What:** On mobile, show single column with horizontal swipe
-**Implementation:**
+**What:** Separate presentational component for DragOverlay
+**Why:** Using the same component that calls `useSortable` in DragOverlay causes ID collision
+
+From @dnd-kit Sortable docs:
+> "A common pitfall when using the DragOverlay component is rendering the same component that calls useSortable inside the DragOverlay. This will lead to unexpected results, since there will be an id collision."
 
 ```typescript
-// kanban-board.tsx (mobile section)
-import { useState, useRef } from "react"
-
-export function KanbanBoard({ stages, dealsByStage }) {
-  const [activeStageIndex, setActiveStageIndex] = useState(0)
-  const touchStartX = useRef(0)
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX
-  }
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const touchEndX = e.changedTouches[0].clientX
-    const diff = touchStartX.current - touchEndX
-
-    if (Math.abs(diff) > 50) { // Minimum swipe distance
-      if (diff > 0 && activeStageIndex < stages.length - 1) {
-        setActiveStageIndex(activeStageIndex + 1)
-      } else if (diff < 0 && activeStageIndex > 0) {
-        setActiveStageIndex(activeStageIndex - 1)
-      }
-    }
-  }
-
-  const isMobile = useMediaQuery("(max-width: 768px)")
-
-  if (isMobile) {
-    return (
-      <div
-        ref={containerRef}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-      >
-        {/* Stage indicator dots */}
-        <div className="flex justify-center gap-2 mb-4">
-          {stages.map((stage, i) => (
-            <button
-              key={stage.id}
-              onClick={() => setActiveStageIndex(i)}
-              className={cn(
-                "w-2 h-2 rounded-full",
-                i === activeStageIndex ? "bg-primary" : "bg-muted"
-              )}
-            />
-          ))}
-        </div>
-        
-        {/* Single column view */}
-        <KanbanColumn stage={stages[activeStageIndex]}>
-          {/* Deal cards */}
-        </KanbanColumn>
+// DealCardOverlay - presentational only, NO useSortable
+export function DealCardOverlay({ deal }: { deal: Deal }) {
+  return (
+    <div className="bg-card border rounded-lg p-3 shadow-lg w-[260px]">
+      <div className="font-medium truncate">{deal.title}</div>
+      <div className="flex justify-between items-center mt-2 text-sm">
+        <span className="text-muted-foreground truncate">
+          {deal.organization?.name || deal.person?.firstName || "No contact"}
+        </span>
+        <span className="font-medium">
+          {deal.value ? formatCurrency(deal.value) : "—"}
+        </span>
       </div>
-    )
-  }
-
-  // Desktop: full kanban board
-  return <DesktopKanbanBoard ... />
+    </div>
+  )
 }
 ```
 
-### Pattern 5: Won/Lost Footer Row
+### Pattern 5: Won/Lost Footer Row (from CONTEXT.md)
 
-**What:** Won and Lost stages shown in collapsed footer, not regular columns
-**Implementation:**
+**What:** Won/Lost stages in collapsed footer, not regular columns
 
 ```typescript
-// kanban-board.tsx
-export function KanbanBoard({ stages, dealsByStage }) {
+// kanban-board.tsx (partial)
+export function KanbanBoard({ stages, deals }) {
   // Separate open stages from won/lost
   const openStages = stages.filter(s => s.type === 'open')
   const wonStage = stages.find(s => s.type === 'won')
@@ -459,36 +438,29 @@ export function KanbanBoard({ stages, dealsByStage }) {
       {/* Main kanban area - only open stages */}
       <div className="flex gap-4 overflow-x-auto flex-1 pb-4">
         {openStages.map((stage) => (
-          <KanbanColumn key={stage.id} stage={stage}>
-            {/* Deal cards */}
+          <KanbanColumn key={stage.id} stage={stage} deals={dealsByStage[stage.id]}>
+            {/* SortableContext + DealCards */}
           </KanbanColumn>
         ))}
       </div>
 
-      {/* Won/Lost footer row */}
+      {/* Won/Lost footer row - collapsed view */}
       {(wonStage || lostStage) && (
         <div className="border-t pt-4 mt-4">
           <div className="flex gap-4">
             {wonStage && (
-              <div className="w-[280px] min-w-[280px]">
-                <div className="p-3 bg-emerald-50 dark:bg-emerald-950 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                  <div className="font-medium text-emerald-700 dark:text-emerald-300">
-                    Won ({dealsByStage[wonStage.id]?.length || 0})
-                  </div>
-                  <div className="text-sm text-emerald-600 dark:text-emerald-400">
-                    {formatCurrency(sumValues(dealsByStage[wonStage.id]))}
-                  </div>
-                </div>
-              </div>
+              <WonLostColumn 
+                type="won" 
+                stage={wonStage} 
+                deals={dealsByStage[wonStage.id]} 
+              />
             )}
             {lostStage && (
-              <div className="w-[280px] min-w-[280px]">
-                <div className="p-3 bg-rose-50 dark:bg-rose-950 rounded-lg border border-rose-200 dark:border-rose-800">
-                  <div className="font-medium text-rose-700 dark:text-rose-300">
-                    Lost ({dealsByStage[lostStage.id]?.length || 0})
-                  </div>
-                </div>
-              </div>
+              <WonLostColumn 
+                type="lost" 
+                stage={lostStage} 
+                deals={dealsByStage[lostStage.id]} 
+              />
             )}
           </div>
         </div>
@@ -498,10 +470,60 @@ export function KanbanBoard({ stages, dealsByStage }) {
 }
 ```
 
-### Pattern 6: Currency Formatting
+### Pattern 6: Mobile Single Column View
 
-**What:** Format deal values as currency
-**Implementation:**
+**What:** On mobile, show one column at a time with swipe navigation
+
+```typescript
+// kanban-board.tsx (mobile section)
+import { useMediaQuery } from "@/hooks/use-media-query"
+
+export function KanbanBoard({ stages, deals }) {
+  const [activeStageIndex, setActiveStageIndex] = useState(0)
+  const isMobile = useMediaQuery("(max-width: 768px)")
+  
+  const openStages = stages.filter(s => s.type === 'open')
+
+  if (isMobile) {
+    return (
+      <div className="flex flex-col h-full">
+        {/* Stage indicator */}
+        <div className="flex justify-center gap-2 py-2">
+          {openStages.map((stage, i) => (
+            <button
+              key={stage.id}
+              onClick={() => setActiveStageIndex(i)}
+              className={cn(
+                "px-3 py-1 rounded-full text-sm",
+                i === activeStageIndex 
+                  ? "bg-primary text-primary-foreground" 
+                  : "bg-muted text-muted-foreground"
+              )}
+            >
+              {stage.name}
+            </button>
+          ))}
+        </div>
+        
+        {/* Single column view */}
+        <div className="flex-1">
+          <KanbanColumn 
+            stage={openStages[activeStageIndex]} 
+            deals={dealsByStage[openStages[activeStageIndex].id]}
+          >
+            {/* DealCards */}
+          </KanbanColumn>
+        </div>
+      </div>
+    )
+  }
+
+  // Desktop: full kanban board
+  return <DesktopKanbanBoard ... />
+}
+```
+
+### Pattern 7: Currency Formatting
 
 ```typescript
 // src/lib/currency.ts
@@ -509,7 +531,7 @@ export function formatCurrency(
   value: number | null | undefined,
   currency: string = 'USD'
 ): string {
-  if (value === null || value === undefined) return 'No Value'
+  if (value === null || value === undefined) return '—'
   
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -519,75 +541,68 @@ export function formatCurrency(
   }).format(value)
 }
 
-// If storing as cents:
-export function formatCentsToCurrency(cents: number | null): string {
-  if (cents === null) return 'No Value'
-  return formatCurrency(cents / 100)
-}
+// Usage: formatCurrency(123456) → "$123,456"
 ```
 
 ### Anti-Patterns to Avoid
 
-- **Don't use closestCenter for kanban:** Use `closestCorners` instead. With stacked columns, closestCenter can return the underlying column droppable instead of items within the column. See @dnd-kit collision detection docs.
-- **Don't forget DragOverlay:** Without DragOverlay, the dragged item disappears during drag. Create a separate presentational component for the overlay.
-- **Don't skip empty column handling:** Without `useDroppable` on columns, you can't drag items into empty stages.
+- **DON'T use `closestCenter` for kanban:** Causes wrong drop target with stacked columns. Use `closestCorners`.
+- **DON'T skip DragOverlay:** Without it, dragged item disappears.
+- **DON'T skip `useDroppable` on columns:** Can't drop into empty stages.
+- **DON'T reuse sortable component in DragOverlay:** Creates ID collision. Create separate presentational component.
 
 ## Don't Hand-Roll
 
 | Problem | Don't Build | Use Instead | Why |
 |---------|-------------|-------------|-----|
 | Drag-drop between columns | Custom drag logic | @dnd-kit with DndContext | Handles collisions, accessibility, touch |
-| Empty column drop zones | Custom drop detection | useDroppable hook | Already handles edge cases |
-| Currency formatting | Custom string formatting | Intl.NumberFormat | Locale-aware, handles edge cases |
-| Inline expansion state | Complex state management | Simple useState per card | Cards are independent |
-
-**Key insight:** @dnd-kit is already installed and well-documented. Don't try to simplify with a lighter library—it handles many edge cases.
+| Empty column drop zones | Custom drop detection | `useDroppable` hook | Handles edge cases |
+| Currency formatting | String concatenation | `Intl.NumberFormat` | Locale-aware, handles edge cases |
+| Card inline expansion | Complex state management | Simple `useState` per card | Cards are independent |
+| Mobile swipe navigation | Custom touch handling | Stage indicator buttons + click | Avoids drag/swipe conflict |
 
 ## Common Pitfalls
 
 ### Pitfall 1: Wrong Collision Detection for Kanban
 **What goes wrong:** Dragging a deal to another column triggers the wrong drop target
-**Why it happens:** Default collision detection or closestCenter doesn't work well with stacked/nested droppables
-**How to avoid:** Use `closestCorners` for kanban boards
+**Why it happens:** `closestCenter` returns underlying column droppable instead of items
+**How to avoid:** Use `closestCorners` for kanban boards (official @dnd-kit recommendation)
 **Warning signs:** Dragged item snaps to wrong column, or column highlight is erratic
+**Source:** https://docs.dndkit.com/api-documentation/context-provider/collision-detection-algorithms
 
 ### Pitfall 2: Can't Drop Into Empty Columns
 **What goes wrong:** Dragging a deal into an empty stage doesn't register
-**Why it happens:** SortableContext only tracks sortable items, not the container itself
+**Why it happens:** `SortableContext` only tracks sortable items, not the container
 **How to avoid:** Wrap each column with `useDroppable` to create a drop zone
 **Warning signs:** Empty columns don't highlight when dragging over them
 
-### Pitfall 3: Gap-Based Position Overflow
-**What goes wrong:** After many reorderings, positions become too close or overflow
-**Why it happens:** Gap-based positioning eventually runs out of gaps
-**How to avoid:** 
-1. When position gap is < 0.01, trigger a full renumbering
-2. Or use a "normalize positions" background job
+### Pitfall 3: DragOverlay Component Reuse
+**What goes wrong:** Console errors about duplicate IDs, overlay doesn't render correctly
+**Why it happens:** Same component calling `useSortable` twice with same ID
+**How to avoid:** Create separate presentational component for `DragOverlay`
+**Warning signs:** "Duplicate ID" errors, overlay behaves unexpectedly
+
+### Pitfall 4: Gap-Based Position Overflow
+**What goes wrong:** After many reorderings, positions become too close
+**Why it happens:** Gap-based positioning eventually runs out of precision
+**How to avoid:** When position gap < 0.01, trigger a renumbering of all positions
 **Warning signs:** Deals stop moving to correct positions
 
-### Pitfall 4: Mobile Drag vs Swipe Conflict
-**What goes wrong:** Trying to drag on mobile triggers swipe navigation
-**Why it happens:** Both touch gestures compete
-**How to avoid:** 
-1. Use `activationConstraint: { distance: 5 }` on PointerSensor
-2. On mobile, disable drag and show a "move to" dropdown instead
-**Warning signs:** Users accidentally swipe while trying to drag
-
-### Pitfall 5: DragOverlay Component Reuse
-**What goes wrong:** DragOverlay shows weird behavior or errors
-**Why it happens:** Using the same component that calls useSortable in DragOverlay creates ID collision
-**How to avoid:** Create a separate presentational component for DragOverlay
-**Warning signs:** Console errors about duplicate IDs, overlay doesn't render
-
-### Pitfall 6: Deal Without Org or Person
-**What goes wrong:** Creating deal without linking to org or person
+### Pitfall 5: Deal Without Org or Person
+**What goes wrong:** Creating deal without linking to organization or person
 **Why it happens:** Both fields are nullable in schema
-**How to avoid:** Add validation in server action: require at least one of organizationId or personId
+**How to avoid:** Add Zod validation: `refine(data => data.organizationId || data.personId)`
 **Warning signs:** Orphan deals in database
+
+### Pitfall 6: Mobile Drag vs Navigation Conflict
+**What goes wrong:** Trying to drag on mobile triggers stage navigation
+**Why it happens:** Both touch gestures compete
+**How to avoid:** On mobile, use stage indicator buttons instead of swipe; disable drag or use "Move to" dropdown
+**Warning signs:** Users accidentally change stages while trying to drag
 
 ## Code Examples
 
-### Server Action: Create Deal
+### Server Action: Create Deal (with gap-based position)
 
 ```typescript
 // src/app/deals/actions.ts
@@ -628,7 +643,7 @@ export async function createDeal(
   }
 
   try {
-    // Get max position in stage for gap-based ordering
+    // Get max position in stage for gap-based ordering (same pattern as stages)
     const existingDeals = await db.query.deals.findMany({
       where: and(
         eq(deals.stageId, validated.data.stageId),
@@ -664,12 +679,13 @@ export async function createDeal(
 }
 ```
 
-### Server Action: Update Deal Stage (Drag-Drop)
+### Server Action: Move Deal Between Stages
 
 ```typescript
-export async function updateDealStage(
+export async function moveDeal(
   dealId: string,
-  data: { stageId: string; position?: number }
+  targetStageId: string,
+  targetIndex?: number
 ): Promise<{ success: true } | { success: false; error: string }> {
   const session = await auth()
 
@@ -691,24 +707,36 @@ export async function updateDealStage(
       return { success: false, error: "Deal not found" }
     }
 
-    // If position not provided, calculate it
-    let position = data.position
-    if (position === undefined) {
-      const existingDeals = await db.query.deals.findMany({
-        where: and(
-          eq(deals.stageId, data.stageId),
-          isNull(deals.deletedAt)
-        ),
-        orderBy: [desc(deals.position)],
-      })
-      position = (existingDeals[0]?.position ?? 0) + 10
+    // Calculate new position using gap-based approach
+    const targetDeals = await db.query.deals.findMany({
+      where: and(
+        eq(deals.stageId, targetStageId),
+        isNull(deals.deletedAt)
+      ),
+      orderBy: [sql`${deals.position} ASC`],
+    })
+
+    let newPosition: number
+    
+    if (targetIndex === undefined || targetIndex >= targetDeals.length) {
+      // Move to end
+      const lastPos = targetDeals[targetDeals.length - 1]?.position ?? 0
+      newPosition = lastPos + 10
+    } else if (targetIndex <= 0) {
+      // Move to start
+      newPosition = (targetDeals[0]?.position ?? 10) / 2
+    } else {
+      // Move between neighbors
+      const prevPos = targetDeals[targetIndex - 1]?.position ?? 0
+      const nextPos = targetDeals[targetIndex]?.position ?? prevPos + 10
+      newPosition = (prevPos + nextPos) / 2
     }
 
     await db
       .update(deals)
       .set({
-        stageId: data.stageId,
-        position,
+        stageId: targetStageId,
+        position: newPosition,
         updatedAt: new Date(),
       })
       .where(eq(deals.id, dealId))
@@ -717,8 +745,8 @@ export async function updateDealStage(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to update deal stage:", error)
-    return { success: false, error: "Failed to update deal" }
+    console.error("Failed to move deal:", error)
+    return { success: false, error: "Failed to move deal" }
   }
 }
 ```
@@ -726,7 +754,7 @@ export async function updateDealStage(
 ### Server Action: Reorder Deals Within Stage
 
 ```typescript
-export async function reorderDeals(
+export async function reorderDeal(
   stageId: string,
   dealId: string,
   newIndex: number
@@ -738,6 +766,7 @@ export async function reorderDeals(
   }
 
   try {
+    // Same pattern as reorderStages from Phase 4
     const allDeals = await db.query.deals.findMany({
       where: and(
         eq(deals.stageId, stageId),
@@ -756,7 +785,7 @@ export async function reorderDeals(
       return { success: true }
     }
 
-    // Gap-based positioning (same pattern as stages)
+    // Gap-based positioning (same as stages)
     let newPosition: number
 
     if (clampedIndex === 0) {
@@ -785,8 +814,8 @@ export async function reorderDeals(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to reorder deals:", error)
-    return { success: false, error: "Failed to reorder deals" }
+    console.error("Failed to reorder deal:", error)
+    return { success: false, error: "Failed to reorder deal" }
   }
 }
 ```
@@ -795,7 +824,7 @@ export async function reorderDeals(
 
 | Old Approach | Current Approach | When Changed | Impact |
 |--------------|------------------|--------------|--------|
-| Custom drag-drop | @dnd-kit | Phase 4 (2026-02-23) | Accessible, touch-friendly |
+| react-beautiful-dnd | @dnd-kit | Phase 4 (2026-02-23) | Accessible, maintained, touch-friendly |
 | Integer renumbering | Gap-based positioning | Phase 4 (2026-02-23) | No full-table updates |
 
 **Deprecated/outdated:**
@@ -804,25 +833,26 @@ export async function reorderDeals(
 ## Open Questions
 
 1. **Currency Storage Format**
-   - What we know: Using integer for value
-   - What's unclear: Should we store as cents (multiply by 100) or base currency units?
-   - Recommendation: Store as base currency units (e.g., 1234 for $1,234). Cents adds complexity for multi-currency scenarios.
+   - What we know: Using `integer` for value field
+   - What's unclear: Store as cents (multiply by 100) or base currency units?
+   - Recommendation: Store as base currency units (e.g., 1234 for $1,234). Cents adds complexity for multi-currency. Keep it simple.
 
 2. **Mobile Drag Alternative**
    - What we know: Touch drag can conflict with swipe navigation
    - What's unclear: Best UX for mobile deal movement
-   - Recommendation: On mobile, use a "Move to stage" dropdown in the card expansion instead of drag-drop.
+   - Recommendation: Use stage indicator buttons (clickable pills) on mobile instead of swipe. Disable drag on mobile or use "Move to stage" dropdown in expanded card.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- @dnd-kit docs: https://docs.dndkit.com/presets/sortable - Sortable preset documentation
-- @dnd-kit collision detection: https://docs.dndkit.com/api-documentation/context-provider/collision-detection-algorithms - Kanban-specific guidance
-- MDN Intl.NumberFormat: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/NumberFormat - Currency formatting
+- @dnd-kit Sortable docs: https://docs.dndkit.com/presets/sortable - Multiple containers pattern, DragOverlay pitfall
+- @dnd-kit Collision Detection: https://docs.dndkit.com/api-documentation/context-provider/collision-detection-algorithms - closestCorners for kanban
+- @dnd-kit Droppable docs: https://docs.dndkit.com/api-documentation/droppable - useDroppable hook
 
 ### Secondary (MEDIUM confidence)
-- Project existing code: src/app/admin/pipelines/[id]/stage-configurator.tsx - @dnd-kit patterns already used
-- Project schema patterns: src/db/schema/people.ts, organizations.ts - Consistent patterns to follow
+- Project existing code: `src/app/admin/pipelines/[id]/stage-configurator.tsx` - @dnd-kit patterns used in Phase 4
+- Project actions: `src/app/admin/pipelines/actions.ts` - Gap-based positioning implementation
+- Project schema patterns: `src/db/schema/people.ts`, `src/db/schema/pipelines.ts`
 
 ### Tertiary (LOW confidence)
 - None needed - all core patterns verified with official docs
@@ -830,10 +860,11 @@ export async function reorderDeals(
 ## Metadata
 
 **Confidence breakdown:**
-- Standard stack: HIGH - @dnd-kit already installed and used in Phase 4
-- Architecture: HIGH - Based on official @dnd-kit documentation and existing project patterns
-- Pitfalls: HIGH - Drawn from official @dnd-kit docs and collision detection guide
-- Database schema: HIGH - Follows existing patterns from people/organizations
+- Standard stack: HIGH - @dnd-kit already installed, verified versions from package.json
+- Architecture: HIGH - Based on official @dnd-kit documentation with explicit kanban guidance
+- Patterns: HIGH - Verified with @dnd-kit official docs, existing project code
+- Database schema: HIGH - Follows existing patterns from people/organizations/pipelines tables
+- Pitfalls: HIGH - Drawn from official @dnd-kit documentation warnings
 
-**Research date:** 2026-02-23
-**Valid until:** 30 days (stable patterns)
+**Research date:** 2026-02-24
+**Valid until:** 30 days (stable patterns, @dnd-kit API stable)
