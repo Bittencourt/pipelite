@@ -20,8 +20,13 @@ interface DealWithRelations {
   person: { id: string; firstName: string; lastName: string } | null
 }
 
-export default async function DealsPage() {
+export default async function DealsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ pipeline?: string }>
+}) {
   const session = await auth()
+  const params = await searchParams
 
   if (!session?.user?.id) {
     redirect("/login")
@@ -55,8 +60,24 @@ export default async function DealsPage() {
     )
   }
 
-  // Determine selected pipeline (default or first)
-  const selectedPipeline = allPipelines.find(p => p.isDefault) || allPipelines[0]
+  // Determine selected pipeline (from query param, default, or first)
+  const selectedPipeline = params.pipeline
+    ? allPipelines.find(p => p.id === params.pipeline)
+    : allPipelines.find(p => p.isDefault) || allPipelines[0]
+  
+  if (!selectedPipeline) {
+    return (
+      <div className="container mx-auto py-8">
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-3xl font-bold">Deals</h1>
+        </div>
+        <div className="text-center py-12 text-muted-foreground border rounded-lg">
+          Pipeline not found.
+        </div>
+      </div>
+    )
+  }
+  
   const selectedPipelineId = selectedPipeline.id
 
   // Fetch stages for the selected pipeline
