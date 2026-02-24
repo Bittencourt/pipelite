@@ -8,6 +8,7 @@ import { organizations } from "./organizations"
 import { people } from "./people"
 import { pipelines } from "./pipelines"
 import { stages } from "./pipelines"
+import { deals } from "./deals"
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
@@ -16,6 +17,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   rejectedSignups: many(rejectedSignups),
   organizations: many(organizations),
   people: many(people),
+  deals: many(deals),
 }))
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -52,9 +54,10 @@ export const organizationsRelations = relations(organizations, ({ one, many }) =
     references: [users.id],
   }),
   people: many(people),
+  deals: many(deals),
 }))
 
-export const peopleRelations = relations(people, ({ one }) => ({
+export const peopleRelations = relations(people, ({ one, many }) => ({
   organization: one(organizations, {
     fields: [people.organizationId],
     references: [organizations.id],
@@ -63,6 +66,7 @@ export const peopleRelations = relations(people, ({ one }) => ({
     fields: [people.ownerId],
     references: [users.id],
   }),
+  deals: many(deals),
 }))
 
 export const pipelinesRelations = relations(pipelines, ({ one, many }) => ({
@@ -73,9 +77,29 @@ export const pipelinesRelations = relations(pipelines, ({ one, many }) => ({
   stages: many(stages),
 }))
 
-export const stagesRelations = relations(stages, ({ one }) => ({
+export const stagesRelations = relations(stages, ({ one, many }) => ({
   pipeline: one(pipelines, {
     fields: [stages.pipelineId],
     references: [pipelines.id],
+  }),
+  deals: many(deals),
+}))
+
+export const dealsRelations = relations(deals, ({ one }) => ({
+  stage: one(stages, {
+    fields: [deals.stageId],
+    references: [stages.id],
+  }),
+  organization: one(organizations, {
+    fields: [deals.organizationId],
+    references: [organizations.id],
+  }),
+  person: one(people, {
+    fields: [deals.personId],
+    references: [people.id],
+  }),
+  owner: one(users, {
+    fields: [deals.ownerId],
+    references: [users.id],
   }),
 }))
