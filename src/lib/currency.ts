@@ -23,3 +23,21 @@ export function formatCurrency(value: number | null | undefined): string {
   const wholeDollars = Math.round(value)
   return `$${wholeDollars.toLocaleString('en-US')}`
 }
+
+/**
+ * Sum the values of an array of deals
+ * - Treats null values as 0
+ * - Returns 0 for empty arrays
+ * 
+ * @param deals - Array of deal objects with value field
+ * @returns Sum of all deal values
+ * 
+ * @example
+ * sumDealValues([{ value: 1000 }, { value: 2000 }, { value: null }]) // => 3000
+ */
+export function sumDealValues(deals: Array<{ value: string | null }>): number {
+  return deals.reduce((sum, deal) => {
+    const value = deal.value ? parseFloat(deal.value) : 0
+    return sum + (isNaN(value) ? 0 : value)
+  }, 0)
+}
