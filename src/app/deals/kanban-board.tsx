@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -69,6 +69,11 @@ export function KanbanBoard({
   const [dealDialogOpen, setDealDialogOpen] = useState(false)
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+
+  // Sync state when server data changes
+  useEffect(() => {
+    setDealsByStage(initialDealsByStage)
+  }, [initialDealsByStage])
 
   // Separate open stages from won/lost
   const openStages = stages.filter(s => s.type === 'open')
