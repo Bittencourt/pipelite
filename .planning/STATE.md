@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 5 - Deals & Kanban (In Progress)
+**Current focus:** Phase 5 - Deals & Kanban (COMPLETE)
 
 ## Current Position
 
-Phase: 5 of 10 (Deals & Kanban)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-02-24 — Completed 05-02 (Deal Dialog)
+Phase: 5 of 10 (Deals & Kanban) - COMPLETE
+Plan: 3 of 3 in current phase
+Status: Phase complete
+Last activity: 2026-02-24 — Completed 05-03 (Kanban Board)
 
-Progress: [██████████████] 95% (18/19 plans in current roadmap)
+Progress: [███████████████] 100% (19/19 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 18
+- Total plans completed: 19
 - Average duration: 5min
-- Total execution time: 1.7 hours
+- Total execution time: 1.8 hours
 
 **By Phase:**
 
@@ -31,14 +31,14 @@ Progress: [██████████████] 95% (18/19 plans in curre
 | 02-organizations | 3/3 | 34min | 11min |
 | 03-people | 3/3 | 6min | 2min |
 | 04-pipelines-stages | 4/4 | 35min | 9min |
-| 05-deals-kanban | 2/3 | 15min | 8min |
+| 05-deals-kanban | 3/3 | 30min | 10min |
 
 **Recent Trend:**
+- 05-03: 15min (4 tasks, 4 files, 8 commits)
 - 05-02: 5min (1 task, 1 file)
 - 05-01: 10min (5 tasks, 5 files)
+- 04-04: 5min (2 tasks, 2 files)
 - 04-03: 7min (3 tasks, 6 files)
-- 04-02: 16min (3 tasks, 1 file)
-- 04-01: 2min (2 tasks, 2 files)
 
 *Updated after each plan completion*
 
@@ -92,6 +92,11 @@ Recent decisions affecting current work:
 - [05-01] At least one of org/person constraint enforced in action validation, not DB constraint
 - [05-01] Position defaults to 10000 for new deals, increments by 10000
 - [05-02] DealDialog uses watch/setValue for Select components (same pattern as people dialogs)
+- [05-03] closestCorners collision detection for kanban columns (not closestCenter)
+- [05-03] PointerSensor with 5px distance constraint for drag activation
+- [05-03] Optimistic updates with error recovery and state sync via useEffect
+- [05-03] Won/Lost stages in collapsed footer row (not drag targets)
+- [05-03] Pipeline switching via query param for shareable URLs
 
 ### Pending Todos
 
@@ -105,11 +110,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-02-24 12:15 UTC
-Stopped at: Completed 05-02-PLAN.md (Deal Dialog)
+Last session: 2026-02-24 14:30 UTC
+Stopped at: Completed 05-03-PLAN.md (Kanban Board) - Phase 5 Complete
 Resume file: None
 
-**Phase 5 in progress.** Deal dialog complete with create/edit modes, form validation, and delete confirmation. Ready for 05-03 (Kanban Board).
+**Phase 5 COMPLETE.** Deals kanban fully functional with drag-drop, inline expansion, pipeline switching, and CRUD operations. Ready for Phase 6: Activities & Timeline.
 
 ---
 *State initialized: 2026-02-22*
