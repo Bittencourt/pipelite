@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 6 - Activities & Timeline
+**Current focus:** Phase 6 - Activities & Timeline (Complete)
 
 ## Current Position
 
-Phase: 6 of 10 (Activities & Timeline) - In progress
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-02-25 — Completed 06-02 (Activity List View + CRUD Dialog)
+Phase: 6 of 10 (Activities & Timeline) - Complete
+Plan: 3 of 3 in current phase
+Status: Phase complete
+Last activity: 2026-02-25 — Completed 06-03 (Calendar View)
 
-Progress: [████████████████] 100% (21/21 plans in current roadmap)
+Progress: [████████████████] 100% (22/22 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 21
+- Total plans completed: 22
 - Average duration: 5min
-- Total execution time: 2.0 hours
+- Total execution time: 2.2 hours
 
 **By Phase:**
 
@@ -32,14 +32,14 @@ Progress: [████████████████] 100% (21/21 plans i
 | 03-people | 3/3 | 6min | 2min |
 | 04-pipelines-stages | 4/4 | 35min | 9min |
 | 05-deals-kanban | 3/3 | 30min | 10min |
-| 06-activities | 2/3 | 21min | 11min |
+| 06-activities | 3/3 | 31min | 10min |
 
 **Recent Trend:**
+- 06-03: 10min (3 tasks, 3 files, 3 commits)
 - 06-02: 13min (3 tasks, 5 files, 4 commits)
 - 06-01: 8min (5 tasks, 6 files, 5 commits)
 - 05-03: 15min (4 tasks, 4 files, 8 commits)
 - 05-02: 5min (1 task, 1 file)
-- 05-01: 10min (5 tasks, 5 files)
 
 *Updated after each plan completion*
 
@@ -104,6 +104,9 @@ Recent decisions affecting current work:
 - [06-02] Overdue activities shown in highlighted section at top + red highlighting in table
 - [06-02] Native HTML date/time inputs for simplicity (not custom pickers)
 - [06-02] Tabs structure for list/calendar view with calendar tab disabled placeholder
+- [06-03] react-big-calendar with date-fns localizer for calendar view
+- [06-03] Week view as default calendar view (more detailed for activity planning)
+- [06-03] Custom CSS theming for react-big-calendar to match shadcn/ui design
 
 ### Pending Todos
 
@@ -117,11 +120,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-02-25 09:17 UTC
-Stopped at: Completed 06-02-PLAN.md (Activity List View + CRUD Dialog)
+Last session: 2026-02-25 09:30 UTC
+Stopped at: Completed 06-03-PLAN.md (Calendar View)
 Resume file: None
 
-**Phase 6 in progress.** Activity list view complete with data table, filtering, overdue handling, and CRUD dialog. Ready for 06-03 (Calendar View).
+**Phase 6 complete.** Activity tracking fully implemented with list view, CRUD dialog, and calendar view with week/month display, type color coding, and edit functionality. Ready for Phase 7 (Dashboard).
 
 ---
 *State initialized: 2026-02-22*
