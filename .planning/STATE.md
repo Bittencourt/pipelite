@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 6 of 10 (Activities & Timeline) - In progress
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-25 — Completed 06-01 (Activity Data Layer)
+Last activity: 2026-02-25 — Completed 06-02 (Activity List View + CRUD Dialog)
 
-Progress: [████████████████] 100% (20/20 plans in current roadmap)
+Progress: [████████████████] 100% (21/21 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 20
+- Total plans completed: 21
 - Average duration: 5min
-- Total execution time: 1.9 hours
+- Total execution time: 2.0 hours
 
 **By Phase:**
 
@@ -32,14 +32,14 @@ Progress: [████████████████] 100% (20/20 plans i
 | 03-people | 3/3 | 6min | 2min |
 | 04-pipelines-stages | 4/4 | 35min | 9min |
 | 05-deals-kanban | 3/3 | 30min | 10min |
-| 06-activities | 1/3 | 8min | 8min |
+| 06-activities | 2/3 | 21min | 11min |
 
 **Recent Trend:**
+- 06-02: 13min (3 tasks, 5 files, 4 commits)
 - 06-01: 8min (5 tasks, 6 files, 5 commits)
 - 05-03: 15min (4 tasks, 4 files, 8 commits)
 - 05-02: 5min (1 task, 1 file)
 - 05-01: 10min (5 tasks, 5 files)
-- 04-04: 5min (2 tasks, 2 files)
 
 *Updated after each plan completion*
 
@@ -101,6 +101,9 @@ Recent decisions affecting current work:
 - [06-01] Activities completedAt timestamp for completion status (null = not done)
 - [06-01] Fixed IDs for default activity types (call, meeting, task, email)
 - [06-01] Optional dealId FK allows activities to exist independently of deals
+- [06-02] Overdue activities shown in highlighted section at top + red highlighting in table
+- [06-02] Native HTML date/time inputs for simplicity (not custom pickers)
+- [06-02] Tabs structure for list/calendar view with calendar tab disabled placeholder
 
 ### Pending Todos
 
@@ -114,11 +117,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-02-25 08:57 UTC
-Stopped at: Completed 06-01-PLAN.md (Activity Data Layer)
+Last session: 2026-02-25 09:17 UTC
+Stopped at: Completed 06-02-PLAN.md (Activity List View + CRUD Dialog)
 Resume file: None
 
-**Phase 6 in progress.** Activity data layer complete with schema, relations, CRUD actions, and seed script. Ready for 06-02 (Activities List UI).
+**Phase 6 in progress.** Activity list view complete with data table, filtering, overdue handling, and CRUD dialog. Ready for 06-03 (Calendar View).
 
 ---
 *State initialized: 2026-02-22*
