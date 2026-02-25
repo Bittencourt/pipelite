@@ -8,14 +8,14 @@
     "active_profile": "quality",
     "presets": {
       "quality": {
-        "planning": "opencode/glm-4.7-free",
-        "execution": "opencode/glm-4.7-free",
-        "verification": "opencode/glm-4.7-free"
+        "planning": "zai-coding-plan/glm-5",
+        "execution": "zai-coding-plan/glm-5",
+        "verification": "zai-coding-plan/glm-5"
       },
       "balanced": {
-        "planning": "opencode/glm-4.7-free",
+        "planning": "zai-coding-plan/glm-5",
         "execution": "opencode/minimax-m2.1-free",
-        "verification": "opencode/glm-4.7-free"
+        "verification": "zai-coding-plan/glm-5"
       },
       "budget": {
         "planning": "opencode/minimax-m2.1-free",
