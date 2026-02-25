@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Plus, Calendar, List, CheckCircle2 } from "lucide-react"
 import { ActivityList, Activity } from "./activity-list"
 import { ActivityDialog } from "./activity-dialog"
+import { ActivityCalendar } from "./activity-calendar"
 
 interface ActivityType {
   id: string
@@ -109,7 +110,7 @@ export function ActivitiesClient({
             <List className="h-4 w-4" />
             List
           </TabsTrigger>
-          <TabsTrigger value="calendar" className="gap-2" disabled>
+          <TabsTrigger value="calendar" className="gap-2">
             <Calendar className="h-4 w-4" />
             Calendar
           </TabsTrigger>
@@ -125,9 +126,11 @@ export function ActivitiesClient({
         </TabsContent>
 
         <TabsContent value="calendar">
-          <div className="text-center py-12 text-muted-foreground border rounded-lg">
-            Calendar view coming soon
-          </div>
+          <ActivityCalendar
+            activities={activities}
+            activityTypes={activityTypes}
+            onSelectActivity={handleEdit}
+          />
         </TabsContent>
       </Tabs>
 
