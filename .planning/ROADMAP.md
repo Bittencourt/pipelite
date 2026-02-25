@@ -127,11 +127,12 @@ Plans:
   4. User can view activities in a calendar view organized by due date
   5. User can edit and delete activities
   6. Activity views show context of their linked deals
-**Plans**: TBD
+**Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] 06-01: Activities CRUD and deal linking
-- [ ] 06-02: Calendar view for activities
+- [ ] 06-01-PLAN.md — Activities data layer (schema, actions, seed)
+- [ ] 06-02-PLAN.md — Activity list view and CRUD dialog
+- [ ] 06-03-PLAN.md — Calendar view with react-big-calendar
 
 ### Phase 7: Custom Fields & Formulas
 **Goal**: Users can extend any entity with custom fields including calculated values
@@ -214,7 +215,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. People | 3/3 | Complete | 2026-02-22 |
 | 4. Pipelines & Stages | 4/4 | Complete | 2026-02-23 |
 | 5. Deals & Kanban | 3/3 | Complete | 2026-02-24 |
-| 6. Activities | 0/TBD | Not started | - |
+| 6. Activities | 0/3 | Not started | - |
 | 7. Custom Fields & Formulas | 0/TBD | Not started | - |
 | 8. Search & Filtering | 0/TBD | Not started | - |
 | 9. Import/Export | 0/TBD | Not started | - |
