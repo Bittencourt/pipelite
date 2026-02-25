@@ -112,9 +112,9 @@ Plans:
 **Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] 05-01-PLAN.md — Deals schema, server actions, and currency utility
-- [ ] 05-02-PLAN.md — Deal create/edit dialog with delete confirmation
-- [ ] 05-03-PLAN.md — Kanban board with drag-drop and inline expansion
+- [x] 05-01-PLAN.md — Deals schema, server actions, and currency utility ✅
+- [x] 05-02-PLAN.md — Deal create/edit dialog with delete confirmation ✅
+- [x] 05-03-PLAN.md — Kanban board with drag-drop and inline expansion ✅
 
 ### Phase 6: Activities
 **Goal**: Users can track follow-up activities with a calendar view
@@ -213,7 +213,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Organizations | 3/3 | Complete | 2026-02-22 |
 | 3. People | 3/3 | Complete | 2026-02-22 |
 | 4. Pipelines & Stages | 4/4 | Complete | 2026-02-23 |
-| 5. Deals & Kanban | 0/TBD | Not started | - |
+| 5. Deals & Kanban | 3/3 | Complete | 2026-02-24 |
 | 6. Activities | 0/TBD | Not started | - |
 | 7. Custom Fields & Formulas | 0/TBD | Not started | - |
 | 8. Search & Filtering | 0/TBD | Not started | - |

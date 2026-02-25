@@ -24,24 +24,24 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### People
 
-- [ ] **PPL-01**: User can create, edit, and delete people
-- [ ] **PPL-02**: User can link people to organizations
-- [ ] **PPL-03**: User can view people list and single person detail
+- [x] **PPL-01**: User can create, edit, and delete people ✓
+- [x] **PPL-02**: User can link people to organizations ✓
+- [x] **PPL-03**: User can view people list and single person detail ✓
 - [ ] **PPL-04**: User can add custom fields to people
 
 ### Pipelines
 
-- [ ] **PIPE-01**: Admin can create pipelines with stages
-- [ ] **PIPE-02**: User can view kanban board showing deals by stage
-- [ ] **PIPE-03**: User can edit stage names
+- [x] **PIPE-01**: Admin can create pipelines with stages ✓
+- [x] **PIPE-02**: User can view kanban board showing deals by stage ✓
+- [x] **PIPE-03**: User can edit stage names ✓
 
 ### Deals
 
-- [ ] **DEAL-01**: User can create, edit, and delete deals
-- [ ] **DEAL-02**: User can link deals to organizations and people
-- [ ] **DEAL-03**: User can assign deals to pipeline stages
-- [ ] **DEAL-04**: User can drag-drop deals between stages on kanban board
-- [ ] **DEAL-05**: User can see deal counts and value totals per stage
+- [x] **DEAL-01**: User can create, edit, and delete deals ✓
+- [x] **DEAL-02**: User can link deals to organizations and people ✓
+- [x] **DEAL-03**: User can assign deals to pipeline stages ✓
+- [x] **DEAL-04**: User can drag-drop deals between stages on kanban board ✓
+- [x] **DEAL-05**: User can see deal counts and value totals per stage ✓
 - [ ] **DEAL-06**: User can add custom fields to deals
 
 ### Activities
@@ -155,18 +155,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ORG-01 | Phase 2 | Complete ✓ |
 | ORG-02 | Phase 2 | Complete ✓ |
 | ORG-03 | Phase 7 | Pending |
-| PPL-01 | Phase 3 | Pending |
-| PPL-02 | Phase 3 | Pending |
-| PPL-03 | Phase 3 | Pending |
+| PPL-01 | Phase 3 | Complete ✓ |
+| PPL-02 | Phase 3 | Complete ✓ |
+| PPL-03 | Phase 3 | Complete ✓ |
 | PPL-04 | Phase 7 | Pending |
 | PIPE-01 | Phase 4 | Complete ✓ |
-| PIPE-02 | Phase 5 | Pending |
+| PIPE-02 | Phase 5 | Complete ✓ |
 | PIPE-03 | Phase 4 | Complete ✓ |
-| DEAL-01 | Phase 5 | Pending |
-| DEAL-02 | Phase 5 | Pending |
-| DEAL-03 | Phase 5 | Pending |
-| DEAL-04 | Phase 5 | Pending |
-| DEAL-05 | Phase 5 | Pending |
+| DEAL-01 | Phase 5 | Complete ✓ |
+| DEAL-02 | Phase 5 | Complete ✓ |
+| DEAL-03 | Phase 5 | Complete ✓ |
+| DEAL-04 | Phase 5 | Complete ✓ |
+| DEAL-05 | Phase 5 | Complete ✓ |
 | DEAL-06 | Phase 7 | Pending |
 | ACT-01 | Phase 6 | Pending |
 | ACT-02 | Phase 6 | Pending |
@@ -196,4 +196,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-22*
-*Last updated: 2026-02-22 after roadmap creation*
+*Last updated: 2026-02-24 after Phase 5 completion*
