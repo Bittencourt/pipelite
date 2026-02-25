@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 5 - Deals & Kanban (COMPLETE)
+**Current focus:** Phase 6 - Activities & Timeline
 
 ## Current Position
 
-Phase: 5 of 10 (Deals & Kanban) - COMPLETE
-Plan: 3 of 3 in current phase
-Status: Phase complete
-Last activity: 2026-02-24 — Completed 05-03 (Kanban Board)
+Phase: 6 of 10 (Activities & Timeline) - In progress
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-02-25 — Completed 06-01 (Activity Data Layer)
 
-Progress: [███████████████] 100% (19/19 plans in current roadmap)
+Progress: [████████████████] 100% (20/20 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 19
+- Total plans completed: 20
 - Average duration: 5min
-- Total execution time: 1.8 hours
+- Total execution time: 1.9 hours
 
 **By Phase:**
 
@@ -32,13 +32,14 @@ Progress: [███████████████] 100% (19/19 plans in c
 | 03-people | 3/3 | 6min | 2min |
 | 04-pipelines-stages | 4/4 | 35min | 9min |
 | 05-deals-kanban | 3/3 | 30min | 10min |
+| 06-activities | 1/3 | 8min | 8min |
 
 **Recent Trend:**
+- 06-01: 8min (5 tasks, 6 files, 5 commits)
 - 05-03: 15min (4 tasks, 4 files, 8 commits)
 - 05-02: 5min (1 task, 1 file)
 - 05-01: 10min (5 tasks, 5 files)
 - 04-04: 5min (2 tasks, 2 files)
-- 04-03: 7min (3 tasks, 6 files)
 
 *Updated after each plan completion*
 
@@ -97,6 +98,9 @@ Recent decisions affecting current work:
 - [05-03] Optimistic updates with error recovery and state sync via useEffect
 - [05-03] Won/Lost stages in collapsed footer row (not drag targets)
 - [05-03] Pipeline switching via query param for shareable URLs
+- [06-01] Activities completedAt timestamp for completion status (null = not done)
+- [06-01] Fixed IDs for default activity types (call, meeting, task, email)
+- [06-01] Optional dealId FK allows activities to exist independently of deals
 
 ### Pending Todos
 
@@ -110,11 +114,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-02-24 14:30 UTC
-Stopped at: Completed 05-03-PLAN.md (Kanban Board) - Phase 5 Complete
+Last session: 2026-02-25 08:57 UTC
+Stopped at: Completed 06-01-PLAN.md (Activity Data Layer)
 Resume file: None
 
-**Phase 5 COMPLETE.** Deals kanban fully functional with drag-drop, inline expansion, pipeline switching, and CRUD operations. Ready for Phase 6: Activities & Timeline.
+**Phase 6 in progress.** Activity data layer complete with schema, relations, CRUD actions, and seed script. Ready for 06-02 (Activities List UI).
 
 ---
 *State initialized: 2026-02-22*
