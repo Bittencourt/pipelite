@@ -60,9 +60,9 @@ interface ActivityType {
 interface Deal {
   id: string
   title: string
-  stageId: string
-  stage?: { name: string; pipelineId: string }
-  pipeline?: { name: string }
+  stageId?: string
+  stage?: { name: string; pipelineId: string } | null
+  pipeline?: { name: string } | null
 }
 
 // Activity for edit mode
@@ -259,14 +259,24 @@ export function ActivityDialog({
                   <SelectValue placeholder="Select activity type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {activityTypes.map((type) => (
-                    <SelectItem key={type.id} value={type.id}>
-                      <div className="flex items-center gap-2">
-                        {type.icon && iconMap[type.icon]}
-                        {type.name}
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {activityTypes.length === 0 ? (
+                    <div className="p-4 text-center text-muted-foreground text-sm">
+                      <p className="font-medium">No activity types available</p>
+                      <p className="mt-1">Run the seed script to add default types:</p>
+                      <code className="mt-1 block bg-muted px-2 py-1 rounded text-xs">
+                        npm run db:seed-activities
+                      </code>
+                    </div>
+                  ) : (
+                    activityTypes.map((type) => (
+                      <SelectItem key={type.id} value={type.id}>
+                        <div className="flex items-center gap-2">
+                          {type.icon && iconMap[type.icon]}
+                          {type.name}
+                        </div>
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
               {errors.typeId && (
