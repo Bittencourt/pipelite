@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 6 - Activities & Timeline (Complete)
+**Current focus:** Phase 7 - Custom Fields & Formulas (Next)
 
 ## Current Position
 
-Phase: 6 of 10 (Activities & Timeline) - Complete
-Plan: 3 of 3 in current phase
-Status: Phase complete
-Last activity: 2026-02-25 — Completed 06-03 (Calendar View)
+Phase: 7 of 10 (Custom Fields & Formulas) - Ready to start
+Plan: 0 of TBD in current phase
+Status: Phase 6 complete (with gap closure), ready for Phase 7
+Last activity: 2026-02-25 — Completed Phase 6 gap closure (06-04)
 
-Progress: [████████████████] 100% (22/22 plans in current roadmap)
+Progress: [████████████████] 100% (23/23 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 22
+- Total plans completed: 23
 - Average duration: 5min
-- Total execution time: 2.2 hours
+- Total execution time: 2.3 hours
 
 **By Phase:**
 
@@ -32,14 +32,14 @@ Progress: [████████████████] 100% (22/22 plans i
 | 03-people | 3/3 | 6min | 2min |
 | 04-pipelines-stages | 4/4 | 35min | 9min |
 | 05-deals-kanban | 3/3 | 30min | 10min |
-| 06-activities | 3/3 | 31min | 10min |
+| 06-activities | 4/4 | 41min | 10min |
 
 **Recent Trend:**
+- 06-04: 10min (2 tasks, 1 file, 2 commits) - gap closure
 - 06-03: 10min (3 tasks, 3 files, 3 commits)
 - 06-02: 13min (3 tasks, 5 files, 4 commits)
 - 06-01: 8min (5 tasks, 6 files, 5 commits)
 - 05-03: 15min (4 tasks, 4 files, 8 commits)
-- 05-02: 5min (1 task, 1 file)
 
 *Updated after each plan completion*
 
@@ -120,11 +120,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-02-25 09:30 UTC
-Stopped at: Completed 06-03-PLAN.md (Calendar View)
+Last session: 2026-02-25
+Stopped at: Phase 6 Complete with Gap Closure
 Resume file: None
 
-**Phase 6 complete.** Activity tracking fully implemented with list view, CRUD dialog, and calendar view with week/month display, type color coding, and edit functionality. Ready for Phase 7 (Dashboard).
+**Phase 6 complete.** Gap closure plan 06-04 executed: seeded activity types in Docker PostgreSQL, added fallback UI for empty types. All 4 activity types now available (Call, Meeting, Task, Email). Ready for Phase 7 (Custom Fields & Formulas).
 
 ---
 *State initialized: 2026-02-22*
