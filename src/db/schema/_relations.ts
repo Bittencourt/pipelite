@@ -9,6 +9,8 @@ import { people } from "./people"
 import { pipelines } from "./pipelines"
 import { stages } from "./pipelines"
 import { deals } from "./deals"
+import { activityTypes } from "./activity-types"
+import { activities } from "./activities"
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
@@ -18,6 +20,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   organizations: many(organizations),
   people: many(people),
   deals: many(deals),
+  activities: many(activities),
 }))
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -85,7 +88,7 @@ export const stagesRelations = relations(stages, ({ one, many }) => ({
   deals: many(deals),
 }))
 
-export const dealsRelations = relations(deals, ({ one }) => ({
+export const dealsRelations = relations(deals, ({ one, many }) => ({
   stage: one(stages, {
     fields: [deals.stageId],
     references: [stages.id],
@@ -100,6 +103,26 @@ export const dealsRelations = relations(deals, ({ one }) => ({
   }),
   owner: one(users, {
     fields: [deals.ownerId],
+    references: [users.id],
+  }),
+  activities: many(activities),
+}))
+
+export const activityTypesRelations = relations(activityTypes, ({ many }) => ({
+  activities: many(activities),
+}))
+
+export const activitiesRelations = relations(activities, ({ one }) => ({
+  type: one(activityTypes, {
+    fields: [activities.typeId],
+    references: [activityTypes.id],
+  }),
+  deal: one(deals, {
+    fields: [activities.dealId],
+    references: [deals.id],
+  }),
+  owner: one(users, {
+    fields: [activities.ownerId],
     references: [users.id],
   }),
 }))
