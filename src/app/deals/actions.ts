@@ -14,6 +14,8 @@ const dealSchema = z.object({
   stageId: z.string().min(1, "Stage is required"),
   organizationId: z.string().optional().nullable(),
   personId: z.string().optional().nullable(),
+  expectedCloseDate: z.date().optional().nullable(),
+  notes: z.string().max(2000, "Notes must be 2000 characters or less").optional().nullable(),
 })
 
 const updateDealSchema = dealSchema.partial()
@@ -218,6 +220,12 @@ export async function updateDeal(
     }
     if (validated.data.personId !== undefined) {
       updateData.personId = validated.data.personId || null
+    }
+    if (validated.data.expectedCloseDate !== undefined) {
+      updateData.expectedCloseDate = validated.data.expectedCloseDate
+    }
+    if (validated.data.notes !== undefined) {
+      updateData.notes = validated.data.notes || null
     }
 
     await db

@@ -13,6 +13,8 @@ export const deals = pgTable('deals', {
   personId: text('person_id').references(() => people.id),
   ownerId: text('owner_id').notNull().references(() => users.id),
   position: numeric('position').notNull().default('10000'),
+  expectedCloseDate: timestamp('expected_close_date'),
+  notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   deletedAt: timestamp('deleted_at'),
