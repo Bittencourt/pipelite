@@ -168,6 +168,69 @@ describe('formula-engine', () => {
       const result = await evaluateFormula('DATE.addDays("2024-01-01", 5)')
       expect(result.value).toBe('2024-01-06')
     })
+
+    // Edge case tests
+    it('handles division by zero', async () => {
+      const result = await evaluateFormula('{{Value}} / 0', { Value: 10 })
+      // JavaScript returns Infinity for division by zero
+      expect(result.value).toBe(Infinity)
+      expect(result.error).toBeNull()
+    })
+
+    it('handles very large numbers', async () => {
+      const result = await evaluateFormula('{{A}} * {{B}}', { A: 1e10, B: 1e10 })
+      expect(result.value).toBe(1e20)
+    })
+
+    it('handles empty expression', async () => {
+      const result = await evaluateFormula('')
+      expect(result.error).toBeTruthy()
+    })
+
+    it('handles TEXT.replace function', async () => {
+      const result = await evaluateFormula('TEXT.replace({{Text}}, "world", "universe")', { Text: 'hello world' })
+      expect(result.value).toBe('hello universe')
+    })
+
+    it('handles TEXT.left function', async () => {
+      const result = await evaluateFormula('TEXT.left({{Text}}, 3)', { Text: 'hello' })
+      expect(result.value).toBe('hel')
+    })
+
+    it('handles TEXT.right function', async () => {
+      const result = await evaluateFormula('TEXT.right({{Text}}, 3)', { Text: 'hello' })
+      expect(result.value).toBe('llo')
+    })
+
+    it('handles MATH.log function', async () => {
+      const result = await evaluateFormula('MATH.log({{Value}})', { Value: Math.E })
+      expect(result.value).toBeCloseTo(1, 10)
+    })
+
+    it('handles MATH.log10 function', async () => {
+      const result = await evaluateFormula('MATH.log10({{Value}})', { Value: 100 })
+      expect(result.value).toBe(2)
+    })
+
+    it('handles MATH.exp function', async () => {
+      const result = await evaluateFormula('MATH.exp({{Value}})', { Value: 0 })
+      expect(result.value).toBe(1)
+    })
+
+    it('handles boolean comparisons', async () => {
+      const result = await evaluateFormula('{{A}} > {{B}}', { A: 10, B: 5 })
+      expect(result.value).toBe(true)
+    })
+
+    it('handles nested function calls', async () => {
+      const result = await evaluateFormula('TEXT.upper(TEXT.trim({{Name}}))', { Name: '  test  ' })
+      expect(result.value).toBe('TEST')
+    })
+
+    it('handles LOGIC.if with false condition', async () => {
+      const result = await evaluateFormula('LOGIC.if({{Score}} > 100, "High", "Low")', { Score: 50 })
+      expect(result.value).toBe('Low')
+    })
   })
 
   describe('extractDependencies', () => {
