@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { X, Search, Loader2, Pencil } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -23,7 +24,9 @@ export function LookupField({ definition, value, onSave, disabled }: LookupField
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [isSearching, setIsSearching] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 })
   const containerRef = useRef<HTMLDivElement>(null)
+  const inputWrapperRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const config = definition.config as LookupConfig | null
@@ -44,6 +47,30 @@ export function LookupField({ definition, value, onSave, disabled }: LookupField
   useEffect(() => {
     if (isEditing && inputRef.current) {
       inputRef.current.focus()
+    }
+  }, [isEditing])
+
+  // Update dropdown position on scroll/resize
+  useEffect(() => {
+    if (!isEditing || !inputWrapperRef.current) return
+
+    const updatePosition = () => {
+      if (inputWrapperRef.current) {
+        const rect = inputWrapperRef.current.getBoundingClientRect()
+        setDropdownPosition({
+          top: rect.bottom + window.scrollY + 4,
+          left: rect.left + window.scrollX,
+          width: rect.width,
+        })
+      }
+    }
+
+    updatePosition()
+    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener('resize', updatePosition)
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener('resize', updatePosition)
     }
   }, [isEditing])
 
@@ -75,16 +102,22 @@ export function LookupField({ definition, value, onSave, disabled }: LookupField
     if (!isEditing) return
 
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsEditing(false)
-        setSearch("")
-        setResults([])
+      const target = e.target as Node
+      // Check if click is outside both the container and the dropdown portal
+      if (containerRef.current && !containerRef.current.contains(target)) {
+        // Also check if clicking on the dropdown (which is in a portal)
+        const dropdown = document.getElementById(`lookup-dropdown-${definition.id}`)
+        if (dropdown && !dropdown.contains(target)) {
+          setIsEditing(false)
+          setSearch("")
+          setResults([])
+        }
       }
     }
 
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [isEditing])
+  }, [isEditing, definition.id])
 
   const handleSelect = useCallback(async (id: string, name: string) => {
     setIsSaving(true)
@@ -127,6 +160,36 @@ export function LookupField({ definition, value, onSave, disabled }: LookupField
     activity: "Activity",
   }
 
+  // Dropdown component rendered via portal
+  const dropdownContent = isEditing && (results.length > 0 || (search.length >= 2 && !isSearching && results.length === 0)) ? (
+    <div
+      id={`lookup-dropdown-${definition.id}`}
+      className="fixed z-[9999] border rounded-md bg-popover shadow-lg max-h-40 overflow-auto"
+      style={{
+        top: dropdownPosition.top,
+        left: dropdownPosition.left,
+        width: dropdownPosition.width,
+      }}
+    >
+      {results.length > 0 ? (
+        results.map((result) => (
+          <button
+            key={result.id}
+            type="button"
+            className="w-full text-left px-3 py-2 hover:bg-accent text-sm"
+            onClick={() => handleSelect(result.id, result.name)}
+          >
+            {result.name}
+          </button>
+        ))
+      ) : (
+        <div className="px-3 py-2 text-sm text-muted-foreground">
+          No {entityLabels[targetEntity].toLowerCase()}s found
+        </div>
+      )}
+    </div>
+  ) : null
+
   return (
     <div className="py-2">
       <Label className="text-sm text-muted-foreground">
@@ -135,8 +198,8 @@ export function LookupField({ definition, value, onSave, disabled }: LookupField
       </Label>
       
       {isEditing ? (
-        <div ref={containerRef} className="relative">
-          <div className="relative">
+        <div ref={containerRef}>
+          <div ref={inputWrapperRef} className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               ref={inputRef}
@@ -151,21 +214,6 @@ export function LookupField({ definition, value, onSave, disabled }: LookupField
               <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
             )}
           </div>
-
-          {results.length > 0 && (
-            <div className="absolute z-50 left-0 right-0 top-full mt-1 border rounded-md bg-popover shadow-md max-h-40 overflow-auto">
-              {results.map((result) => (
-                <button
-                  key={result.id}
-                  type="button"
-                  className="w-full text-left px-3 py-2 hover:bg-accent text-sm"
-                  onClick={() => handleSelect(result.id, result.name)}
-                >
-                  {result.name}
-                </button>
-              ))}
-            </div>
-          )}
 
           <div className="flex gap-2 mt-2">
             <Button
@@ -228,6 +276,9 @@ export function LookupField({ definition, value, onSave, disabled }: LookupField
           )}
         </button>
       )}
+      
+      {/* Render dropdown via portal to avoid clipping issues */}
+      {dropdownContent && createPortal(dropdownContent, document.body)}
     </div>
   )
 }
