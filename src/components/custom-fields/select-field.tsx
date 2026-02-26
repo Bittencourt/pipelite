@@ -25,6 +25,8 @@ export function SelectField({ definition, value, onSave, disabled }: SelectField
   const [isSaving, setIsSaving] = useState(false)
   const [editValue, setEditValue] = useState(value ?? "")
   const containerRef = useRef<HTMLDivElement>(null)
+  // Use a ref to track saving state synchronously (avoids race condition with Select close)
+  const isSavingRef = useRef(false)
 
   const config = definition.config as SelectConfig | null
   const options = config?.options ?? []
@@ -35,14 +37,15 @@ export function SelectField({ definition, value, onSave, disabled }: SelectField
   }, [value])
 
   const handleStartEdit = useCallback(() => {
-    if (disabled || isSaving) return
+    if (disabled || isSavingRef.current) return
     setEditValue(value ?? "")
     setIsEditing(true)
-  }, [disabled, isSaving, value])
+  }, [disabled, value])
 
   const handleSave = useCallback(async (newValue: string) => {
-    if (isSaving) return
+    if (isSavingRef.current) return
     
+    isSavingRef.current = true
     setIsSaving(true)
     try {
       await onSave(newValue === "" ? null : newValue)
@@ -52,10 +55,13 @@ export function SelectField({ definition, value, onSave, disabled }: SelectField
       setEditValue(value ?? "")
     } finally {
       setIsSaving(false)
+      isSavingRef.current = false
     }
-  }, [isSaving, onSave, value])
+  }, [onSave, value])
 
   const handleCancel = useCallback(() => {
+    // Don't cancel if we're in the middle of saving
+    if (isSavingRef.current) return
     setEditValue(value ?? "")
     setIsEditing(false)
   }, [value])
@@ -95,7 +101,7 @@ export function SelectField({ definition, value, onSave, disabled }: SelectField
             disabled={isSaving}
             open={isEditing}
             onOpenChange={(open) => {
-              if (!open && !isSaving) handleCancel()
+              if (!open) handleCancel()
             }}
           >
             <SelectTrigger className="h-8">
