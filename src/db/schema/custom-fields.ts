@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, numeric, jsonb, boolean } from "drizzle-orm/pg-core"
+import type { InferSelectModel } from "drizzle-orm"
 
 // Field types enum (as TypeScript type, not DB enum for flexibility)
 export type FieldType = 
@@ -30,3 +31,5 @@ export const customFieldDefinitions = pgTable('custom_field_definitions', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   deletedAt: timestamp('deleted_at'),
 })
+
+export type CustomFieldDefinition = InferSelectModel<typeof customFieldDefinitions>
