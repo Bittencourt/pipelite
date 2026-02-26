@@ -203,6 +203,13 @@ export default async function PersonDetailPage({ params }: PageProps) {
         entityId={person.id}
         definitions={customFieldDefs as CustomFieldDefinition[]}
         values={(person.customFields as Record<string, unknown>) || {}}
+        entityAttributes={{
+          FirstName: person.firstName,
+          LastName: person.lastName,
+          Email: person.email,
+          Phone: person.phone,
+          Notes: person.notes,
+        }}
       />
     </div>
   )

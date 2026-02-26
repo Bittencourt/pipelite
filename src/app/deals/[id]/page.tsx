@@ -248,6 +248,12 @@ export default async function DealDetailPage({ params }: PageProps) {
         entityId={deal.id}
         definitions={customFieldDefs as CustomFieldDefinition[]}
         values={(deal.customFields as Record<string, unknown>) || {}}
+        entityAttributes={{
+          Value: deal.value ? parseFloat(deal.value) : null,
+          Title: deal.title,
+          Notes: deal.notes,
+          ExpectedCloseDate: deal.expectedCloseDate,
+        }}
       />
     </div>
   )

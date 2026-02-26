@@ -187,6 +187,12 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
         entityId={organization.id}
         definitions={customFieldDefs as CustomFieldDefinition[]}
         values={(organization.customFields as Record<string, unknown>) || {}}
+        entityAttributes={{
+          Name: organization.name,
+          Website: organization.website,
+          Industry: organization.industry,
+          Notes: organization.notes,
+        }}
       />
 
       <Card className="mt-6">
