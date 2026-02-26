@@ -125,29 +125,43 @@ export async function evaluateFormula(
   // Normalize fieldValues to an empty object if not provided
   const fields = fieldValues ?? {}
   
-  // Check for null propagation - only for arithmetic expressions, not null-safe functions
-  // If expression contains arithmetic and any referenced field is explicitly null, return null
+  // Check for missing fields - if a referenced field doesn't exist at all, return error
   const deps = extractDependencies(expression)
-  const hasArithmetic = containsArithmeticOperation(expression)
-  const usesNullSafe = usesNullSafeFunction(expression)
-  
-  if (hasArithmetic && !usesNullSafe) {
-    for (const dep of deps) {
-      // Handle related entity references
-      if (dep.includes('.')) {
-        const [entity, field] = dep.split('.')
-        const entityData = relatedEntities?.[entity.trim()]
-        if (entityData && field.trim() in entityData && entityData[field.trim()] === null) {
+  for (const dep of deps) {
+    // Handle related entity references
+    if (dep.includes('.')) {
+      const [entity, field] = dep.split('.')
+      const entityData = relatedEntities?.[entity.trim()]
+      if (!entityData) {
+        return { value: null, error: `Unknown entity: ${entity.trim()}` }
+      }
+      if (!(field.trim() in entityData)) {
+        return { value: null, error: `Field "${field.trim()}" not found on ${entity.trim()}` }
+      }
+      if (entityData[field.trim()] === null) {
+        return { value: null, error: null }
+      }
+    } else {
+      // Check if field exists in main fields values
+      if (!(dep in fields)) {
+        // Check if it might be in related entities
+        const fromRelated = getFromRelatedEntities(dep, relatedEntities)
+        if (fromRelated === undefined) {
+          return { value: null, error: `Unknown field: ${dep}` }
+        }
+        if (fromRelated === null) {
           return { value: null, error: null }
         }
-      } else {
-        // Check if field is explicitly set to null
-        if (dep in fields && fields[dep] === null) {
-          return { value: null, error: null }
-        }
+      } else if (fields[dep] === null) {
+        // Field exists but is null
+        return { value: null, error: null }
       }
     }
   }
+  
+  // Check for null propagation - only for arithmetic expressions, not null-safe functions
+  const hasArithmetic = containsArithmeticOperation(expression)
+  const usesNullSafe = usesNullSafeFunction(expression)
 
   const QuickJS = await getQuickJS()
   const vm = QuickJS.newContext()
