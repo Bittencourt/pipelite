@@ -6,6 +6,9 @@ import { NumberField } from "./number-field"
 import { DateField } from "./date-field"
 import { BooleanField } from "./boolean-field"
 import { SelectField } from "./select-field"
+import { MultiSelectField } from "./multi-select-field"
+import { UrlField } from "./url-field"
+import { LookupField } from "./lookup-field"
 import { FileField, type FileItem } from "./file-field"
 import { FormulaField } from "./formula-field"
 
@@ -102,11 +105,35 @@ export function FieldRenderer({ definition, value, onSave, disabled, allFieldVal
         />
       )
 
-    // Advanced types - placeholder for now
     case "multi_select":
+      return (
+        <MultiSelectField
+          definition={definition}
+          value={value as string[] | null}
+          onSave={async (v) => { await onSave(v) }}
+          disabled={disabled}
+        />
+      )
+
     case "url":
+      return (
+        <UrlField
+          definition={definition}
+          value={value as string | null}
+          onSave={async (v) => { await onSave(v) }}
+          disabled={disabled}
+        />
+      )
+
     case "lookup":
-      return <PlaceholderField definition={definition} />
+      return (
+        <LookupField
+          definition={definition}
+          value={value as string | null}
+          onSave={async (v) => { await onSave(v) }}
+          disabled={disabled}
+        />
+      )
 
     default:
       return <PlaceholderField definition={definition} />
