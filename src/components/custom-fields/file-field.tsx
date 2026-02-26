@@ -119,6 +119,12 @@ export function FileField({ definition, value, entityId, onSave, disabled }: Fil
       formData.append('fieldName', definition.name)
       
       const res = await fetch('/api/upload', { method: 'POST', body: formData })
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: 'Upload failed' }))
+        throw new Error(errorData.error || `Upload failed with status ${res.status}`)
+      }
+      
       const data = await res.json()
       
       if (data.success) {
@@ -126,8 +132,11 @@ export function FileField({ definition, value, entityId, onSave, disabled }: Fil
         setFiles(newFiles)
         await onSave(newFiles)
       } else {
-        alert(data.error || 'Upload failed')
+        throw new Error(data.error || 'Upload failed')
       }
+    } catch (error) {
+      console.error('Upload error:', error)
+      alert(error instanceof Error ? error.message : 'Upload failed')
     } finally {
       setUploading(false)
       if (fileInputRef.current) {
