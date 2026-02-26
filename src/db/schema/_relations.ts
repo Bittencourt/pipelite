@@ -11,6 +11,7 @@ import { stages } from "./pipelines"
 import { deals } from "./deals"
 import { activityTypes } from "./activity-types"
 import { activities } from "./activities"
+import { customFieldDefinitions } from "./custom-fields"
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
