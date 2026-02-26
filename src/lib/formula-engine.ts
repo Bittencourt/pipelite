@@ -119,9 +119,12 @@ function containsArithmeticOperation(expression: string): boolean {
  */
 export async function evaluateFormula(
   expression: string,
-  fieldValues: Record<string, unknown>,
+  fieldValues?: Record<string, unknown>,
   relatedEntities?: RelatedEntities
 ): Promise<EvalResult> {
+  // Normalize fieldValues to an empty object if not provided
+  const fields = fieldValues ?? {}
+  
   // Check for null propagation - only for arithmetic expressions, not null-safe functions
   // If expression contains arithmetic and any referenced field is explicitly null, return null
   const deps = extractDependencies(expression)
@@ -139,7 +142,7 @@ export async function evaluateFormula(
         }
       } else {
         // Check if field is explicitly set to null
-        if (dep in fieldValues && fieldValues[dep] === null) {
+        if (dep in fields && fields[dep] === null) {
           return { value: null, error: null }
         }
       }
@@ -160,7 +163,7 @@ export async function evaluateFormula(
     
     // Merge field values with related entity fields for simpler lookups
     // When a field like {{Revenue}} is used, we check fields first, then all related entities
-    const allFields: Record<string, unknown> = { ...fieldValues }
+    const allFields: Record<string, unknown> = { ...fields }
     if (relatedEntities) {
       for (const [entity, values] of Object.entries(relatedEntities)) {
         const safeEntity = entity.replace(/[^a-zA-Z0-9]/g, '_')
