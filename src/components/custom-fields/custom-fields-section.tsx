@@ -5,8 +5,21 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { FieldRenderer } from './field-renderer'
-import { saveFieldValues } from '@/lib/custom-fields'
 import type { CustomFieldDefinition, EntityType } from '@/db/schema'
+
+// Server action for saving custom field values
+async function saveCustomFields(
+  entityType: EntityType,
+  entityId: string,
+  values: Record<string, unknown>
+): Promise<{ success: boolean; error?: string }> {
+  const response = await fetch('/api/custom-fields/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entityType, entityId, values }),
+  })
+  return response.json()
+}
 
 interface CustomFieldsSectionProps {
   entityType: EntityType
@@ -35,7 +48,7 @@ export function CustomFieldsSection({
     setLocalValues(newValues)
     
     try {
-      const result = await saveFieldValues(entityType, entityId, newValues)
+      const result = await saveCustomFields(entityType, entityId, newValues)
       if (result.success) {
         onValuesChange?.(newValues)
       } else {

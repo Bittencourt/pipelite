@@ -1,5 +1,5 @@
 import { db } from "@/db"
-import { organizations, users, people } from "@/db/schema"
+import { organizations, users, people, customFieldDefinitions } from "@/db/schema"
 import { eq, and, isNull, desc } from "drizzle-orm"
 import { notFound } from "next/navigation"
 import Link from "next/link"
@@ -13,6 +13,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { ExternalLink, Calendar, User, Globe, Building2, FileText, Users, Mail } from "lucide-react"
 import { OrganizationDetailClient } from "./organization-detail-client"
+import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
+import type { EntityType, CustomFieldDefinition } from "@/db/schema"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -26,6 +28,7 @@ async function getOrganization(id: string) {
       website: organizations.website,
       industry: organizations.industry,
       notes: organizations.notes,
+      customFields: organizations.customFields,
       createdAt: organizations.createdAt,
       ownerName: users.name,
     })
@@ -44,6 +47,16 @@ async function getOrganization(id: string) {
   }
 }
 
+async function getCustomFieldDefinitions() {
+  return db.select()
+    .from(customFieldDefinitions)
+    .where(and(
+      eq(customFieldDefinitions.entityType, 'organization'),
+      isNull(customFieldDefinitions.deletedAt)
+    ))
+    .orderBy(customFieldDefinitions.position)
+}
+
 async function getLinkedPeople(organizationId: string) {
   return db
     .select({
@@ -60,9 +73,10 @@ async function getLinkedPeople(organizationId: string) {
 
 export default async function OrganizationDetailPage({ params }: PageProps) {
   const { id } = await params
-  const [organization, linkedPeople] = await Promise.all([
+  const [organization, linkedPeople, customFieldDefs] = await Promise.all([
     getOrganization(id),
     getLinkedPeople(id),
+    getCustomFieldDefinitions(),
   ])
 
   if (!organization) {
@@ -167,6 +181,13 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
           )}
         </CardContent>
       </Card>
+
+      <CustomFieldsSection
+        entityType="organization"
+        entityId={organization.id}
+        definitions={customFieldDefs as CustomFieldDefinition[]}
+        values={(organization.customFields as Record<string, unknown>) || {}}
+      />
 
       <Card className="mt-6">
         <CardHeader>

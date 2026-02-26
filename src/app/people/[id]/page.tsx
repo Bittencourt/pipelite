@@ -1,5 +1,5 @@
 import { db } from "@/db"
-import { people, organizations, users } from "@/db/schema"
+import { people, organizations, users, customFieldDefinitions } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
 import { notFound } from "next/navigation"
 import {
@@ -12,6 +12,8 @@ import {
 import { Users, Mail, Phone, Building2, Calendar, User, FileText } from "lucide-react"
 import Link from "next/link"
 import { PersonDetailClient } from "./person-detail-client"
+import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
+import type { EntityType, CustomFieldDefinition } from "@/db/schema"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -26,6 +28,7 @@ async function getPerson(id: string) {
       email: people.email,
       phone: people.phone,
       notes: people.notes,
+      customFields: people.customFields,
       organizationId: people.organizationId,
       organizationName: organizations.name,
       ownerName: users.name,
@@ -59,11 +62,22 @@ async function getOrganizationsForSelect() {
     .orderBy(organizations.name)
 }
 
+async function getCustomFieldDefinitions() {
+  return db.select()
+    .from(customFieldDefinitions)
+    .where(and(
+      eq(customFieldDefinitions.entityType, 'person'),
+      isNull(customFieldDefinitions.deletedAt)
+    ))
+    .orderBy(customFieldDefinitions.position)
+}
+
 export default async function PersonDetailPage({ params }: PageProps) {
   const { id } = await params
-  const [person, orgsForSelect] = await Promise.all([
+  const [person, orgsForSelect, customFieldDefs] = await Promise.all([
     getPerson(id),
     getOrganizationsForSelect(),
+    getCustomFieldDefinitions(),
   ])
 
   if (!person) {
@@ -183,6 +197,13 @@ export default async function PersonDetailPage({ params }: PageProps) {
           )}
         </CardContent>
       </Card>
+
+      <CustomFieldsSection
+        entityType="person"
+        entityId={person.id}
+        definitions={customFieldDefs as CustomFieldDefinition[]}
+        values={(person.customFields as Record<string, unknown>) || {}}
+      />
     </div>
   )
 }
