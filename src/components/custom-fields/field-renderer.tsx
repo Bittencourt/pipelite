@@ -6,12 +6,17 @@ import { NumberField } from "./number-field"
 import { DateField } from "./date-field"
 import { BooleanField } from "./boolean-field"
 import { SelectField } from "./select-field"
+import { FileField, type FileItem } from "./file-field"
+import { FormulaField } from "./formula-field"
 
 interface FieldRendererProps {
   definition: CustomFieldDefinition
   value: unknown
   onSave: (value: unknown) => Promise<void>
   disabled?: boolean
+  allFieldValues?: Record<string, unknown>
+  relatedEntities?: Record<string, Record<string, unknown>>
+  entityId?: string // For file fields
 }
 
 // Placeholder for advanced field types not yet implemented
@@ -23,7 +28,7 @@ function PlaceholderField({ definition }: { definition: CustomFieldDefinition })
   )
 }
 
-export function FieldRenderer({ definition, value, onSave, disabled }: FieldRendererProps) {
+export function FieldRenderer({ definition, value, onSave, disabled, allFieldValues, relatedEntities, entityId }: FieldRendererProps) {
   switch (definition.type) {
     case "text":
       return (
@@ -75,12 +80,32 @@ export function FieldRenderer({ definition, value, onSave, disabled }: FieldRend
         />
       )
 
+    case "file":
+      return (
+        <FileField
+          definition={definition}
+          value={value as FileItem[] | null}
+          entityId={entityId || ''}
+          onSave={async (v) => { await onSave(v) }}
+          disabled={disabled}
+        />
+      )
+
+    case "formula":
+      return (
+        <FormulaField
+          definition={definition}
+          value={value}
+          allFieldValues={allFieldValues || {}}
+          relatedEntities={relatedEntities}
+          disabled={disabled}
+        />
+      )
+
     // Advanced types - placeholder for now
     case "multi_select":
     case "url":
     case "lookup":
-    case "file":
-    case "formula":
       return <PlaceholderField definition={definition} />
 
     default:
