@@ -88,6 +88,33 @@ function getFromRelatedEntities(
 }
 
 /**
+ * Check if expression uses null-safe functions (LOGIC.isBlank, LOGIC.isNumber, LOGIC.if)
+ * These functions can handle null arguments and should not trigger null propagation
+ */
+function usesNullSafeFunction(expression: string): boolean {
+  const nullSafePatterns = [
+    /LOGIC\.isBlank\s*\(/,
+    /LOGIC\.isNumber\s*\(/,
+    /LOGIC\.if\s*\(/,
+    /LOGIC\.or\s*\(/,
+    /LOGIC\.and\s*\(/,
+    /TEXT\.\w+\s*\(/, // TEXT functions handle null gracefully
+  ]
+  return nullSafePatterns.some(pattern => pattern.test(expression))
+}
+
+/**
+ * Check if expression contains arithmetic operations that should propagate null
+ */
+function containsArithmeticOperation(expression: string): boolean {
+  // Check for arithmetic operators outside of function calls
+  // This is a simple heuristic - matches + - * / when not inside parentheses
+  const withoutStrings = expression.replace(/"[^"]*"/g, '')
+  // Check for operators that aren't part of function names or comparison
+  return /[+\-*\/]/.test(withoutStrings.replace(/[<>=!]=?/g, '').replace(/\b(?:and|or|not)\b/gi, ''))
+}
+
+/**
  * Evaluate a formula expression in a sandboxed QuickJS environment
  */
 export async function evaluateFormula(
@@ -95,20 +122,26 @@ export async function evaluateFormula(
   fieldValues: Record<string, unknown>,
   relatedEntities?: RelatedEntities
 ): Promise<EvalResult> {
-  // Check for null propagation - if any referenced field is explicitly null, return null
+  // Check for null propagation - only for arithmetic expressions, not null-safe functions
+  // If expression contains arithmetic and any referenced field is explicitly null, return null
   const deps = extractDependencies(expression)
-  for (const dep of deps) {
-    // Handle related entity references
-    if (dep.includes('.')) {
-      const [entity, field] = dep.split('.')
-      const entityData = relatedEntities?.[entity.trim()]
-      if (entityData && field.trim() in entityData && entityData[field.trim()] === null) {
-        return { value: null, error: null }
-      }
-    } else {
-      // Check if field is explicitly set to null
-      if (dep in fieldValues && fieldValues[dep] === null) {
-        return { value: null, error: null }
+  const hasArithmetic = containsArithmeticOperation(expression)
+  const usesNullSafe = usesNullSafeFunction(expression)
+  
+  if (hasArithmetic && !usesNullSafe) {
+    for (const dep of deps) {
+      // Handle related entity references
+      if (dep.includes('.')) {
+        const [entity, field] = dep.split('.')
+        const entityData = relatedEntities?.[entity.trim()]
+        if (entityData && field.trim() in entityData && entityData[field.trim()] === null) {
+          return { value: null, error: null }
+        }
+      } else {
+        // Check if field is explicitly set to null
+        if (dep in fieldValues && fieldValues[dep] === null) {
+          return { value: null, error: null }
+        }
       }
     }
   }
