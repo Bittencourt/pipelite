@@ -16,6 +16,7 @@ const dealSchema = z.object({
   personId: z.string().optional().nullable(),
   expectedCloseDate: z.date().optional().nullable(),
   notes: z.string().max(2000, "Notes must be 2000 characters or less").optional().nullable(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
 })
 
 const updateDealSchema = dealSchema.partial()

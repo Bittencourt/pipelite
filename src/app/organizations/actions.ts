@@ -13,6 +13,7 @@ const organizationSchema = z.object({
   website: z.string().url("Invalid website URL").optional().or(z.literal("")),
   industry: z.string().max(50, "Industry must be 50 characters or less").optional(),
   notes: z.string().max(2000, "Notes must be 2000 characters or less").optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
 })
 
 const updateOrganizationSchema = organizationSchema.partial()

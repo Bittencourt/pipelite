@@ -14,6 +14,7 @@ const activitySchema = z.object({
   dealId: z.string().optional().nullable(),
   dueDate: z.date({ message: "Due date is required" }),
   notes: z.string().max(2000, "Notes must be 2000 characters or less").optional().nullable(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
 })
 
 const updateActivitySchema = activitySchema.partial()

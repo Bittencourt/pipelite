@@ -15,6 +15,7 @@ const personSchema = z.object({
   phone: z.string().max(30, "Phone must be 30 characters or less").optional().or(z.literal("")),
   notes: z.string().max(2000, "Notes must be 2000 characters or less").optional().or(z.literal("")),
   organizationId: z.string().optional().or(z.literal("")),
+  customFields: z.record(z.string(), z.unknown()).optional(),
 })
 
 const updatePersonSchema = personSchema.partial()
