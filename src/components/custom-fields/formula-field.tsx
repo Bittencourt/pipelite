@@ -75,9 +75,12 @@ export function FormulaField({
       {isLoading ? (
         <div className="text-sm text-muted-foreground mt-1">Calculating...</div>
       ) : error ? (
-        <div className="flex items-center gap-1 text-destructive mt-1">
-          <AlertCircle className="h-4 w-4" />
-          <span className="text-sm">#ERROR</span>
+        <div className="flex items-start gap-1 text-destructive mt-1">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="flex flex-col">
+            <span className="text-sm font-medium">#ERROR</span>
+            <span className="text-xs opacity-80">{error}</span>
+          </div>
         </div>
       ) : (
         <div className="text-sm font-medium mt-1">
