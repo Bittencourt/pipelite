@@ -113,8 +113,10 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Upload error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Upload failed'
     return NextResponse.json({ 
-      error: 'Upload failed' 
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? String(error) : undefined
     }, { status: 500 })
   }
 }
