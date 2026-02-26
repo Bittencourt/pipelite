@@ -99,6 +99,35 @@ export function FormulaEditor({ definition, existingFields, onSave, onCancel }: 
         </p>
       </div>
       
+      {/* Available Fields */}
+      {existingFields.length > 0 && (
+        <Card>
+          <CardHeader className="py-2 px-3">
+            <CardTitle className="text-sm">Available Fields</CardTitle>
+          </CardHeader>
+          <CardContent className="py-2 px-3">
+            <p className="text-xs text-muted-foreground mb-2">
+              Click a field to insert it into the formula:
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {existingFields.map((field) => (
+                <button
+                  key={field}
+                  type="button"
+                  onClick={() => {
+                    const fieldRef = `{{${field}}}`
+                    setExpression(prev => prev + fieldRef)
+                  }}
+                  className="inline-flex items-center px-2 py-1 rounded-md bg-muted hover:bg-muted/80 text-xs font-medium transition-colors"
+                >
+                  {field}
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
       {/* Preview Panel */}
       <Card>
         <CardHeader className="py-2 px-3">
