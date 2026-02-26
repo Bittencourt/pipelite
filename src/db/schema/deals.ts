@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, numeric } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, numeric, jsonb } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { stages } from "./pipelines"
 import { organizations } from "./organizations"
@@ -15,6 +15,7 @@ export const deals = pgTable('deals', {
   position: numeric('position').notNull().default('10000'),
   expectedCloseDate: timestamp('expected_close_date'),
   notes: text('notes'),
+  customFields: jsonb('custom_fields').$type<Record<string, unknown>>().default({}),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   deletedAt: timestamp('deleted_at'),

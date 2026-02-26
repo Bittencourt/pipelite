@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, jsonb } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { deals } from "./deals"
 import { activityTypes } from "./activity-types"
@@ -12,6 +12,7 @@ export const activities = pgTable('activities', {
   dueDate: timestamp('due_date', { mode: 'date' }).notNull(),
   completedAt: timestamp('completed_at', { mode: 'date' }), // null = not done, timestamp = done
   notes: text('notes'),
+  customFields: jsonb('custom_fields').$type<Record<string, unknown>>().default({}),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   deletedAt: timestamp('deleted_at', { mode: 'date' }), // Soft delete

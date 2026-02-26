@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, jsonb } from "drizzle-orm/pg-core"
 import { users } from "./users"
 
 export const organizations = pgTable('organizations', {
@@ -8,6 +8,7 @@ export const organizations = pgTable('organizations', {
   industry: text('industry'),
   notes: text('notes'),
   ownerId: text('owner_id').notNull().references(() => users.id),
+  customFields: jsonb('custom_fields').$type<Record<string, unknown>>().default({}),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   deletedAt: timestamp('deleted_at'),
