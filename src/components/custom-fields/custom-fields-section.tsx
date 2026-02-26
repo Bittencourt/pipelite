@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -26,6 +26,8 @@ interface CustomFieldsSectionProps {
   entityId: string
   definitions: CustomFieldDefinition[]
   values: Record<string, unknown>
+  /** Native entity attributes accessible by formulas (e.g., deal value, organization name) */
+  entityAttributes?: Record<string, unknown>
   relatedEntities?: Record<string, Record<string, unknown>>
   onValuesChange?: (values: Record<string, unknown>) => void
   disabled?: boolean
@@ -36,12 +38,19 @@ export function CustomFieldsSection({
   entityId,
   definitions,
   values,
+  entityAttributes,
   relatedEntities,
   onValuesChange,
   disabled,
 }: CustomFieldsSectionProps) {
   const [isOpen, setIsOpen] = useState(true)
   const [localValues, setLocalValues] = useState(values)
+  
+  // Merge custom field values with entity attributes for formula evaluation
+  const allFieldValues = useMemo(() => ({
+    ...entityAttributes,
+    ...localValues,
+  }), [entityAttributes, localValues])
   
   const handleSave = useCallback(async (fieldName: string, value: unknown) => {
     const newValues = { ...localValues, [fieldName]: value }
@@ -96,7 +105,7 @@ export function CustomFieldsSection({
               onSave={(value) => handleSave(definition.name, value)}
               disabled={disabled}
               entityId={entityId}
-              allFieldValues={localValues}
+              allFieldValues={allFieldValues}
               relatedEntities={relatedEntities}
             />
           ))}
@@ -112,7 +121,7 @@ export function CustomFieldsSection({
                 value={localValues[definition.name] ?? null}
                 onSave={() => Promise.resolve()} // Formulas are read-only
                 disabled={true}
-                allFieldValues={localValues}
+                allFieldValues={allFieldValues}
                 relatedEntities={relatedEntities}
               />
             ))}
