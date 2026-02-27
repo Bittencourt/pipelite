@@ -7,7 +7,8 @@ import type { S3Client } from '@aws-sdk/client-s3'
 
 // Storage configuration from environment
 const STORAGE_TYPE = process.env.FILE_STORAGE || 'local' // 'local' | 's3'
-const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads'
+// Use UPLOAD_DIR env var, or fallback to /tmp/uploads for containerized environments
+const UPLOAD_DIR = process.env.UPLOAD_DIR || '/tmp/uploads'
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || '10485760') // 10MB default
 
 // S3 client (lazy init for when S3 is configured)

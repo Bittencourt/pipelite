@@ -6,7 +6,7 @@ import path from 'path'
 import type { S3Client } from '@aws-sdk/client-s3'
 
 const STORAGE_TYPE = process.env.FILE_STORAGE || 'local'
-const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads'
+const UPLOAD_DIR = process.env.UPLOAD_DIR || '/tmp/uploads'
 
 // S3 client (lazy init)
 let s3Client: S3Client | null = null
