@@ -2,7 +2,7 @@
 
 import { auth } from "@/auth"
 import { db } from "@/db"
-import { organizations, people, deals } from "@/db/schema"
+import { organizations, people, deals, activities } from "@/db/schema"
 import { eq, ilike, and, isNull, or } from "drizzle-orm"
 import type { EntityType } from "@/db/schema"
 
@@ -64,9 +64,14 @@ export async function searchEntities(
       return results.map((r) => ({ ...r, type: "deal" as EntityType }))
     }
 
-    case "activity":
-      // Activities typically not linked from other entities
-      return []
+    case "activity": {
+      const results = await db
+        .select({ id: activities.id, name: activities.title })
+        .from(activities)
+        .where(and(isNull(activities.deletedAt), ilike(activities.title, searchTerm)))
+        .limit(20)
+      return results.map((r) => ({ ...r, type: "activity" as EntityType }))
+    }
 
     default:
       return []
@@ -112,6 +117,15 @@ export async function getEntityById(
         .where(eq(deals.id, id))
         .limit(1)
       return results[0] ? { ...results[0], type: "deal" } : null
+    }
+
+    case "activity": {
+      const results = await db
+        .select({ id: activities.id, name: activities.title })
+        .from(activities)
+        .where(eq(activities.id, id))
+        .limit(1)
+      return results[0] ? { ...results[0], type: "activity" } : null
     }
 
     default:
