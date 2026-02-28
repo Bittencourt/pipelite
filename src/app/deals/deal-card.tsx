@@ -154,16 +154,17 @@ export function DealCard({ deal, onEdit, isOverlay }: DealCardProps) {
                 {deal.notes}
               </div>
             )}
-            <div className="flex gap-2 pt-2">
-              <Link href={`/deals/${deal.id}`}>
-                <Button variant="outline" size="sm">
+            <div className="flex items-center gap-2 pt-2">
+              <Link href={`/deals/${deal.id}`} className="flex-1">
+                <Button variant="outline" size="sm" className="w-full">
                   <ExternalLink className="h-3 w-3 mr-1" />
                   View Details
                 </Button>
               </Link>
               <Button
                 variant="outline"
-                size="sm"
+                size="icon"
+                className="h-8 w-8 shrink-0"
                 onClick={() => {
                   if (onEdit) {
                     onEdit(deal)
@@ -172,17 +173,15 @@ export function DealCard({ deal, onEdit, isOverlay }: DealCardProps) {
                   }
                 }}
               >
-                <Pencil className="h-3 w-3 mr-1" />
-                Edit
+                <Pencil className="h-3 w-3" />
               </Button>
               <Button
                 variant="outline"
-                size="sm"
-                className="text-destructive hover:text-destructive"
+                size="icon"
+                className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
                 onClick={() => setDeleteDialogOpen(true)}
               >
-                <Trash2 className="h-3 w-3 mr-1" />
-                Delete
+                <Trash2 className="h-3 w-3" />
               </Button>
             </div>
           </div>
