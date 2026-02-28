@@ -4,10 +4,11 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, Calendar, List, CheckCircle2 } from "lucide-react"
+import { Plus, Calendar, List, CheckCircle2, Search } from "lucide-react"
 import { ActivityList, Activity } from "./activity-list"
 import { ActivityDialog } from "./activity-dialog"
 import { ActivityCalendar } from "./activity-calendar"
+import { ActivityFilters } from "./activity-filters"
 
 interface ActivityType {
   id: string
@@ -28,12 +29,22 @@ interface ActivitiesClientProps {
   activities: Activity[]
   activityTypes: ActivityType[]
   deals: DealInfo[]
+  owners: Array<{ id: string; name: string }>
+  activeFilters: {
+    type: string | null
+    owner: string | null
+    status: string | null
+    dateFrom: string | null
+    dateTo: string | null
+  }
 }
 
 export function ActivitiesClient({
   activities,
   activityTypes,
   deals,
+  owners,
+  activeFilters,
 }: ActivitiesClientProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -67,6 +78,9 @@ export function ActivitiesClient({
   // Calculate stats
   const completedCount = activities.filter((a) => a.completedAt).length
   const pendingCount = activities.filter((a) => !a.completedAt).length
+
+  // Check if any filters are active
+  const hasActiveFilters = Object.values(activeFilters).some((v) => v !== null)
 
   return (
     <div className="space-y-6">
@@ -117,12 +131,27 @@ export function ActivitiesClient({
         </TabsList>
 
         <TabsContent value="list">
-          <ActivityList
-            activities={activities}
-            activityTypes={activityTypes}
-            onEdit={handleEdit}
-            onRefresh={handleRefresh}
-          />
+          <div className="space-y-4">
+            <ActivityFilters activityTypes={activityTypes} owners={owners} />
+            
+            {hasActiveFilters && activities.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground border rounded-lg">
+                <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p className="text-lg font-medium mb-2">No results match your filters</p>
+                <p className="text-sm mb-4">Try adjusting your filter criteria</p>
+                <Button variant="outline" onClick={() => router.push("/activities")}>
+                  Clear filters
+                </Button>
+              </div>
+            ) : (
+              <ActivityList
+                activities={activities}
+                activityTypes={activityTypes}
+                onEdit={handleEdit}
+                onRefresh={handleRefresh}
+              />
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="calendar">

@@ -20,13 +20,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -138,8 +131,6 @@ export function ActivityList({
   onEdit,
   onRefresh,
 }: ActivityListProps) {
-  const [typeFilter, setTypeFilter] = useState<string>("all")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [activityToDelete, setActivityToDelete] = useState<Activity | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -148,36 +139,15 @@ export function ActivityList({
   // Separate overdue activities
   const overdueActivities = activities.filter(isOverdue)
 
-  // Filter activities
-  const filteredActivities = useMemo(() => {
-    let result = activities
-
-    // Type filter
-    if (typeFilter !== "all") {
-      result = result.filter((a) => a.typeId === typeFilter)
-    }
-
-    // Status filter
-    if (statusFilter === "pending") {
-      result = result.filter((a) => !a.completedAt && !isOverdue(a))
-    } else if (statusFilter === "completed") {
-      result = result.filter((a) => a.completedAt)
-    } else if (statusFilter === "overdue") {
-      result = result.filter(isOverdue)
-    }
-
-    return result
-  }, [activities, typeFilter, statusFilter])
-
   // Sort: overdue first, then by dueDate ascending
   const sortedActivities = useMemo(() => {
-    return [...filteredActivities].sort((a, b) => {
+    return [...activities].sort((a, b) => {
       const aOverdue = isOverdue(a) ? 0 : 1
       const bOverdue = isOverdue(b) ? 0 : 1
       if (aOverdue !== bOverdue) return aOverdue - bOverdue
       return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
     })
-  }, [filteredActivities])
+  }, [activities])
 
   const handleToggleComplete = async (activity: Activity) => {
     setTogglingId(activity.id)
@@ -382,7 +352,7 @@ export function ActivityList({
   return (
     <div className="space-y-4">
       {/* Overdue section */}
-      {overdueActivities.length > 0 && statusFilter !== "completed" && (
+      {overdueActivities.length > 0 && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4">
           <div className="flex items-center gap-2 mb-3">
             <AlertCircle className="h-5 w-5 text-red-600" />
@@ -427,41 +397,6 @@ export function ActivityList({
           </div>
         </div>
       )}
-
-      {/* Filter controls */}
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-muted-foreground">Type:</label>
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="All types" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All types</SelectItem>
-              {activityTypes.map((type) => (
-                <SelectItem key={type.id} value={type.id}>
-                  {type.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-muted-foreground">Status:</label>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="All" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="completed">Done</SelectItem>
-              <SelectItem value="overdue">Overdue</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
 
       {/* Data table */}
       <div className="rounded-md border">
