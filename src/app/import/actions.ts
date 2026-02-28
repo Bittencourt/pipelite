@@ -96,8 +96,13 @@ async function resolveOrganization(
 export async function importOrganizations(
   data: Array<{ name: string; website?: string; industry?: string; notes?: string }>
 ): Promise<
-  { success: true; count: number; autoCreated: string[] } |
-  { success: false; error: string }
+  | {
+      success: true
+      count: number
+      warnings: string[]
+      autoCreated: { orgs: string[]; people: string[] }
+    }
+  | { success: false; error: string }
 > {
   const session = await auth()
   if (!session?.user?.id) {
@@ -119,7 +124,12 @@ export async function importOrganizations(
     await batchInsert(organizations, rows)
 
     revalidatePath("/organizations")
-    return { success: true, count: rows.length, autoCreated: [] }
+    return {
+      success: true,
+      count: rows.length,
+      warnings: [],
+      autoCreated: { orgs: [], people: [] },
+    }
   } catch (error) {
     console.error("Failed to import organizations:", error)
     return { success: false, error: "Failed to import organizations" }
