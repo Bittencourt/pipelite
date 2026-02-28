@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Users, Home, Layers } from "lucide-react"
+import { Users, Home, Layers, SlidersHorizontal } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
@@ -22,6 +22,11 @@ const sidebarItems = [
     href: "/admin/pipelines",
     icon: Layers,
   },
+  {
+    title: "Custom Fields",
+    href: "/admin/fields",
+    icon: SlidersHorizontal,
+  },
 ]
 
 export function AdminSidebar() {
@@ -35,7 +40,7 @@ export function AdminSidebar() {
         </div>
         <nav className="flex-1 p-4 space-y-2">
           {sidebarItems.map((item) => {
-            const isActive = pathname === item.href
+            const isActive = item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href)
             return (
               <Link key={item.href} href={item.href}>
                 <Button

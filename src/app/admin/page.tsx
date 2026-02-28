@@ -2,8 +2,9 @@ import { auth } from "@/auth"
 import { db } from "@/db"
 import { users } from "@/db/schema/users"
 import { eq, count, and, isNull } from "drizzle-orm"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, UserCheck } from "lucide-react"
+import Link from "next/link"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Users, UserCheck, Layers, SlidersHorizontal } from "lucide-react"
 
 export default async function AdminDashboard() {
   const session = await auth()
@@ -114,6 +115,51 @@ export default async function AdminDashboard() {
           </CardContent>
         </Card>
       )}
+
+      <div>
+        <h2 className="text-xl font-semibold mb-4">Admin Tools</h2>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Link href="/admin/users">
+            <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">User Management</CardTitle>
+                  <Users className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <CardDescription>
+                  Manage user accounts, roles, and approvals
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+          <Link href="/admin/pipelines">
+            <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">Pipelines</CardTitle>
+                  <Layers className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <CardDescription>
+                  Configure sales pipelines and stages
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+          <Link href="/admin/fields">
+            <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">Custom Fields</CardTitle>
+                  <SlidersHorizontal className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <CardDescription>
+                  Configure custom fields for organizations, people, deals, and activities
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        </div>
+      </div>
     </div>
   )
 }
