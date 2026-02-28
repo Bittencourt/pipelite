@@ -278,8 +278,9 @@ export function ActivityList({
         const dueToday = isDueToday(activity.dueDate)
 
         return (
-          <span
-            className={`font-medium ${
+          <Link
+            href={`/activities/${activity.id}`}
+            className={`font-medium hover:underline ${
               overdue
                 ? "text-red-600"
                 : dueToday && !activity.completedAt
@@ -290,7 +291,7 @@ export function ActivityList({
             }`}
           >
             {activity.title}
-          </span>
+          </Link>
         )
       },
     },

@@ -5,7 +5,8 @@ import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { cn } from "@/lib/utils"
 import { formatCurrency } from "@/lib/currency"
-import { Pencil, Trash2, ChevronDown, ChevronUp } from "lucide-react"
+import { Pencil, Trash2, ChevronDown, ChevronUp, ExternalLink } from "lucide-react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -154,6 +155,12 @@ export function DealCard({ deal, onEdit, isOverlay }: DealCardProps) {
               </div>
             )}
             <div className="flex gap-2 pt-2">
+              <Link href={`/deals/${deal.id}`}>
+                <Button variant="outline" size="sm">
+                  <ExternalLink className="h-3 w-3 mr-1" />
+                  View Details
+                </Button>
+              </Link>
               <Button
                 variant="outline"
                 size="sm"
