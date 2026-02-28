@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { ExternalLink, Loader2, Pencil } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 import type { CustomFieldDefinition } from "@/db/schema"
 
@@ -129,62 +130,66 @@ export function UrlField({ definition, value, onSave, disabled }: UrlFieldProps)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [isEditing, handleCancel])
 
-  if (isEditing) {
-    return (
-      <div ref={containerRef} className="relative">
-        <Input
-          ref={inputRef}
-          type="url"
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={isSaving}
-          placeholder="https://example.com"
-          className="h-8"
-        />
-        {isSaving && (
-          <div className="absolute right-2 top-1/2 -translate-y-1/2">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          </div>
-        )}
-        {error && (
-          <p className="text-xs text-destructive mt-1">{error}</p>
-        )}
-      </div>
-    )
-  }
-
   return (
-    <button
-      type="button"
-      onClick={handleStartEdit}
-      disabled={disabled}
-      className={cn(
-        "group flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm transition-colors",
-        "hover:bg-accent/50",
-        disabled && "cursor-not-allowed opacity-50",
-        !disabled && "cursor-pointer"
-      )}
-    >
-      {value ? (
-        <a
-          href={value}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 text-blue-600 hover:underline flex-1 truncate"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {formatUrl(value)}
-          <ExternalLink className="h-3 w-3 shrink-0" />
-        </a>
+    <div className="py-2">
+      <Label className="text-sm text-muted-foreground">
+        {definition.name}
+        {definition.required && " *"}
+      </Label>
+      {isEditing ? (
+        <div ref={containerRef} className="relative">
+          <Input
+            ref={inputRef}
+            type="url"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={isSaving}
+            placeholder="https://example.com"
+            className="h-8"
+          />
+          {isSaving && (
+            <div className="absolute right-2 top-1/2 -translate-y-1/2">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          {error && (
+            <p className="text-xs text-destructive mt-1">{error}</p>
+          )}
+        </div>
       ) : (
-        <span className="text-muted-foreground flex-1">
-          {definition.required ? `${definition.name} *` : `Enter ${definition.name.toLowerCase()}`}
-        </span>
+        <button
+          type="button"
+          onClick={handleStartEdit}
+          disabled={disabled}
+          className={cn(
+            "group flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm transition-colors",
+            "hover:bg-accent/50",
+            disabled && "cursor-not-allowed opacity-50",
+            !disabled && "cursor-pointer"
+          )}
+        >
+          {value ? (
+            <a
+              href={value}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-blue-600 hover:underline flex-1 truncate"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {formatUrl(value)}
+              <ExternalLink className="h-3 w-3 shrink-0" />
+            </a>
+          ) : (
+            <span className="text-muted-foreground flex-1">
+              {`Enter ${definition.name.toLowerCase()}`}
+            </span>
+          )}
+          {!disabled && (
+            <Pencil className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" />
+          )}
+        </button>
       )}
-      {!disabled && (
-        <Pencil className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" />
-      )}
-    </button>
+    </div>
   )
 }
