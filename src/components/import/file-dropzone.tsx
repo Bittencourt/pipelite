@@ -38,9 +38,14 @@ export function FileDropzone({
   const [isDragging, setIsDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
+
   const handleFile = useCallback(
     (file: File) => {
-      if (file.type === "text/csv" || file.name.endsWith(".csv")) {
+      const isCSV = file.type === "text/csv" || file.name.endsWith(".csv")
+      const isJSON = file.type === "application/json" || file.name.endsWith(".json")
+      if (isCSV || isJSON) {
+        setSelectedFileName(file.name)
         onFileSelect(file)
       }
     },
@@ -113,7 +118,7 @@ export function FileDropzone({
         >
           <Upload className="text-muted-foreground mb-4 h-10 w-10" />
           <p className="mb-1 text-sm font-medium">
-            Drag and drop your CSV file here
+            Drag and drop your CSV or JSON file here
           </p>
           <p className="text-muted-foreground mb-4 text-xs">or click to browse</p>
           <Button type="button" variant="outline" size="sm">
@@ -122,7 +127,7 @@ export function FileDropzone({
           <input
             ref={inputRef}
             type="file"
-            accept=".csv"
+            accept=".csv,.json"
             className="hidden"
             onChange={handleInputChange}
           />

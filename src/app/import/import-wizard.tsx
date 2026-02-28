@@ -49,15 +49,25 @@ export function ImportWizard() {
   const [errors, setErrors] = useState<ImportError[]>([])
   const [warnings, setWarnings] = useState<ImportWarning[]>([])
   const [allowPartial, setAllowPartial] = useState(false)
+  const [fileType, setFileType] = useState<"csv" | "json">("csv")
 
   // --- Step handlers ---
 
   const handleFileParsed = useCallback(
-    (data: Record<string, string>[], columns: string[]) => {
+    (data: Record<string, string>[], columns: string[], detectedFileType: "csv" | "json", detectedEntityType?: ImportEntityType) => {
       setRawData(data)
       setSourceColumns(columns)
+      setFileType(detectedFileType)
+
+      // If JSON export format detected an entity type, update the entity type
+      if (detectedEntityType) {
+        setEntityType(detectedEntityType)
+      }
+
+      const activeEntityType = detectedEntityType ?? entityType
+
       // Auto-suggest mapping
-      const suggested = autoSuggestMapping(columns, entityType)
+      const suggested = autoSuggestMapping(columns, activeEntityType)
       setMapping(suggested)
       setStep("mapping")
     },
@@ -137,6 +147,7 @@ export function ImportWizard() {
     setErrors([])
     setWarnings([])
     setAllowPartial(false)
+    setFileType("csv")
   }, [])
 
   // --- Step indicator ---
@@ -194,6 +205,16 @@ export function ImportWizard() {
           })}
         </ol>
       </nav>
+
+      {/* File type indicator */}
+      {step !== "upload" && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">File type:</span>
+          <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
+            {fileType.toUpperCase()}
+          </span>
+        </div>
+      )}
 
       {/* Step content */}
       {step === "upload" && (

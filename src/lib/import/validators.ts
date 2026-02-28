@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { ImportError, ImportWarning, ValidationResult } from "./types"
+import type { ImportEntityType, ImportError, ImportWarning, ValidationResult } from "./types"
 
 // --- Zod schemas for each entity type ---
 
@@ -128,4 +128,97 @@ export function validateImportData<T>(
     errors,
     warnings,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Data normalization for JSON import
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert common snake_case and variant field names to the expected camelCase.
+ */
+const FIELD_NAME_ALIASES: Record<string, Record<string, string>> = {
+  organization: {
+    org_name: "name",
+    organization_name: "name",
+    web_site: "website",
+  },
+  person: {
+    first_name: "firstName",
+    firstname: "firstName",
+    last_name: "lastName",
+    lastname: "lastName",
+    organization_name: "organizationName",
+    org_name: "organizationName",
+    email_address: "email",
+    phone_number: "phone",
+  },
+  deal: {
+    deal_title: "title",
+    stage_name: "stageName",
+    organization_name: "organizationName",
+    org_name: "organizationName",
+    person_email: "personEmail",
+    expected_close_date: "expectedCloseDate",
+    close_date: "expectedCloseDate",
+  },
+  activity: {
+    type_name: "typeName",
+    activity_type: "typeName",
+    due_date: "dueDate",
+    deal_title: "dealTitle",
+  },
+}
+
+/**
+ * Normalize import data field names and values.
+ * Handles snake_case to camelCase, custom_ prefix stripping, and name splitting for people.
+ */
+export function normalizeImportData(
+  data: Record<string, unknown>[],
+  entityType: ImportEntityType
+): Record<string, unknown>[] {
+  const aliases = FIELD_NAME_ALIASES[entityType] ?? {}
+
+  return data.map((row) => {
+    const normalized: Record<string, unknown> = {}
+
+    for (const [key, value] of Object.entries(row)) {
+      // Strip custom_ prefix
+      const cleanKey = key.startsWith("custom_") ? key : key
+
+      // Convert snake_case to camelCase
+      const camelKey = cleanKey.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+
+      // Check aliases first, then use camelCase version
+      const resolvedKey = aliases[key.toLowerCase()] ?? aliases[camelKey.toLowerCase()] ?? camelKey
+
+      // Normalize date values
+      let normalizedValue = value
+      if (value instanceof Date) {
+        normalizedValue = value.toISOString()
+      }
+      // Convert null/undefined to empty string for consistency
+      if (normalizedValue === null || normalizedValue === undefined) {
+        normalizedValue = ""
+      }
+
+      normalized[resolvedKey] = normalizedValue
+    }
+
+    // Handle combined "name" field for people (split into firstName/lastName)
+    if (
+      entityType === "person" &&
+      normalized.name &&
+      typeof normalized.name === "string" &&
+      !normalized.firstName
+    ) {
+      const parts = (normalized.name as string).trim().split(/\s+/)
+      normalized.firstName = parts[0] || ""
+      normalized.lastName = parts.slice(1).join(" ") || ""
+      delete normalized.name
+    }
+
+    return normalized
+  })
 }

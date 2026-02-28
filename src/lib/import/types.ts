@@ -77,7 +77,7 @@ export interface ImportState {
   validatedData: Record<string, unknown>[]
   errors: ImportError[]
   warnings: ImportWarning[]
-  fileType: "csv"
+  fileType: "csv" | "json"
 }
 
 // Import action result
