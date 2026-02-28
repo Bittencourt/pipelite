@@ -63,7 +63,7 @@ export function FieldDialog({ entityType, field, children }: FieldDialogProps) {
   const isRestore = !!field?.deletedAt
   const isEdit = !!field && !field.deletedAt
   
-  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FieldFormData>({
+  const { register, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<FieldFormData>({
     resolver: zodResolver(fieldSchema),
     defaultValues: {
       name: field?.name || '',
@@ -234,11 +234,19 @@ export function FieldDialog({ entityType, field, children }: FieldDialogProps) {
             
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <Checkbox id="required" {...register('required')} />
+                <Checkbox
+                  id="required"
+                  checked={watch('required')}
+                  onCheckedChange={(checked) => setValue('required', !!checked)}
+                />
                 <Label htmlFor="required">Required field</Label>
               </div>
               <div className="flex items-center gap-2">
-                <Checkbox id="showInList" {...register('showInList')} />
+                <Checkbox
+                  id="showInList"
+                  checked={watch('showInList')}
+                  onCheckedChange={(checked) => setValue('showInList', !!checked)}
+                />
                 <Label htmlFor="showInList">Show in list views</Label>
               </div>
             </div>
