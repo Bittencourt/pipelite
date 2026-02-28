@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react"
 import { X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -49,8 +50,12 @@ export function MultiSelectField({ definition, value, onSave, disabled }: MultiS
   }, [selected, isSaving, onSave])
 
   return (
-    <div className="py-1">
-      <div className="flex flex-wrap gap-1">
+    <div className="py-2">
+      <Label className="text-sm text-muted-foreground">
+        {definition.name}
+        {definition.required && " *"}
+      </Label>
+      <div className="flex flex-wrap gap-1 mt-1">
         {selected.map(opt => (
           <Badge key={opt} variant="secondary" className="gap-1 pr-1">
             {opt}
