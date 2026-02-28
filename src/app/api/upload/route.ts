@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       publicUrl = `${process.env.S3_PUBLIC_URL}/${key}`
     } else {
       // Local filesystem upload
-      const uploadDir = path.join(process.cwd(), UPLOAD_DIR, entityId, fieldName)
+      const uploadDir = path.resolve(UPLOAD_DIR, entityId, fieldName)
       if (!existsSync(uploadDir)) {
         await mkdir(uploadDir, { recursive: true })
       }
