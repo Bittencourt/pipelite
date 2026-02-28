@@ -70,8 +70,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       })
     } else {
       // Local filesystem
-      const filePath = path.join(process.cwd(), UPLOAD_DIR, entityId, fieldName, filename)
-      
+      const filePath = path.resolve(UPLOAD_DIR, entityId, fieldName, filename)
+
       if (!existsSync(filePath)) {
         return NextResponse.json({ error: 'File not found' }, { status: 404 })
       }
@@ -115,8 +115,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       }))
     } else {
       // Local filesystem
-      const filePath = path.join(process.cwd(), UPLOAD_DIR, entityId, fieldName, filename)
-      
+      const filePath = path.resolve(UPLOAD_DIR, entityId, fieldName, filename)
+
       if (existsSync(filePath)) {
         await unlink(filePath)
       }
