@@ -3,6 +3,7 @@ import { UserMenu } from "./user-menu"
 import { Button } from "@/components/ui/button"
 import { Building2, Users, Kanban, CheckCircle2 } from "lucide-react"
 import Link from "next/link"
+import { GlobalSearch } from "./global-search"
 
 export async function NavHeader() {
   const session = await auth()
@@ -48,6 +49,7 @@ export async function NavHeader() {
           )}
         </div>
         <div className="flex items-center gap-4">
+          {session?.user && <GlobalSearch />}
           {session?.user ? (
             <UserMenu
               user={{
