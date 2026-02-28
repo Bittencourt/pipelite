@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -40,10 +40,11 @@ type FieldFormData = z.infer<typeof fieldSchema>
 interface FieldDialogProps {
   entityType: EntityType
   field?: CustomFieldDefinition
+  availableFields?: CustomFieldDefinition[]
   children: React.ReactNode
 }
 
-export function FieldDialog({ entityType, field, children }: FieldDialogProps) {
+export function FieldDialog({ entityType, field, availableFields, children }: FieldDialogProps) {
   const [open, setOpen] = useState(false)
   const [selectedType, setSelectedType] = useState<FieldType>(field?.type || 'text')
   const [options, setOptions] = useState<string[]>(
@@ -60,6 +61,25 @@ export function FieldDialog({ entityType, field, children }: FieldDialogProps) {
     (field?.config as { maxFiles?: number })?.maxFiles || 5
   )
   
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const insertFieldReference = (fieldName: string) => {
+    const textarea = textareaRef.current
+    if (!textarea) {
+      setExpression(prev => prev + `{{${fieldName}}}`)
+      return
+    }
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const newValue = expression.slice(0, start) + `{{${fieldName}}}` + expression.slice(end)
+    setExpression(newValue)
+    requestAnimationFrame(() => {
+      textarea.focus()
+      const newPos = start + fieldName.length + 4
+      textarea.setSelectionRange(newPos, newPos)
+    })
+  }
+
   const isRestore = !!field?.deletedAt
   const isEdit = !!field && !field.deletedAt
   
@@ -206,7 +226,8 @@ export function FieldDialog({ entityType, field, children }: FieldDialogProps) {
             {selectedType === 'formula' && (
               <div className="space-y-2">
                 <Label>Formula Expression</Label>
-                <Textarea 
+                <Textarea
+                  ref={textareaRef}
                   value={expression}
                   onChange={(e) => setExpression(e.target.value)}
                   placeholder='e.g., {{Annual Revenue}} * 0.1'
@@ -215,6 +236,26 @@ export function FieldDialog({ entityType, field, children }: FieldDialogProps) {
                 <p className="text-xs text-muted-foreground">
                   Use {'{{Field Name}}'} to reference other fields. Functions: MATH, TEXT, DATE, LOGIC
                 </p>
+                {availableFields && availableFields.filter(f => f.type !== 'formula' && f.id !== field?.id).length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">Available fields — click to insert:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {availableFields
+                        .filter(f => f.type !== 'formula' && f.id !== field?.id)
+                        .map(f => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => insertFieldReference(f.name)}
+                            className="text-xs px-2 py-0.5 rounded border bg-muted hover:bg-accent transition-colors font-mono"
+                          >
+                            {`{{${f.name}}}`}
+                          </button>
+                        ))
+                      }
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             

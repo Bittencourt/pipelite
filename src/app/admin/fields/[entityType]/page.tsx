@@ -41,7 +41,7 @@ export default async function FieldSettingsPage({ params }: PageProps) {
             Configure custom fields for {entityType} records
           </p>
         </div>
-        <FieldDialog entityType={entityType as EntityType}>
+        <FieldDialog entityType={entityType as EntityType} availableFields={activeFields as CustomFieldDefinition[]}>
           <Button>
             <Plus className="h-4 w-4 mr-2" />
             Add Field

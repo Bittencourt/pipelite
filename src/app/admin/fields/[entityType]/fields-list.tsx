@@ -17,7 +17,7 @@ interface FieldsListProps {
   entityType: EntityType
 }
 
-function SortableField({ field, entityType }: { field: CustomFieldDefinition; entityType: EntityType }) {
+function SortableField({ field, entityType, allFields }: { field: CustomFieldDefinition; entityType: EntityType; allFields: CustomFieldDefinition[] }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id })
   
   const style = {
@@ -58,7 +58,7 @@ function SortableField({ field, entityType }: { field: CustomFieldDefinition; en
       </div>
       
       <div className="flex items-center gap-1">
-        <FieldDialog field={field} entityType={entityType}>
+        <FieldDialog field={field} entityType={entityType} availableFields={allFields}>
           <Button variant="ghost" size="icon">
             <Pencil className="h-4 w-4" />
           </Button>
@@ -82,7 +82,7 @@ function SortableField({ field, entityType }: { field: CustomFieldDefinition; en
 
 export function FieldsList({ fields, entityType }: FieldsListProps) {
   const [items, setItems] = useState(fields)
-  
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
     if (over && active.id !== over.id) {
@@ -90,17 +90,17 @@ export function FieldsList({ fields, entityType }: FieldsListProps) {
       const newIndex = items.findIndex(f => f.id === over.id)
       const reordered = arrayMove(items, oldIndex, newIndex)
       setItems(reordered)
-      
+
       await reorderFieldDefinitions(entityType, reordered.map(f => f.id))
     }
   }
-  
+
   return (
     <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={items.map(f => f.id)} strategy={verticalListSortingStrategy}>
         <div className="space-y-2">
           {items.map(field => (
-            <SortableField key={field.id} field={field} entityType={entityType} />
+            <SortableField key={field.id} field={field} entityType={entityType} allFields={items} />
           ))}
         </div>
       </SortableContext>
