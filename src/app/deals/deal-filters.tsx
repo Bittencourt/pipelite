@@ -96,14 +96,14 @@ export function DealFilters({ stages, owners }: DealFiltersProps) {
               <div className="space-y-2">
                 <Label htmlFor="stage-filter">Stage</Label>
                 <Select
-                  value={stageId || ""}
-                  onValueChange={(value) => setFilter("stage", value || null)}
+                  value={stageId || "all"}
+                  onValueChange={(value) => setFilter("stage", value === "all" ? null : value)}
                 >
                   <SelectTrigger id="stage-filter">
                     <SelectValue placeholder="All stages" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All stages</SelectItem>
+                    <SelectItem value="all">All stages</SelectItem>
                     {stages.map((stage) => (
                       <SelectItem key={stage.id} value={stage.id}>
                         {stage.name}
@@ -116,14 +116,14 @@ export function DealFilters({ stages, owners }: DealFiltersProps) {
               <div className="space-y-2">
                 <Label htmlFor="owner-filter">Owner</Label>
                 <Select
-                  value={ownerId || ""}
-                  onValueChange={(value) => setFilter("owner", value || null)}
+                  value={ownerId || "all"}
+                  onValueChange={(value) => setFilter("owner", value === "all" ? null : value)}
                 >
                   <SelectTrigger id="owner-filter">
                     <SelectValue placeholder="All owners" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All owners</SelectItem>
+                    <SelectItem value="all">All owners</SelectItem>
                     {owners.map((owner) => (
                       <SelectItem key={owner.id} value={owner.id}>
                         {owner.name}

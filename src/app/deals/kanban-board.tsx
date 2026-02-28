@@ -278,7 +278,7 @@ export function KanbanBoard({
       {/* Filters */}
       <Suspense fallback={null}>
         <DealFilters
-          stages={stages.filter(s => s.pipelineId === selectedPipelineId).map(s => ({ id: s.id, name: s.name }))}
+          stages={stages.filter(s => s.pipelineId === selectedPipelineId && s.id).map(s => ({ id: s.id, name: s.name }))}
           owners={owners}
         />
       </Suspense>
