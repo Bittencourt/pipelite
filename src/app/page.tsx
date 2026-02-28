@@ -42,8 +42,7 @@ export default async function HomePage() {
             </a>
           </div>
         )}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {/* Dashboard cards will be added in later phases */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Link
             href="/organizations"
             className="p-6 border rounded-lg hover:border-primary transition-colors"
@@ -58,10 +57,20 @@ export default async function HomePage() {
             <h3 className="font-semibold">People</h3>
             <p className="text-sm text-muted-foreground">Manage your contacts</p>
           </Link>
-          <div className="p-6 border rounded-lg">
-            <h3 className="font-semibold">Pipelines</h3>
-            <p className="text-sm text-muted-foreground">Coming in Phase 4</p>
-          </div>
+          <Link
+            href="/deals"
+            className="p-6 border rounded-lg hover:border-primary transition-colors"
+          >
+            <h3 className="font-semibold">Deals</h3>
+            <p className="text-sm text-muted-foreground">View and manage your sales pipeline</p>
+          </Link>
+          <Link
+            href="/activities"
+            className="p-6 border rounded-lg hover:border-primary transition-colors"
+          >
+            <h3 className="font-semibold">Activities</h3>
+            <p className="text-sm text-muted-foreground">Manage tasks, calls, meetings, and emails</p>
+          </Link>
         </div>
       </div>
     </div>
