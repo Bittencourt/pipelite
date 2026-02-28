@@ -11,8 +11,8 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 
 Phase: 9 of 10 (Import/Export) - In Progress
 Plan: 2 of 3 in current phase
-Status: Plan 09-02 complete
-Last activity: 2026-02-28 — Completed 09-02: CSV/JSON/Pipedrive export from admin panel
+Status: Plans 09-01 and 09-02 complete
+Last activity: 2026-02-28 — Completed 09-01: CSV import wizard with fuzzy matching and auto-create
 
 Progress: [██████████████████░] 93% (38/41 plans in current roadmap)
 
@@ -38,6 +38,7 @@ Progress: [██████████████████░] 93% (38/41
 | 09-import-export | 2/3 | TBD | TBD |
 
 **Recent Trend:**
+- 09-01: 9min (3 tasks, 18 files, 3 commits) - CSV import wizard with fuzzy matching and auto-create
 - 09-02: 6min (2 tasks, 8 files, 2 commits) - CSV/JSON/Pipedrive export from admin panel
 - 08-03: 2min (2 tasks, 4 files, 2 commits) - Activities URL-param filtering
 - 08-02: 9min (2 tasks, 3 files, 2 commits) - Deals filtering with server-side query
@@ -161,6 +162,12 @@ Recent decisions affecting current work:
 - [08-01] Global search uses 300ms debounce to balance responsiveness and server load
 - [08-01] Search results use innerJoin for deals->stages (ensures valid deals only), leftJoin for people->organizations (allows people without orgs)
 - [08-01] Match highlighting with yellow background (bg-yellow-100) for search results
+- [09-01] Levenshtein distance with normalized scoring (0.85 threshold) for fuzzy org matching
+- [09-01] Auto-created entities flagged with "[Imported]" prefix in notes field for review
+- [09-01] Batch insert with BATCH_SIZE=100 for all entity imports
+- [09-01] Auto-suggest mapping normalizes column names and matches against target field definitions
+- [09-01] Warning dialog groups warnings by type (auto_create_org, auto_create_person, stage_fallback)
+- [09-01] Web worker for CSV parsing of files > 1MB to avoid blocking UI
 - [09-02] Papa.unparse for CSV generation (handles escaping, quoting, special characters)
 - [09-02] Drizzle relational queries with 'with' for joins to get relationship names in export
 - [09-02] Admin-only authorization on export server action
@@ -192,10 +199,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 09-02-PLAN.md
+Stopped at: Completed 09-01-PLAN.md
 Resume file: None
 
-**Phase 9 IN PROGRESS.** Plan 09-02 complete: CSV/JSON/Pipedrive export from admin panel with filter-aware queries, relationship names, and custom_ prefixed custom fields. Plan 09-03 remaining.
+**Phase 9 IN PROGRESS.** Plans 09-01 and 09-02 complete. 09-01: CSV import wizard with 4 steps (upload, map, preview, confirm), papaparse parsing, Levenshtein fuzzy org matching, auto-create entities with [Imported] flag, batch server actions. 09-02: CSV/JSON/Pipedrive export from admin panel. Plan 09-03 remaining.
 
 ---
 *State initialized: 2026-02-22*
