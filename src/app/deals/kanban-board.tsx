@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -31,6 +31,7 @@ import {
 import { KanbanColumn } from "./kanban-column"
 import { DealCard, type Deal } from "./deal-card"
 import { DealDialog } from "./deal-dialog"
+import { DealFilters } from "./deal-filters"
 import { reorderDeals } from "./actions"
 import { toast } from "sonner"
 import { formatCurrency, sumDealValues } from "@/lib/currency"
@@ -51,6 +52,8 @@ interface KanbanBoardProps {
   organizations: { id: string; name: string }[]
   people: { id: string; firstName: string; lastName: string }[]
   defaultStageId?: string
+  owners: Array<{ id: string; name: string }>
+  activeFilters: { stage?: string; owner?: string; dateFrom?: string; dateTo?: string }
 }
 
 export function KanbanBoard({
@@ -61,6 +64,8 @@ export function KanbanBoard({
   organizations,
   people,
   defaultStageId,
+  owners,
+  activeFilters,
 }: KanbanBoardProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -235,6 +240,10 @@ export function KanbanBoard({
     router.refresh()
   }
 
+  // Calculate total deals for empty state check
+  const totalDeals = Object.values(dealsByStage).reduce((sum, deals) => sum + deals.length, 0)
+  const hasActiveFilters = !!(activeFilters.stage || activeFilters.owner || activeFilters.dateFrom || activeFilters.dateTo)
+
   return (
     <div className="space-y-6">
       {/* Pipeline Selector */}
@@ -266,87 +275,105 @@ export function KanbanBoard({
         )}
       </div>
 
-      {/* Kanban Board */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-      >
-        {/* Open Stages */}
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          {openStages.map((stage) => (
-            <KanbanColumn
-              key={stage.id}
-              stage={stage}
-              deals={dealsByStage[stage.id] || []}
-            >
-              <SortableContext
-                items={(dealsByStage[stage.id] || []).map(d => d.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                {(dealsByStage[stage.id] || []).map((deal) => (
-                  <DealCard
-                    key={deal.id}
-                    deal={deal}
-                    onEdit={handleEditDeal}
-                  />
-                ))}
-              </SortableContext>
-            </KanbanColumn>
-          ))}
+      {/* Filters */}
+      <Suspense fallback={null}>
+        <DealFilters
+          stages={stages.filter(s => s.pipelineId === selectedPipelineId).map(s => ({ id: s.id, name: s.name }))}
+          owners={owners}
+        />
+      </Suspense>
+
+      {/* Empty state when filters return no results */}
+      {hasActiveFilters && totalDeals === 0 ? (
+        <div className="text-center py-12 text-muted-foreground border rounded-lg">
+          <p className="mb-2">No results match your filters</p>
+          <Button variant="outline" size="sm" onClick={() => router.replace(`${pathname}?pipeline=${selectedPipelineId}`)}>
+            Clear filters
+          </Button>
         </div>
-
-        {/* Won/Lost Footer Row */}
-        {(wonStage || lostStage) && (
-          <div className="flex gap-4 pt-4 border-t">
-            {wonStage && (
-              <div
-                className={cn(
-                  "w-[280px] min-w-[280px] p-4 rounded-lg",
-                  "bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900"
-                )}
+      ) : (
+        /* Kanban Board */
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
+          {/* Open Stages */}
+          <div className="flex gap-4 overflow-x-auto pb-4">
+            {openStages.map((stage) => (
+              <KanbanColumn
+                key={stage.id}
+                stage={stage}
+                deals={dealsByStage[stage.id] || []}
               >
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-3 h-3 rounded-full bg-emerald-500" />
-                  <span className="font-medium text-emerald-700 dark:text-emerald-400">
-                    {wonStage.name}
-                  </span>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {(dealsByStage[wonStage.id] || []).length} deals · {formatCurrency(sumDealValues(dealsByStage[wonStage.id] || []))}
-                </div>
-              </div>
-            )}
-            {lostStage && (
-              <div
-                className={cn(
-                  "w-[280px] min-w-[280px] p-4 rounded-lg",
-                  "bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900"
-                )}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-3 h-3 rounded-full bg-rose-500" />
-                  <span className="font-medium text-rose-700 dark:text-rose-400">
-                    {lostStage.name}
-                  </span>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {(dealsByStage[lostStage.id] || []).length} deals · {formatCurrency(sumDealValues(dealsByStage[lostStage.id] || []))}
-                </div>
-              </div>
-            )}
+                <SortableContext
+                  items={(dealsByStage[stage.id] || []).map(d => d.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {(dealsByStage[stage.id] || []).map((deal) => (
+                    <DealCard
+                      key={deal.id}
+                      deal={deal}
+                      onEdit={handleEditDeal}
+                    />
+                  ))}
+                </SortableContext>
+              </KanbanColumn>
+            ))}
           </div>
-        )}
 
-        {/* Drag Overlay */}
-        <DragOverlay>
-          {activeDeal && (
-            <DealCard deal={activeDeal} isOverlay />
+          {/* Won/Lost Footer Row */}
+          {(wonStage || lostStage) && (
+            <div className="flex gap-4 pt-4 border-t">
+              {wonStage && (
+                <div
+                  className={cn(
+                    "w-[280px] min-w-[280px] p-4 rounded-lg",
+                    "bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900"
+                  )}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-3 h-3 rounded-full bg-emerald-500" />
+                    <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                      {wonStage.name}
+                    </span>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {(dealsByStage[wonStage.id] || []).length} deals · {formatCurrency(sumDealValues(dealsByStage[wonStage.id] || []))}
+                  </div>
+                </div>
+              )}
+              {lostStage && (
+                <div
+                  className={cn(
+                    "w-[280px] min-w-[280px] p-4 rounded-lg",
+                    "bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900"
+                  )}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-3 h-3 rounded-full bg-rose-500" />
+                    <span className="font-medium text-rose-700 dark:text-rose-400">
+                      {lostStage.name}
+                    </span>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {(dealsByStage[lostStage.id] || []).length} deals · {formatCurrency(sumDealValues(dealsByStage[lostStage.id] || []))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
-        </DragOverlay>
-      </DndContext>
+
+          {/* Drag Overlay */}
+          <DragOverlay>
+            {activeDeal && (
+              <DealCard deal={activeDeal} isOverlay />
+            )}
+          </DragOverlay>
+        </DndContext>
+      )}
 
       {/* Deal Dialog for Edit */}
       {selectedDeal && (

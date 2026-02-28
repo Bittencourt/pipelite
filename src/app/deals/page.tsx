@@ -1,7 +1,7 @@
 import { auth } from "@/auth"
 import { db } from "@/db"
-import { deals, stages, pipelines, organizations, people } from "@/db/schema"
-import { eq, and, isNull, asc, sql } from "drizzle-orm"
+import { deals, stages, pipelines, organizations, people, users } from "@/db/schema"
+import { eq, and, isNull, gte, lte, asc, sql } from "drizzle-orm"
 import { redirect } from "next/navigation"
 import { KanbanBoard } from "./kanban-board"
 
@@ -23,7 +23,13 @@ interface DealWithRelations {
 export default async function DealsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ pipeline?: string }>
+  searchParams: Promise<{
+    pipeline?: string
+    stage?: string
+    owner?: string
+    dateFrom?: string
+    dateTo?: string
+  }>
 }) {
   const session = await auth()
   const params = await searchParams
@@ -86,14 +92,25 @@ export default async function DealsPage({
     orderBy: [stages.position],
   })
 
-  // Fetch all deals with relations (for the selected pipeline's stages)
+  // Fetch all deals with relations (for the selected pipeline's stages, with optional filters)
   const stageIds = pipelineStages.map(s => s.id)
+  
+  // Build filter conditions
+  const filterConditions = [
+    sql`${deals.stageId} IN ${stageIds}`,
+    isNull(deals.deletedAt),
+    // Stage filter - only apply if filtering by a specific stage
+    params.stage ? eq(deals.stageId, params.stage) : undefined,
+    // Owner filter
+    params.owner ? eq(deals.ownerId, params.owner) : undefined,
+    // Date range filters
+    params.dateFrom ? gte(deals.expectedCloseDate, new Date(params.dateFrom)) : undefined,
+    params.dateTo ? lte(deals.expectedCloseDate, new Date(params.dateTo)) : undefined,
+  ].filter(Boolean)
+  
   const allDeals = stageIds.length > 0
     ? await db.query.deals.findMany({
-        where: and(
-          sql`${deals.stageId} IN ${stageIds}`,
-          isNull(deals.deletedAt)
-        ),
+        where: and(...filterConditions),
         orderBy: [sql`${deals.position} ASC`],
         with: {
           organization: {
@@ -145,6 +162,13 @@ export default async function DealsPage({
     },
   })
 
+  // Fetch all users (for owner filter dropdown)
+  const allUsers = await db.query.users.findMany({
+    where: isNull(users.deletedAt),
+    columns: { id: true, email: true, name: true },
+    orderBy: [users.email],
+  })
+
   // Get first open stage for default create dialog
   const firstOpenStage = pipelineStages.find(s => s.type === 'open')
 
@@ -168,6 +192,13 @@ export default async function DealsPage({
         organizations={allOrganizations}
         people={allPeople}
         defaultStageId={firstOpenStage?.id}
+        owners={allUsers.map(u => ({ id: u.id, name: u.name || u.email }))}
+        activeFilters={{ 
+          stage: params.stage, 
+          owner: params.owner, 
+          dateFrom: params.dateFrom, 
+          dateTo: params.dateTo 
+        }}
       />
     </div>
   )
