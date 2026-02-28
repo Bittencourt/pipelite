@@ -24,7 +24,6 @@ export function SelectField({ definition, value, onSave, disabled }: SelectField
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [editValue, setEditValue] = useState(value ?? "")
-  const containerRef = useRef<HTMLDivElement>(null)
   // Use a ref to track saving state synchronously (avoids race condition with Select close)
   const isSavingRef = useRef(false)
 
@@ -66,20 +65,6 @@ export function SelectField({ definition, value, onSave, disabled }: SelectField
     setIsEditing(false)
   }, [value])
 
-  // Handle click outside to cancel
-  useEffect(() => {
-    if (!isEditing) return
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        handleCancel()
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [isEditing, handleCancel])
-
   // Find display label for current value
   const displayLabel = value ? options.find(o => o === value) ?? value : ""
 
@@ -91,7 +76,7 @@ export function SelectField({ definition, value, onSave, disabled }: SelectField
       </Label>
       
       {isEditing ? (
-        <div ref={containerRef} className="relative">
+        <div className="relative">
           <Select
             value={editValue}
             onValueChange={(v) => {
