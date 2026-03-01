@@ -76,7 +76,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### REST API
 
 - [x] **API-01**: Full CRUD REST endpoints for all entities
-- [ ] **API-02**: OpenAPI documentation available
+- [x] **API-02**: OpenAPI documentation available
 - [x] **API-03**: Webhooks fire on events (deal stage change, activity creation)
 
 ## v2 Requirements
@@ -186,7 +186,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IMP-03 | Phase 9 | Pending |
 | IMP-04 | Phase 9 | Pending |
 | API-01 | Phase 10 | Complete |
-| API-02 | Phase 10 | Pending |
+| API-02 | Phase 10 | Complete |
 | API-03 | Phase 10 | Complete |
 
 **Coverage:**

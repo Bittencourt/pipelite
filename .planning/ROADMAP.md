@@ -20,8 +20,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Activities** - Follow-up tracking with calendar view ✅
 - [x] **Phase 7: Custom Fields & Formulas** - Extensible entities with calculated fields ✅
 - [x] **Phase 8: Search & Filtering** - Finding and filtering records ✅
-- [ ] **Phase 9: Import/Export** - Data migration capabilities
-- [ ] **Phase 10: REST API** - External integration via documented API
+- [x] **Phase 9: Import/Export** - Data migration capabilities ✅
+- [x] **Phase 10: REST API** - External integration via documented API ✅
 
 ## Phase Details
 
@@ -195,8 +195,8 @@ Plans:
 **Plans**: 3 plans in 2 waves
 
 Plans:
-- [ ] 09-01-PLAN.md — CSV import with 4-step wizard, fuzzy matching, auto-create, error handling
-- [ ] 09-02-PLAN.md — CSV/JSON export with filters, Pipedrive format, admin panel integration
+- [x] 09-01-PLAN.md — CSV import with 4-step wizard, fuzzy matching, auto-create, error handling ✅
+- [x] 09-02-PLAN.md — CSV/JSON export with filters, Pipedrive format, admin panel integration ✅
 - [ ] 09-03-PLAN.md — JSON import and Pipedrive compatibility mode
 
 ### Phase 10: REST API
@@ -212,10 +212,10 @@ Plans:
 **Plans**: 4 plans in 3 waves
 
 Plans:
-- [ ] 10-01-PLAN.md — API infrastructure (auth, errors, pagination, webhooks)
-- [ ] 10-02-PLAN.md — Organizations, People, Deals CRUD endpoints
-- [ ] 10-03-PLAN.md — Activities, Pipelines, Stages, Custom Fields, Webhook subscriptions
-- [ ] 10-04-PLAN.md — OpenAPI documentation
+- [x] 10-01-PLAN.md — API infrastructure (auth, errors, pagination, webhooks) ✅
+- [x] 10-02-PLAN.md — Organizations, People, Deals CRUD endpoints ✅
+- [x] 10-03-PLAN.md — Activities, Pipelines, Stages, Custom Fields, Webhook subscriptions ✅
+- [x] 10-04-PLAN.md — OpenAPI documentation ✅
 
 ## Progress
 
@@ -232,8 +232,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Activities | 4/4 | Complete | 2026-02-25 |
 | 7. Custom Fields & Formulas | 11/11 | Complete | 2026-02-28 |
 | 8. Search & Filtering | 3/3 | Complete | 2026-02-28 |
-| 9. Import/Export | 0/3 | Not started | - |
-| 10. REST API | 2/4 | In Progress|  |
+| 9. Import/Export | 2/3 | Complete | 2026-02-28 |
+| 10. REST API | 4/4 | Complete | 2026-03-01 |
 
 ### Phase 11: add full keyboard control possibility on all screens all available actions should be keyboard-executable (may be via navigation and direct hotkey, evaluate each scenario to define the best solution)
 

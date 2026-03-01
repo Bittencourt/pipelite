@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 
 ## Current Position
 
-Phase: 10 of 10 (REST API) - In Progress
-Plan: 3 of 4 in current phase
-Status: Plan 10-03 complete
-Last activity: 2026-02-28 — Completed 10-03: CRUD endpoints for activities, pipelines, stages, custom fields, webhooks
+Phase: 10 of 10 (REST API) - Complete
+Plan: 4 of 4 in current phase
+Status: Plan 10-04 complete - Phase 10 finished
+Last activity: 2026-03-01 — Completed 10-04: OpenAPI 3.1 specification and documentation endpoint
 
-Progress: [████████████████████░] 98% (40/41 plans in current roadmap)
+Progress: [█████████████████████] 100% (41/41 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 40
+- Total plans completed: 41
 - Average duration: 7min
-- Total execution time: 4.9 hours
+- Total execution time: 5.1 hours
 
 **By Phase:**
 
@@ -36,9 +36,11 @@ Progress: [████████████████████░] 98% 
 | 07-custom-fields-formulas | 11/11 | 144min | 13min |
 | 08-search-filtering | 3/3 | 25min | 8min |
 | 09-import-export | 2/3 | TBD | TBD |
-| 10-rest-api | 2/4 | 19min | 9.5min |
+| 10-rest-api | 4/4 | 30min | 7.5min |
 
 **Recent Trend:**
+- 10-04: 11min (2 tasks, 2 files, 2 commits) - OpenAPI 3.1 specification and public documentation endpoint
+- 10-03: 25min (2 tasks, 10 files, 2 commits) - CRUD endpoints for activities, pipelines, stages, custom fields, webhooks
 - 10-02: 11min (3 tasks, 9 files, 3 commits) - CRUD endpoints for organizations, people, deals with pagination, expand, webhooks
 - 10-01: 8min (3 tasks, 10 files, 3 commits) - API infrastructure with auth, rate limiting, RFC 7807 errors, pagination, webhooks
 - 09-01: 9min (3 tasks, 18 files, 3 commits) - CSV import wizard with fuzzy matching and auto-create
@@ -186,6 +188,9 @@ Recent decisions affecting current work:
 - [Phase 10-rest-api]: Stage change events: Deal stage changes trigger separate deal.stage_changed webhook with old/new stage IDs
 - [Phase 10-rest-api]: Stages use hard delete (no deletedAt column)
 - [Phase 10-rest-api]: Webhook secrets shown only in POST response, never in GET
+- [10-04] Public docs endpoint - no authentication required for API discovery
+- [10-04] YAML source format for OpenAPI spec, JSON conversion at runtime
+- [10-04] CORS headers on docs endpoint for external tool access (Swagger UI, etc.)
 
 ### Pending Todos
 
@@ -211,11 +216,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-02-28
-Stopped at: Completed 10-03-PLAN.md
+Last session: 2026-03-01
+Stopped at: Completed 10-04-PLAN.md (Phase 10 complete)
 Resume file: None
 
-**Phase 10 IN PROGRESS.** Plans 10-01, 10-02, 10-03 complete: API infrastructure with Bearer token auth, RFC 7807 errors, rate limiting, pagination, serializers, webhooks. CRUD endpoints for organizations, people, deals with pagination, expand, bulk operations. CRUD endpoints for activities, pipelines, stages, custom fields, webhooks with proper security patterns. Plan 10-04 remaining.
+**Phase 10 COMPLETE.** All 4 plans finished: API infrastructure with Bearer token auth, RFC 7807 errors, rate limiting, pagination, serializers, webhooks. CRUD endpoints for all entities (organizations, people, deals, activities, pipelines, stages, custom fields, webhooks). OpenAPI 3.1 specification served at /api/v1/docs.
 
 ---
 *State initialized: 2026-02-22*
