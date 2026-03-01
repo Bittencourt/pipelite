@@ -1,8 +1,10 @@
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
+import { auth } from "@/auth"
 import { NavHeader } from "@/components/nav-header"
 import { HotkeysProvider } from "@/components/keyboard/hotkeys-provider"
+import { ShortcutsHint } from "@/components/keyboard"
 import { Toaster } from "@/components/ui/sonner"
 
 const geistSans = Geist({
@@ -20,21 +22,27 @@ export const metadata: Metadata = {
   description: "Self-hosted CRM for sales teams",
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const session = await auth()
+  const user = session?.user
+    ? { email: session.user.email || "", role: session.user.role }
+    : null
+
   return (
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <NavHeader />
         <HotkeysProvider>
+          <NavHeader user={user} />
           <main className="min-h-[calc(100vh-3.5rem)]">
             {children}
           </main>
+          <ShortcutsHint />
           <Toaster />
         </HotkeysProvider>
       </body>
