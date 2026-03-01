@@ -124,3 +124,50 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Keyboard-only focus indicators
+ *
+ * Uses browser-native :focus-visible so focus rings only appear during
+ * keyboard navigation, never on mouse clicks.
+ * --------------------------------------------------------------------------- */
+
+/* Remove default focus outline (replaced by :focus-visible) */
+*:focus {
+  outline: none;
+}
+
+/* Generic focus-visible for all interactive elements */
+*:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Buttons, links, and role="button" elements get primary color */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Selected items in lists/tables use inset outline */
+[data-selected="true"]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+/* Kanban cards */
+.card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Fallback for older browsers that don't support :focus-visible */
+@supports not selector(:focus-visible) {
+  *:focus {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
