@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { NavHeader } from "@/components/nav-header"
+import { HotkeysProvider } from "@/components/keyboard/hotkeys-provider"
 import { Toaster } from "@/components/ui/sonner"
 
 const geistSans = Geist({
@@ -30,10 +31,12 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <NavHeader />
-        <main className="min-h-[calc(100vh-3.5rem)]">
-          {children}
-        </main>
-        <Toaster />
+        <HotkeysProvider>
+          <main className="min-h-[calc(100vh-3.5rem)]">
+            {children}
+          </main>
+          <Toaster />
+        </HotkeysProvider>
       </body>
     </html>
   )
