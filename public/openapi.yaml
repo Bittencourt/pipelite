@@ -1,0 +1,2036 @@
+openapi: 3.1.0
+info:
+  title: Pipelite REST API
+  version: 1.0.0
+  description: |
+    CRM API for organizations, people, deals, activities, and more.
+    
+    ## Authentication
+    
+    All API endpoints require Bearer token authentication using an API key.
+    API keys can be created from the Pipelite dashboard and must have the `pk_live_` prefix.
+    
+    Include the API key in the Authorization header:
+    ```
+    Authorization: Bearer pk_live_your_api_key_here
+    ```
+    
+    ## Rate Limiting
+    
+    API requests are rate limited per API key. Rate limit headers are included in responses.
+    When rate limited, a 429 status is returned with a `Retry-After` header.
+    
+    ## Pagination
+    
+    List endpoints support pagination via `offset` and `limit` query parameters.
+    Default limit is 50 items. Maximum limit is 100.
+    
+    Responses include a `meta` object with pagination info:
+    ```json
+    {
+      "data": [...],
+      "meta": { "total": 100, "offset": 0, "limit": 50 }
+    }
+    ```
+    
+    ## Expanding Relations
+    
+    Many endpoints support an `expand` parameter to include related entities.
+    Multiple relations can be expanded with comma separation: `?expand=owner,organization`
+    
+    ## Webhooks
+    
+    Subscribe to events by creating webhook endpoints. Webhooks are signed with HMAC-SHA256.
+    Verify signatures using the `X-Webhook-Signature` header.
+
+servers:
+  - url: /api/v1
+    description: Current server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: API key with pk_live_ prefix
+
+  schemas:
+    # Common Schemas
+    PaginationParams:
+      type: object
+      properties:
+        offset:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Number of items to skip
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+          description: Maximum number of items to return
+
+    PaginatedMeta:
+      type: object
+      required: [total, offset, limit]
+      properties:
+        total:
+          type: integer
+          description: Total number of items available
+        offset:
+          type: integer
+          description: Current offset
+        limit:
+          type: integer
+          description: Current limit
+
+    ProblemDetail:
+      type: object
+      required: [type, title, status, detail]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: Error type identifier
+          example: "https://api.pipelite.app/errors/VALIDATION_ERROR"
+        title:
+          type: string
+          description: Short error title
+          example: "Validation Error"
+        status:
+          type: integer
+          description: HTTP status code
+          example: 422
+        detail:
+          type: string
+          description: Detailed error message
+          example: "Request validation failed"
+        instance:
+          type: string
+          description: Request path that caused the error
+        errors:
+          type: array
+          description: Validation errors
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field:
+                type: string
+                description: Field that failed validation
+              code:
+                type: string
+                description: Error code
+              message:
+                type: string
+                description: Human-readable error message
+
+    # User Reference (for expanded responses)
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+
+    # Organization Schemas
+    Organization:
+      type: object
+      required: [id, name, owner_id, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          description: Unique organization identifier
+        name:
+          type: string
+          maxLength: 100
+          description: Organization name
+        website:
+          type: string
+          format: uri
+          nullable: true
+          description: Organization website URL
+        industry:
+          type: string
+          maxLength: 100
+          nullable: true
+          description: Industry classification
+        notes:
+          type: string
+          nullable: true
+          description: Additional notes
+        owner_id:
+          type: string
+          description: ID of the user who owns this organization
+        custom_fields:
+          type: object
+          nullable: true
+          description: Custom field values keyed by field ID
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+
+    OrganizationCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        website:
+          type: string
+          format: uri
+        industry:
+          type: string
+          maxLength: 100
+        notes:
+          type: string
+
+    OrganizationUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        website:
+          type: string
+          format: uri
+          nullable: true
+        industry:
+          type: string
+          maxLength: 100
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    # Person Schemas
+    Person:
+      type: object
+      required: [id, first_name, last_name, owner_id, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          description: Unique person identifier
+        first_name:
+          type: string
+          maxLength: 100
+        last_name:
+          type: string
+          maxLength: 100
+        full_name:
+          type: string
+          description: Computed full name (read-only)
+        email:
+          type: string
+          format: email
+          nullable: true
+        phone:
+          type: string
+          maxLength: 50
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        organization_id:
+          type: string
+          nullable: true
+          description: ID of associated organization
+        owner_id:
+          type: string
+          description: ID of the user who owns this person
+        custom_fields:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PersonCreate:
+      type: object
+      required: [first_name, last_name]
+      properties:
+        first_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        last_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          maxLength: 50
+        notes:
+          type: string
+        organization_id:
+          type: string
+
+    PersonUpdate:
+      type: object
+      properties:
+        first_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        last_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          nullable: true
+        phone:
+          type: string
+          maxLength: 50
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        organization_id:
+          type: string
+          nullable: true
+
+    # Deal Schemas
+    Deal:
+      type: object
+      required: [id, title, stage_id, owner_id, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+          maxLength: 200
+        value:
+          type: number
+          nullable: true
+          description: Deal value in default currency
+        stage_id:
+          type: string
+          description: ID of the current pipeline stage
+        organization_id:
+          type: string
+          nullable: true
+        person_id:
+          type: string
+          nullable: true
+        owner_id:
+          type: string
+        position:
+          type: number
+          nullable: true
+          description: Position within the stage for kanban ordering
+        expected_close_date:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        custom_fields:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DealCreate:
+      type: object
+      required: [title, stage_id]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        value:
+          type: number
+          minimum: 0
+        stage_id:
+          type: string
+          minLength: 1
+        organization_id:
+          type: string
+        person_id:
+          type: string
+        expected_close_date:
+          type: string
+          format: date-time
+        notes:
+          type: string
+
+    DealUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        value:
+          type: number
+          minimum: 0
+          nullable: true
+        stage_id:
+          type: string
+        organization_id:
+          type: string
+          nullable: true
+        person_id:
+          type: string
+          nullable: true
+        expected_close_date:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    # Activity Schemas
+    Activity:
+      type: object
+      required: [id, title, type_id, owner_id, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        type_id:
+          type: string
+          description: ID of the activity type (call, meeting, task, email)
+        deal_id:
+          type: string
+          nullable: true
+          description: ID of associated deal
+        owner_id:
+          type: string
+        due_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the activity was completed
+        notes:
+          type: string
+          nullable: true
+        custom_fields:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ActivityCreate:
+      type: object
+      required: [title, type_id]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        type_id:
+          type: string
+          minLength: 1
+        deal_id:
+          type: string
+          nullable: true
+        owner_id:
+          type: string
+          nullable: true
+          description: Defaults to authenticated user
+        due_at:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    ActivityUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+        type_id:
+          type: string
+        deal_id:
+          type: string
+          nullable: true
+        owner_id:
+          type: string
+          nullable: true
+        due_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    ActivityType:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        icon:
+          type: string
+          nullable: true
+        color:
+          type: string
+          nullable: true
+
+    # Pipeline Schemas
+    Pipeline:
+      type: object
+      required: [id, name, is_default, owner_id, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        is_default:
+          type: boolean
+          description: Whether this is the default pipeline
+        owner_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PipelineCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        is_default:
+          type: boolean
+          default: false
+
+    PipelineUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        is_default:
+          type: boolean
+
+    # Stage Schemas
+    Stage:
+      type: object
+      required: [id, pipeline_id, name, type, position, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        pipeline_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        color:
+          type: string
+          description: Stage color for UI display
+        type:
+          type: string
+          enum: [open, won, lost]
+          description: Stage type - open for active, won/lost for closed
+        position:
+          type: integer
+          description: Position within pipeline for ordering
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    StageCreate:
+      type: object
+      required: [name, pipeline_id]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        pipeline_id:
+          type: string
+          minLength: 1
+        color:
+          type: string
+          default: "blue"
+        type:
+          type: string
+          enum: [open, won, lost]
+          default: "open"
+        description:
+          type: string
+          nullable: true
+
+    StageUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        color:
+          type: string
+        type:
+          type: string
+          enum: [open, won, lost]
+        description:
+          type: string
+          nullable: true
+
+    # Custom Field Definition Schemas
+    CustomFieldDefinition:
+      type: object
+      required: [id, entity_type, name, type, required, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        entity_type:
+          type: string
+          enum: [organization, person, deal, activity]
+          description: Entity type this field applies to
+        name:
+          type: string
+          description: Display name of the field
+        type:
+          type: string
+          enum: [text, number, date, boolean, single_select, multi_select, file, url, lookup, formula]
+          description: Field data type
+        config:
+          type: object
+          nullable: true
+          description: Type-specific configuration (options for select, entity for lookup, formula for formula)
+        required:
+          type: boolean
+          description: Whether the field is required
+        position:
+          type: number
+          nullable: true
+          description: Position for ordering
+        show_in_list:
+          type: boolean
+          description: Whether to show in list views
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CustomFieldDefinitionCreate:
+      type: object
+      required: [name, entity_type, type]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        entity_type:
+          type: string
+          enum: [organization, person, deal, activity]
+        type:
+          type: string
+          enum: [text, number, date, boolean, single_select, multi_select, file, url, lookup, formula]
+        config:
+          type: object
+          nullable: true
+        required:
+          type: boolean
+          default: false
+        show_in_list:
+          type: boolean
+          default: false
+
+    CustomFieldDefinitionUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        config:
+          type: object
+          nullable: true
+        required:
+          type: boolean
+        show_in_list:
+          type: boolean
+
+    # Webhook Schemas
+    Webhook:
+      type: object
+      required: [id, url, events, active, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+          format: uri
+          description: HTTPS endpoint to receive webhook payloads
+        events:
+          type: array
+          items:
+            type: string
+          description: List of events to subscribe to
+        active:
+          type: boolean
+          description: Whether the webhook is active
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    WebhookWithSecret:
+      allOf:
+        - $ref: '#/components/schemas/Webhook'
+        - type: object
+          properties:
+            secret:
+              type: string
+              description: HMAC secret for verifying signatures (only shown once on creation)
+
+    WebhookCreate:
+      type: object
+      required: [url, events]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Must be HTTPS
+        events:
+          type: array
+          items:
+            type: string
+            enum:
+              - organization.created
+              - organization.updated
+              - organization.deleted
+              - person.created
+              - person.updated
+              - person.deleted
+              - deal.created
+              - deal.updated
+              - deal.deleted
+              - deal.stage_changed
+              - activity.created
+              - activity.updated
+              - activity.deleted
+              - pipeline.created
+              - pipeline.updated
+              - pipeline.deleted
+              - stage.created
+              - stage.updated
+              - stage.deleted
+              - custom_field_definition.created
+              - custom_field_definition.updated
+              - custom_field_definition.deleted
+          minItems: 1
+
+    WebhookUpdate:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        active:
+          type: boolean
+
+    WebhookPayload:
+      type: object
+      properties:
+        event:
+          type: string
+          description: Event type that triggered the webhook
+        entity:
+          type: string
+          description: Entity type (organization, person, deal, etc.)
+        entityId:
+          type: string
+          description: ID of the affected entity
+        action:
+          type: string
+          enum: [created, updated, deleted]
+        data:
+          type: object
+          description: Entity data (or {id} for deleted)
+        timestamp:
+          type: string
+          format: date-time
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+          example:
+            type: "https://api.pipelite.app/errors/UNAUTHORIZED"
+            title: "Unauthorized"
+            status: 401
+            detail: "Authentication required"
+
+    Forbidden:
+      description: Access denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+          example:
+            type: "https://api.pipelite.app/errors/ENTITY_NOT_FOUND"
+            title: "Not Found"
+            status: 404
+            detail: "Organization not found"
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+          example:
+            type: "https://api.pipelite.app/errors/VALIDATION_ERROR"
+            title: "Validation Error"
+            status: 422
+            detail: "Request validation failed"
+            errors:
+              - field: "name"
+                code: "too_small"
+                message: "Name is required"
+
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: Seconds until rate limit resets
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Unix timestamp when rate limit resets
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ========== Organizations ==========
+  /organizations:
+    get:
+      summary: List organizations
+      description: Retrieve a paginated list of organizations owned by the authenticated user
+      operationId: listOrganizations
+      tags: [Organizations]
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: expand
+          in: query
+          description: Relations to expand (comma-separated)
+          schema:
+            type: string
+            example: "owner"
+      responses:
+        '200':
+          description: List of organizations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Organization'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      summary: Create organization
+      description: Create a new organization
+      operationId: createOrganization
+      tags: [Organizations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreate'
+      responses:
+        '201':
+          description: Organization created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /organizations/{id}:
+    get:
+      summary: Get organization
+      description: Retrieve a single organization by ID
+      operationId: getOrganization
+      tags: [Organizations]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: expand
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Organization details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update organization
+      description: Update an existing organization
+      operationId: updateOrganization
+      tags: [Organizations]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationUpdate'
+      responses:
+        '200':
+          description: Organization updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      summary: Delete organization
+      description: Soft delete an organization
+      operationId: deleteOrganization
+      tags: [Organizations]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Organization deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /organizations/batch:
+    post:
+      summary: Batch create organizations
+      description: Create multiple organizations in a single request (max 100)
+      operationId: batchCreateOrganizations
+      tags: [Organizations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 100
+              items:
+                $ref: '#/components/schemas/OrganizationCreate'
+      responses:
+        '201':
+          description: Organizations created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Organization'
+                  meta:
+                    type: object
+                    properties:
+                      created:
+                        type: integer
+                      total:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ========== People ==========
+  /people:
+    get:
+      summary: List people
+      description: Retrieve a paginated list of people
+      operationId: listPeople
+      tags: [People]
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: expand
+          in: query
+          description: Relations to expand (owner, organization)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of people
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Person'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+    post:
+      summary: Create person
+      operationId: createPerson
+      tags: [People]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonCreate'
+      responses:
+        '201':
+          description: Person created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Person'
+
+  /people/{id}:
+    get:
+      summary: Get person
+      operationId: getPerson
+      tags: [People]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: expand
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Person details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Person'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update person
+      operationId: updatePerson
+      tags: [People]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonUpdate'
+      responses:
+        '200':
+          description: Person updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Person'
+    delete:
+      summary: Delete person
+      operationId: deletePerson
+      tags: [People]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Person deleted
+
+  /people/batch:
+    post:
+      summary: Batch create people
+      operationId: batchCreatePeople
+      tags: [People]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 100
+              items:
+                $ref: '#/components/schemas/PersonCreate'
+      responses:
+        '201':
+          description: People created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Person'
+                  meta:
+                    type: object
+                    properties:
+                      created:
+                        type: integer
+                      total:
+                        type: integer
+
+  # ========== Deals ==========
+  /deals:
+    get:
+      summary: List deals
+      description: Retrieve a paginated list of deals with optional filters
+      operationId: listDeals
+      tags: [Deals]
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: expand
+          in: query
+          description: Relations to expand (owner, organization, person, stage)
+          schema:
+            type: string
+        - name: stage_id
+          in: query
+          description: Filter by stage ID
+          schema:
+            type: string
+        - name: organization_id
+          in: query
+          description: Filter by organization ID
+          schema:
+            type: string
+        - name: owner_id
+          in: query
+          description: Filter by owner ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of deals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Deal'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+    post:
+      summary: Create deal
+      operationId: createDeal
+      tags: [Deals]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DealCreate'
+      responses:
+        '201':
+          description: Deal created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Deal'
+
+  /deals/{id}:
+    get:
+      summary: Get deal
+      operationId: getDeal
+      tags: [Deals]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: expand
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deal details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Deal'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update deal
+      operationId: updateDeal
+      tags: [Deals]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DealUpdate'
+      responses:
+        '200':
+          description: Deal updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Deal'
+    delete:
+      summary: Delete deal
+      operationId: deleteDeal
+      tags: [Deals]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deal deleted
+
+  /deals/batch:
+    post:
+      summary: Batch create deals
+      operationId: batchCreateDeals
+      tags: [Deals]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 100
+              items:
+                $ref: '#/components/schemas/DealCreate'
+      responses:
+        '201':
+          description: Deals created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Deal'
+                  meta:
+                    type: object
+                    properties:
+                      created:
+                        type: integer
+                      total:
+                        type: integer
+
+  # ========== Activities ==========
+  /activities:
+    get:
+      summary: List activities
+      description: Retrieve a paginated list of activities with optional filters
+      operationId: listActivities
+      tags: [Activities]
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: expand
+          in: query
+          description: Relations to expand (type, deal, owner)
+          schema:
+            type: string
+        - name: type_id
+          in: query
+          description: Filter by activity type ID
+          schema:
+            type: string
+        - name: deal_id
+          in: query
+          description: Filter by deal ID
+          schema:
+            type: string
+        - name: owner_id
+          in: query
+          description: Filter by owner ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of activities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Activity'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+    post:
+      summary: Create activity
+      operationId: createActivity
+      tags: [Activities]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivityCreate'
+      responses:
+        '201':
+          description: Activity created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Activity'
+
+  /activities/{id}:
+    get:
+      summary: Get activity
+      operationId: getActivity
+      tags: [Activities]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: expand
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Activity details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Activity'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update activity
+      operationId: updateActivity
+      tags: [Activities]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivityUpdate'
+      responses:
+        '200':
+          description: Activity updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Activity'
+    delete:
+      summary: Delete activity
+      operationId: deleteActivity
+      tags: [Activities]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Activity deleted
+
+  # ========== Pipelines ==========
+  /pipelines:
+    get:
+      summary: List pipelines
+      operationId: listPipelines
+      tags: [Pipelines]
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: expand
+          in: query
+          description: Relations to expand (owner, stages)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of pipelines
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Pipeline'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+    post:
+      summary: Create pipeline
+      operationId: createPipeline
+      tags: [Pipelines]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PipelineCreate'
+      responses:
+        '201':
+          description: Pipeline created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Pipeline'
+
+  /pipelines/{id}:
+    get:
+      summary: Get pipeline
+      operationId: getPipeline
+      tags: [Pipelines]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: expand
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pipeline details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Pipeline'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update pipeline
+      operationId: updatePipeline
+      tags: [Pipelines]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PipelineUpdate'
+      responses:
+        '200':
+          description: Pipeline updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Pipeline'
+    delete:
+      summary: Delete pipeline
+      operationId: deletePipeline
+      tags: [Pipelines]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Pipeline deleted
+
+  # ========== Stages ==========
+  /stages:
+    get:
+      summary: List stages
+      description: Retrieve a paginated list of stages, optionally filtered by pipeline
+      operationId: listStages
+      tags: [Stages]
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: expand
+          in: query
+          description: Relations to expand (pipeline)
+          schema:
+            type: string
+        - name: pipeline_id
+          in: query
+          description: Filter by pipeline ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of stages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Stage'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+    post:
+      summary: Create stage
+      operationId: createStage
+      tags: [Stages]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StageCreate'
+      responses:
+        '201':
+          description: Stage created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Stage'
+
+  /stages/{id}:
+    get:
+      summary: Get stage
+      operationId: getStage
+      tags: [Stages]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: expand
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Stage details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Stage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update stage
+      operationId: updateStage
+      tags: [Stages]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StageUpdate'
+      responses:
+        '200':
+          description: Stage updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Stage'
+    delete:
+      summary: Delete stage
+      operationId: deleteStage
+      tags: [Stages]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Stage deleted
+
+  # ========== Custom Field Definitions ==========
+  /custom-field-definitions:
+    get:
+      summary: List custom field definitions
+      description: Retrieve a paginated list of custom field definitions
+      operationId: listCustomFieldDefinitions
+      tags: [Custom Fields]
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: entity_type
+          in: query
+          description: Filter by entity type
+          schema:
+            type: string
+            enum: [organization, person, deal, activity]
+      responses:
+        '200':
+          description: List of custom field definitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CustomFieldDefinition'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+    post:
+      summary: Create custom field definition
+      operationId: createCustomFieldDefinition
+      tags: [Custom Fields]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldDefinitionCreate'
+      responses:
+        '201':
+          description: Custom field definition created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CustomFieldDefinition'
+
+  /custom-field-definitions/{id}:
+    get:
+      summary: Get custom field definition
+      operationId: getCustomFieldDefinition
+      tags: [Custom Fields]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Custom field definition details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CustomFieldDefinition'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update custom field definition
+      operationId: updateCustomFieldDefinition
+      tags: [Custom Fields]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomFieldDefinitionUpdate'
+      responses:
+        '200':
+          description: Custom field definition updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CustomFieldDefinition'
+    delete:
+      summary: Delete custom field definition
+      operationId: deleteCustomFieldDefinition
+      tags: [Custom Fields]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Custom field definition deleted
+
+  # ========== Webhooks ==========
+  /webhooks:
+    get:
+      summary: List webhooks
+      description: Retrieve a paginated list of webhook subscriptions (secrets are not returned)
+      operationId: listWebhooks
+      tags: [Webhooks]
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: List of webhooks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Webhook'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+    post:
+      summary: Create webhook
+      description: Create a new webhook subscription. The secret is only returned in this response.
+      operationId: createWebhook
+      tags: [Webhooks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookCreate'
+      responses:
+        '201':
+          description: Webhook created (secret shown only once)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebhookWithSecret'
+
+  /webhooks/{id}:
+    get:
+      summary: Get webhook
+      description: Retrieve a single webhook (secret is not returned)
+      operationId: getWebhook
+      tags: [Webhooks]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Webhook details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Webhook'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update webhook
+      operationId: updateWebhook
+      tags: [Webhooks]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookUpdate'
+      responses:
+        '200':
+          description: Webhook updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Webhook'
+    delete:
+      summary: Delete webhook
+      operationId: deleteWebhook
+      tags: [Webhooks]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Webhook deleted

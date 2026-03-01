@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 10 of 10 (REST API) - In Progress
-Plan: 2 of 4 in current phase
-Status: Plan 10-02 complete
-Last activity: 2026-03-01 — Completed 10-02: CRUD endpoints for organizations, people, deals with pagination, expand, webhooks
+Plan: 3 of 4 in current phase
+Status: Plan 10-03 complete
+Last activity: 2026-02-28 — Completed 10-03: CRUD endpoints for activities, pipelines, stages, custom fields, webhooks
 
 Progress: [████████████████████░] 98% (40/41 plans in current roadmap)
 
@@ -62,6 +62,7 @@ Progress: [████████████████████░] 98% 
 - 06-01: 8min (5 tasks, 6 files, 5 commits)
 
 *Updated after each plan completion*
+| Phase 10-rest-api P03 | 25min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -183,6 +184,8 @@ Recent decisions affecting current work:
 - [Phase 10-rest-api]: Snake_case API fields: Request bodies use snake_case (first_name, stage_id) matching response format
 - [Phase 10-rest-api]: Batch skip strategy: Invalid references in batch operations are skipped rather than failing entire batch
 - [Phase 10-rest-api]: Stage change events: Deal stage changes trigger separate deal.stage_changed webhook with old/new stage IDs
+- [Phase 10-rest-api]: Stages use hard delete (no deletedAt column)
+- [Phase 10-rest-api]: Webhook secrets shown only in POST response, never in GET
 
 ### Pending Todos
 
@@ -208,11 +211,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-03-01
-Stopped at: Completed 10-02-PLAN.md
+Last session: 2026-02-28
+Stopped at: Completed 10-03-PLAN.md
 Resume file: None
 
-**Phase 10 IN PROGRESS.** Plans 10-01 and 10-02 complete: API infrastructure with Bearer token auth, RFC 7807 errors, rate limiting, pagination, serializers, webhooks. CRUD endpoints for organizations, people, deals with pagination, expand, bulk operations, and webhook triggers. Plans 10-03, 10-04 remaining.
+**Phase 10 IN PROGRESS.** Plans 10-01, 10-02, 10-03 complete: API infrastructure with Bearer token auth, RFC 7807 errors, rate limiting, pagination, serializers, webhooks. CRUD endpoints for organizations, people, deals with pagination, expand, bulk operations. CRUD endpoints for activities, pipelines, stages, custom fields, webhooks with proper security patterns. Plan 10-04 remaining.
 
 ---
 *State initialized: 2026-02-22*
