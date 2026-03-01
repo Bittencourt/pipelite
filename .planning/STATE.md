@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 11 of 12 (Keyboard Control) - In Progress
-Plan: 2 of 4 in current phase
-Status: Plan 11-02 complete
-Last activity: 2026-03-01 — Completed 11-02: Global shortcuts overlay, navigation hotkeys, search focus
+Plan: 3 of 4 in current phase
+Status: Plan 11-03 complete
+Last activity: 2026-03-01 — Completed 11-03: Data table keyboard navigation across all 5 tables
 
-Progress: [█████████████████████] 100% (43/45 plans in current roadmap)
+Progress: [█████████████████████] 100% (44/45 plans in current roadmap)
 
 ## Performance Metrics
 
@@ -37,9 +37,10 @@ Progress: [█████████████████████] 100%
 | 08-search-filtering | 3/3 | 25min | 8min |
 | 09-import-export | 2/3 | TBD | TBD |
 | 10-rest-api | 4/4 | 30min | 7.5min |
-| 11-keyboard-control | 2/4 | TBD | TBD |
+| 11-keyboard-control | 3/4 | TBD | TBD |
 
 **Recent Trend:**
+- 11-03: 10min (5 tasks, 7 files, 6 commits) - useDataTableKeyboard hook with j/k/arrow/Enter/e/d/n across all 5 data tables
 - 11-02: 5min (4 tasks, 6 files, 5 commits) - Shortcuts overlay, Alt+1/2/3/4 navigation, / search focus, first-use hint
 - 11-01: 3min (3 tasks, 6 files, 3 commits) - react-hotkeys-hook infrastructure with HotkeysProvider and focus-visible CSS
 - 10-04: 11min (2 tasks, 2 files, 2 commits) - OpenAPI 3.1 specification and public documentation endpoint
@@ -200,6 +201,10 @@ Recent decisions affecting current work:
 - [11-02] NavHeader converted to client component with user prop -- auth() moved to layout.tsx server component
 - [11-02] NavHeader moved inside HotkeysProvider in layout.tsx for useHotkeys context
 - [11-02] Lazy localStorage initializer for ShortcutsHint to satisfy React effect lint rules
+- [11-03] Ref-based hotkey binding for table-scoped shortcuts (useHotkeys ref on container div)
+- [11-03] Computed index clamping instead of setState-in-useEffect for React compiler compliance
+- [11-03] Admin users table gets j/k navigation only (approve/reject actions don't map to e/d shortcuts)
+- [11-03] Form element detection (isFormFocused) prevents keyboard shortcuts firing in input fields
 
 ### Pending Todos
 
@@ -226,10 +231,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 11-02-PLAN.md
+Stopped at: Completed 11-03-PLAN.md
 Resume file: None
 
-**Phase 11 IN PROGRESS.** Plan 02 complete: Global shortcuts and navigation. ShortcutsOverlay dialog, Alt+1/2/3/4 section navigation, / search focus, first-use hint banner. NavHeader now client component inside HotkeysProvider.
+**Phase 11 IN PROGRESS.** Plan 03 complete: Data table keyboard navigation. useDataTableKeyboard hook with j/k/arrow row navigation and n/e/d/Enter action shortcuts integrated across all 5 data tables (organizations, people, activities, admin users, admin pipelines).
 
 ---
 *State initialized: 2026-02-22*
