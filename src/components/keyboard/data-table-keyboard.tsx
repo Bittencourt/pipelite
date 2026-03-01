@@ -9,14 +9,14 @@ interface UseDataTableKeyboardProps<T> {
   onDelete?: (item: T) => void
   onOpen?: (item: T) => void
   onCreate?: () => void
-  getId: (item: T) => string
+  getId?: (item: T) => string
 }
 
 interface UseDataTableKeyboardReturn<T> {
   selectedIndex: number
   selectedItem: T | null
   containerProps: {
-    ref: React.RefCallback<HTMLElement>
+    ref: React.RefCallback<HTMLElement | null>
     tabIndex: number
     "data-keyboard-nav": string
   }
@@ -33,19 +33,17 @@ export function useDataTableKeyboard<T>({
   onDelete,
   onOpen,
   onCreate,
-  getId,
 }: UseDataTableKeyboardProps<T>): UseDataTableKeyboardReturn<T> {
-  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [rawSelectedIndex, setSelectedIndex] = useState(0)
   const containerElRef = useRef<HTMLElement | null>(null)
 
-  const selectedItem = data[selectedIndex] || null
+  // Clamp selection index to valid bounds without setState in useEffect
+  const selectedIndex =
+    data.length > 0
+      ? Math.min(rawSelectedIndex, data.length - 1)
+      : 0
 
-  // Reset selection if data changes and selection is out of bounds
-  useEffect(() => {
-    if (selectedIndex >= data.length && data.length > 0) {
-      setSelectedIndex(data.length - 1)
-    }
-  }, [data.length, selectedIndex])
+  const selectedItem = data[selectedIndex] || null
 
   // Scroll selected row into view
   useEffect(() => {
@@ -125,17 +123,13 @@ export function useDataTableKeyboard<T>({
     { enableOnFormTags: false }
   )
 
-  // Merge refs: containerRef from useHotkeys + our local ref for scroll tracking
+  // Merge refs: containerRef from useHotkeys (RefObject) + our local ref for scroll tracking
   const mergedRef = useCallback(
     (node: HTMLElement | null) => {
       containerElRef.current = node
-      // useHotkeys ref is a RefObject, assign the node to it
-      if (typeof containerRef === "function") {
-        containerRef(node)
-      } else if (containerRef) {
-        ;(containerRef as React.MutableRefObject<HTMLElement | null>).current =
-          node
-      }
+      // useHotkeys returns a RefObject - assign via mutable cast
+      const mutableRef = containerRef as React.MutableRefObject<HTMLElement | null>
+      mutableRef.current = node
     },
     [containerRef]
   )
