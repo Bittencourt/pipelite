@@ -12,6 +12,7 @@ import { deals } from "./deals"
 import { activityTypes } from "./activity-types"
 import { activities } from "./activities"
 import { customFieldDefinitions } from "./custom-fields"
+import { webhooks } from "./webhooks"
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
@@ -22,6 +23,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   people: many(people),
   deals: many(deals),
   activities: many(activities),
+  webhooks: many(webhooks),
 }))
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -124,6 +126,13 @@ export const activitiesRelations = relations(activities, ({ one }) => ({
   }),
   owner: one(users, {
     fields: [activities.ownerId],
+    references: [users.id],
+  }),
+}))
+
+export const webhooksRelations = relations(webhooks, ({ one }) => ({
+  user: one(users, {
+    fields: [webhooks.userId],
     references: [users.id],
   }),
 }))
