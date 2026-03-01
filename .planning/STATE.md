@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 9 - Import/Export (In Progress)
+**Current focus:** Phase 10 - REST API (In Progress)
 
 ## Current Position
 
-Phase: 9 of 10 (Import/Export) - In Progress
-Plan: 2 of 3 in current phase
-Status: Plans 09-01 and 09-02 complete
-Last activity: 2026-02-28 — Completed 09-01: CSV import wizard with fuzzy matching and auto-create
+Phase: 10 of 10 (REST API) - In Progress
+Plan: 1 of 4 in current phase
+Status: Plan 10-01 complete
+Last activity: 2026-03-01 — Completed 10-01: API infrastructure with auth, rate limiting, errors, pagination, webhooks
 
-Progress: [██████████████████░] 93% (38/41 plans in current roadmap)
+Progress: [███████████████████░] 95% (39/41 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 38
+- Total plans completed: 39
 - Average duration: 7min
-- Total execution time: 4.6 hours
+- Total execution time: 4.7 hours
 
 **By Phase:**
 
@@ -36,8 +36,10 @@ Progress: [██████████████████░] 93% (38/41
 | 07-custom-fields-formulas | 11/11 | 144min | 13min |
 | 08-search-filtering | 3/3 | 25min | 8min |
 | 09-import-export | 2/3 | TBD | TBD |
+| 10-rest-api | 1/4 | 8min | 8min |
 
 **Recent Trend:**
+- 10-01: 8min (3 tasks, 10 files, 3 commits) - API infrastructure with auth, rate limiting, RFC 7807 errors, pagination, webhooks
 - 09-01: 9min (3 tasks, 18 files, 3 commits) - CSV import wizard with fuzzy matching and auto-create
 - 09-02: 6min (2 tasks, 8 files, 2 commits) - CSV/JSON/Pipedrive export from admin panel
 - 08-03: 2min (2 tasks, 4 files, 2 commits) - Activities URL-param filtering
@@ -173,6 +175,10 @@ Recent decisions affecting current work:
 - [09-02] Admin-only authorization on export server action
 - [09-02] Blob + object URL pattern for client-side file download trigger
 - [09-02] Collapsible filter section that auto-opens when URL params contain filter values
+- [10-01] Rate limiting uses fail-open pattern when Redis unavailable (logs warning, allows request)
+- [10-01] Serializers convert camelCase DB fields to snake_case API format
+- [10-01] Webhook delivery is fire-and-forget from request (async background delivery)
+- [10-01] Pagination defaults to 50 items per page
 
 ### Pending Todos
 
@@ -198,11 +204,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-02-28
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-03-01
+Stopped at: Completed 10-01-PLAN.md
 Resume file: None
 
-**Phase 9 IN PROGRESS.** Plans 09-01 and 09-02 complete. 09-01: CSV import wizard with 4 steps (upload, map, preview, confirm), papaparse parsing, Levenshtein fuzzy org matching, auto-create entities with [Imported] flag, batch server actions. 09-02: CSV/JSON/Pipedrive export from admin panel. Plan 09-03 remaining.
+**Phase 10 IN PROGRESS.** Plan 10-01 complete: API infrastructure with Bearer token authentication, RFC 7807 errors, rate limiting (500/min), pagination, response envelopes, entity serializers, webhook delivery with HMAC signatures and exponential backoff retry. Plans 10-02, 10-03, 10-04 remaining.
 
 ---
 *State initialized: 2026-02-22*
