@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 10 - REST API (In Progress)
+**Current focus:** Phase 11 - Keyboard Control (In Progress)
 
 ## Current Position
 
-Phase: 10 of 10 (REST API) - Complete
-Plan: 4 of 4 in current phase
-Status: Plan 10-04 complete - Phase 10 finished
-Last activity: 2026-03-01 — Completed 10-04: OpenAPI 3.1 specification and documentation endpoint
+Phase: 11 of 12 (Keyboard Control) - In Progress
+Plan: 1 of 4 in current phase
+Status: Plan 11-01 complete
+Last activity: 2026-03-01 — Completed 11-01: Keyboard infrastructure (react-hotkeys-hook, HotkeysProvider, focus-visible CSS)
 
-Progress: [█████████████████████] 100% (41/41 plans in current roadmap)
+Progress: [█████████████████████] 100% (42/45 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 41
+- Total plans completed: 42
 - Average duration: 7min
-- Total execution time: 5.1 hours
+- Total execution time: 5.15 hours
 
 **By Phase:**
 
@@ -37,8 +37,10 @@ Progress: [█████████████████████] 100%
 | 08-search-filtering | 3/3 | 25min | 8min |
 | 09-import-export | 2/3 | TBD | TBD |
 | 10-rest-api | 4/4 | 30min | 7.5min |
+| 11-keyboard-control | 1/4 | TBD | TBD |
 
 **Recent Trend:**
+- 11-01: 3min (3 tasks, 6 files, 3 commits) - react-hotkeys-hook infrastructure with HotkeysProvider and focus-visible CSS
 - 10-04: 11min (2 tasks, 2 files, 2 commits) - OpenAPI 3.1 specification and public documentation endpoint
 - 10-03: 25min (2 tasks, 10 files, 2 commits) - CRUD endpoints for activities, pipelines, stages, custom fields, webhooks
 - 10-02: 11min (3 tasks, 9 files, 3 commits) - CRUD endpoints for organizations, people, deals with pagination, expand, webhooks
@@ -191,6 +193,9 @@ Recent decisions affecting current work:
 - [10-04] Public docs endpoint - no authentication required for API discovery
 - [10-04] YAML source format for OpenAPI spec, JSON conversion at runtime
 - [10-04] CORS headers on docs endpoint for external tool access (Swagger UI, etc.)
+- [11-01] Client wrapper component for HotkeysProvider to maintain server component root layout
+- [11-01] shift+/ for help shortcut (? key requires shift modifier in hotkey notation)
+- [11-01] :focus-visible CSS outside @layer base to ensure higher specificity
 
 ### Pending Todos
 
@@ -217,10 +222,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 10-04-PLAN.md (Phase 10 complete)
+Stopped at: Completed 11-01-PLAN.md
 Resume file: None
 
-**Phase 10 COMPLETE.** All 4 plans finished: API infrastructure with Bearer token auth, RFC 7807 errors, rate limiting, pagination, serializers, webhooks. CRUD endpoints for all entities (organizations, people, deals, activities, pipelines, stages, custom fields, webhooks). OpenAPI 3.1 specification served at /api/v1/docs.
+**Phase 11 IN PROGRESS.** Plan 01 complete: Keyboard infrastructure installed. react-hotkeys-hook v5 with HotkeysProvider in root layout, centralized SHORTCUTS config, :focus-visible CSS for keyboard-only focus indicators.
 
 ---
 *State initialized: 2026-02-22*

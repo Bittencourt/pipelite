@@ -235,14 +235,26 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9. Import/Export | 2/3 | Complete | 2026-02-28 |
 | 10. REST API | 4/4 | Complete    | 2026-03-01 |
 
-### Phase 11: add full keyboard control possibility on all screens all available actions should be keyboard-executable (may be via navigation and direct hotkey, evaluate each scenario to define the best solution)
+### Phase 11: Keyboard Control
 
-**Goal:** [To be planned]
+**Goal:** Users can fully navigate and interact with the application using only keyboard - all actions are keyboard-executable via navigation and contextual hotkeys
 **Depends on:** Phase 10
-**Plans:** 4/4 plans complete
+**Requirements:** (new feature area - keyboard accessibility)
+**Success Criteria** (what must be TRUE):
+  1. User can navigate between major sections using Alt+1/2/3/4 shortcuts
+  2. User can focus search by pressing / from anywhere in the app
+  3. User can press ? to see all available keyboard shortcuts
+  4. User can navigate data tables with j/k (or arrow keys) and use n/e/d for create/edit/delete
+  5. User can navigate kanban board with h/j/k/l and use n/Enter for create/edit
+  6. Focus indicators appear only during keyboard navigation, not mouse clicks
+  7. First-time users see a hint about keyboard shortcuts
+**Plans:** 4 plans in 4 waves
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 11 to break down)
+- [x] 11-01-PLAN.md — Install react-hotkeys-hook, HotkeysProvider, focus-visible CSS ✅
+- [ ] 11-02-PLAN.md — Shortcuts overlay (?), global navigation (Alt+1/2/3/4), search focus (/)
+- [ ] 11-03-PLAN.md — Data table keyboard navigation (j/k, n/e/d/Enter)
+- [ ] 11-04-PLAN.md — Kanban board keyboard navigation (h/j/k/l, n/Enter)
 
 ### Phase 12: Make the application fully localizable (language, currency, date formats, timezones)
 
