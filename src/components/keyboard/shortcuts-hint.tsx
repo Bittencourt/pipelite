@@ -1,29 +1,31 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 const STORAGE_KEY = "pipelite_shortcuts_hint_dismissed"
 
+function getInitialVisible() {
+  if (typeof window === "undefined") return false
+  return !localStorage.getItem(STORAGE_KEY)
+}
+
 export function ShortcutsHint() {
-  const [visible, setVisible] = useState(false)
+  const [visible, setVisible] = useState(getInitialVisible)
 
   useEffect(() => {
-    const dismissed = localStorage.getItem(STORAGE_KEY)
-    if (!dismissed) {
-      setVisible(true)
-      const timer = setTimeout(() => {
-        setVisible(false)
-      }, 10000)
-      return () => clearTimeout(timer)
-    }
-  }, [])
+    if (!visible) return
+    const timer = setTimeout(() => {
+      setVisible(false)
+    }, 10000)
+    return () => clearTimeout(timer)
+  }, [visible])
 
-  const dismiss = () => {
+  const dismiss = useCallback(() => {
     localStorage.setItem(STORAGE_KEY, "1")
     setVisible(false)
-  }
+  }, [])
 
   if (!visible) return null
 
