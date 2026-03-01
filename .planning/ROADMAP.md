@@ -233,13 +233,13 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Custom Fields & Formulas | 11/11 | Complete | 2026-02-28 |
 | 8. Search & Filtering | 3/3 | Complete | 2026-02-28 |
 | 9. Import/Export | 0/3 | Not started | - |
-| 10. REST API | 1/4 | In Progress|  |
+| 10. REST API | 2/4 | In Progress|  |
 
 ### Phase 11: add full keyboard control possibility on all screens all available actions should be keyboard-executable (may be via navigation and direct hotkey, evaluate each scenario to define the best solution)
 
 **Goal:** [To be planned]
 **Depends on:** Phase 10
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 - [ ] TBD (run /gsd:plan-phase 11 to break down)

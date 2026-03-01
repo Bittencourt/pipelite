@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 10 of 10 (REST API) - In Progress
-Plan: 1 of 4 in current phase
-Status: Plan 10-01 complete
-Last activity: 2026-03-01 — Completed 10-01: API infrastructure with auth, rate limiting, errors, pagination, webhooks
+Plan: 2 of 4 in current phase
+Status: Plan 10-02 complete
+Last activity: 2026-03-01 — Completed 10-02: CRUD endpoints for organizations, people, deals with pagination, expand, webhooks
 
-Progress: [███████████████████░] 95% (39/41 plans in current roadmap)
+Progress: [████████████████████░] 98% (40/41 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 39
+- Total plans completed: 40
 - Average duration: 7min
-- Total execution time: 4.7 hours
+- Total execution time: 4.9 hours
 
 **By Phase:**
 
@@ -36,9 +36,10 @@ Progress: [███████████████████░] 95% (39
 | 07-custom-fields-formulas | 11/11 | 144min | 13min |
 | 08-search-filtering | 3/3 | 25min | 8min |
 | 09-import-export | 2/3 | TBD | TBD |
-| 10-rest-api | 1/4 | 8min | 8min |
+| 10-rest-api | 2/4 | 19min | 9.5min |
 
 **Recent Trend:**
+- 10-02: 11min (3 tasks, 9 files, 3 commits) - CRUD endpoints for organizations, people, deals with pagination, expand, webhooks
 - 10-01: 8min (3 tasks, 10 files, 3 commits) - API infrastructure with auth, rate limiting, RFC 7807 errors, pagination, webhooks
 - 09-01: 9min (3 tasks, 18 files, 3 commits) - CSV import wizard with fuzzy matching and auto-create
 - 09-02: 6min (2 tasks, 8 files, 2 commits) - CSV/JSON/Pipedrive export from admin panel
@@ -179,6 +180,9 @@ Recent decisions affecting current work:
 - [10-01] Serializers convert camelCase DB fields to snake_case API format
 - [10-01] Webhook delivery is fire-and-forget from request (async background delivery)
 - [10-01] Pagination defaults to 50 items per page
+- [Phase 10-rest-api]: Snake_case API fields: Request bodies use snake_case (first_name, stage_id) matching response format
+- [Phase 10-rest-api]: Batch skip strategy: Invalid references in batch operations are skipped rather than failing entire batch
+- [Phase 10-rest-api]: Stage change events: Deal stage changes trigger separate deal.stage_changed webhook with old/new stage IDs
 
 ### Pending Todos
 
@@ -205,10 +209,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 10-01-PLAN.md
+Stopped at: Completed 10-02-PLAN.md
 Resume file: None
 
-**Phase 10 IN PROGRESS.** Plan 10-01 complete: API infrastructure with Bearer token authentication, RFC 7807 errors, rate limiting (500/min), pagination, response envelopes, entity serializers, webhook delivery with HMAC signatures and exponential backoff retry. Plans 10-02, 10-03, 10-04 remaining.
+**Phase 10 IN PROGRESS.** Plans 10-01 and 10-02 complete: API infrastructure with Bearer token auth, RFC 7807 errors, rate limiting, pagination, serializers, webhooks. CRUD endpoints for organizations, people, deals with pagination, expand, bulk operations, and webhook triggers. Plans 10-03, 10-04 remaining.
 
 ---
 *State initialized: 2026-02-22*
