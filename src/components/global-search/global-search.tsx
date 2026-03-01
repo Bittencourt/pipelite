@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useDebouncedCallback } from "use-debounce"
 import {
@@ -18,6 +18,7 @@ import {
 import { Search, Loader2, Building2, User, DollarSign } from "lucide-react"
 import { SearchResultItem } from "./search-result-item"
 import { Input } from "@/components/ui/input"
+import { useHotkeys } from "react-hotkeys-hook"
 
 interface SearchResults {
   organizations: Array<{ id: string; name: string }>
@@ -33,10 +34,16 @@ interface SearchResults {
 
 export function GlobalSearch() {
   const router = useRouter()
+  const inputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResults | null>(null)
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
+
+  useHotkeys("/", (e) => {
+    e.preventDefault()
+    inputRef.current?.focus()
+  }, { scopes: ["global"] })
 
   const fetchResults = useDebouncedCallback(async (term: string) => {
     if (!term.trim()) {
@@ -85,8 +92,9 @@ export function GlobalSearch() {
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            ref={inputRef}
             type="search"
-            placeholder="Search..."
+            placeholder="Search... (/ to focus)"
             value={query}
             onChange={handleInputChange}
             className="w-64 pl-9 pr-9"
