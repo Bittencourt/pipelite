@@ -1,0 +1,10 @@
+name,website,industry,notes
+Acme Corporation,https://acme.com,Technology,Top enterprise client
+Globex Industries,https://globex.io,Manufacturing,Mid-market prospect
+Initech Solutions,,Software,Legacy system vendor
+Umbrella Ltd,https://umbrella.co,Pharmaceuticals,High-value account in EMEA
+Hooli Inc,https://hooli.com,Technology,Competitor turned partner
+Vandelay Industries,,Import/Export,Notes about Vandelay
+,https://no-name.com,,This row is missing the required name field and should show as an error
+Waystar Royco,https://waystar.com,Media,Media conglomerate
+Prestige Worldwide,https://prestige.biz,Entertainment,Party planning and entertainment

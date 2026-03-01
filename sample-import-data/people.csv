@@ -1,0 +1,9 @@
+firstName,lastName,email,phone,organizationName,notes
+Alice,Johnson,alice@acme.com,+1-555-0101,Acme Corporation,Primary deal contact
+Bob,Smith,bob@globex.io,+1-555-0102,Globex Industries,Technical evaluator
+Carol,Williams,carol@initech.com,,Initech Solutions,
+Dave,Brown,dave@hooli.com,+1-555-0104,Hooli Inc,Decision maker
+Eve,Davis,eve@newstartup.com,+1-555-0105,New Startup Co,Organization will be auto-created
+Frank,Miller,frank@acme-corp.com,,Acme Corp,Tests fuzzy match - should match Acme Corporation
+Grace,Wilson,not-a-valid-email,,Umbrella Ltd,This row has an invalid email and should be flagged as an error
+Henry,Moore,henry@waystar.com,+1-555-0107,Waystar Royco,

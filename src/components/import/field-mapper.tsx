@@ -107,12 +107,25 @@ export function FieldMapper({
                       <SelectItem value={DO_NOT_IMPORT}>
                         Do not import
                       </SelectItem>
-                      {targetFields.map((field) => (
+                      {targetFields.filter((f) => !f.group).map((field) => (
                         <SelectItem key={field.name} value={field.name}>
                           {field.label}
                           {field.required ? " *" : ""}
                         </SelectItem>
                       ))}
+                      {targetFields.some((f) => f.group === "custom") && (
+                        <>
+                          <div className="text-muted-foreground px-2 py-1.5 text-xs font-medium">
+                            Custom Fields
+                          </div>
+                          {targetFields.filter((f) => f.group === "custom").map((field) => (
+                            <SelectItem key={field.name} value={field.name}>
+                              {field.label}
+                              {field.required ? " *" : ""}
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 </TableCell>

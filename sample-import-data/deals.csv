@@ -1,0 +1,8 @@
+title,value,organizationName,personEmail,expectedCloseDate,notes
+Enterprise License - Acme,50000,Acme Corporation,alice@acme.com,2026-03-31,Annual renewal
+Cloud Migration - Globex,125000,Globex Industries,bob@globex.io,2026-04-15,Multi-year contract
+Support Contract - Initech,8500,Initech Solutions,carol@initech.com,2026-03-15,
+Platform Deal - Hooli,75000,Hooli Inc,dave@hooli.com,2026-05-01,Strategic partnership
+Unknown Org Deal,30000,Brand New Company,,2026-06-30,Org will be auto-created
+,15000,Acme Corporation,,2026-03-20,This deal is missing a title and will show as an error
+Big Win - Umbrella,200000,Umbrella Ltd,,2026-12-31,Major pharmaceutical deal

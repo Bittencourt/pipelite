@@ -1,0 +1,9 @@
+title,typeName,dueDate,dealTitle,notes
+Follow up call with Alice,call,2026-03-05,Enterprise License - Acme,Discuss renewal terms
+Globex demo meeting,meeting,2026-03-07,Cloud Migration - Globex,Technical demo for engineering team
+Send Initech proposal,task,2026-03-04,Support Contract - Initech,Attach pricing sheet
+Hooli intro email,email,2026-03-06,Platform Deal - Hooli,CC their VP of Engineering
+Quarterly review prep,meeting,2026-03-10,,Internal prep before client call
+Umbrella contract review,task,2026-03-15,Big Win - Umbrella,Legal sign-off required
+Check in with Dave,call,2026-03-08,Platform Deal - Hooli,
+,task,2026-03-12,,This activity has no title and will be flagged as an error

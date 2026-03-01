@@ -17,6 +17,20 @@ import { fuzzyMatchOrganization } from "@/lib/import/fuzzy-match"
 
 const BATCH_SIZE = 100
 
+/** Extract custom field values from a mapped row (keys prefixed with "custom_") */
+function extractCustomFields(row: Record<string, unknown>): Record<string, unknown> {
+  const custom: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(row)) {
+    if (key.startsWith("custom_")) {
+      const fieldName = key.slice("custom_".length)
+      if (value !== "" && value !== null && value !== undefined) {
+        custom[fieldName] = value
+      }
+    }
+  }
+  return custom
+}
+
 // ----- Helpers -----
 
 /** Insert rows in batches of BATCH_SIZE */
@@ -111,15 +125,20 @@ export async function importOrganizations(
 
   try {
     const now = new Date()
-    const rows = data.map((item) => ({
-      name: item.name,
-      website: item.website || null,
-      industry: item.industry || null,
-      notes: item.notes || null,
-      ownerId: session.user!.id,
-      createdAt: now,
-      updatedAt: now,
-    }))
+    const rows = data.map((item) => {
+      const { name, website, industry, notes, ...rest } = item as Record<string, unknown>
+      const customFields = extractCustomFields(rest)
+      return {
+        name: name as string,
+        website: (website as string) || null,
+        industry: (industry as string) || null,
+        notes: (notes as string) || null,
+        ownerId: session.user!.id,
+        customFields,
+        createdAt: now,
+        updatedAt: now,
+      }
+    })
 
     await batchInsert(organizations, rows)
 
@@ -194,14 +213,17 @@ export async function importPeople(
         }
       }
 
+      const { firstName, lastName, email, phone, notes, organizationName: _orgName, ...rest } = item as Record<string, unknown>
+      const customFields = extractCustomFields(rest)
       rows.push({
-        firstName: item.firstName,
-        lastName: item.lastName,
-        email: item.email || null,
-        phone: item.phone || null,
-        notes: item.notes || null,
+        firstName: firstName as string,
+        lastName: lastName as string,
+        email: (email as string) || null,
+        phone: (phone as string) || null,
+        notes: (notes as string) || null,
         organizationId,
         ownerId: session.user!.id,
+        customFields,
         createdAt: now,
         updatedAt: now,
       })
@@ -371,16 +393,19 @@ export async function importDeals(
         }
       }
 
+      const { title, value, stageName: _sn, organizationName: _on, personEmail: _pe, expectedCloseDate: _ec, notes, ...rest } = item as Record<string, unknown>
+      const customFields = extractCustomFields(rest)
       rows.push({
-        title: item.title,
-        value: item.value || null,
+        title: title as string,
+        value: (value as string) || null,
         stageId,
         organizationId,
         personId,
         ownerId: session.user!.id,
         position: "10000",
         expectedCloseDate,
-        notes: item.notes || null,
+        notes: (notes as string) || null,
+        customFields,
         createdAt: now,
         updatedAt: now,
       })
@@ -489,13 +514,16 @@ export async function importActivities(
         warnings.push(`Invalid due date "${item.dueDate}" for activity "${item.title}", using current date`)
       }
 
+      const { title, typeName: _tn, dueDate: _dd, dealTitle: _dt, notes, ...rest } = item as Record<string, unknown>
+      const customFields = extractCustomFields(rest)
       rows.push({
-        title: item.title,
+        title: title as string,
         typeId,
         dealId,
         ownerId: session.user!.id,
         dueDate: isNaN(dueDate.getTime()) ? now : dueDate,
-        notes: item.notes || null,
+        notes: (notes as string) || null,
+        customFields,
         createdAt: now,
         updatedAt: now,
       })

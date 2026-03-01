@@ -61,6 +61,9 @@ export interface FieldDefinition {
   label: string
   required: boolean
   type: "string" | "number" | "email" | "url" | "date" | "text"
+  group?: "custom"
+  /** For custom fields: the actual DB field type (e.g. "multi_select") */
+  fieldType?: string
 }
 
 // Column mapping from source to target

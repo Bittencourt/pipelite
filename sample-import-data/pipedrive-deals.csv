@@ -1,0 +1,4 @@
+title,value,currency,stage_name,org_name,person_email,expected_close_date,status,notes,owner_name,add_time
+Alpha Enterprise Deal,45000,USD,Qualified,Pipedrive Org Alpha,james@alpha.example.com,2026-03-31,open,Migrated from Pipedrive,John Smith,2025-01-20
+Beta Manufacturing Contract,12000,USD,Proposal Sent,Beta Technologies,sarah@beta.example.com,2026-04-15,open,,Jane Doe,2025-02-25
+Gamma Consulting Retainer,8000,USD,Negotiation,Gamma Solutions,michael@gamma.example.io,2026-03-15,open,Monthly retainer,John Smith,2025-03-15

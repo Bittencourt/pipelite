@@ -23,7 +23,12 @@ interface MultiSelectFieldProps {
 
 export function MultiSelectField({ definition, value, onSave, disabled }: MultiSelectFieldProps) {
   const [isSaving, setIsSaving] = useState(false)
-  const selected = value || []
+  // Guard against strings stored by CSV import (should be string[])
+  const selected: string[] = Array.isArray(value)
+    ? value
+    : value
+      ? [String(value)]
+      : []
   const config = definition.config as SelectConfig | null
   const options = config?.options || []
   const availableOptions = options.filter(opt => !selected.includes(opt))

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Check } from "lucide-react"
 import { UploadStep } from "./steps/upload-step"
@@ -16,6 +16,7 @@ import { validateImportData } from "@/lib/import/validators"
 import type {
   ImportStep,
   ImportEntityType,
+  FieldDefinition,
   FieldMapping,
   ImportError,
   ImportWarning,
@@ -35,7 +36,11 @@ const ENTITY_PATHS: Record<ImportEntityType, string> = {
   activity: "/activities",
 }
 
-export function ImportWizard() {
+interface ImportWizardProps {
+  customFieldsByEntity: Record<ImportEntityType, FieldDefinition[]>
+}
+
+export function ImportWizard({ customFieldsByEntity }: ImportWizardProps) {
   const router = useRouter()
 
   const [step, setStep] = useState<ImportStep>("upload")
@@ -74,9 +79,36 @@ export function ImportWizard() {
     [entityType]
   )
 
+  // Build a lookup of custom field name → fieldType for coercion
+  const customFieldTypes = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const def of customFieldsByEntity[entityType] ?? []) {
+      if (def.fieldType) map[def.name] = def.fieldType
+    }
+    return map
+  }, [customFieldsByEntity, entityType])
+
   const handleMappingNext = useCallback(() => {
     // Apply mapping to all rows
-    const mapped = rawData.map((row) => applyFieldMapping(row, mapping))
+    const raw = rawData.map((row) => applyFieldMapping(row, mapping))
+
+    // Coerce custom field values to their correct types
+    const mapped = raw.map((row) => {
+      const coerced = { ...row }
+      for (const [key, fieldType] of Object.entries(customFieldTypes)) {
+        if (!(key in coerced)) continue
+        const val = coerced[key]
+        if (fieldType === "multi_select") {
+          // CSV gives a comma-separated string; store as string[]
+          if (typeof val === "string") {
+            coerced[key] = val ? val.split(",").map((s) => s.trim()).filter(Boolean) : []
+          } else if (!Array.isArray(val)) {
+            coerced[key] = []
+          }
+        }
+      }
+      return coerced
+    })
     setMappedData(mapped)
 
     // Validate
@@ -228,7 +260,10 @@ export function ImportWizard() {
       {step === "mapping" && (
         <MappingStep
           sourceColumns={sourceColumns}
-          targetFields={getTargetFields(entityType)}
+          targetFields={[
+            ...getTargetFields(entityType),
+            ...(customFieldsByEntity[entityType] ?? []),
+          ]}
           mapping={mapping}
           onMappingChange={setMapping}
           sampleData={rawData.slice(0, 5)}

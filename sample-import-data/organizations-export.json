@@ -1,0 +1,32 @@
+{
+  "entityType": "organization",
+  "version": "1.0",
+  "exportedAt": "2026-02-28T12:00:00.000Z",
+  "count": 4,
+  "data": [
+    {
+      "name": "JSON Import Corp",
+      "website": "https://jsonimport.com",
+      "industry": "Technology",
+      "notes": "Imported from JSON export format"
+    },
+    {
+      "name": "Parsed Data Ltd",
+      "website": "https://parseddata.io",
+      "industry": "Data Analytics",
+      "notes": "Tests that JSON metadata is recognized"
+    },
+    {
+      "name": "Round Trip Inc",
+      "website": "",
+      "industry": "Software",
+      "notes": "Verifies export then import cycle"
+    },
+    {
+      "name": "No Website Co",
+      "website": "",
+      "industry": "",
+      "notes": ""
+    }
+  ]
+}
