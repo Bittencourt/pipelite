@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 11 of 12 (Keyboard Control) - In Progress
-Plan: 1 of 4 in current phase
-Status: Plan 11-01 complete
-Last activity: 2026-03-01 — Completed 11-01: Keyboard infrastructure (react-hotkeys-hook, HotkeysProvider, focus-visible CSS)
+Plan: 2 of 4 in current phase
+Status: Plan 11-02 complete
+Last activity: 2026-03-01 — Completed 11-02: Global shortcuts overlay, navigation hotkeys, search focus
 
-Progress: [█████████████████████] 100% (42/45 plans in current roadmap)
+Progress: [█████████████████████] 100% (43/45 plans in current roadmap)
 
 ## Performance Metrics
 
@@ -37,9 +37,10 @@ Progress: [█████████████████████] 100%
 | 08-search-filtering | 3/3 | 25min | 8min |
 | 09-import-export | 2/3 | TBD | TBD |
 | 10-rest-api | 4/4 | 30min | 7.5min |
-| 11-keyboard-control | 1/4 | TBD | TBD |
+| 11-keyboard-control | 2/4 | TBD | TBD |
 
 **Recent Trend:**
+- 11-02: 5min (4 tasks, 6 files, 5 commits) - Shortcuts overlay, Alt+1/2/3/4 navigation, / search focus, first-use hint
 - 11-01: 3min (3 tasks, 6 files, 3 commits) - react-hotkeys-hook infrastructure with HotkeysProvider and focus-visible CSS
 - 10-04: 11min (2 tasks, 2 files, 2 commits) - OpenAPI 3.1 specification and public documentation endpoint
 - 10-03: 25min (2 tasks, 10 files, 2 commits) - CRUD endpoints for activities, pipelines, stages, custom fields, webhooks
@@ -196,6 +197,9 @@ Recent decisions affecting current work:
 - [11-01] Client wrapper component for HotkeysProvider to maintain server component root layout
 - [11-01] shift+/ for help shortcut (? key requires shift modifier in hotkey notation)
 - [11-01] :focus-visible CSS outside @layer base to ensure higher specificity
+- [11-02] NavHeader converted to client component with user prop -- auth() moved to layout.tsx server component
+- [11-02] NavHeader moved inside HotkeysProvider in layout.tsx for useHotkeys context
+- [11-02] Lazy localStorage initializer for ShortcutsHint to satisfy React effect lint rules
 
 ### Pending Todos
 
@@ -222,10 +226,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 11-01-PLAN.md
+Stopped at: Completed 11-02-PLAN.md
 Resume file: None
 
-**Phase 11 IN PROGRESS.** Plan 01 complete: Keyboard infrastructure installed. react-hotkeys-hook v5 with HotkeysProvider in root layout, centralized SHORTCUTS config, :focus-visible CSS for keyboard-only focus indicators.
+**Phase 11 IN PROGRESS.** Plan 02 complete: Global shortcuts and navigation. ShortcutsOverlay dialog, Alt+1/2/3/4 section navigation, / search focus, first-use hint banner. NavHeader now client component inside HotkeysProvider.
 
 ---
 *State initialized: 2026-02-22*
