@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { PendingUser } from "./columns"
+import { useDataTableKeyboard } from "@/components/keyboard"
 
 interface DataTableProps {
   columns: ColumnDef<PendingUser, unknown>[]
@@ -23,6 +24,11 @@ interface DataTableProps {
 }
 
 export function DataTable({ columns, data, refresh }: DataTableProps) {
+  const { containerProps, rowProps } = useDataTableKeyboard({
+    data,
+    getId: (user) => user.id,
+  })
+
   const table = useReactTable({
     data,
     columns,
@@ -33,7 +39,7 @@ export function DataTable({ columns, data, refresh }: DataTableProps) {
   })
 
   return (
-    <div className="rounded-md border">
+    <div className="rounded-md border" {...containerProps}>
       <Table>
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
@@ -55,21 +61,27 @@ export function DataTable({ columns, data, refresh }: DataTableProps) {
         </TableHeader>
         <TableBody>
           {table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow
-                key={row.id}
-                data-state={row.getIsSelected() && "selected"}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    {flexRender(
-                      cell.column.columnDef.cell,
-                      cell.getContext()
-                    )}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))
+            table.getRowModel().rows.map((row, index) => {
+              const rp = rowProps(index)
+              return (
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() && "selected"}
+                  data-selected={rp["data-selected"]}
+                  className={rp.className}
+                  onClick={rp.onClick}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              )
+            })
           ) : (
             <TableRow>
               <TableCell

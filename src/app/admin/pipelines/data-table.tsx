@@ -23,6 +23,7 @@ import { PipelineDialog } from "./pipeline-dialog"
 import { DeleteDialog } from "./delete-dialog"
 import { deletePipeline, setDefaultPipeline } from "./actions"
 import { toast } from "sonner"
+import { useDataTableKeyboard } from "@/components/keyboard"
 
 interface DataTableProps {
   columns: ColumnDef<Pipeline, unknown>[]
@@ -97,6 +98,15 @@ export function DataTable({ columns, data }: DataTableProps) {
     router.refresh()
   }
 
+  const { containerProps, rowProps } = useDataTableKeyboard({
+    data,
+    onEdit: handleEdit,
+    onDelete: handleDeleteClick,
+    onOpen: (pipeline) => router.push(`/admin/pipelines/${pipeline.id}`),
+    onCreate: handleAddNew,
+    getId: (pipeline) => pipeline.id,
+  })
+
   const table = useReactTable({
     data,
     columns,
@@ -117,7 +127,7 @@ export function DataTable({ columns, data }: DataTableProps) {
           New Pipeline
         </Button>
       </div>
-      <div className="rounded-md border">
+      <div className="rounded-md border" {...containerProps}>
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -139,21 +149,27 @@ export function DataTable({ columns, data }: DataTableProps) {
           </TableHeader>
           <TableBody>
             {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+              table.getRowModel().rows.map((row, index) => {
+                const rp = rowProps(index)
+                return (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                    data-selected={rp["data-selected"]}
+                    className={rp.className}
+                    onClick={rp.onClick}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                )
+              })
             ) : (
               <TableRow>
                 <TableCell
