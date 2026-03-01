@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   ColumnDef,
   flexRender,
@@ -43,6 +44,7 @@ import {
 import { deleteActivity, toggleActivityCompletion } from "./actions"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
+import { useDataTableKeyboard } from "@/components/keyboard"
 
 // Activity type with icon info
 interface ActivityType {
@@ -131,6 +133,7 @@ export function ActivityList({
   onEdit,
   onRefresh,
 }: ActivityListProps) {
+  const router = useRouter()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [activityToDelete, setActivityToDelete] = useState<Activity | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -148,6 +151,17 @@ export function ActivityList({
       return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
     })
   }, [activities])
+
+  const { containerProps, rowProps } = useDataTableKeyboard({
+    data: sortedActivities,
+    onEdit,
+    onDelete: (activity: Activity) => {
+      setActivityToDelete(activity)
+      setDeleteDialogOpen(true)
+    },
+    onOpen: (activity) => router.push(`/activities/${activity.id}`),
+    getId: (activity) => activity.id,
+  })
 
   const handleToggleComplete = async (activity: Activity) => {
     setTogglingId(activity.id)
@@ -399,7 +413,7 @@ export function ActivityList({
       )}
 
       {/* Data table */}
-      <div className="rounded-md border">
+      <div className="rounded-md border" {...containerProps}>
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -419,21 +433,27 @@ export function ActivityList({
           </TableHeader>
           <TableBody>
             {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+              table.getRowModel().rows.map((row, index) => {
+                const rp = rowProps(index)
+                return (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                    data-selected={rp["data-selected"]}
+                    className={rp.className}
+                    onClick={rp.onClick}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                )
+              })
             ) : (
               <TableRow>
                 <TableCell
