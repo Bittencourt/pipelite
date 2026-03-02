@@ -12,7 +12,6 @@ import {
   DragStartEvent,
   DragEndEvent,
   DragOverEvent,
-  UniqueIdentifier,
 } from "@dnd-kit/core"
 import {
   SortableContext,
@@ -103,7 +102,7 @@ export function KanbanBoard({
     [openStages, dealsByStage]
   )
 
-  const { containerProps, getItemProps, selection } = useKanbanKeyboard({
+  const { containerProps, getItemProps } = useKanbanKeyboard({
     columns: kanbanColumns,
     onEdit: handleEditDeal,
     onCreate: () => {

@@ -12,7 +12,7 @@ interface UseKanbanKeyboardProps<T> {
   columns: KanbanColumn<T>[]
   onEdit?: (item: T) => void
   onCreate?: (columnId?: string) => void
-  getId: (item: T) => string
+  getId?: (item: T) => string
   scope?: string
 }
 
@@ -52,7 +52,6 @@ export function useKanbanKeyboard<T>({
   columns,
   onEdit,
   onCreate,
-  getId,
   scope = "kanban",
 }: UseKanbanKeyboardProps<T>): UseKanbanKeyboardReturn<T> {
   const [selection, setSelection] = useState<KanbanSelection | null>(null)
