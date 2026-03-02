@@ -164,6 +164,17 @@ a:focus-visible,
   outline-offset: 2px;
 }
 
+/* Kanban card keyboard selection highlight */
+[data-selected="true"] {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+/* Keyboard navigation focus style for kanban container */
+[data-keyboard-nav="true"]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 /* Fallback for older browsers that don't support :focus-visible */
 @supports not selector(:focus-visible) {
   *:focus {
