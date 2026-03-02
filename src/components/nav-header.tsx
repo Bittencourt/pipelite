@@ -22,7 +22,7 @@ export function NavHeader({ user }: NavHeaderProps) {
   useHotkeys("alt+2", () => router.push("/people"), { scopes: ["global"] })
   useHotkeys("alt+3", () => router.push("/organizations"), { scopes: ["global"] })
   useHotkeys("alt+4", () => router.push("/activities"), { scopes: ["global"] })
-  useHotkeys("?", () => setShortcutsOpen(true), { scopes: ["global"] })
+  useHotkeys("?", () => setShortcutsOpen(true), { scopes: ["global"], useKey: true })
 
   return (
     <>
