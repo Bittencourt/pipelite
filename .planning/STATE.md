@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 11 of 12 (Keyboard Control) - Complete
-Plan: 4 of 4 in current phase
+Plan: 5 of 5 in current phase
 Status: Phase 11 complete
-Last activity: 2026-03-01 — Completed 11-04: Kanban board keyboard navigation with 2D vim-style h/j/k/l
+Last activity: 2026-03-02 — Completed 11-05: Fixed 4 keyboard shortcut bugs (help overlay, search focus, event leakage, kanban wrapping)
 
-Progress: [█████████████████████] 100% (45/45 plans in current roadmap)
+Progress: [█████████████████████] 100% (46/46 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 42
+- Total plans completed: 43
 - Average duration: 7min
-- Total execution time: 5.15 hours
+- Total execution time: 5.28 hours
 
 **By Phase:**
 
@@ -37,9 +37,10 @@ Progress: [█████████████████████] 100%
 | 08-search-filtering | 3/3 | 25min | 8min |
 | 09-import-export | 2/3 | TBD | TBD |
 | 10-rest-api | 4/4 | 30min | 7.5min |
-| 11-keyboard-control | 4/4 | 23min | 5.75min |
+| 11-keyboard-control | 5/5 | 31min | 6.2min |
 
 **Recent Trend:**
+- 11-05: 8min (4 tasks, 5 files, 4 commits) - Fixed ? shortcut binding, / search focus, action event leakage, kanban column wrapping
 - 11-04: 5min (4 tasks, 5 files, 5 commits) - useKanbanKeyboard hook with h/j/k/l 2D navigation, Enter/n actions, ring selection highlight
 - 11-03: 10min (5 tasks, 7 files, 6 commits) - useDataTableKeyboard hook with j/k/arrow/Enter/e/d/n across all 5 data tables
 - 11-02: 5min (4 tasks, 6 files, 5 commits) - Shortcuts overlay, Alt+1/2/3/4 navigation, / search focus, first-use hint
@@ -197,7 +198,6 @@ Recent decisions affecting current work:
 - [10-04] YAML source format for OpenAPI spec, JSON conversion at runtime
 - [10-04] CORS headers on docs endpoint for external tool access (Swagger UI, etc.)
 - [11-01] Client wrapper component for HotkeysProvider to maintain server component root layout
-- [11-01] shift+/ for help shortcut (? key requires shift modifier in hotkey notation)
 - [11-01] :focus-visible CSS outside @layer base to ensure higher specificity
 - [11-02] NavHeader converted to client component with user prop -- auth() moved to layout.tsx server component
 - [11-02] NavHeader moved inside HotkeysProvider in layout.tsx for useHotkeys context
@@ -209,6 +209,10 @@ Recent decisions affecting current work:
 - [11-04] Merged refs pattern (hotkeys ref + container ref) for simultaneous keyboard binding and scroll targeting
 - [11-04] ensureSelection initializer selects first available item across columns when navigation starts
 - [11-04] Selection ring (ring-offset-2) only on non-expanded cards to avoid double ring conflict
+- [11-05] Use '?' directly instead of 'shift+/' for help shortcut (react-hotkeys-hook matches event.key)
+- [11-05] preventDefault: true on action shortcuts prevents key events from leaking into dialog inputs
+- [11-05] enableOnFormTags: true allows global shortcuts to work even when form elements have focus
+- [11-05] Column wrapping for kanban up/down navigation (skips empty columns)
 
 ### Pending Todos
 
@@ -234,11 +238,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-03-01
-Stopped at: Completed 11-04-PLAN.md (Phase 11 complete)
+Last session: 2026-03-02
+Stopped at: Completed 11-05-PLAN.md (Phase 11 complete with gap closure)
 Resume file: None
 
-**Phase 11 COMPLETE.** All 4 plans executed: keyboard infrastructure (01), global shortcuts (02), data table navigation (03), kanban board navigation (04). Full keyboard control across all screens with vim-style navigation, action shortcuts, and visual selection feedback.
+**Phase 11 COMPLETE.** All 5 plans executed: keyboard infrastructure (01), global shortcuts (02), data table navigation (03), kanban board navigation (04), bug fixes (05). Full keyboard control across all screens with vim-style navigation, action shortcuts, and visual selection feedback. All UAT issues resolved.
 
 ---
 *State initialized: 2026-02-22*

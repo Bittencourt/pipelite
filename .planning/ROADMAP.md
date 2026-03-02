@@ -235,7 +235,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 8. Search & Filtering | 3/3 | Complete | 2026-02-28 |
 | 9. Import/Export | 2/3 | Complete | 2026-02-28 |
 | 10. REST API | 4/4 | Complete    | 2026-03-01 |
-| 11. Keyboard Control | 4/4 | Complete | 2026-03-01 |
+| 11. Keyboard Control | 5/5 | Complete   | 2026-03-02 |
 
 ### Phase 11: Keyboard Control
 
@@ -250,7 +250,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
   5. User can navigate kanban board with h/j/k/l and use n/Enter for create/edit
   6. Focus indicators appear only during keyboard navigation, not mouse clicks
   7. First-time users see a hint about keyboard shortcuts
-**Plans:** 4 plans in 4 waves
+**Plans:** 5/5 plans complete
 
 Plans:
 - [x] 11-01-PLAN.md — Install react-hotkeys-hook, HotkeysProvider, focus-visible CSS ✅
