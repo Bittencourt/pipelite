@@ -93,7 +93,7 @@ export function useDataTableKeyboard<T>({
       if (isFormFocused()) return
       if (selectedItem && onOpen) onOpen(selectedItem)
     },
-    { enableOnFormTags: false }
+    { enableOnFormTags: false, preventDefault: true }
   )
 
   useHotkeys(
@@ -102,7 +102,7 @@ export function useDataTableKeyboard<T>({
       if (isFormFocused()) return
       if (selectedItem && onEdit) onEdit(selectedItem)
     },
-    { enableOnFormTags: false }
+    { enableOnFormTags: false, preventDefault: true }
   )
 
   useHotkeys(
@@ -111,7 +111,7 @@ export function useDataTableKeyboard<T>({
       if (isFormFocused()) return
       if (selectedItem && onDelete) onDelete(selectedItem)
     },
-    { enableOnFormTags: false }
+    { enableOnFormTags: false, preventDefault: true }
   )
 
   useHotkeys(
@@ -120,7 +120,7 @@ export function useDataTableKeyboard<T>({
       if (isFormFocused()) return
       onCreate?.()
     },
-    { enableOnFormTags: false }
+    { enableOnFormTags: false, preventDefault: true }
   )
 
   // Merge refs: containerRef from useHotkeys (RefObject) + our local ref for scroll tracking
