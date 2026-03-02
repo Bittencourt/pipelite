@@ -71,7 +71,7 @@ export const SHORTCUTS: Record<string, ShortcutCategory> = {
   general: {
     label: "General",
     shortcuts: [
-      { id: "general-help", keys: ["shift+/"], description: "Show keyboard shortcuts" },
+      { id: "general-help", keys: ["?"], description: "Show keyboard shortcuts" },
       { id: "general-close", keys: ["Escape"], description: "Close dialog / Cancel" },
     ],
   },
