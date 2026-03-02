@@ -22,6 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 8: Search & Filtering** - Finding and filtering records ✅
 - [x] **Phase 9: Import/Export** - Data migration capabilities ✅
 - [x] **Phase 10: REST API** - External integration via documented API ✅
+- [x] **Phase 11: Keyboard Control** - Full keyboard navigation across all screens ✅
 
 ## Phase Details
 
@@ -234,6 +235,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 8. Search & Filtering | 3/3 | Complete | 2026-02-28 |
 | 9. Import/Export | 2/3 | Complete | 2026-02-28 |
 | 10. REST API | 4/4 | Complete    | 2026-03-01 |
+| 11. Keyboard Control | 4/4 | Complete | 2026-03-01 |
 
 ### Phase 11: Keyboard Control
 
@@ -252,9 +254,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 Plans:
 - [x] 11-01-PLAN.md — Install react-hotkeys-hook, HotkeysProvider, focus-visible CSS ✅
-- [ ] 11-02-PLAN.md — Shortcuts overlay (?), global navigation (Alt+1/2/3/4), search focus (/)
-- [ ] 11-03-PLAN.md — Data table keyboard navigation (j/k, n/e/d/Enter)
-- [ ] 11-04-PLAN.md — Kanban board keyboard navigation (h/j/k/l, n/Enter)
+- [x] 11-02-PLAN.md — Shortcuts overlay (?), global navigation (Alt+1/2/3/4), search focus (/) ✅
+- [x] 11-03-PLAN.md — Data table keyboard navigation (j/k, n/e/d/Enter) ✅
+- [x] 11-04-PLAN.md — Kanban board keyboard navigation (h/j/k/l, n/Enter) ✅
 
 ### Phase 12: Make the application fully localizable (language, currency, date formats, timezones)
 
