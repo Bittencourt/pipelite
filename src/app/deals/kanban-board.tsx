@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, useMemo, Suspense } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -37,6 +37,8 @@ import { toast } from "sonner"
 import { formatCurrency, sumDealValues } from "@/lib/currency"
 import { cn } from "@/lib/utils"
 import { useRouter, usePathname } from "next/navigation"
+import { useKanbanKeyboard } from "@/components/keyboard"
+import { useHotkeysContext } from "react-hotkeys-hook"
 
 interface KanbanBoardProps {
   selectedPipelineId: string
@@ -84,6 +86,39 @@ export function KanbanBoard({
   const openStages = stages.filter(s => s.type === 'open')
   const wonStage = stages.find(s => s.type === 'won')
   const lostStage = stages.find(s => s.type === 'lost')
+
+  // Deal edit handler (moved above keyboard hook so it can reference it)
+  const handleEditDeal = (deal: Deal) => {
+    setSelectedDeal(deal)
+    setDealDialogOpen(true)
+  }
+
+  // Kanban keyboard navigation
+  const kanbanColumns = useMemo(
+    () =>
+      openStages.map((stage) => ({
+        id: stage.id,
+        items: dealsByStage[stage.id] || [],
+      })),
+    [openStages, dealsByStage]
+  )
+
+  const { containerProps, getItemProps, selection } = useKanbanKeyboard({
+    columns: kanbanColumns,
+    onEdit: handleEditDeal,
+    onCreate: () => {
+      setCreateDialogOpen(true)
+    },
+    getId: (deal) => deal.id,
+    scope: "kanban",
+  })
+
+  // Enable kanban scope while board is mounted
+  const { enableScope, disableScope } = useHotkeysContext()
+  useEffect(() => {
+    enableScope("kanban")
+    return () => disableScope("kanban")
+  }, [enableScope, disableScope])
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -224,11 +259,6 @@ export function KanbanBoard({
     router.refresh()
   }
 
-  const handleEditDeal = (deal: Deal) => {
-    setSelectedDeal(deal)
-    setDealDialogOpen(true)
-  }
-
   const handleDealDialogSuccess = () => {
     setDealDialogOpen(false)
     setSelectedDeal(null)
@@ -301,8 +331,8 @@ export function KanbanBoard({
           onDragEnd={handleDragEnd}
         >
           {/* Open Stages */}
-          <div className="flex gap-4 overflow-x-auto pb-4">
-            {openStages.map((stage) => (
+          <div className="flex gap-4 overflow-x-auto pb-4 outline-none" {...containerProps}>
+            {openStages.map((stage, columnIndex) => (
               <KanbanColumn
                 key={stage.id}
                 stage={stage}
@@ -312,11 +342,14 @@ export function KanbanBoard({
                   items={(dealsByStage[stage.id] || []).map(d => d.id)}
                   strategy={verticalListSortingStrategy}
                 >
-                  {(dealsByStage[stage.id] || []).map((deal) => (
+                  {(dealsByStage[stage.id] || []).map((deal, itemIndex) => (
                     <DealCard
                       key={deal.id}
                       deal={deal}
                       onEdit={handleEditDeal}
+                      isSelected={getItemProps(columnIndex, itemIndex)["data-selected"]}
+                      data-kanban-col={columnIndex}
+                      data-kanban-item={itemIndex}
                     />
                   ))}
                 </SortableContext>
