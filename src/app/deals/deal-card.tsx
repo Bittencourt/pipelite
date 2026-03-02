@@ -40,9 +40,12 @@ interface DealCardProps {
   deal: Deal
   onEdit?: (deal: Deal) => void
   isOverlay?: boolean
+  isSelected?: boolean
+  "data-kanban-col"?: number
+  "data-kanban-item"?: number
 }
 
-export function DealCard({ deal, onEdit, isOverlay }: DealCardProps) {
+export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col": kanbanCol, "data-kanban-item": kanbanItem }: DealCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -111,8 +114,12 @@ export function DealCard({ deal, onEdit, isOverlay }: DealCardProps) {
         className={cn(
           "bg-card border rounded-lg p-3 cursor-pointer transition-all",
           isDragging && "opacity-50",
-          isExpanded && "ring-2 ring-primary"
+          isExpanded && "ring-2 ring-primary",
+          isSelected && !isExpanded && "ring-2 ring-primary ring-offset-2"
         )}
+        data-selected={isSelected || undefined}
+        data-kanban-col={kanbanCol}
+        data-kanban-item={kanbanItem}
         onClick={() => setIsExpanded(!isExpanded)}
         {...attributes}
         {...listeners}
