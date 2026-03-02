@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useDebouncedCallback } from "use-debounce"
 import {
@@ -80,6 +80,31 @@ export function GlobalSearch() {
     router.push(href)
   }
 
+  const handleInputKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Escape" && open) {
+        e.preventDefault()
+        setOpen(false)
+        return
+      }
+
+      // When the dropdown is closed, prevent arrow/Enter events from reaching
+      // the cmdk root (which would call preventDefault on them for no reason).
+      if (!open) {
+        if (
+          e.key === "ArrowDown" ||
+          e.key === "ArrowUp" ||
+          e.key === "Enter" ||
+          e.key === "Home" ||
+          e.key === "End"
+        ) {
+          e.stopPropagation()
+        }
+      }
+    },
+    [open]
+  )
+
   const hasResults =
     results &&
     (results.organizations.length > 0 ||
@@ -87,29 +112,34 @@ export function GlobalSearch() {
       results.deals.length > 0)
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverAnchor asChild>
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            ref={inputRef}
-            type="search"
-            placeholder="Search... (/ to focus)"
-            value={query}
-            onChange={handleInputChange}
-            className="w-64 pl-9 pr-9"
-          />
-          {loading && (
-            <Loader2 className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
-          )}
-        </div>
-      </PopoverAnchor>
-      <PopoverContent
-        className="w-80 p-0"
-        align="start"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <Command shouldFilter={false}>
+    <Command
+      shouldFilter={false}
+      loop
+      className="relative h-auto w-auto flex-none overflow-visible rounded-none border-0 bg-transparent"
+    >
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverAnchor asChild>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              ref={inputRef}
+              type="search"
+              placeholder="Search... (/ to focus)"
+              value={query}
+              onChange={handleInputChange}
+              onKeyDown={handleInputKeyDown}
+              className="w-64 pl-9 pr-9"
+            />
+            {loading && (
+              <Loader2 className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+            )}
+          </div>
+        </PopoverAnchor>
+        <PopoverContent
+          className="w-80 p-0"
+          align="start"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <CommandList>
             {hasResults ? (
               <>
@@ -174,8 +204,8 @@ export function GlobalSearch() {
               </CommandEmpty>
             )}
           </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+        </PopoverContent>
+      </Popover>
+    </Command>
   )
 }
