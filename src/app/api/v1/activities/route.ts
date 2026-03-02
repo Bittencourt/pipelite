@@ -18,6 +18,7 @@ const createActivitySchema = z.object({
   owner_id: z.string().optional().nullable(),
   due_at: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 })
 
 // GET /api/v1/activities - List activities with pagination and filters
@@ -135,7 +136,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { title, type_id, deal_id, owner_id, due_at, notes } = parsed.data
+    const { title, type_id, deal_id, owner_id, due_at, notes, custom_fields } = parsed.data
 
     // Verify type exists
     const activityType = await db.query.activityTypes.findFirst({
@@ -176,7 +177,7 @@ export async function POST(request: NextRequest) {
       ownerId: activityOwnerId,
       dueDate: due_at ? new Date(due_at) : now,
       notes: notes || null,
-      customFields: {},
+      customFields: custom_fields || {},
       createdAt: now,
       updatedAt: now,
     }).returning()

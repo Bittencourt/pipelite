@@ -16,6 +16,7 @@ const createOrganizationSchema = z.object({
   website: z.string().url("Invalid website URL").optional(),
   industry: z.string().max(100).optional(),
   notes: z.string().optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 })
 
 export async function GET(request: NextRequest) {
@@ -89,7 +90,7 @@ export async function POST(request: NextRequest) {
       return Problems.validation(errors)
     }
 
-    const { name, website, industry, notes } = parseResult.data
+    const { name, website, industry, notes, custom_fields } = parseResult.data
 
     // Insert organization
     const [org] = await db
@@ -100,6 +101,7 @@ export async function POST(request: NextRequest) {
         industry,
         notes,
         ownerId: context.userId,
+        customFields: custom_fields || {},
       })
       .returning()
 

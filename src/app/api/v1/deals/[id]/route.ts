@@ -21,6 +21,7 @@ const updateDealSchema = z.object({
   person_id: z.string().nullable().optional(),
   expected_close_date: z.string().datetime().nullable().optional(),
   notes: z.string().nullable().optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 })
 
 interface RouteParams {
@@ -145,7 +146,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return Problems.notFound("Deal")
     }
 
-    const { title, value, stage_id, organization_id, person_id, expected_close_date, notes } = parseResult.data
+    const { title, value, stage_id, organization_id, person_id, expected_close_date, notes, custom_fields } = parseResult.data
     const oldStageId = existing.stageId
 
     // Verify stage exists and pipeline belongs to user if changing
@@ -214,6 +215,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       updates.expectedCloseDate = expected_close_date ? new Date(expected_close_date) : null
     }
     if (notes !== undefined) updates.notes = notes
+    if (custom_fields !== undefined) {
+      // Merge with existing custom fields
+      updates.customFields = {
+        ...((existing.customFields as Record<string, unknown>) || {}),
+        ...custom_fields,
+      }
+    }
 
     // Update deal
     const [updated] = await db

@@ -22,6 +22,7 @@ const createDealSchema = z.object({
   person_id: z.string().optional(),
   expected_close_date: z.string().datetime().optional(),
   notes: z.string().optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 })
 
 export async function GET(request: NextRequest) {
@@ -160,7 +161,7 @@ export async function POST(request: NextRequest) {
       return Problems.validation(errors)
     }
 
-    const { title, value, stage_id, organization_id, person_id, expected_close_date, notes } = parseResult.data
+    const { title, value, stage_id, organization_id, person_id, expected_close_date, notes, custom_fields } = parseResult.data
 
     // Verify stage exists and pipeline belongs to user
     const stage = await db.query.stages.findFirst({
@@ -235,6 +236,7 @@ export async function POST(request: NextRequest) {
         position: String(nextPosition),
         expectedCloseDate: expected_close_date ? new Date(expected_close_date) : null,
         notes,
+        customFields: custom_fields || {},
       })
       .returning()
 

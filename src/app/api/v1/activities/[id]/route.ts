@@ -18,6 +18,7 @@ const updateActivitySchema = z.object({
   due_at: z.string().nullable().optional(),
   completed_at: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 })
 
 interface RouteParams {
@@ -142,6 +143,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     
     if (updates.completed_at !== undefined) {
       updateData.completedAt = updates.completed_at ? new Date(updates.completed_at) : null
+    }
+    
+    // Handle custom_fields with merge
+    if (updates.custom_fields !== undefined) {
+      updateData.customFields = {
+        ...((existingActivity.customFields as Record<string, unknown>) || {}),
+        ...updates.custom_fields,
+      }
     }
 
     const [updatedActivity] = await db.update(activities)

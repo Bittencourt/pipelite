@@ -19,6 +19,7 @@ const createPersonSchema = z.object({
   phone: z.string().max(50).optional(),
   notes: z.string().optional(),
   organization_id: z.string().optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 })
 
 export async function GET(request: NextRequest) {
@@ -110,7 +111,7 @@ export async function POST(request: NextRequest) {
       return Problems.validation(errors)
     }
 
-    const { first_name, last_name, email, phone, notes, organization_id } = parseResult.data
+    const { first_name, last_name, email, phone, notes, organization_id, custom_fields } = parseResult.data
 
     // Verify organization exists and belongs to user if provided
     if (organization_id) {
@@ -140,6 +141,7 @@ export async function POST(request: NextRequest) {
         notes,
         organizationId: organization_id || null,
         ownerId: context.userId,
+        customFields: custom_fields || {},
       })
       .returning()
 

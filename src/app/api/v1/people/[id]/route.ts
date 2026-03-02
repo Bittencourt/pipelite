@@ -18,6 +18,7 @@ const updatePersonSchema = z.object({
   phone: z.string().max(50).nullable().optional(),
   notes: z.string().nullable().optional(),
   organization_id: z.string().nullable().optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 })
 
 interface RouteParams {
@@ -115,7 +116,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return Problems.notFound("Person")
     }
 
-    const { first_name, last_name, email, phone, notes, organization_id } = parseResult.data
+    const { first_name, last_name, email, phone, notes, organization_id, custom_fields } = parseResult.data
 
     // Verify organization exists and belongs to user if provided
     if (organization_id !== undefined && organization_id !== null) {
@@ -145,6 +146,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (phone !== undefined) updates.phone = phone
     if (notes !== undefined) updates.notes = notes
     if (organization_id !== undefined) updates.organizationId = organization_id
+    if (custom_fields !== undefined) {
+      // Merge with existing custom fields
+      updates.customFields = {
+        ...((existing.customFields as Record<string, unknown>) || {}),
+        ...custom_fields,
+      }
+    }
 
     // Update person
     const [updated] = await db

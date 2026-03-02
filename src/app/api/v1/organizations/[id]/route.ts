@@ -15,6 +15,7 @@ const updateOrganizationSchema = z.object({
   website: z.string().url("Invalid website URL").nullable().optional(),
   industry: z.string().max(100).nullable().optional(),
   notes: z.string().nullable().optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 })
 
 interface RouteParams {
@@ -101,11 +102,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       updatedAt: new Date(),
     }
 
-    const { name, website, industry, notes } = parseResult.data
+    const { name, website, industry, notes, custom_fields } = parseResult.data
     if (name !== undefined) updates.name = name
     if (website !== undefined) updates.website = website
     if (industry !== undefined) updates.industry = industry
     if (notes !== undefined) updates.notes = notes
+    if (custom_fields !== undefined) {
+      // Merge with existing custom fields
+      updates.customFields = {
+        ...((existing.customFields as Record<string, unknown>) || {}),
+        ...custom_fields,
+      }
+    }
 
     // Update organization
     const [updated] = await db
