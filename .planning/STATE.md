@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 11 - Keyboard Control (In Progress)
+**Current focus:** Phase 11 - Keyboard Control (Complete)
 
 ## Current Position
 
-Phase: 11 of 12 (Keyboard Control) - In Progress
-Plan: 3 of 4 in current phase
-Status: Plan 11-03 complete
-Last activity: 2026-03-01 — Completed 11-03: Data table keyboard navigation across all 5 tables
+Phase: 11 of 12 (Keyboard Control) - Complete
+Plan: 4 of 4 in current phase
+Status: Phase 11 complete
+Last activity: 2026-03-01 — Completed 11-04: Kanban board keyboard navigation with 2D vim-style h/j/k/l
 
-Progress: [█████████████████████] 100% (44/45 plans in current roadmap)
+Progress: [█████████████████████] 100% (45/45 plans in current roadmap)
 
 ## Performance Metrics
 
@@ -37,9 +37,10 @@ Progress: [█████████████████████] 100%
 | 08-search-filtering | 3/3 | 25min | 8min |
 | 09-import-export | 2/3 | TBD | TBD |
 | 10-rest-api | 4/4 | 30min | 7.5min |
-| 11-keyboard-control | 3/4 | TBD | TBD |
+| 11-keyboard-control | 4/4 | 23min | 5.75min |
 
 **Recent Trend:**
+- 11-04: 5min (4 tasks, 5 files, 5 commits) - useKanbanKeyboard hook with h/j/k/l 2D navigation, Enter/n actions, ring selection highlight
 - 11-03: 10min (5 tasks, 7 files, 6 commits) - useDataTableKeyboard hook with j/k/arrow/Enter/e/d/n across all 5 data tables
 - 11-02: 5min (4 tasks, 6 files, 5 commits) - Shortcuts overlay, Alt+1/2/3/4 navigation, / search focus, first-use hint
 - 11-01: 3min (3 tasks, 6 files, 3 commits) - react-hotkeys-hook infrastructure with HotkeysProvider and focus-visible CSS
@@ -205,6 +206,9 @@ Recent decisions affecting current work:
 - [11-03] Computed index clamping instead of setState-in-useEffect for React compiler compliance
 - [11-03] Admin users table gets j/k navigation only (approve/reject actions don't map to e/d shortcuts)
 - [11-03] Form element detection (isFormFocused) prevents keyboard shortcuts firing in input fields
+- [11-04] Merged refs pattern (hotkeys ref + container ref) for simultaneous keyboard binding and scroll targeting
+- [11-04] ensureSelection initializer selects first available item across columns when navigation starts
+- [11-04] Selection ring (ring-offset-2) only on non-expanded cards to avoid double ring conflict
 
 ### Pending Todos
 
@@ -231,10 +235,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 11-03-PLAN.md
+Stopped at: Completed 11-04-PLAN.md (Phase 11 complete)
 Resume file: None
 
-**Phase 11 IN PROGRESS.** Plan 03 complete: Data table keyboard navigation. useDataTableKeyboard hook with j/k/arrow row navigation and n/e/d/Enter action shortcuts integrated across all 5 data tables (organizations, people, activities, admin users, admin pipelines).
+**Phase 11 COMPLETE.** All 4 plans executed: keyboard infrastructure (01), global shortcuts (02), data table navigation (03), kanban board navigation (04). Full keyboard control across all screens with vim-style navigation, action shortcuts, and visual selection feedback.
 
 ---
 *State initialized: 2026-02-22*
