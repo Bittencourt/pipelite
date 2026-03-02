@@ -43,7 +43,7 @@ export function GlobalSearch() {
   useHotkeys("/", (e) => {
     e.preventDefault()
     inputRef.current?.focus()
-  }, { scopes: ["global"] })
+  }, { scopes: ["global"], enableOnFormTags: true })
 
   const fetchResults = useDebouncedCallback(async (term: string) => {
     if (!term.trim()) {
