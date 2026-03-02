@@ -96,9 +96,23 @@ export function useKanbanKeyboard<T>({
     if (!sel) return
     const column = columns[sel.columnIndex]
     if (!column) return
-    const newItemIndex = Math.max(0, sel.itemIndex - 1)
-    setSelection({ ...sel, itemIndex: newItemIndex })
-    scrollToSelected(sel.columnIndex, newItemIndex)
+
+    if (sel.itemIndex > 0) {
+      // Move up within column
+      const newItemIndex = sel.itemIndex - 1
+      setSelection({ ...sel, itemIndex: newItemIndex })
+      scrollToSelected(sel.columnIndex, newItemIndex)
+    } else if (sel.columnIndex > 0) {
+      // At top of column, wrap to bottom of previous column
+      for (let ci = sel.columnIndex - 1; ci >= 0; ci--) {
+        if (columns[ci].items.length > 0) {
+          const newItemIndex = columns[ci].items.length - 1
+          setSelection({ columnIndex: ci, itemIndex: newItemIndex })
+          scrollToSelected(ci, newItemIndex)
+          break
+        }
+      }
+    }
   }, [columns, ensureSelection, scrollToSelected])
 
   const moveDown = useCallback(() => {
@@ -107,9 +121,22 @@ export function useKanbanKeyboard<T>({
     if (!sel) return
     const column = columns[sel.columnIndex]
     if (!column) return
-    const newItemIndex = Math.min(column.items.length - 1, sel.itemIndex + 1)
-    setSelection({ ...sel, itemIndex: newItemIndex })
-    scrollToSelected(sel.columnIndex, newItemIndex)
+
+    if (sel.itemIndex < column.items.length - 1) {
+      // Move down within column
+      const newItemIndex = sel.itemIndex + 1
+      setSelection({ ...sel, itemIndex: newItemIndex })
+      scrollToSelected(sel.columnIndex, newItemIndex)
+    } else if (sel.columnIndex < columns.length - 1) {
+      // At bottom of column, wrap to top of next column
+      for (let ci = sel.columnIndex + 1; ci < columns.length; ci++) {
+        if (columns[ci].items.length > 0) {
+          setSelection({ columnIndex: ci, itemIndex: 0 })
+          scrollToSelected(ci, 0)
+          break
+        }
+      }
+    }
   }, [columns, ensureSelection, scrollToSelected])
 
   const moveLeft = useCallback(() => {
@@ -138,8 +165,8 @@ export function useKanbanKeyboard<T>({
     scrollToSelected(newColumnIndex, Math.max(0, newItemIndex))
   }, [columns, ensureSelection, scrollToSelected])
 
-  // Hotkey registrations -- ref-based so they only fire when container is in DOM
-  const hotkeysRef = useHotkeys<HTMLElement>(
+  // Hotkey registrations
+  useHotkeys(
     "k, up",
     (e) => { e.preventDefault(); moveUp() },
     { scopes: [scope], enableOnFormTags: false }
@@ -187,15 +214,12 @@ export function useKanbanKeyboard<T>({
     { scopes: [scope], enableOnFormTags: false }
   )
 
-  // Merge refs: hotkeys ref + our container ref
+  // Container ref for scroll tracking
   const setContainerRef = useCallback(
     (node: HTMLElement | null) => {
       containerElRef.current = node
-      // Assign to hotkeys ref (MutableRefObject)
-      const hRef = hotkeysRef as React.MutableRefObject<HTMLElement | null>
-      hRef.current = node
     },
-    [hotkeysRef]
+    []
   )
 
   return {
