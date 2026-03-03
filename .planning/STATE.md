@@ -19,9 +19,9 @@ Progress: [█████████████████████] 100%
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 45
+- Total plans completed: 46
 - Average duration: 7min
-- Total execution time: 5.53 hours
+- Total execution time: 5.68 hours
 
 **By Phase:**
 
@@ -38,9 +38,10 @@ Progress: [█████████████████████] 100%
 | 09-import-export | 2/2 | 15min | 7.5min |
 | 10-rest-api | 4/4 | 30min | 7.5min |
 | 11-keyboard-control | 5/5 | 31min | 6.2min |
-| 12-localization | 2/5 | 15min | 7.5min |
+| 12-localization | 3/5 | 24min | 8min |
 
 **Recent Trend:**
+- 12-03: 9min (3 tasks, 4 files, 3 commits) - Profile settings page with language/timezone selection, server actions, timezone utilities
 - 12-02: 7min (3 tasks, 3 files, 3 commits) - NextIntlClientProvider wrapper, locale-aware currency formatting, date/number formatters
 - 12-01: 8min (3 tasks, 8 files, 3 commits) - next-intl infrastructure with cookie-based locale, English translations, schema fields for locale/timezone/currency
 - 11-05: 8min (4 tasks, 5 files, 4 commits) - Fixed ? shortcut binding, / search focus, action event leakage, kanban column wrapping
@@ -220,6 +221,8 @@ Recent decisions affecting current work:
 - [12-01] ICU message format for pluralization in translation files
 - [Phase 12-02]: useCurrency hook provides reactive formatting for client components via next-intl useFormatter
 - [Phase 12-02]: Currency formatting uses Intl.NumberFormat with locale and currency parameters for correct symbol placement and separators
+- [12-03] User settings actions in src/actions/ module for shared access (not colocated with page)
+- [12-03] Immediate-save pattern for settings dropdowns instead of save button for better UX
 
 ### Pending Todos
 
@@ -247,10 +250,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 12-02-PLAN.md
+Stopped at: Completed 12-03-PLAN.md
 Resume file: None
 
-**Phase 12 IN PROGRESS.** Plan 02 complete: NextIntlClientProvider wrapper in root layout, locale-aware currency formatting with useCurrency hook, date/time/number formatting utilities in formatters.ts.
+**Phase 12 IN PROGRESS.** Plan 03 complete: Profile settings page with language/timezone selection, server actions for database/cookie persistence, and timezone utilities for browser detection.
 
 ---
 *State initialized: 2026-02-22*
