@@ -1,0 +1,170 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "loading": "Loading...",
+    "confirm": "Confirm",
+    "close": "Close",
+    "search": "Search",
+    "noResults": "No results found",
+    "actions": "Actions",
+    "optional": "Optional"
+  },
+  "nav": {
+    "organizations": "Organizations",
+    "people": "People",
+    "deals": "Deals",
+    "activities": "Activities",
+    "pipelines": "Pipelines",
+    "admin": "Admin",
+    "settings": "Settings"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "email": "Email",
+    "password": "Password"
+  },
+  "organizations": {
+    "title": "Organizations",
+    "createOrganization": "Create Organization",
+    "editOrganization": "Edit Organization",
+    "deleteOrganization": "Delete Organization",
+    "name": "Name",
+    "website": "Website",
+    "industry": "Industry",
+    "notes": "Notes",
+    "noOrganizations": "No organizations found",
+    "owner": "Owner"
+  },
+  "people": {
+    "title": "People",
+    "createPerson": "Create Person",
+    "editPerson": "Edit Person",
+    "deletePerson": "Delete Person",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "email": "Email",
+    "phone": "Phone",
+    "organization": "Organization",
+    "noPeople": "No people found"
+  },
+  "deals": {
+    "title": "Deals",
+    "createDeal": "Create Deal",
+    "editDeal": "Edit Deal",
+    "deleteDeal": "Delete Deal",
+    "name": "Name",
+    "value": "Value",
+    "stage": "Stage",
+    "expectedCloseDate": "Expected Close Date",
+    "organization": "Organization",
+    "person": "Person",
+    "noValue": "No Value",
+    "noDeals": "No deals found",
+    "kanban": {
+      "moveToStage": "Move to {stage}",
+      "dealsCount": "{count, plural, one {# deal} other {# deals}}"
+    }
+  },
+  "activities": {
+    "title": "Activities",
+    "createActivity": "Create Activity",
+    "editActivity": "Edit Activity",
+    "deleteActivity": "Delete Activity",
+    "type": "Type",
+    "dueDate": "Due Date",
+    "description": "Description",
+    "deal": "Deal",
+    "completed": "Completed",
+    "overdue": "Overdue",
+    "pending": "Pending",
+    "noActivities": "No activities found",
+    "types": {
+      "call": "Call",
+      "meeting": "Meeting",
+      "task": "Task",
+      "email": "Email"
+    }
+  },
+  "settings": {
+    "profile": {
+      "title": "Profile Settings",
+      "language": "Language",
+      "timezone": "Timezone",
+      "languageDescription": "Choose your preferred language for the interface",
+      "timezoneDescription": "Dates and times will be displayed in this timezone",
+      "saved": "Settings saved"
+    },
+    "apiKeys": {
+      "title": "API Keys",
+      "createKey": "Create API Key",
+      "keyName": "Key Name",
+      "lastUsed": "Last Used",
+      "never": "Never",
+      "warning": "Copy your API key now. You won't be able to see it again."
+    }
+  },
+  "admin": {
+    "users": {
+      "title": "Users",
+      "email": "Email",
+      "role": "Role",
+      "status": "Status",
+      "createdAt": "Created",
+      "approve": "Approve",
+      "reject": "Reject",
+      "roles": {
+        "admin": "Admin",
+        "member": "Member"
+      },
+      "statuses": {
+        "approved": "Approved",
+        "pending_approval": "Pending Approval",
+        "rejected": "Rejected"
+      }
+    },
+    "pipelines": {
+      "title": "Pipelines",
+      "createPipeline": "Create Pipeline",
+      "editPipeline": "Edit Pipeline",
+      "deletePipeline": "Delete Pipeline",
+      "name": "Name",
+      "stages": "Stages",
+      "default": "Default"
+    },
+    "customFields": {
+      "title": "Custom Fields",
+      "entity": "Entity",
+      "fieldName": "Field Name",
+      "fieldType": "Field Type"
+    }
+  },
+  "import": {
+    "title": "Import Data",
+    "upload": "Upload",
+    "mapping": "Mapping",
+    "preview": "Preview",
+    "confirm": "Confirm",
+    "selectFile": "Select a file to import",
+    "dragDrop": "Drag and drop a file here, or click to select"
+  },
+  "errors": {
+    "somethingWentWrong": "Something went wrong",
+    "notFound": "Not found",
+    "unauthorized": "Unauthorized",
+    "forbidden": "Forbidden"
+  },
+  "time": {
+    "ago": "{time} ago",
+    "inTime": "in {time}",
+    "justNow": "Just now",
+    "minutes": "{count, plural, one {# minute} other {# minutes}}",
+    "hours": "{count, plural, one {# hour} other {# hours}}",
+    "days": "{count, plural, one {# day} other {# days}}",
+    "weeks": "{count, plural, one {# week} other {# weeks}}"
+  }
+}
