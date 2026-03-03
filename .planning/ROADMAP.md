@@ -260,12 +260,35 @@ Plans:
 
 ### Phase 12: Make the application fully localizable (language, currency, date formats, timezones)
 
-**Goal:** [To be planned]
+**Goal:** Users can configure their preferred language, and the UI adapts accordingly. Currency and date formatting respects both user preferences and organizational settings. All dates stored in UTC, displayed in user's timezone.
 **Depends on:** Phase 11
+**Requirements:** L10N-01, L10N-02, L10N-03, L10N-04, L10N-05, L10N-06, L10N-07, L10N-08, L10N-09, L10N-10, L10N-11
+**Success Criteria** (what must be TRUE):
+  1. User can select language (en-US, pt-BR, es-ES) from profile settings
+  2. User can select timezone from profile settings or auto-detect from browser
+  3. Dates display in user's locale format (MM/DD/YYYY vs DD/MM/YYYY)
+  4. Currency displays with correct symbol placement based on locale
+  5. Activity due dates show timezone information
+  6. Recent activities show relative time ("3 hours ago")
+  7. Calendar shows localized day/month names
+  8. All UI text is translatable (user content stays in original language)
+**Plans:** 5 plans in 3 waves
+
+Plans:
+- [ ] 12-01-PLAN.md — i18n infrastructure: next-intl, config, schema, en.json
+- [ ] 12-02-PLAN.md — Provider setup, locale-aware currency and date formatters
+- [ ] 12-03-PLAN.md — Profile settings page with language/timezone selection
+- [ ] 12-04-PLAN.md — Date formatting updates across components, calendar localization
+- [ ] 12-05-PLAN.md — pt-BR and es-ES translations, final verification
+
+### Phase 13: comprehensive project documentation
+
+**Goal:** [To be planned]
+**Depends on:** Phase 12
 **Plans:** 0 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 12 to break down)
+- [ ] TBD (run /gsd-plan-phase 13 to break down)
 
 ---
 *Roadmap created: 2026-02-22*
