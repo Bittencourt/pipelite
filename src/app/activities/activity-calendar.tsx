@@ -4,22 +4,20 @@ import { useMemo } from "react"
 import { Calendar, dateFnsLocalizer, Views, type Event } from "react-big-calendar"
 import { format, parse, startOfWeek, getDay, addHours } from "date-fns"
 import { enUS } from "date-fns/locale/en-US"
+import { ptBR } from "date-fns/locale/pt-BR"
+import { es } from "date-fns/locale/es"
+import type { Locale } from "date-fns"
+import { useLocale } from 'next-intl'
 import "react-big-calendar/lib/css/react-big-calendar.css"
 
 import { Activity } from "./activity-list"
 
-// Setup date-fns localizer for react-big-calendar
-const locales = {
-  "en-US": enUS,
+// Map next-intl locales to date-fns locales
+const dateFnsLocales: Record<string, Locale> = {
+  'en-US': enUS,
+  'pt-BR': ptBR,
+  'es-ES': es
 }
-
-const localizer = dateFnsLocalizer({
-  format,
-  parse,
-  startOfWeek,
-  getDay,
-  locales,
-})
 
 // Activity type info
 interface ActivityType {
@@ -68,6 +66,21 @@ export function ActivityCalendar({
   activityTypes,
   onSelectActivity,
 }: ActivityCalendarProps) {
+  // Get current locale from next-intl
+  const locale = useLocale()
+  
+  // Create locale-aware localizer
+  const localizer = useMemo(() => {
+    const dateFnsLocale = dateFnsLocales[locale] || enUS
+    return dateFnsLocalizer({
+      format,
+      parse,
+      startOfWeek,
+      getDay,
+      locales: { [locale]: dateFnsLocale },
+    })
+  }, [locale])
+
   // Create type lookup for color mapping
   const typeLookup = useMemo(() => {
     const map = new Map<string, ActivityType>()
@@ -247,6 +260,7 @@ export function ActivityCalendar({
       
       <Calendar
         localizer={localizer}
+        culture={locale}
         events={events}
         startAccessor="start"
         endAccessor="end"
