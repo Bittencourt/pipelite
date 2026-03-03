@@ -17,6 +17,8 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash'),
   role: userRoleEnum('role').default('member').notNull(),
   status: userStatusEnum('status').default('pending_verification').notNull(),
+  locale: text('locale').default('en-US').notNull(),
+  timezone: text('timezone').default('America/New_York').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   deletedAt: timestamp('deleted_at'),
