@@ -210,7 +210,7 @@ Recent decisions affecting current work:
 - [11-04] ensureSelection initializer selects first available item across columns when navigation starts
 - [11-04] Selection ring (ring-offset-2) only on non-expanded cards to avoid double ring conflict
 - [11-05] Use '?' directly instead of 'shift+/' for help shortcut (react-hotkeys-hook matches event.key)
-- [11-05] preventDefault: true on action shortcuts prevents key events from leaking into dialog inputs
+| 11-05 | preventDefault: true on action shortcuts prevents key events from leaking into dialog inputs
 - [11-05] enableOnFormTags: true allows global shortcuts to work even when form elements have focus
 - [11-05] Column wrapping for kanban up/down navigation (skips empty columns)
 
