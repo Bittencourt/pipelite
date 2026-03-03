@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 12 of 12 (Localization) - In Progress
-Plan: 3 of 5 in current phase
-Status: Plan 12-03 complete
-Last activity: 2026-03-03 — Completed 12-03: Profile settings page with language/timezone selection, server actions, timezone utilities
+Plan: 4 of 5 in current phase
+Status: Plan 12-04 complete
+Last activity: 2026-03-03 — Completed 12-04: RelativeTime component, localized calendar, locale-aware date/time formatting across 15+ components
 
 Progress: [█████████████████████] 100% (47/47 plans in current roadmap)
 
@@ -38,9 +38,10 @@ Progress: [█████████████████████] 100%
 | 09-import-export | 2/2 | 15min | 7.5min |
 | 10-rest-api | 4/4 | 30min | 7.5min |
 | 11-keyboard-control | 5/5 | 31min | 6.2min |
-| 12-localization | 3/5 | 24min | 8min |
+| 12-localization | 4/5 | 55min | 13.75min |
 
 **Recent Trend:**
+- 12-04: 31min (3 tasks, 15 files, 3 commits) - RelativeTime component, localized calendar, locale-aware date/time formatting across 15+ components
 - 12-03: 9min (3 tasks, 4 files, 3 commits) - Profile settings page with language/timezone selection, server actions, timezone utilities
 - 12-02: 7min (3 tasks, 3 files, 3 commits) - NextIntlClientProvider wrapper, locale-aware currency formatting, date/number formatters
 - 12-01: 8min (3 tasks, 8 files, 3 commits) - next-intl infrastructure with cookie-based locale, English translations, schema fields for locale/timezone/currency
@@ -223,6 +224,10 @@ Recent decisions affecting current work:
 - [Phase 12-02]: Currency formatting uses Intl.NumberFormat with locale and currency parameters for correct symbol placement and separators
 - [12-03] User settings actions in src/actions/ module for shared access (not colocated with page)
 - [12-03] Immediate-save pattern for settings dropdowns instead of save button for better UX
+- [12-04] RelativeTime shows relative time for items < 24 hours, absolute date otherwise
+- [12-04] Activity due dates include timezone abbreviation for clarity
+- [12-04] Calendar uses dynamic localizer based on user's locale from next-intl
+- [12-04] Client components use useFormatter hook, server components use getFormatter
 
 ### Pending Todos
 
@@ -250,10 +255,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 12-03-PLAN.md
+Stopped at: Completed 12-04-PLAN.md
 Resume file: None
 
-**Phase 12 IN PROGRESS.** Plan 03 complete: Profile settings page with language/timezone selection, server actions for database/cookie persistence, and timezone utilities for browser detection.
+**Phase 12 IN PROGRESS.** Plan 04 complete: RelativeTime component for recent activities, localized react-big-calendar with date-fns, and locale-aware date/time formatting across 15+ components.
 
 ---
 *State initialized: 2026-02-22*

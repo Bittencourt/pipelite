@@ -272,7 +272,7 @@ Plans:
   6. Recent activities show relative time ("3 hours ago")
   7. Calendar shows localized day/month names
   8. All UI text is translatable (user content stays in original language)
-**Plans:** 3/5 plans executed
+**Plans:** 4/5 plans executed
 
 Plans:
 - [ ] 12-01-PLAN.md — i18n infrastructure: next-intl, config, schema, en.json
