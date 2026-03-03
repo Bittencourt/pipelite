@@ -1,0 +1,170 @@
+{
+  "common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "create": "Crear",
+    "loading": "Cargando...",
+    "confirm": "Confirmar",
+    "close": "Cerrar",
+    "search": "Buscar",
+    "noResults": "No se encontraron resultados",
+    "actions": "Acciones",
+    "optional": "Opcional"
+  },
+  "nav": {
+    "organizations": "Empresas",
+    "people": "Personas",
+    "deals": "Ofertas",
+    "activities": "Actividades",
+    "pipelines": "Pipelines",
+    "admin": "Administración",
+    "settings": "Configuración"
+  },
+  "auth": {
+    "login": "Iniciar sesión",
+    "logout": "Cerrar sesión",
+    "email": "Correo electrónico",
+    "password": "Contraseña"
+  },
+  "organizations": {
+    "title": "Empresas",
+    "createOrganization": "Crear Empresa",
+    "editOrganization": "Editar Empresa",
+    "deleteOrganization": "Eliminar Empresa",
+    "name": "Nombre",
+    "website": "Sitio web",
+    "industry": "Industria",
+    "notes": "Notas",
+    "noOrganizations": "No se encontraron empresas",
+    "owner": "Propietario"
+  },
+  "people": {
+    "title": "Personas",
+    "createPerson": "Crear Persona",
+    "editPerson": "Editar Persona",
+    "deletePerson": "Eliminar Persona",
+    "firstName": "Nombre",
+    "lastName": "Apellidos",
+    "email": "Correo electrónico",
+    "phone": "Teléfono",
+    "organization": "Empresa",
+    "noPeople": "No se encontraron personas"
+  },
+  "deals": {
+    "title": "Ofertas",
+    "createDeal": "Crear Oferta",
+    "editDeal": "Editar Oferta",
+    "deleteDeal": "Eliminar Oferta",
+    "name": "Nombre",
+    "value": "Valor",
+    "stage": "Etapa",
+    "expectedCloseDate": "Fecha Esperada de Cierre",
+    "organization": "Empresa",
+    "person": "Persona",
+    "noValue": "Sin Valor",
+    "noDeals": "No se encontraron ofertas",
+    "kanban": {
+      "moveToStage": "Mover a {stage}",
+      "dealsCount": "{count} {count, plural, one {oferta} other {ofertas}}"
+    }
+  },
+  "activities": {
+    "title": "Actividades",
+    "createActivity": "Crear Actividad",
+    "editActivity": "Editar Actividad",
+    "deleteActivity": "Eliminar Actividad",
+    "type": "Tipo",
+    "dueDate": "Fecha de Vencimiento",
+    "description": "Descripción",
+    "deal": "Oferta",
+    "completed": "Completada",
+    "overdue": "Vencida",
+    "pending": "Pendiente",
+    "noActivities": "No se encontraron actividades",
+    "types": {
+      "call": "Llamada",
+      "meeting": "Reunión",
+      "task": "Tarea",
+      "email": "Correo electrónico"
+    }
+  },
+  "settings": {
+    "profile": {
+      "title": "Configuración de Perfil",
+      "language": "Idioma",
+      "timezone": "Zona Horaria",
+      "languageDescription": "Elige tu idioma preferido para la interfaz",
+      "timezoneDescription": "Las fechas y horas se mostrarán en esta zona horaria",
+      "saved": "Configuración guardada"
+    },
+    "apiKeys": {
+      "title": "Claves de API",
+      "createKey": "Crear Clave de API",
+      "keyName": "Nombre de la Clave",
+      "lastUsed": "Último Uso",
+      "never": "Nunca",
+      "warning": "Copia tu clave de API ahora. No podrás verla de nuevo."
+    }
+  },
+  "admin": {
+    "users": {
+      "title": "Usuarios",
+      "email": "Correo electrónico",
+      "role": "Rol",
+      "status": "Estado",
+      "createdAt": "Creado",
+      "approve": "Aprobar",
+      "reject": "Rechazar",
+      "roles": {
+        "admin": "Administrador",
+        "member": "Miembro"
+      },
+      "statuses": {
+        "approved": "Aprobado",
+        "pending_approval": "Pendiente de Aprobación",
+        "rejected": "Rechazado"
+      }
+    },
+    "pipelines": {
+      "title": "Pipelines",
+      "createPipeline": "Crear Pipeline",
+      "editPipeline": "Editar Pipeline",
+      "deletePipeline": "Eliminar Pipeline",
+      "name": "Nombre",
+      "stages": "Etapas",
+      "default": "Predeterminado"
+    },
+    "customFields": {
+      "title": "Campos Personalizados",
+      "entity": "Entidad",
+      "fieldName": "Nombre del Campo",
+      "fieldType": "Tipo de Campo"
+    }
+  },
+  "import": {
+    "title": "Importar Datos",
+    "upload": "Subir",
+    "mapping": "Mapeo",
+    "preview": "Vista Previa",
+    "confirm": "Confirmar",
+    "selectFile": "Selecciona un archivo para importar",
+    "dragDrop": "Arrastra y suelta un archivo aquí, o haz clic para seleccionar"
+  },
+  "errors": {
+    "somethingWentWrong": "Algo salió mal",
+    "notFound": "No encontrado",
+    "unauthorized": "No autorizado",
+    "forbidden": "Acceso denegado"
+  },
+  "time": {
+    "ago": "hace {time}",
+    "inTime": "en {time}",
+    "justNow": "Ahora mismo",
+    "minutes": "{count} {count, plural, one {minuto} other {minutos}}",
+    "hours": "{count} {count, plural, one {hora} other {horas}}",
+    "days": "{count} {count, plural, one {día} other {días}}",
+    "weeks": "{count} {count, plural, one {semana} other {semanas}}"
+  }
+}
