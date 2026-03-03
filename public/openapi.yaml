@@ -196,6 +196,9 @@ components:
           maxLength: 100
         notes:
           type: string
+        custom_fields:
+          type: object
+          description: Custom field values
 
     OrganizationUpdate:
       type: object
@@ -215,6 +218,9 @@ components:
         notes:
           type: string
           nullable: true
+        custom_fields:
+          type: object
+          description: Custom field values (merged with existing)
 
     # Person Schemas
     Person:
@@ -283,6 +289,9 @@ components:
           type: string
         organization_id:
           type: string
+        custom_fields:
+          type: object
+          description: Custom field values
 
     PersonUpdate:
       type: object
@@ -309,6 +318,9 @@ components:
         organization_id:
           type: string
           nullable: true
+        custom_fields:
+          type: object
+          description: Custom field values (merged with existing)
 
     # Deal Schemas
     Deal:
@@ -379,6 +391,9 @@ components:
           format: date-time
         notes:
           type: string
+        custom_fields:
+          type: object
+          description: Custom field values
 
     DealUpdate:
       type: object
@@ -406,6 +421,9 @@ components:
         notes:
           type: string
           nullable: true
+        custom_fields:
+          type: object
+          description: Custom field values (merged with existing)
 
     # Activity Schemas
     Activity:
@@ -471,6 +489,9 @@ components:
         notes:
           type: string
           nullable: true
+        custom_fields:
+          type: object
+          description: Custom field values
 
     ActivityUpdate:
       type: object
@@ -497,6 +518,9 @@ components:
         notes:
           type: string
           nullable: true
+        custom_fields:
+          type: object
+          description: Custom field values (merged with existing)
 
     ActivityType:
       type: object
