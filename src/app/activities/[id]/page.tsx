@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, Users, DollarSign } from "lucide-react"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
 import type { CustomFieldDefinition } from "@/db/schema"
+import { getFormatter, getTimeZone } from 'next-intl/server'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -93,6 +94,9 @@ export default async function ActivityDetailPage({ params }: PageProps) {
   }
 
   const { id } = await params
+  const format = await getFormatter()
+  const timeZone = await getTimeZone()
+  
   const [activity, customFieldDefs] = await Promise.all([
     getActivity(id),
     getCustomFieldDefinitions(),
@@ -156,10 +160,14 @@ export default async function ActivityDetailPage({ params }: PageProps) {
                   Due Date
                 </div>
                 <p className={`font-medium ${isOverdue ? 'text-red-600' : ''}`}>
-                  {new Date(activity.dueDate).toLocaleDateString("en-US", {
+                  {format.dateTime(new Date(activity.dueDate), {
                     year: "numeric",
                     month: "long",
                     day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    timeZone,
+                    timeZoneName: "short"
                   })}
                 </p>
               </div>
@@ -171,7 +179,7 @@ export default async function ActivityDetailPage({ params }: PageProps) {
                 </div>
                 <p className="font-medium">
                   {isCompleted
-                    ? `Completed ${activity.completedAt ? new Date(activity.completedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : ''}`
+                    ? `Completed ${activity.completedAt ? format.dateTime(new Date(activity.completedAt), { year: "numeric", month: "long", day: "numeric" }) : ''}`
                     : "Pending"}
                 </p>
               </div>
@@ -216,10 +224,10 @@ export default async function ActivityDetailPage({ params }: PageProps) {
                   Created
                 </div>
                 <p className="font-medium">
-                  {new Date(activity.createdAt).toLocaleDateString("en-US", {
+                  {format.dateTime(new Date(activity.createdAt), {
                     year: "numeric",
                     month: "long",
-                    day: "numeric",
+                    day: "numeric"
                   })}
                 </p>
               </div>

@@ -14,6 +14,7 @@ import Link from "next/link"
 import { PersonDetailClient } from "./person-detail-client"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
 import type { EntityType, CustomFieldDefinition } from "@/db/schema"
+import { getFormatter } from 'next-intl/server'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -74,6 +75,8 @@ async function getCustomFieldDefinitions() {
 
 export default async function PersonDetailPage({ params }: PageProps) {
   const { id } = await params
+  const format = await getFormatter()
+  
   const [person, orgsForSelect, customFieldDefs] = await Promise.all([
     getPerson(id),
     getOrganizationsForSelect(),
@@ -174,10 +177,10 @@ export default async function PersonDetailPage({ params }: PageProps) {
                   Created
                 </div>
                 <p className="font-medium">
-                  {new Date(person.createdAt).toLocaleDateString("en-US", {
+                  {format.dateTime(new Date(person.createdAt), {
                     year: "numeric",
                     month: "long",
-                    day: "numeric",
+                    day: "numeric"
                   })}
                 </p>
               </div>

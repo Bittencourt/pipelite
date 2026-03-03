@@ -4,6 +4,7 @@ import { ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Users, Pencil, Trash2, Building2 } from "lucide-react"
+import { useFormatter } from 'next-intl'
 
 export type Person = {
   id: string
@@ -16,6 +17,16 @@ export type Person = {
   organizationName: string | null
   ownerName: string | null
   createdAt: Date
+}
+
+// Client component for formatted date display
+function FormattedDate({ date }: { date: Date }) {
+  const format = useFormatter()
+  return format.dateTime(date, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  })
 }
 
 export const columns: ColumnDef<Person, unknown>[] = [
@@ -87,7 +98,7 @@ export const columns: ColumnDef<Person, unknown>[] = [
     header: "Created",
     cell: ({ row }) => {
       const createdAt = row.getValue("createdAt") as Date
-      return new Date(createdAt).toLocaleDateString()
+      return <FormattedDate date={new Date(createdAt)} />
     },
   },
   {

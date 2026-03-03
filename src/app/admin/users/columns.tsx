@@ -6,12 +6,23 @@ import { Button } from "@/components/ui/button"
 import { approveUser, rejectUser } from "./actions"
 import { toast } from "sonner"
 import { startTransition } from "react"
+import { useFormatter } from 'next-intl'
 
 export type PendingUser = {
   id: string
   email: string
   createdAt: Date
   emailVerified: Date | null
+}
+
+// Client component for formatted date display
+function FormattedDate({ date }: { date: Date }) {
+  const format = useFormatter()
+  return format.dateTime(date, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
 }
 
 export const columns: ColumnDef<PendingUser>[] = [
@@ -42,11 +53,7 @@ export const columns: ColumnDef<PendingUser>[] = [
     header: "Requested",
     cell: ({ row }) => {
       const date = new Date(row.getValue("createdAt"))
-      return date.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
+      return <FormattedDate date={date} />
     },
   },
   {

@@ -15,6 +15,7 @@ import { ExternalLink, Calendar, User, Globe, Building2, FileText, Users, Mail }
 import { OrganizationDetailClient } from "./organization-detail-client"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
 import type { EntityType, CustomFieldDefinition } from "@/db/schema"
+import { getFormatter } from 'next-intl/server'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -73,6 +74,8 @@ async function getLinkedPeople(organizationId: string) {
 
 export default async function OrganizationDetailPage({ params }: PageProps) {
   const { id } = await params
+  const format = await getFormatter()
+  
   const [organization, linkedPeople, customFieldDefs] = await Promise.all([
     getOrganization(id),
     getLinkedPeople(id),
@@ -158,10 +161,10 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
                   Created
                 </div>
                 <p className="font-medium">
-                  {new Date(organization.createdAt).toLocaleDateString("en-US", {
+                  {format.dateTime(new Date(organization.createdAt), {
                     year: "numeric",
                     month: "long",
-                    day: "numeric",
+                    day: "numeric"
                   })}
                 </p>
               </div>

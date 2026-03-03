@@ -21,6 +21,7 @@ import {
 import { DealDialog } from "./deal-dialog"
 import { deleteDeal } from "./actions"
 import { toast } from "sonner"
+import { useFormatter } from 'next-intl'
 
 export interface Deal {
   id: string
@@ -46,6 +47,7 @@ interface DealCardProps {
 }
 
 export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col": kanbanCol, "data-kanban-item": kanbanItem }: DealCardProps) {
+  const format = useFormatter()
   const [isExpanded, setIsExpanded] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -153,7 +155,11 @@ export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col
             {deal.expectedCloseDate && (
               <div className="text-xs text-muted-foreground">
                 <span className="font-medium">Expected Close:</span>{" "}
-                {new Date(deal.expectedCloseDate).toLocaleDateString()}
+                {format.dateTime(new Date(deal.expectedCloseDate), {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric'
+                })}
               </div>
             )}
             {deal.notes && (

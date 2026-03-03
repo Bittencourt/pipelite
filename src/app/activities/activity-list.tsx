@@ -45,6 +45,8 @@ import { deleteActivity, toggleActivityCompletion } from "./actions"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { useDataTableKeyboard } from "@/components/keyboard"
+import { useFormatter } from 'next-intl'
+import { RelativeTime } from "@/components/ui/relative-time"
 
 // Activity type with icon info
 interface ActivityType {
@@ -98,18 +100,6 @@ const colorMap: Record<string, string> = {
   Email: "bg-amber-100 text-amber-800",
 }
 
-// Helper to format date/time
-function formatDateTime(date: Date): string {
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  })
-}
-
 // Helper to check if activity is overdue
 function isOverdue(activity: Activity): boolean {
   if (activity.completedAt) return false
@@ -134,6 +124,7 @@ export function ActivityList({
   onRefresh,
 }: ActivityListProps) {
   const router = useRouter()
+  const format = useFormatter()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [activityToDelete, setActivityToDelete] = useState<Activity | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -298,7 +289,14 @@ export function ActivityList({
                 : "text-muted-foreground"
             }`}
           >
-            {formatDateTime(activity.dueDate)}
+            {format.dateTime(new Date(activity.dueDate), {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+              timeZoneName: 'short'
+            })}
           </span>
         )
       },
@@ -390,7 +388,14 @@ export function ActivityList({
                   <div>
                     <span className="font-medium text-red-700">{activity.title}</span>
                     <span className="text-sm text-muted-foreground ml-2">
-                      Due: {formatDateTime(activity.dueDate)}
+                      Due: {format.dateTime(new Date(activity.dueDate), {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        timeZoneName: 'short'
+                      })}
                     </span>
                   </div>
                 </div>

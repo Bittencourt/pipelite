@@ -1,6 +1,7 @@
 "use client"
 
 import type { ImportProgress } from "@/lib/import/types"
+import { useFormatter } from 'next-intl'
 
 const PHASE_LABELS: Record<string, string> = {
   parsing: "Parsing CSV...",
@@ -13,6 +14,7 @@ interface ProgressBarProps {
 }
 
 export function ProgressBar({ progress }: ProgressBarProps) {
+  const format = useFormatter()
   const label = PHASE_LABELS[progress.phase] ?? progress.phase
 
   return (
@@ -29,7 +31,7 @@ export function ProgressBar({ progress }: ProgressBarProps) {
       </div>
       {progress.total > 0 && (
         <p className="text-muted-foreground text-xs">
-          {progress.current.toLocaleString()} / {progress.total.toLocaleString()}
+          {format.number(progress.current)} / {format.number(progress.total)}
         </p>
       )}
     </div>

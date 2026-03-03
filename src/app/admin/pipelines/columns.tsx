@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Layers, Pencil, Trash2, Star } from "lucide-react"
+import { useFormatter } from 'next-intl'
 
 export type Pipeline = {
   id: string
@@ -12,6 +13,16 @@ export type Pipeline = {
   isDefault: number | null
   stageCount: number
   createdAt: Date
+}
+
+// Client component for formatted date display
+function FormattedDate({ date }: { date: Date }) {
+  const format = useFormatter()
+  return format.dateTime(date, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  })
 }
 
 export const columns: ColumnDef<Pipeline, unknown>[] = [
@@ -66,7 +77,7 @@ export const columns: ColumnDef<Pipeline, unknown>[] = [
     header: "Created",
     cell: ({ row }) => {
       const createdAt = row.getValue("createdAt") as Date
-      return new Date(createdAt).toLocaleDateString()
+      return <FormattedDate date={new Date(createdAt)} />
     },
   },
   {

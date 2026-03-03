@@ -22,6 +22,7 @@ import {
 import { Loader2, Plus, RefreshCw, Copy, Check, Key } from "lucide-react"
 import { toast } from "sonner"
 import { ApiKeyDialog } from "@/components/api-key-dialog"
+import { useFormatter } from 'next-intl'
 
 interface ApiKey {
   id: string
@@ -32,6 +33,7 @@ interface ApiKey {
 }
 
 export default function ApiKeysPage() {
+  const format = useFormatter()
   const [keys, setKeys] = useState<ApiKey[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -159,11 +161,19 @@ export default function ApiKeysPage() {
                       </code>
                     </TableCell>
                     <TableCell>
-                      {new Date(key.createdAt).toLocaleDateString()}
+                       {format.dateTime(new Date(key.createdAt), {
+                         year: 'numeric',
+                         month: 'short',
+                         day: 'numeric'
+                       })}
                     </TableCell>
                     <TableCell>
                       {key.lastUsedAt
-                        ? new Date(key.lastUsedAt).toLocaleDateString()
+                        ? format.dateTime(new Date(key.lastUsedAt), {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                          })
                         : "Never"}
                     </TableCell>
                     <TableCell className="text-right">

@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft, DollarSign, Building2, Users, Calendar, FileText, Pencil } from "lucide-react"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
 import type { CustomFieldDefinition } from "@/db/schema"
+import { getFormatter, getLocale } from 'next-intl/server'
+import { formatCurrency } from '@/lib/currency'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -93,6 +95,9 @@ export default async function DealDetailPage({ params }: PageProps) {
   }
 
   const { id } = await params
+  const format = await getFormatter()
+  const locale = await getLocale()
+  
   const [deal, customFieldDefs] = await Promise.all([
     getDeal(id),
     getCustomFieldDefinitions(),
@@ -102,9 +107,9 @@ export default async function DealDetailPage({ params }: PageProps) {
     notFound()
   }
 
-  const formatCurrency = (value: string | null) => {
+  const formatDealCurrency = (value: string | null) => {
     if (!value) return null
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(parseFloat(value))
+    return formatCurrency(parseFloat(value), 'USD', locale)
   }
 
   return (
@@ -149,7 +154,7 @@ export default async function DealDetailPage({ params }: PageProps) {
                   Value
                 </div>
                 <p className="font-medium">
-                  {formatCurrency(deal.value) || <span className="text-muted-foreground">No value</span>}
+                  {formatDealCurrency(deal.value) || <span className="text-muted-foreground">No value</span>}
                 </p>
               </div>
 
@@ -196,10 +201,10 @@ export default async function DealDetailPage({ params }: PageProps) {
                 </div>
                 <p className="font-medium">
                   {deal.expectedCloseDate
-                    ? new Date(deal.expectedCloseDate).toLocaleDateString("en-US", {
+                    ? format.dateTime(new Date(deal.expectedCloseDate), {
                         year: "numeric",
                         month: "long",
-                        day: "numeric",
+                        day: "numeric"
                       })
                     : <span className="text-muted-foreground">Not set</span>}
                 </p>
@@ -219,10 +224,10 @@ export default async function DealDetailPage({ params }: PageProps) {
                   Created
                 </div>
                 <p className="font-medium">
-                  {new Date(deal.createdAt).toLocaleDateString("en-US", {
+                  {format.dateTime(new Date(deal.createdAt), {
                     year: "numeric",
                     month: "long",
-                    day: "numeric",
+                    day: "numeric"
                   })}
                 </p>
               </div>
