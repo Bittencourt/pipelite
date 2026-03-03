@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 12 of 12 (Localization) - In Progress
-Plan: 1 of 5 in current phase
-Status: Plan 12-01 complete
-Last activity: 2026-03-03 — Completed 12-01: i18n infrastructure with next-intl, English translations, locale/timezone/currency schema fields
+Plan: 3 of 5 in current phase
+Status: Plan 12-03 complete
+Last activity: 2026-03-03 — Completed 12-03: Profile settings page with language/timezone selection, server actions, timezone utilities
 
 Progress: [█████████████████████] 100% (47/47 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 44
+- Total plans completed: 45
 - Average duration: 7min
-- Total execution time: 5.41 hours
+- Total execution time: 5.53 hours
 
 **By Phase:**
 
@@ -38,9 +38,10 @@ Progress: [█████████████████████] 100%
 | 09-import-export | 2/2 | 15min | 7.5min |
 | 10-rest-api | 4/4 | 30min | 7.5min |
 | 11-keyboard-control | 5/5 | 31min | 6.2min |
-| 12-localization | 1/5 | 8min | 8min |
+| 12-localization | 2/5 | 15min | 7.5min |
 
 **Recent Trend:**
+- 12-02: 7min (3 tasks, 3 files, 3 commits) - NextIntlClientProvider wrapper, locale-aware currency formatting, date/number formatters
 - 12-01: 8min (3 tasks, 8 files, 3 commits) - next-intl infrastructure with cookie-based locale, English translations, schema fields for locale/timezone/currency
 - 11-05: 8min (4 tasks, 5 files, 4 commits) - Fixed ? shortcut binding, / search focus, action event leakage, kanban column wrapping
 - 11-04: 5min (4 tasks, 5 files, 5 commits) - useKanbanKeyboard hook with h/j/k/l 2D navigation, Enter/n actions, ring selection highlight
@@ -72,7 +73,6 @@ Progress: [█████████████████████] 100%
 - 06-01: 8min (5 tasks, 6 files, 5 commits)
 
 *Updated after each plan completion*
-| Phase 10-rest-api P03 | 25min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -218,6 +218,8 @@ Recent decisions affecting current work:
 - [12-01] Cookie-based locale detection instead of URL routing for simpler UX
 - [12-01] Three initial locales: en-US, pt-BR, es-ES (US, Brazil, Spain markets)
 - [12-01] ICU message format for pluralization in translation files
+- [Phase 12-02]: useCurrency hook provides reactive formatting for client components via next-intl useFormatter
+- [Phase 12-02]: Currency formatting uses Intl.NumberFormat with locale and currency parameters for correct symbol placement and separators
 
 ### Pending Todos
 
@@ -245,10 +247,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 12-01-PLAN.md
+Stopped at: Completed 12-02-PLAN.md
 Resume file: None
 
-**Phase 12 IN PROGRESS.** Plan 01 complete: i18n infrastructure with next-intl package, cookie-based locale detection, comprehensive English translation file, and database schema fields for user locale/timezone and organization currency.
+**Phase 12 IN PROGRESS.** Plan 02 complete: NextIntlClientProvider wrapper in root layout, locale-aware currency formatting with useCurrency hook, date/time/number formatting utilities in formatters.ts.
 
 ---
 *State initialized: 2026-02-22*
