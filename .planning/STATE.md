@@ -5,28 +5,28 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 11 - Keyboard Control (Complete)
+**Current focus:** Phase 12 - Localization (In Progress)
 
 ## Current Position
 
-Phase: 11 of 12 (Keyboard Control) - Complete
-Plan: 5 of 5 in current phase
-Status: Phase 11 complete
-Last activity: 2026-03-02 — Completed 11-05: Fixed 4 keyboard shortcut bugs (help overlay, search focus, event leakage, kanban wrapping)
+Phase: 12 of 12 (Localization) - In Progress
+Plan: 1 of 5 in current phase
+Status: Plan 12-01 complete
+Last activity: 2026-03-03 — Completed 12-01: i18n infrastructure with next-intl, English translations, locale/timezone/currency schema fields
 
-Progress: [█████████████████████] 100% (46/46 plans in current roadmap)
+Progress: [█████████████████████] 100% (47/47 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 43
+- Total plans completed: 44
 - Average duration: 7min
-- Total execution time: 5.28 hours
+- Total execution time: 5.41 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
+| |-------|-------|----------|
 | 01-foundation-authentication | 6/6 | 30min | 5min |
 | 02-organizations | 3/3 | 34min | 11min |
 | 03-people | 3/3 | 6min | 2min |
@@ -35,11 +35,13 @@ Progress: [█████████████████████] 100%
 | 06-activities | 4/4 | 41min | 10min |
 | 07-custom-fields-formulas | 11/11 | 144min | 13min |
 | 08-search-filtering | 3/3 | 25min | 8min |
-| 09-import-export | 2/3 | TBD | TBD |
+| 09-import-export | 2/2 | 15min | 7.5min |
 | 10-rest-api | 4/4 | 30min | 7.5min |
 | 11-keyboard-control | 5/5 | 31min | 6.2min |
+| 12-localization | 1/5 | 8min | 8min |
 
 **Recent Trend:**
+- 12-01: 8min (3 tasks, 8 files, 3 commits) - next-intl infrastructure with cookie-based locale, English translations, schema fields for locale/timezone/currency
 - 11-05: 8min (4 tasks, 5 files, 4 commits) - Fixed ? shortcut binding, / search focus, action event leakage, kanban column wrapping
 - 11-04: 5min (4 tasks, 5 files, 5 commits) - useKanbanKeyboard hook with h/j/k/l 2D navigation, Enter/n actions, ring selection highlight
 - 11-03: 10min (5 tasks, 7 files, 6 commits) - useDataTableKeyboard hook with j/k/arrow/Enter/e/d/n across all 5 data tables
@@ -213,6 +215,9 @@ Recent decisions affecting current work:
 | 11-05 | preventDefault: true on action shortcuts prevents key events from leaking into dialog inputs
 - [11-05] enableOnFormTags: true allows global shortcuts to work even when form elements have focus
 - [11-05] Column wrapping for kanban up/down navigation (skips empty columns)
+- [12-01] Cookie-based locale detection instead of URL routing for simpler UX
+- [12-01] Three initial locales: en-US, pt-BR, es-ES (US, Brazil, Spain markets)
+- [12-01] ICU message format for pluralization in translation files
 
 ### Pending Todos
 
@@ -222,6 +227,7 @@ None yet.
 
 - Phase 11 added: add full keyboard control possibility on all screens all available actions should be keyboard-executable (may be via navigation and direct hotkey, evaluate each scenario to define the best solution)
 - Phase 12 added: Make the application fully localizable (language, currency, date formats, timezones)
+- Phase 13 added: comprehensive project documentation
 
 ### Blockers/Concerns
 
@@ -238,11 +244,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-03-02
-Stopped at: Completed 11-05-PLAN.md (Phase 11 complete with gap closure)
+Last session: 2026-03-03
+Stopped at: Completed 12-01-PLAN.md
 Resume file: None
 
-**Phase 11 COMPLETE.** All 5 plans executed: keyboard infrastructure (01), global shortcuts (02), data table navigation (03), kanban board navigation (04), bug fixes (05). Full keyboard control across all screens with vim-style navigation, action shortcuts, and visual selection feedback. All UAT issues resolved.
+**Phase 12 IN PROGRESS.** Plan 01 complete: i18n infrastructure with next-intl package, cookie-based locale detection, comprehensive English translation file, and database schema fields for user locale/timezone and organization currency.
 
 ---
 *State initialized: 2026-02-22*
