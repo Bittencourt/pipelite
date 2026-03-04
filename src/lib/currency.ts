@@ -1,6 +1,3 @@
-"use client"
-import { useFormatter, useLocale } from 'next-intl'
-
 /**
  * Format a numeric value as currency (server-side or non-hook version)
  * - Returns formatted "0" for null/undefined/0
@@ -52,23 +49,12 @@ export function formatCurrency(
  * @example
  * const { format } = useCurrency()
  * format(1234567, 'USD') // => "$1,234,567" (en-US) or "US$ 1.234.567" (pt-BR)
+ * 
+ * @deprecated Use useCurrency from '@/lib/use-currency' instead
+ * This file is server-safe. Import the hook from the dedicated file.
  */
 export function useCurrency() {
-  const format = useFormatter()
-  const locale = useLocale()
-  
-  return {
-    format: (value: number | null | undefined, currency: string = 'USD') => {
-      const numValue = value ?? 0
-      return format.number(numValue, { 
-        style: 'currency', 
-        currency,
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-      })
-    },
-    locale
-  }
+  throw new Error('useCurrency must be imported from @/lib/use-currency in client components')
 }
 
 /**
