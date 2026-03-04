@@ -15,7 +15,7 @@ import { ExternalLink, Calendar, User, Globe, Building2, FileText, Users, Mail }
 import { OrganizationDetailClient } from "./organization-detail-client"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
 import type { EntityType, CustomFieldDefinition } from "@/db/schema"
-import { getFormatter } from 'next-intl/server'
+import { getFormatter, getTranslations } from 'next-intl/server'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -75,6 +75,7 @@ async function getLinkedPeople(organizationId: string) {
 export default async function OrganizationDetailPage({ params }: PageProps) {
   const { id } = await params
   const format = await getFormatter()
+  const t = await getTranslations('organizations')
   
   const [organization, linkedPeople, customFieldDefs] = await Promise.all([
     getOrganization(id),
@@ -94,10 +95,10 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Building2 className="h-5 w-5" />
-            Organization Details
+            {t('organizationDetails')}
           </CardTitle>
           <CardDescription>
-            View and manage organization information
+            {t('viewOrgInfo')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -106,7 +107,7 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Building2 className="h-4 w-4" />
-                  Name
+                  {t('name')}
                 </div>
                 <p className="font-medium">{organization.name}</p>
               </div>
@@ -114,7 +115,7 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Globe className="h-4 w-4" />
-                  Website
+                  {t('website')}
                 </div>
                 {organization.website ? (
                   <a
@@ -127,19 +128,19 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
                     {organization.website}
                   </a>
                 ) : (
-                  <p className="text-muted-foreground">Not specified</p>
+                  <p className="text-muted-foreground">{t('notSpecified')}</p>
                 )}
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Building2 className="h-4 w-4" />
-                  Industry
+                  {t('industry')}
                 </div>
                 {organization.industry ? (
                   <Badge variant="secondary">{organization.industry}</Badge>
                 ) : (
-                  <p className="text-muted-foreground">Not specified</p>
+                  <p className="text-muted-foreground">{t('notSpecified')}</p>
                 )}
               </div>
             </div>
@@ -148,17 +149,17 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <User className="h-4 w-4" />
-                  Owner
+                  {t('owner')}
                 </div>
                 <p className="font-medium">
-                  {organization.ownerName || "Unknown"}
+                  {organization.ownerName || t('unknown')}
                 </p>
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  Created
+                  {t('created')}
                 </div>
                 <p className="font-medium">
                   {format.dateTime(new Date(organization.createdAt), {
@@ -176,7 +177,7 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <FileText className="h-4 w-4" />
-                  Notes
+                  {t('notes')}
                 </div>
                 <p className="text-sm whitespace-pre-wrap">{organization.notes}</p>
               </div>
@@ -202,16 +203,16 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            People
+            {t('people')}
           </CardTitle>
           <CardDescription>
-            Contacts linked to this organization
+            {t('contactsLinked')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {linkedPeople.length === 0 ? (
             <p className="text-muted-foreground text-sm">
-              No people linked to this organization.
+              {t('noPeopleLinked')}
             </p>
           ) : (
             <div className="space-y-3">
