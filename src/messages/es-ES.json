@@ -52,7 +52,9 @@
     "activities": "Actividades",
     "pipelines": "Pipelines",
     "admin": "Administración",
-    "settings": "Configuración"
+    "settings": "Configuración",
+    "apiKeys": "Claves de API",
+    "userManagement": "Gestión de Usuarios"
   },
   "auth": {
     "login": "Iniciar sesión",
