@@ -19,9 +19,9 @@ Progress: [█████████████████████ ] 96%
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 47
+- Total plans completed: 48
 - Average duration: 7min
-- Total execution time: 5.85 hours
+- Total execution time: 5.94 hours
 
 **By Phase:**
 
@@ -233,6 +233,9 @@ Recent decisions affecting current work:
 - [12-04] Calendar uses dynamic localizer based on user's locale from next-intl
 - [12-04] Client components use useFormatter hook, server components use getFormatter
 - [Phase 13-comprehensive-project-documentation]: Linked to OpenAPI spec (/api/v1/docs) for authoritative endpoint reference rather than duplicating endpoint definitions
+- [13-03] Mixed audience approach: Quick-start sections for technical experts, detailed step-by-step for beginners
+- [13-03] Deployment decision guide: Docker recommended for most, VPS for full control, Vercel for easiest setup
+- [13-03] Troubleshooting format: Symptom-cause-solution pattern for clarity and actionable guidance
 
 ### Pending Todos
 
