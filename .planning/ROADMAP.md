@@ -281,14 +281,17 @@ Plans:
 - [ ] 12-04-PLAN.md — Date formatting updates across components, calendar localization
 - [ ] 12-05-PLAN.md — pt-BR and es-ES translations, final verification
 
-### Phase 13: comprehensive project documentation
+### Phase 13: Comprehensive Project Documentation
 
-**Goal:** [To be planned]
+**Goal:** Create comprehensive documentation for all audiences (users, API developers, administrators, and code contributors) with markdown files, visual content, and exhaustive coverage of all features and systems
 **Depends on:** Phase 12
-**Plans:** 0 plans
+**Plans:** 4 plans in 2 waves
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 13 to break down)
+- [ ] 13-01-PLAN.md — User documentation (tutorials and reference guides)
+- [ ] 13-02-PLAN.md — API documentation (guides and code examples)
+- [ ] 13-03-PLAN.md — Admin documentation (deployment and operations)
+- [ ] 13-04-PLAN.md — Developer/architecture documentation
 
 ---
 *Roadmap created: 2026-02-22*
