@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 12 of 12 (Localization) - In Progress
-Plan: 4 of 5 in current phase
-Status: Plan 12-04 complete
-Last activity: 2026-03-03 — Completed 12-04: RelativeTime component, localized calendar, locale-aware date/time formatting across 15+ components
+Plan: 5 of 5 in current phase
+Status: Plan 12-05 complete
+Last activity: 2026-03-04 — Completed 12-05: Portuguese and Spanish translations, useTranslations integration in nav-header, shortcuts-overlay, user-menu, and global-search
 
 Progress: [█████████████████████] 100% (47/47 plans in current roadmap)
 
@@ -254,11 +254,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-03-03
-Stopped at: Completed 12-04-PLAN.md
+Last session: 2026-03-04
+Stopped at: Completed 12-05-PLAN.md
 Resume file: None
 
-**Phase 12 IN PROGRESS.** Plan 04 complete: RelativeTime component for recent activities, localized react-big-calendar with date-fns, and locale-aware date/time formatting across 15+ components.
+**Phase 12 COMPLETE.** Plan 05 complete: Portuguese and Spanish translations, useTranslations integration in nav-header, shortcuts-overlay, user-menu, and global-search. All 5 plans in Phase 12 finished.
 
 ---
 *State initialized: 2026-02-22*
