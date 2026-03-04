@@ -9,6 +9,7 @@ import { getActivityTypes, getActivities } from "./actions"
 import { Button } from "@/components/ui/button"
 import { Plus, Calendar, List } from "lucide-react"
 import { ActivitiesClient } from "./activities-client"
+import { getTranslations } from 'next-intl/server'
 
 // Get deals with stage/pipeline info for dropdown
 async function getDealsForDropdown() {
@@ -54,6 +55,7 @@ export default async function ActivitiesPage({
 }) {
   const session = await auth()
   const params = await searchParams
+  const t = await getTranslations('activities')
 
   if (!session?.user?.id) {
     redirect("/login")
@@ -96,7 +98,7 @@ export default async function ActivitiesPage({
     return (
       <div className="container py-8">
         <div className="text-center py-12 text-muted-foreground border rounded-lg">
-          Error loading activities. Please try again.
+          {t('errorLoading')}
         </div>
       </div>
     )
