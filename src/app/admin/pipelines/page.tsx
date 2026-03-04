@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Layers } from "lucide-react"
+import { getTranslations } from 'next-intl/server'
 
 async function getPipelines() {
   // Query pipelines with stage count using subquery
@@ -50,6 +51,7 @@ export type PipelineListItem = Awaited<ReturnType<typeof getPipelines>>[number]
 
 export default async function PipelinesPage() {
   const pipelines = await getPipelines()
+  const t = await getTranslations('admin.pipelines')
 
   return (
     <div className="space-y-6">
@@ -58,16 +60,16 @@ export default async function PipelinesPage() {
           <Layers className="h-6 w-6 text-primary" />
         </div>
         <div>
-          <h1 className="text-3xl font-bold">Pipelines</h1>
+          <h1 className="text-3xl font-bold">{t('title')}</h1>
           <p className="text-muted-foreground">
-            Configure sales pipelines and their stages
+            {t('configurePipelines')}
           </p>
         </div>
       </div>
 
       <Card>
         <CardHeader className="sr-only">
-          <CardTitle>Pipelines List</CardTitle>
+          <CardTitle>{t('title')} List</CardTitle>
           <CardDescription>
             A table of all pipelines in your account
           </CardDescription>
