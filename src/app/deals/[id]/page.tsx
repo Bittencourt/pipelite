@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft, DollarSign, Building2, Users, Calendar, FileText, Pencil } from "lucide-react"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
 import type { CustomFieldDefinition } from "@/db/schema"
-import { getFormatter, getLocale } from 'next-intl/server'
+import { getFormatter, getLocale, getTranslations } from 'next-intl/server'
 import { formatCurrency } from '@/lib/currency'
 
 interface PageProps {
@@ -97,6 +97,7 @@ export default async function DealDetailPage({ params }: PageProps) {
   const { id } = await params
   const format = await getFormatter()
   const locale = await getLocale()
+  const t = await getTranslations('deals')
   
   const [deal, customFieldDefs] = await Promise.all([
     getDeal(id),
@@ -118,7 +119,7 @@ export default async function DealDetailPage({ params }: PageProps) {
         <Button variant="ghost" size="sm" asChild>
           <Link href="/deals">
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Deals
+            {t('backToDeals')}
           </Link>
         </Button>
       </div>
@@ -139,7 +140,7 @@ export default async function DealDetailPage({ params }: PageProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <DollarSign className="h-5 w-5" />
-            Deal Details
+            {t('dealDetails')}
           </CardTitle>
           <CardDescription>
             View and manage deal information
@@ -151,17 +152,17 @@ export default async function DealDetailPage({ params }: PageProps) {
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <DollarSign className="h-4 w-4" />
-                  Value
+                  {t('value')}
                 </div>
                 <p className="font-medium">
-                  {formatDealCurrency(deal.value) || <span className="text-muted-foreground">No value</span>}
+                  {formatDealCurrency(deal.value) || <span className="text-muted-foreground">{t('noValue')}</span>}
                 </p>
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Building2 className="h-4 w-4" />
-                  Organization
+                  {t('organization')}
                 </div>
                 {deal.organizationId && deal.organizationName ? (
                   <Link
@@ -171,14 +172,14 @@ export default async function DealDetailPage({ params }: PageProps) {
                     {deal.organizationName}
                   </Link>
                 ) : (
-                  <p className="text-muted-foreground">No organization</p>
+                  <p className="text-muted-foreground">{t('noOrganization')}</p>
                 )}
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Users className="h-4 w-4" />
-                  Contact
+                  {t('contact')}
                 </div>
                 {deal.personId && deal.personFirstName ? (
                   <Link
@@ -188,7 +189,7 @@ export default async function DealDetailPage({ params }: PageProps) {
                     {deal.personFirstName} {deal.personLastName}
                   </Link>
                 ) : (
-                  <p className="text-muted-foreground">No contact</p>
+                  <p className="text-muted-foreground">{t('noContact')}</p>
                 )}
               </div>
             </div>
@@ -197,7 +198,7 @@ export default async function DealDetailPage({ params }: PageProps) {
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  Expected Close Date
+                  {t('expectedCloseDate')}
                 </div>
                 <p className="font-medium">
                   {deal.expectedCloseDate
@@ -206,22 +207,22 @@ export default async function DealDetailPage({ params }: PageProps) {
                         month: "long",
                         day: "numeric"
                       })
-                    : <span className="text-muted-foreground">Not set</span>}
+                    : <span className="text-muted-foreground">{t('notSet')}</span>}
                 </p>
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Users className="h-4 w-4" />
-                  Owner
+                  {t('owner')}
                 </div>
-                <p className="font-medium">{deal.ownerName || "Unknown"}</p>
+                <p className="font-medium">{deal.ownerName || t('unknown')}</p>
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  Created
+                  {t('createdAt')}
                 </div>
                 <p className="font-medium">
                   {format.dateTime(new Date(deal.createdAt), {
@@ -239,7 +240,7 @@ export default async function DealDetailPage({ params }: PageProps) {
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <FileText className="h-4 w-4" />
-                  Notes
+                  {t('notes')}
                 </div>
                 <p className="text-sm whitespace-pre-wrap">{deal.notes}</p>
               </div>

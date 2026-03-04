@@ -21,7 +21,7 @@ import {
 import { DealDialog } from "./deal-dialog"
 import { deleteDeal } from "./actions"
 import { toast } from "sonner"
-import { useFormatter } from 'next-intl'
+import { useFormatter, useTranslations } from 'next-intl'
 
 export interface Deal {
   id: string
@@ -48,6 +48,8 @@ interface DealCardProps {
 
 export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col": kanbanCol, "data-kanban-item": kanbanItem }: DealCardProps) {
   const format = useFormatter()
+  const t = useTranslations('deals')
+  const tCommon = useTranslations('common')
   const [isExpanded, setIsExpanded] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -67,7 +69,7 @@ export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col
     transition,
   }
 
-  const formattedValue = deal.value ? formatCurrency(parseFloat(deal.value)) : "No Value"
+  const formattedValue = deal.value ? formatCurrency(parseFloat(deal.value)) : t('noValue')
 
   const displayName = deal.organization?.name || 
     (deal.person ? `${deal.person.firstName} ${deal.person.lastName}` : null)
@@ -154,7 +156,7 @@ export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col
           <div className="mt-3 pt-3 border-t space-y-2" onClick={e => e.stopPropagation()}>
             {deal.expectedCloseDate && (
               <div className="text-xs text-muted-foreground">
-                <span className="font-medium">Expected Close:</span>{" "}
+                <span className="font-medium">{t('expectedCloseDate')}:</span>{" "}
                 {format.dateTime(new Date(deal.expectedCloseDate), {
                   year: 'numeric',
                   month: 'short',
@@ -171,7 +173,7 @@ export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col
               <Link href={`/deals/${deal.id}`} className="flex-1">
                 <Button variant="outline" size="sm" className="w-full">
                   <ExternalLink className="h-3 w-3 mr-1" />
-                  View Details
+                  {t('viewDetails')}
                 </Button>
               </Link>
               <Button
@@ -231,19 +233,19 @@ export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Deal</AlertDialogTitle>
+            <AlertDialogTitle>{t('deleteDeal')}</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete "{deal.title}"? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>{tCommon('cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               disabled={isDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {tCommon('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

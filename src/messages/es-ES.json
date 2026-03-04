@@ -72,7 +72,16 @@
     "industry": "Industria",
     "notes": "Notas",
     "noOrganizations": "No se encontraron empresas",
-    "owner": "Propietario"
+    "owner": "Propietario",
+    "manageOrganizations": "Gestiona tus empresas y sus detalles",
+    "organizationDetails": "Detalles de la Empresa",
+    "viewOrgInfo": "Ver y gestionar información de la empresa",
+    "notSpecified": "No especificado",
+    "unknown": "Desconocido",
+    "created": "Creado",
+    "people": "Personas",
+    "contactsLinked": "Contactos vinculados a esta empresa",
+    "noPeopleLinked": "No hay personas vinculadas a esta empresa."
   },
   "people": {
     "title": "Personas",
@@ -84,7 +93,17 @@
     "email": "Correo electrónico",
     "phone": "Teléfono",
     "organization": "Empresa",
-    "noPeople": "No se encontraron personas"
+    "noPeople": "No se encontraron personas",
+    "manageContacts": "Gestiona tus contactos y sus detalles",
+    "personDetails": "Detalles de la Persona",
+    "viewContactInfo": "Ver y gestionar información de contacto",
+    "notSpecified": "No especificado",
+    "noOrganization": "Sin empresa",
+    "unknown": "Desconocido",
+    "owner": "Propietario",
+    "created": "Creado",
+    "name": "Nombre",
+    "notes": "Notas"
   },
   "deals": {
     "title": "Ofertas",
@@ -99,6 +118,17 @@
     "person": "Persona",
     "noValue": "Sin Valor",
     "noDeals": "No se encontraron ofertas",
+    "viewDetails": "Ver Detalles",
+    "backToDeals": "Volver a Ofertas",
+    "dealDetails": "Detalles de la Oferta",
+    "contact": "Contacto",
+    "noContact": "Sin contacto",
+    "noOrganization": "Sin empresa",
+    "notSet": "No establecido",
+    "unknown": "Desconocido",
+    "owner": "Propietario",
+    "noPipelines": "Aún no existen pipelines. Crea un pipeline primero para gestionar ofertas.",
+    "pipelineNotFound": "Pipeline no encontrado.",
     "kanban": {
       "moveToStage": "Mover a {stage}",
       "dealsCount": "{count} {count, plural, one {oferta} other {ofertas}}"
@@ -117,6 +147,10 @@
     "overdue": "Vencida",
     "pending": "Pendiente",
     "noActivities": "No se encontraron actividades",
+    "titleColumn": "Título",
+    "overdueActivities": "Actividades Vencidas",
+    "noActivitiesFound": "No se encontraron actividades.",
+    "errorLoading": "Error al cargar actividades. Por favor, inténtalo de nuevo.",
     "types": {
       "call": "Llamada",
       "meeting": "Reunión",
@@ -151,6 +185,14 @@
       "createdAt": "Creado",
       "approve": "Aprobar",
       "reject": "Rechazar",
+      "userManagement": "Gestión de Usuarios",
+      "reviewApprove": "Revisar y aprobar registros pendientes",
+      "pendingApprovals": "Aprobaciones Pendientes",
+      "waitingForApproval": "Usuarios que han verificado su correo y están esperando aprobación",
+      "verified": "Verificado",
+      "notVerified": "No verificado",
+      "requested": "Solicitado",
+      "actions": "Acciones",
       "roles": {
         "admin": "Administrador",
         "member": "Miembro"
@@ -168,7 +210,11 @@
       "deletePipeline": "Eliminar Pipeline",
       "name": "Nombre",
       "stages": "Etapas",
-      "default": "Predeterminado"
+      "default": "Predeterminado",
+      "configurePipelines": "Configurar pipelines de ventas y sus etapas",
+      "stagesCount": "{count} {count, plural, one {etapa} other {etapas}}",
+      "created": "Creado",
+      "setAsDefault": "Establecer como Predeterminado"
     },
     "customFields": {
       "title": "Campos Personalizados",

@@ -4,6 +4,7 @@ import { deals, stages, pipelines, organizations, people, users } from "@/db/sch
 import { eq, and, isNull, gte, lte, asc, sql } from "drizzle-orm"
 import { redirect } from "next/navigation"
 import { KanbanBoard } from "./kanban-board"
+import { getTranslations } from 'next-intl/server'
 
 
 interface DealWithRelations {
@@ -33,6 +34,7 @@ export default async function DealsPage({
 }) {
   const session = await auth()
   const params = await searchParams
+  const t = await getTranslations('deals')
 
   if (!session?.user?.id) {
     redirect("/login")
@@ -57,10 +59,10 @@ export default async function DealsPage({
     return (
       <div className="container mx-auto py-8">
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl font-bold">Deals</h1>
+          <h1 className="text-3xl font-bold">{t('title')}</h1>
         </div>
         <div className="text-center py-12 text-muted-foreground border rounded-lg">
-          No pipelines exist yet. Create a pipeline first to manage deals.
+          {t('noPipelines')}
         </div>
       </div>
     )
@@ -75,10 +77,10 @@ export default async function DealsPage({
     return (
       <div className="container mx-auto py-8">
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl font-bold">Deals</h1>
+          <h1 className="text-3xl font-bold">{t('title')}</h1>
         </div>
         <div className="text-center py-12 text-muted-foreground border rounded-lg">
-          Pipeline not found.
+          {t('pipelineNotFound')}
         </div>
       </div>
     )
@@ -175,7 +177,7 @@ export default async function DealsPage({
   return (
     <div className="container mx-auto py-8">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Deals</h1>
+        <h1 className="text-3xl font-bold">{t('title')}</h1>
       </div>
 
       <KanbanBoard
