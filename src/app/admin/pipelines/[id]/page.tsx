@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, Layers } from "lucide-react"
 import { StageConfigurator } from "./stage-configurator"
+import { getTranslations } from 'next-intl/server'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -32,6 +33,8 @@ async function getStages(pipelineId: string) {
 export default async function PipelineDetailPage({ params }: PageProps) {
   const { id } = await params
   const pipeline = await getPipeline(id)
+  const t = await getTranslations('admin.pipelines')
+  const tNav = await getTranslations('nav')
 
   if (!pipeline) {
     notFound()
@@ -60,11 +63,11 @@ export default async function PipelineDetailPage({ params }: PageProps) {
       {/* Breadcrumb */}
       <nav className="text-sm text-muted-foreground">
         <Link href="/admin" className="hover:text-foreground">
-          Admin
+          {tNav('admin')}
         </Link>
         {" / "}
         <Link href="/admin/pipelines" className="hover:text-foreground">
-          Pipelines
+          {t('title')}
         </Link>
         {" / "}
         <span className="text-foreground">{pipeline.name}</span>
@@ -79,14 +82,14 @@ export default async function PipelineDetailPage({ params }: PageProps) {
           <div>
             <h1 className="text-3xl font-bold">{pipeline.name}</h1>
             <p className="text-muted-foreground">
-              Configure stages for this pipeline
+              {t('configureStages')}
             </p>
           </div>
         </div>
         <Button variant="outline" asChild>
           <Link href="/admin/pipelines">
             <ChevronLeft className="h-4 w-4 mr-2" />
-            Back to Pipelines
+            {t('backToPipelines')}
           </Link>
         </Button>
       </div>

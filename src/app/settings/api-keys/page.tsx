@@ -22,7 +22,7 @@ import {
 import { Loader2, Plus, RefreshCw, Copy, Check, Key } from "lucide-react"
 import { toast } from "sonner"
 import { ApiKeyDialog } from "@/components/api-key-dialog"
-import { useFormatter } from 'next-intl'
+import { useFormatter, useTranslations } from 'next-intl'
 
 interface ApiKey {
   id: string
@@ -34,6 +34,8 @@ interface ApiKey {
 
 export default function ApiKeysPage() {
   const format = useFormatter()
+  const t = useTranslations('settings.apiKeys')
+  const tCommon = useTranslations('common')
   const [keys, setKeys] = useState<ApiKey[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -108,14 +110,14 @@ export default function ApiKeysPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">API Keys</h1>
+          <h1 className="text-3xl font-bold">{t('title')}</h1>
           <p className="text-muted-foreground">
-            Manage API keys for external tool access
+            {t('subtitle')}
           </p>
         </div>
         <Button onClick={() => setDialogOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
-          Create Key
+          {t('createKey')}
         </Button>
       </div>
 
@@ -123,11 +125,10 @@ export default function ApiKeysPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Key className="h-5 w-5" />
-            Your API Keys
+            {t('yourApiKeys')}
           </CardTitle>
           <CardDescription>
-            API keys allow external tools to access your account.
-            Keys are shown in full only once when created or regenerated.
+            {t('apiKeysDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -137,18 +138,18 @@ export default function ApiKeysPage() {
             </div>
           ) : keys.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              <p>No API keys yet.</p>
-              <p className="text-sm">Create one to get started.</p>
+              <p>{t('noKeys')}</p>
+              <p className="text-sm">{t('createToStart')}</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Key</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Last Used</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{t('name')}</TableHead>
+                  <TableHead>{t('key')}</TableHead>
+                  <TableHead>{t('created')}</TableHead>
+                  <TableHead>{t('lastUsed')}</TableHead>
+                  <TableHead className="text-right">{tCommon('actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -174,7 +175,7 @@ export default function ApiKeysPage() {
                             month: 'short',
                             day: 'numeric'
                           })
-                        : "Never"}
+                        : t('never')}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button
@@ -183,7 +184,7 @@ export default function ApiKeysPage() {
                         onClick={() => handleRegenerate(key.id, key.name)}
                       >
                         <RefreshCw className="mr-2 h-3 w-3" />
-                        Regenerate
+                        {t('regenerate')}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -206,9 +207,9 @@ export default function ApiKeysPage() {
           {regenerateDialog.newKey ? (
             <>
               <DialogHeader>
-                <DialogTitle>Key Regenerated!</DialogTitle>
+                <DialogTitle>{t('keyRegenerated')}</DialogTitle>
                 <DialogDescription>
-                  Copy this new key now. The old key is no longer valid.
+                  {t('copyNewKey')}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -230,25 +231,24 @@ export default function ApiKeysPage() {
                   </Button>
                 </div>
                 <Button onClick={closeRegenerateDialog} className="w-full">
-                  Done
+                  {t('done')}
                 </Button>
               </div>
             </>
           ) : (
             <>
               <DialogHeader>
-                <DialogTitle>Regenerate API Key</DialogTitle>
+                <DialogTitle>{t('regenerateApiKey')}</DialogTitle>
                 <DialogDescription>
-                  Are you sure you want to regenerate &quot;{regenerateDialog.keyName}&quot;?
-                  The current key will stop working immediately.
+                  {t('regenerateConfirm', { name: regenerateDialog.keyName })}
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
                 <Button variant="outline" onClick={closeRegenerateDialog}>
-                  Cancel
+                  {tCommon('cancel')}
                 </Button>
                 <Button onClick={confirmRegenerate}>
-                  Regenerate
+                  {t('regenerate')}
                 </Button>
               </DialogFooter>
             </>

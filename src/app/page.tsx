@@ -1,24 +1,26 @@
 import { auth } from "@/auth"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { getTranslations } from 'next-intl/server'
 
 export default async function HomePage() {
   const session = await auth()
+  const t = await getTranslations('home')
 
   if (!session) {
     return (
       <div className="container py-12">
         <div className="max-w-2xl mx-auto text-center space-y-6">
-          <h1 className="text-4xl font-bold">Welcome to Pipelite</h1>
+          <h1 className="text-4xl font-bold">{t('welcome')}</h1>
           <p className="text-xl text-muted-foreground">
-            A lightweight, self-hostable CRM for sales teams.
+            {t('subtitle')}
           </p>
           <div className="flex justify-center gap-4">
             <a href="/signup">
-              <Button size="lg">Get Started</Button>
+              <Button size="lg">{t('getStarted')}</Button>
             </a>
             <a href="/login">
-              <Button size="lg" variant="outline">Sign In</Button>
+              <Button size="lg" variant="outline">{t('signIn')}</Button>
             </a>
           </div>
         </div>
@@ -30,15 +32,15 @@ export default async function HomePage() {
     <div className="container py-8">
       <div className="space-y-6">
         <h1 className="text-3xl font-bold">
-          Welcome back{session.user?.email ? `, ${session.user.email.split("@")[0]}` : ""}!
+          {t('welcomeBack')}{session.user?.email ? `, ${session.user.email.split("@")[0]}` : ""}!
         </h1>
         <p className="text-muted-foreground">
-          You are logged in as <span className="capitalize font-medium">{session.user?.role}</span>.
+          {t('youAreLoggedInAs')} <span className="capitalize font-medium">{session.user?.role}</span>.
         </p>
         {session.user?.role === "admin" && (
           <div className="flex gap-4">
             <a href="/admin/users">
-              <Button>Manage Users</Button>
+              <Button>{t('manageUsers')}</Button>
             </a>
           </div>
         )}
@@ -47,29 +49,29 @@ export default async function HomePage() {
             href="/organizations"
             className="p-6 border rounded-lg hover:border-primary transition-colors"
           >
-            <h3 className="font-semibold">Organizations</h3>
-            <p className="text-sm text-muted-foreground">Manage your organizations</p>
+            <h3 className="font-semibold">{t('organizations')}</h3>
+            <p className="text-sm text-muted-foreground">{t('manageOrganizations')}</p>
           </Link>
           <Link
             href="/people"
             className="p-6 border rounded-lg hover:border-primary transition-colors"
           >
-            <h3 className="font-semibold">People</h3>
-            <p className="text-sm text-muted-foreground">Manage your contacts</p>
+            <h3 className="font-semibold">{t('people')}</h3>
+            <p className="text-sm text-muted-foreground">{t('manageContacts')}</p>
           </Link>
           <Link
             href="/deals"
             className="p-6 border rounded-lg hover:border-primary transition-colors"
           >
-            <h3 className="font-semibold">Deals</h3>
-            <p className="text-sm text-muted-foreground">View and manage your sales pipeline</p>
+            <h3 className="font-semibold">{t('deals')}</h3>
+            <p className="text-sm text-muted-foreground">{t('viewPipeline')}</p>
           </Link>
           <Link
             href="/activities"
             className="p-6 border rounded-lg hover:border-primary transition-colors"
           >
-            <h3 className="font-semibold">Activities</h3>
-            <p className="text-sm text-muted-foreground">Manage tasks, calls, meetings, and emails</p>
+            <h3 className="font-semibold">{t('activities')}</h3>
+            <p className="text-sm text-muted-foreground">{t('manageTasks')}</p>
           </Link>
         </div>
       </div>

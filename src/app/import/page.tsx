@@ -1,6 +1,7 @@
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import type { FieldDefinition, ImportEntityType } from "@/lib/import/types"
 import { ImportWizard } from "./import-wizard"
+import { getTranslations } from 'next-intl/server'
 
 const ENTITY_TYPES: ImportEntityType[] = ["organization", "person", "deal", "activity"]
 
@@ -10,6 +11,8 @@ const IMPORTABLE_FIELD_TYPES = new Set([
 ])
 
 export default async function ImportPage() {
+  const t = await getTranslations('import')
+
   // Fetch custom field definitions for all entity types so the mapping step
   // can offer them as target options.
   const customFieldsByEntity: Record<ImportEntityType, FieldDefinition[]> = {
@@ -39,9 +42,9 @@ export default async function ImportPage() {
   return (
     <div className="container mx-auto max-w-4xl py-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold">Import Data</h1>
+        <h1 className="text-2xl font-bold">{t('title')}</h1>
         <p className="text-muted-foreground mt-1">
-          Import organizations, people, deals, or activities from a CSV or JSON file.
+          {t('description')}
         </p>
       </div>
 

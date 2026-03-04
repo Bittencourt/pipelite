@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Filter, X } from "lucide-react"
 import { Suspense } from "react"
+import { useTranslations } from "next-intl"
 
 interface ActivityFiltersProps {
   activityTypes: Array<{ id: string; name: string }>
@@ -32,6 +33,7 @@ function ActivityFiltersInner({
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const router = useRouter()
+  const t = useTranslations('activities')
 
   // Read filter values from URL
   const typeId = searchParams.get("type") || ""
@@ -81,11 +83,11 @@ function ActivityFiltersInner({
   const getStatusName = (value: string) => {
     switch (value) {
       case "pending":
-        return "Pending"
+        return t('pending')
       case "completed":
-        return "Completed"
+        return t('completed')
       case "overdue":
-        return "Overdue"
+        return t('overdue')
       default:
         return value
     }
@@ -98,7 +100,7 @@ function ActivityFiltersInner({
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">
               <Filter className="h-4 w-4" />
-              Filters
+              {t('filters')}
               {activeFilterCount > 0 && (
                 <Badge
                   variant="secondary"
@@ -112,16 +114,16 @@ function ActivityFiltersInner({
           <PopoverContent className="w-80" align="start">
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="type-filter">Activity Type</Label>
+                <Label htmlFor="type-filter">{t('activityType')}</Label>
                 <Select
                   value={typeId}
                   onValueChange={(value) => setFilter("type", value === "all" ? "" : value)}
                 >
                   <SelectTrigger id="type-filter">
-                    <SelectValue placeholder="All types" />
+                    <SelectValue placeholder={t('allTypes')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All types</SelectItem>
+                    <SelectItem value="all">{t('allTypes')}</SelectItem>
                     {activityTypes.map((type) => (
                       <SelectItem key={type.id} value={type.id}>
                         {type.name}
@@ -132,34 +134,34 @@ function ActivityFiltersInner({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="status-filter">Status</Label>
+                <Label htmlFor="status-filter">{t('status')}</Label>
                 <Select
                   value={status}
                   onValueChange={(value) => setFilter("status", value === "all" ? "" : value)}
                 >
                   <SelectTrigger id="status-filter">
-                    <SelectValue placeholder="All statuses" />
+                    <SelectValue placeholder={t('allStatuses')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="overdue">Overdue</SelectItem>
+                    <SelectItem value="all">{t('all')}</SelectItem>
+                    <SelectItem value="pending">{t('pending')}</SelectItem>
+                    <SelectItem value="completed">{t('completed')}</SelectItem>
+                    <SelectItem value="overdue">{t('overdue')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="owner-filter">Owner</Label>
+                <Label htmlFor="owner-filter">{t('owner')}</Label>
                 <Select
                   value={ownerId}
                   onValueChange={(value) => setFilter("owner", value === "all" ? "" : value)}
                 >
                   <SelectTrigger id="owner-filter">
-                    <SelectValue placeholder="All owners" />
+                    <SelectValue placeholder={t('allOwners')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All owners</SelectItem>
+                    <SelectItem value="all">{t('allOwners')}</SelectItem>
                     {owners.map((owner) => (
                       <SelectItem key={owner.id} value={owner.id}>
                         {owner.name}
@@ -170,12 +172,12 @@ function ActivityFiltersInner({
               </div>
 
               <div className="space-y-2">
-                <Label>Due Date Range</Label>
+                <Label>{t('dueDateRange')}</Label>
                 <div className="flex gap-2">
                   <div className="flex-1">
                     <Input
                       type="date"
-                      placeholder="From"
+                      placeholder={t('from')}
                       value={dateFrom}
                       onChange={(e) => setFilter("dateFrom", e.target.value)}
                       className="text-sm"
@@ -184,7 +186,7 @@ function ActivityFiltersInner({
                   <div className="flex-1">
                     <Input
                       type="date"
-                      placeholder="To"
+                      placeholder={t('to')}
                       value={dateTo}
                       onChange={(e) => setFilter("dateTo", e.target.value)}
                       className="text-sm"
@@ -200,7 +202,7 @@ function ActivityFiltersInner({
                   className="w-full"
                   onClick={clearAll}
                 >
-                  Clear all filters
+                  {t('clearAllFilters')}
                 </Button>
               )}
             </div>
@@ -212,7 +214,7 @@ function ActivityFiltersInner({
           <div className="flex flex-wrap items-center gap-2">
             {typeId && (
               <Badge variant="secondary" className="gap-1 font-normal">
-                Type: {getTypeName(typeId)}
+                {t('typeLabel')}: {getTypeName(typeId)}
                 <button
                   onClick={() => setFilter("type", "")}
                   className="ml-1 hover:text-destructive"
@@ -223,7 +225,7 @@ function ActivityFiltersInner({
             )}
             {status && (
               <Badge variant="secondary" className="gap-1 font-normal">
-                Status: {getStatusName(status)}
+                {t('statusLabel')}: {getStatusName(status)}
                 <button
                   onClick={() => setFilter("status", "")}
                   className="ml-1 hover:text-destructive"
@@ -234,7 +236,7 @@ function ActivityFiltersInner({
             )}
             {ownerId && (
               <Badge variant="secondary" className="gap-1 font-normal">
-                Owner: {getOwnerName(ownerId)}
+                {t('ownerLabel')}: {getOwnerName(ownerId)}
                 <button
                   onClick={() => setFilter("owner", "")}
                   className="ml-1 hover:text-destructive"
@@ -245,7 +247,7 @@ function ActivityFiltersInner({
             )}
             {dateFrom && (
               <Badge variant="secondary" className="gap-1 font-normal">
-                From: {dateFrom}
+                {t('fromLabel')}: {dateFrom}
                 <button
                   onClick={() => setFilter("dateFrom", "")}
                   className="ml-1 hover:text-destructive"
@@ -256,7 +258,7 @@ function ActivityFiltersInner({
             )}
             {dateTo && (
               <Badge variant="secondary" className="gap-1 font-normal">
-                To: {dateTo}
+                {t('toLabel')}: {dateTo}
                 <button
                   onClick={() => setFilter("dateTo", "")}
                   className="ml-1 hover:text-destructive"
@@ -271,7 +273,7 @@ function ActivityFiltersInner({
               className="h-6 px-2 text-xs text-muted-foreground"
               onClick={clearAll}
             >
-              Clear all
+              {t('clearAll')}
             </Button>
           </div>
         )}
@@ -281,8 +283,9 @@ function ActivityFiltersInner({
 }
 
 export function ActivityFilters(props: ActivityFiltersProps) {
+  const t = useTranslations('activities')
   return (
-    <Suspense fallback={<Button variant="outline" size="sm">Filters</Button>}>
+    <Suspense fallback={<Button variant="outline" size="sm">{t('filters')}</Button>}>
       <ActivityFiltersInner {...props} />
     </Suspense>
   )

@@ -5,9 +5,11 @@ import { eq, count, and, isNull } from "drizzle-orm"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, UserCheck, Layers, SlidersHorizontal, Database } from "lucide-react"
+import { getTranslations } from 'next-intl/server'
 
 export default async function AdminDashboard() {
   const session = await auth()
+  const t = await getTranslations('admin.dashboard')
 
   // Get counts for dashboard
   const [pendingCount] = await db
@@ -41,12 +43,14 @@ export default async function AdminDashboard() {
       )
     )
 
+  const userName = session?.user?.email?.split("@")[0] || ""
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+        <h1 className="text-3xl font-bold">{t('title')}</h1>
         <p className="text-muted-foreground">
-          Welcome back, {session?.user?.email?.split("@")[0]}
+          {t('welcomeBack', { name: userName })}
         </p>
       </div>
 
@@ -54,14 +58,14 @@ export default async function AdminDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Pending Approvals
+              {t('pendingApprovals')}
             </CardTitle>
             <UserCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{pendingCount.count}</div>
             <p className="text-xs text-muted-foreground">
-              Users awaiting approval
+              {t('usersAwaiting')}
             </p>
           </CardContent>
         </Card>
@@ -69,14 +73,14 @@ export default async function AdminDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Total Users
+              {t('totalUsers')}
             </CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{approvedCount.count}</div>
             <p className="text-xs text-muted-foreground">
-              Approved accounts
+              {t('approvedAccounts')}
             </p>
           </CardContent>
         </Card>
@@ -84,14 +88,14 @@ export default async function AdminDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Team Members
+              {t('teamMembers')}
             </CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{memberCount.count}</div>
             <p className="text-xs text-muted-foreground">
-              Non-admin members
+              {t('nonAdminMembers')}
             </p>
           </CardContent>
         </Card>
@@ -100,34 +104,34 @@ export default async function AdminDashboard() {
       {pendingCount.count > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Action Required</CardTitle>
+            <CardTitle>{t('actionRequired')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground">
-              You have {pendingCount.count} user{pendingCount.count !== 1 ? "s" : ""} waiting for approval.
+              {t('usersWaiting', { count: pendingCount.count })}
             </p>
             <a
               href="/admin/users"
               className="text-primary hover:underline mt-2 inline-block"
             >
-              Review pending users
+              {t('reviewPending')}
             </a>
           </CardContent>
         </Card>
       )}
 
       <div>
-        <h2 className="text-xl font-semibold mb-4">Admin Tools</h2>
+        <h2 className="text-xl font-semibold mb-4">{t('adminTools')}</h2>
         <div className="grid gap-4 md:grid-cols-3">
           <Link href="/admin/users">
             <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">User Management</CardTitle>
+                  <CardTitle className="text-base">{t('userManagement')}</CardTitle>
                   <Users className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <CardDescription>
-                  Manage user accounts, roles, and approvals
+                  {t('manageUsers')}
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -136,11 +140,11 @@ export default async function AdminDashboard() {
             <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Pipelines</CardTitle>
+                  <CardTitle className="text-base">{t('pipelines')}</CardTitle>
                   <Layers className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <CardDescription>
-                  Configure sales pipelines and stages
+                  {t('configurePipelines')}
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -149,11 +153,11 @@ export default async function AdminDashboard() {
             <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Custom Fields</CardTitle>
+                  <CardTitle className="text-base">{t('customFields')}</CardTitle>
                   <SlidersHorizontal className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <CardDescription>
-                  Configure custom fields for organizations, people, deals, and activities
+                  {t('configureCustomFields')}
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -162,17 +166,17 @@ export default async function AdminDashboard() {
       </div>
 
       <div>
-        <h2 className="text-xl font-semibold mb-4">Data Management</h2>
+        <h2 className="text-xl font-semibold mb-4">{t('dataManagement')}</h2>
         <div className="grid gap-4 md:grid-cols-3">
           <Link href="/admin/export">
             <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Export Data</CardTitle>
+                  <CardTitle className="text-base">{t('exportData')}</CardTitle>
                   <Database className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <CardDescription>
-                  Export organizations, people, deals, and activities
+                  {t('exportDescription')}
                 </CardDescription>
               </CardHeader>
             </Card>

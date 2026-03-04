@@ -2,16 +2,18 @@ import { getCurrentUserSettings } from "@/actions/user-settings"
 import { ProfileSettingsForm } from "./profile-settings-form"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { UserCircle } from "lucide-react"
+import { getTranslations } from 'next-intl/server'
 
 export default async function ProfileSettingsPage() {
   const settings = await getCurrentUserSettings()
+  const t = await getTranslations('settings.profile')
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Profile Settings</h1>
+        <h1 className="text-3xl font-bold">{t('title')}</h1>
         <p className="text-muted-foreground">
-          Manage your language and timezone preferences
+          {t('subtitle')}
         </p>
       </div>
 
@@ -19,10 +21,10 @@ export default async function ProfileSettingsPage() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <UserCircle className="h-5 w-5 text-muted-foreground" />
-            <CardTitle>Localization</CardTitle>
+            <CardTitle>{t('localization')}</CardTitle>
           </div>
           <CardDescription>
-            Customize how the application displays language, dates, and times
+            {t('localizationDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent>

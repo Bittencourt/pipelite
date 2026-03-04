@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, Users, DollarSign } from "lucide-react"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
 import type { CustomFieldDefinition } from "@/db/schema"
-import { getFormatter, getTimeZone } from 'next-intl/server'
+import { getFormatter, getTimeZone, getTranslations } from 'next-intl/server'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -96,7 +96,8 @@ export default async function ActivityDetailPage({ params }: PageProps) {
   const { id } = await params
   const format = await getFormatter()
   const timeZone = await getTimeZone()
-  
+  const t = await getTranslations('activities')
+
   const [activity, customFieldDefs] = await Promise.all([
     getActivity(id),
     getCustomFieldDefinitions(),
@@ -115,7 +116,7 @@ export default async function ActivityDetailPage({ params }: PageProps) {
         <Button variant="ghost" size="sm" asChild>
           <Link href="/activities">
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Activities
+            {t('backToActivities')}
           </Link>
         </Button>
       </div>
@@ -129,12 +130,12 @@ export default async function ActivityDetailPage({ params }: PageProps) {
             </Badge>
             {isCompleted && (
               <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                Completed
+                {t('completed')}
               </Badge>
             )}
             {isOverdue && (
               <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                Overdue
+                {t('overdue')}
               </Badge>
             )}
           </div>
@@ -145,10 +146,10 @@ export default async function ActivityDetailPage({ params }: PageProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Clock className="h-5 w-5" />
-            Activity Details
+            {t('activityDetails')}
           </CardTitle>
           <CardDescription>
-            View and manage activity information
+            {t('viewManageActivity')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -157,7 +158,7 @@ export default async function ActivityDetailPage({ params }: PageProps) {
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  Due Date
+                  {t('dueDate')}
                 </div>
                 <p className={`font-medium ${isOverdue ? 'text-red-600' : ''}`}>
                   {format.dateTime(new Date(activity.dueDate), {
@@ -175,12 +176,12 @@ export default async function ActivityDetailPage({ params }: PageProps) {
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <CheckCircle2 className="h-4 w-4" />
-                  Status
+                  {t('status')}
                 </div>
                 <p className="font-medium">
                   {isCompleted
-                    ? `Completed ${activity.completedAt ? format.dateTime(new Date(activity.completedAt), { year: "numeric", month: "long", day: "numeric" }) : ''}`
-                    : "Pending"}
+                    ? t('completedOn', { date: activity.completedAt ? format.dateTime(new Date(activity.completedAt), { year: "numeric", month: "long", day: "numeric" }) : '' })
+                    : t('pending')}
                 </p>
               </div>
             </div>
@@ -189,7 +190,7 @@ export default async function ActivityDetailPage({ params }: PageProps) {
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <DollarSign className="h-4 w-4" />
-                  Deal
+                  {t('deal')}
                 </div>
                 {activity.dealId && activity.dealTitle ? (
                   <div>
@@ -201,27 +202,27 @@ export default async function ActivityDetailPage({ params }: PageProps) {
                     </Link>
                     {activity.stageName && activity.pipelineName && (
                       <p className="text-sm text-muted-foreground">
-                        {activity.stageName} in {activity.pipelineName}
+                        {t('inPipeline', { stage: activity.stageName, pipeline: activity.pipelineName })}
                       </p>
                     )}
                   </div>
                 ) : (
-                  <p className="text-muted-foreground">No deal linked</p>
+                  <p className="text-muted-foreground">{t('noDealLinked')}</p>
                 )}
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Users className="h-4 w-4" />
-                  Owner
+                  {t('owner')}
                 </div>
-                <p className="font-medium">{activity.ownerName || "Unknown"}</p>
+                <p className="font-medium">{activity.ownerName || t('unknown')}</p>
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  Created
+                  {t('created')}
                 </div>
                 <p className="font-medium">
                   {format.dateTime(new Date(activity.createdAt), {
@@ -239,7 +240,7 @@ export default async function ActivityDetailPage({ params }: PageProps) {
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <FileText className="h-4 w-4" />
-                  Notes
+                  {t('notes')}
                 </div>
                 <p className="text-sm whitespace-pre-wrap">{activity.notes}</p>
               </div>
