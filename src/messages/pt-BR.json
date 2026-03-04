@@ -1,4 +1,36 @@
 {
+  "shortcuts": {
+    "title": "Atalhos de Teclado",
+    "description": "Atalhos de teclado disponíveis para navegação rápida e ações.",
+    "categories": {
+      "navigation": "Navegação",
+      "actions": "Ações",
+      "list_navigation": "Navegação em Lista",
+      "general": "Geral"
+    },
+    "actions": {
+      "nav-deals": "Ir para Negócios",
+      "nav-people": "Ir para Pessoas",
+      "nav-orgs": "Ir para Empresas",
+      "nav-activities": "Ir para Atividades",
+      "nav-search": "Focar na busca",
+      "action-create": "Criar novo item",
+      "action-edit": "Editar selecionado",
+      "action-delete": "Excluir selecionado",
+      "action-open": "Abrir item",
+      "list-down": "Mover para baixo",
+      "list-up": "Mover para cima",
+      "list-left": "Coluna anterior",
+      "list-right": "Próxima coluna",
+      "general-help": "Mostrar atalhos de teclado",
+      "general-close": "Fechar diálogo / Cancelar"
+    },
+    "contexts": {
+      "In lists": "Em listas",
+      "When item selected": "Com item selecionado",
+      "Kanban": "Kanban"
+    }
+  },
   "common": {
     "save": "Salvar",
     "cancel": "Cancelar",

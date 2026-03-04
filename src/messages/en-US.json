@@ -1,4 +1,36 @@
 {
+  "shortcuts": {
+    "title": "Keyboard Shortcuts",
+    "description": "Available keyboard shortcuts for quick navigation and actions.",
+    "categories": {
+      "navigation": "Navigation",
+      "actions": "Actions",
+      "list_navigation": "List Navigation",
+      "general": "General"
+    },
+    "actions": {
+      "nav-deals": "Go to Deals",
+      "nav-people": "Go to People",
+      "nav-orgs": "Go to Organizations",
+      "nav-activities": "Go to Activities",
+      "nav-search": "Focus search",
+      "action-create": "Create new item",
+      "action-edit": "Edit selected",
+      "action-delete": "Delete selected",
+      "action-open": "Open item",
+      "list-down": "Move down",
+      "list-up": "Move up",
+      "list-left": "Previous column",
+      "list-right": "Next column",
+      "general-help": "Show keyboard shortcuts",
+      "general-close": "Close dialog / Cancel"
+    },
+    "contexts": {
+      "In lists": "In lists",
+      "When item selected": "When item selected",
+      "Kanban": "Kanban"
+    }
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",
