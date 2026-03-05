@@ -11,7 +11,9 @@ A lightweight, self-hostable CRM with kanban-style pipeline management.
 - **Deals & Kanban** - Visual deal management with drag-and-drop board
 - **Activities** - Follow-up tracking with calendar view (week/month)
 - **Custom Fields** - Extensible entities with calculated fields
-- **REST API** - Full CRUD API with custom field support
+- **Search & Filtering** - Global search across organizations, people, and deals
+- **Import/Export** - Bulk data management via CSV
+- **REST API** - Full CRUD API with webhook support
 
 ## Tech Stack
 
@@ -104,18 +106,15 @@ src/
 └── lib/                    # Utilities
 ```
 
-## Roadmap
+## Documentation
 
-- [x] Foundation & Authentication
-- [x] Organizations
-- [x] People
-- [x] Pipelines & Stages
-- [x] Deals & Kanban
-- [x] Activities
-- [ ] Custom Fields & Formulas
-- [ ] Search & Filtering
-- [ ] Import/Export
-- [ ] REST API
+Full documentation is available in the [`docs/`](./docs/index.md) directory:
+
+- **[Getting Started](./docs/user/getting-started.md)** - Learn the basics in 10 minutes
+- **[User Guide](./docs/user/)** - Tutorials and reference for end users
+- **[REST API](./docs/api/index.md)** - API reference, authentication, webhooks, and examples
+- **[Admin Guide](./docs/admin/index.md)** - Deployment, configuration, and operations
+- **[Developer Guide](./docs/development/index.md)** - Architecture, contributing, and coding standards
 
 ## License
 
