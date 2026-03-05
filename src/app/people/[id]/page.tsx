@@ -14,6 +14,7 @@ import Link from "next/link"
 import { PersonDetailClient } from "./person-detail-client"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
 import type { EntityType, CustomFieldDefinition } from "@/db/schema"
+import { getFormatter, getTranslations } from 'next-intl/server'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -74,6 +75,9 @@ async function getCustomFieldDefinitions() {
 
 export default async function PersonDetailPage({ params }: PageProps) {
   const { id } = await params
+  const format = await getFormatter()
+  const t = await getTranslations('people')
+  
   const [person, orgsForSelect, customFieldDefs] = await Promise.all([
     getPerson(id),
     getOrganizationsForSelect(),
@@ -92,10 +96,10 @@ export default async function PersonDetailPage({ params }: PageProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            Person Details
+            {t('personDetails')}
           </CardTitle>
           <CardDescription>
-            View and manage contact information
+            {t('viewContactInfo')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -104,7 +108,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Users className="h-4 w-4" />
-                  Name
+                  {t('name')}
                 </div>
                 <p className="font-medium">
                   {person.firstName} {person.lastName}
@@ -114,7 +118,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Mail className="h-4 w-4" />
-                  Email
+                  {t('email')}
                 </div>
                 {person.email ? (
                   <a
@@ -124,17 +128,17 @@ export default async function PersonDetailPage({ params }: PageProps) {
                     {person.email}
                   </a>
                 ) : (
-                  <p className="text-muted-foreground">Not specified</p>
+                  <p className="text-muted-foreground">{t('notSpecified')}</p>
                 )}
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Phone className="h-4 w-4" />
-                  Phone
+                  {t('phone')}
                 </div>
                 <p className="font-medium">
-                  {person.phone || <span className="text-muted-foreground font-normal">Not specified</span>}
+                  {person.phone || <span className="text-muted-foreground font-normal">{t('notSpecified')}</span>}
                 </p>
               </div>
             </div>
@@ -143,7 +147,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Building2 className="h-4 w-4" />
-                  Organization
+                  {t('organization')}
                 </div>
                 {person.organizationId && person.organizationName ? (
                   <Link
@@ -154,30 +158,30 @@ export default async function PersonDetailPage({ params }: PageProps) {
                     {person.organizationName}
                   </Link>
                 ) : (
-                  <p className="text-muted-foreground">No organization</p>
+                  <p className="text-muted-foreground">{t('noOrganization')}</p>
                 )}
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <User className="h-4 w-4" />
-                  Owner
+                  {t('owner')}
                 </div>
                 <p className="font-medium">
-                  {person.ownerName || "Unknown"}
+                  {person.ownerName || t('unknown')}
                 </p>
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  Created
+                  {t('created')}
                 </div>
                 <p className="font-medium">
-                  {new Date(person.createdAt).toLocaleDateString("en-US", {
+                  {format.dateTime(new Date(person.createdAt), {
                     year: "numeric",
                     month: "long",
-                    day: "numeric",
+                    day: "numeric"
                   })}
                 </p>
               </div>
@@ -189,7 +193,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <FileText className="h-4 w-4" />
-                  Notes
+                  {t('notes')}
                 </div>
                 <p className="text-sm whitespace-pre-wrap">{person.notes}</p>
               </div>

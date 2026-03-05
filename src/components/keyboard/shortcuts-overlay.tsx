@@ -7,6 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
+import { useTranslations } from "next-intl"
 import { SHORTCUTS } from "@/lib/hotkey-config"
 
 interface ShortcutsOverlayProps {
@@ -40,13 +41,15 @@ function formatKey(key: string): string {
 }
 
 export function ShortcutsOverlay({ open, onOpenChange }: ShortcutsOverlayProps) {
+  const t = useTranslations("shortcuts")
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Keyboard Shortcuts</DialogTitle>
+          <DialogTitle>{t("title")}</DialogTitle>
           <DialogDescription>
-            Available keyboard shortcuts for quick navigation and actions.
+            {t("description")}
           </DialogDescription>
         </DialogHeader>
 
@@ -54,7 +57,7 @@ export function ShortcutsOverlay({ open, onOpenChange }: ShortcutsOverlayProps) 
           {Object.entries(SHORTCUTS).map(([categoryKey, category]) => (
             <div key={categoryKey}>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-                {category.label}
+                {t(`categories.${categoryKey}`)}
               </h3>
               <div className="space-y-2">
                 {category.shortcuts.map((shortcut) => (
@@ -63,10 +66,10 @@ export function ShortcutsOverlay({ open, onOpenChange }: ShortcutsOverlayProps) 
                     className="flex items-center justify-between py-1"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-sm">{shortcut.description}</span>
+                      <span className="text-sm">{t(`actions.${shortcut.id}`)}</span>
                       {shortcut.context && (
                         <span className="text-xs text-muted-foreground">
-                          ({shortcut.context})
+                          ({t(`contexts.${shortcut.context}`)})
                         </span>
                       )}
                     </div>

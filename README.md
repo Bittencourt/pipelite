@@ -10,7 +10,8 @@ A lightweight, self-hostable CRM with kanban-style pipeline management.
 - **Pipelines & Stages** - Configurable sales pipelines with drag-and-drop stages
 - **Deals & Kanban** - Visual deal management with drag-and-drop board
 - **Activities** - Follow-up tracking with calendar view (week/month)
-- **Custom Fields** - Extensible entities with calculated fields (coming soon)
+- **Custom Fields** - Extensible entities with calculated fields
+- **REST API** - Full CRUD API with custom field support
 
 ## Tech Stack
 

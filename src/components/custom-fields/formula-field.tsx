@@ -5,6 +5,7 @@ import { AlertCircle, Calculator } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { evaluateFormula } from '@/lib/formula-engine'
 import type { CustomFieldDefinition, FormulaConfig } from '@/db/schema'
+import { useFormatter } from 'next-intl'
 
 interface FormulaFieldProps {
   definition: CustomFieldDefinition
@@ -14,11 +15,21 @@ interface FormulaFieldProps {
   disabled?: boolean
 }
 
-function formatValue(value: unknown): string {
+function FormatValue({ value }: { value: unknown }) {
+  const format = useFormatter()
+  
   if (value === null || value === undefined) return ''
-  if (typeof value === 'number') return value.toLocaleString()
+  if (typeof value === 'number') {
+    return format.number(value)
+  }
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
-  if (value instanceof Date) return value.toLocaleDateString()
+  if (value instanceof Date) {
+    return format.dateTime(value, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    })
+  }
   return String(value)
 }
 
@@ -84,7 +95,11 @@ export function FormulaField({
         </div>
       ) : (
         <div className="text-sm font-medium mt-1">
-          {formatValue(calculatedValue) || <span className="text-muted-foreground italic">Empty</span>}
+          {calculatedValue !== null && calculatedValue !== undefined ? (
+            <FormatValue value={calculatedValue} />
+          ) : (
+            <span className="text-muted-foreground italic">Empty</span>
+          )}
         </div>
       )}
     </div>

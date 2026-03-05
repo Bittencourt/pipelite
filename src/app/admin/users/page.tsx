@@ -5,6 +5,7 @@ import { columns, PendingUser } from "./columns"
 import { DataTable } from "./data-table"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { UserCheck } from "lucide-react"
+import { getTranslations } from 'next-intl/server'
 
 async function getPendingUsers(): Promise<PendingUser[]> {
   const pendingUsers = await db
@@ -32,13 +33,14 @@ async function getPendingUsers(): Promise<PendingUser[]> {
 
 export default async function AdminUsersPage() {
   const pendingUsers = await getPendingUsers()
+  const t = await getTranslations('admin.users')
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">User Management</h1>
+        <h1 className="text-3xl font-bold">{t('userManagement')}</h1>
         <p className="text-muted-foreground">
-          Review and approve pending user signups
+          {t('reviewApprove')}
         </p>
       </div>
 
@@ -46,10 +48,10 @@ export default async function AdminUsersPage() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <UserCheck className="h-5 w-5 text-muted-foreground" />
-            <CardTitle>Pending Approvals</CardTitle>
+            <CardTitle>{t('pendingApprovals')}</CardTitle>
           </div>
           <CardDescription>
-            Users who have verified their email and are waiting for approval
+            {t('waitingForApproval')}
           </CardDescription>
         </CardHeader>
         <CardContent>

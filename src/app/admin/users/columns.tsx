@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { approveUser, rejectUser } from "./actions"
 import { toast } from "sonner"
 import { startTransition } from "react"
+import { useFormatter, useTranslations } from 'next-intl'
 
 export type PendingUser = {
   id: string
@@ -14,6 +15,106 @@ export type PendingUser = {
   emailVerified: Date | null
 }
 
+// Client component for formatted date display
+function FormattedDate({ date }: { date: Date }) {
+  const format = useFormatter()
+  return format.dateTime(date, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+}
+
+// Hook to get column definitions with translations
+export function useColumns(): ColumnDef<PendingUser>[] {
+  const t = useTranslations('admin.users')
+  
+  return [
+    {
+      accessorKey: "email",
+      header: t('email'),
+      cell: ({ row }) => {
+        return <span className="font-medium">{row.getValue("email")}</span>
+      },
+    },
+    {
+      accessorKey: "emailVerified",
+      header: t('verified'),
+      cell: ({ row }) => {
+        const verified = row.getValue("emailVerified") as Date | null
+        if (!verified) {
+          return <Badge variant="secondary">{t('notVerified')}</Badge>
+        }
+        return (
+          <Badge variant="default" className="bg-green-500">
+            {t('verified')}
+          </Badge>
+        )
+      },
+    },
+    {
+      accessorKey: "createdAt",
+      header: t('requested'),
+      cell: ({ row }) => {
+        const date = new Date(row.getValue("createdAt"))
+        return <FormattedDate date={date} />
+      },
+    },
+    {
+      id: "actions",
+      header: t('actions'),
+      cell: ({ row, table }) => {
+        const user = row.original
+        const meta = table.options.meta as { refresh: () => void } | undefined
+
+        const handleApprove = () => {
+          startTransition(async () => {
+            try {
+              await approveUser(user.id)
+              toast.success("User approved successfully")
+              meta?.refresh()
+            } catch (error) {
+              toast.error("Failed to approve user")
+            }
+          })
+        }
+
+        const handleReject = () => {
+          startTransition(async () => {
+            try {
+              await rejectUser(user.id)
+              toast.success("User rejected")
+              meta?.refresh()
+            } catch (error) {
+              toast.error("Failed to reject user")
+            }
+          })
+        }
+
+        return (
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="default"
+              onClick={handleApprove}
+            >
+              {t('approve')}
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleReject}
+            >
+              {t('reject')}
+            </Button>
+          </div>
+        )
+      },
+    },
+  ]
+}
+
+// Keep legacy export for backward compatibility (without translations)
 export const columns: ColumnDef<PendingUser>[] = [
   {
     accessorKey: "email",
@@ -42,11 +143,7 @@ export const columns: ColumnDef<PendingUser>[] = [
     header: "Requested",
     cell: ({ row }) => {
       const date = new Date(row.getValue("createdAt"))
-      return date.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
+      return <FormattedDate date={date} />
     },
   },
   {

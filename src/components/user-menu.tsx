@@ -2,6 +2,7 @@
 
 import { signOut } from "next-auth/react"
 import { LogOut, User, Key } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -21,6 +22,9 @@ interface UserMenuProps {
 }
 
 export function UserMenu({ user }: UserMenuProps) {
+  const t = useTranslations("nav")
+  const tAuth = useTranslations("auth")
+  
   const initials = user.email
     .split("@")[0]
     .slice(0, 2)
@@ -54,14 +58,14 @@ export function UserMenu({ user }: UserMenuProps) {
         <DropdownMenuItem asChild>
           <a href="/settings/api-keys" className="flex items-center">
             <Key className="mr-2 h-4 w-4" />
-            <span>API Keys</span>
+            <span>{t("apiKeys")}</span>
           </a>
         </DropdownMenuItem>
         {user.role === "admin" && (
           <DropdownMenuItem asChild>
             <a href="/admin/users" className="flex items-center">
               <User className="mr-2 h-4 w-4" />
-              <span>User Management</span>
+              <span>{t("userManagement")}</span>
             </a>
           </DropdownMenuItem>
         )}
@@ -71,7 +75,7 @@ export function UserMenu({ user }: UserMenuProps) {
           className="text-red-600 focus:text-red-600"
         >
           <LogOut className="mr-2 h-4 w-4" />
-          <span>Log out</span>
+          <span>{tAuth("logout")}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

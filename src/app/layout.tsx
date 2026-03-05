@@ -6,6 +6,8 @@ import { NavHeader } from "@/components/nav-header"
 import { HotkeysProvider } from "@/components/keyboard/hotkeys-provider"
 import { ShortcutsHint } from "@/components/keyboard"
 import { Toaster } from "@/components/ui/sonner"
+import { NextIntlClientProvider } from "next-intl"
+import { getLocale, getMessages, getTimeZone } from "next-intl/server"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,19 +34,26 @@ export default async function RootLayout({
     ? { email: session.user.email || "", role: session.user.role }
     : null
 
+  // Get locale, messages, and timezone from next-intl
+  const locale = await getLocale()
+  const messages = await getMessages()
+  const timeZone = await getTimeZone()
+
   return (
-    <html lang="en">
+    <html lang={locale}>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <HotkeysProvider>
-          <NavHeader user={user} />
-          <main className="min-h-[calc(100vh-3.5rem)]">
-            {children}
-          </main>
-          <ShortcutsHint />
-          <Toaster />
-        </HotkeysProvider>
+        <NextIntlClientProvider locale={locale} messages={messages} timeZone={timeZone}>
+          <HotkeysProvider>
+            <NavHeader user={user} />
+            <main className="min-h-[calc(100vh-3.5rem)]">
+              {children}
+            </main>
+            <ShortcutsHint />
+            <Toaster />
+          </HotkeysProvider>
+        </NextIntlClientProvider>
       </body>
     </html>
   )

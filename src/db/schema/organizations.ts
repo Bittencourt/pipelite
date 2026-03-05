@@ -8,6 +8,7 @@ export const organizations = pgTable('organizations', {
   industry: text('industry'),
   notes: text('notes'),
   ownerId: text('owner_id').notNull().references(() => users.id),
+  defaultCurrency: text('default_currency').default('USD').notNull(),
   customFields: jsonb('custom_fields').$type<Record<string, unknown>>().default({}),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

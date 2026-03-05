@@ -9,6 +9,7 @@ import { ActivityList, Activity } from "./activity-list"
 import { ActivityDialog } from "./activity-dialog"
 import { ActivityCalendar } from "./activity-calendar"
 import { ActivityFilters } from "./activity-filters"
+import { useTranslations } from "next-intl"
 
 interface ActivityType {
   id: string
@@ -50,6 +51,7 @@ export function ActivitiesClient({
   const [isPending, startTransition] = useTransition()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null)
+  const t = useTranslations('activities')
 
   const handleAddNew = () => {
     setEditingActivity(null)
@@ -91,15 +93,15 @@ export function ActivitiesClient({
             <CheckCircle2 className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold">Activities</h1>
+            <h1 className="text-3xl font-bold">{t('title')}</h1>
             <p className="text-muted-foreground">
-              Manage your tasks, calls, meetings, and emails
+              {t('manageActivities')}
             </p>
           </div>
         </div>
         <Button onClick={handleAddNew}>
           <Plus className="h-4 w-4 mr-2" />
-          Add Activity
+          {t('addActivity')}
         </Button>
       </div>
 
@@ -107,12 +109,12 @@ export function ActivitiesClient({
       <div className="flex gap-6 text-sm">
         <div className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-green-500" />
-          <span className="text-muted-foreground">Completed:</span>
+          <span className="text-muted-foreground">{t('completed')}:</span>
           <span className="font-medium">{completedCount}</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-amber-500" />
-          <span className="text-muted-foreground">Pending:</span>
+          <span className="text-muted-foreground">{t('pending')}:</span>
           <span className="font-medium">{pendingCount}</span>
         </div>
       </div>
@@ -122,25 +124,25 @@ export function ActivitiesClient({
         <TabsList className="mb-4">
           <TabsTrigger value="list" className="gap-2">
             <List className="h-4 w-4" />
-            List
+            {t('list')}
           </TabsTrigger>
           <TabsTrigger value="calendar" className="gap-2">
             <Calendar className="h-4 w-4" />
-            Calendar
+            {t('calendar')}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="list">
           <div className="space-y-4">
             <ActivityFilters activityTypes={activityTypes} owners={owners} />
-            
+
             {hasActiveFilters && activities.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground border rounded-lg">
                 <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="text-lg font-medium mb-2">No results match your filters</p>
-                <p className="text-sm mb-4">Try adjusting your filter criteria</p>
+                <p className="text-lg font-medium mb-2">{t('noResultsMatch')}</p>
+                <p className="text-sm mb-4">{t('tryAdjusting')}</p>
                 <Button variant="outline" onClick={() => router.push("/activities")}>
-                  Clear filters
+                  {t('clearFilters')}
                 </Button>
               </div>
             ) : (

@@ -45,6 +45,8 @@ import { deleteActivity, toggleActivityCompletion } from "./actions"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { useDataTableKeyboard } from "@/components/keyboard"
+import { useFormatter, useTranslations } from 'next-intl'
+import { RelativeTime } from "@/components/ui/relative-time"
 
 // Activity type with icon info
 interface ActivityType {
@@ -98,18 +100,6 @@ const colorMap: Record<string, string> = {
   Email: "bg-amber-100 text-amber-800",
 }
 
-// Helper to format date/time
-function formatDateTime(date: Date): string {
-  return new Date(date).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  })
-}
-
 // Helper to check if activity is overdue
 function isOverdue(activity: Activity): boolean {
   if (activity.completedAt) return false
@@ -134,6 +124,9 @@ export function ActivityList({
   onRefresh,
 }: ActivityListProps) {
   const router = useRouter()
+  const format = useFormatter()
+  const t = useTranslations('activities')
+  const tCommon = useTranslations('common')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [activityToDelete, setActivityToDelete] = useState<Activity | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -239,7 +232,7 @@ export function ActivityList({
     },
     {
       accessorKey: "type",
-      header: "Type",
+      header: t('type'),
       size: 120,
       cell: ({ row }) => {
         const type = row.original.type
@@ -255,7 +248,7 @@ export function ActivityList({
     },
     {
       accessorKey: "title",
-      header: "Title",
+      header: t('titleColumn'),
       cell: ({ row }) => {
         const activity = row.original
         const overdue = isOverdue(activity)
@@ -281,7 +274,7 @@ export function ActivityList({
     },
     {
       accessorKey: "dueDate",
-      header: "Due Date",
+      header: t('dueDate'),
       size: 180,
       cell: ({ row }) => {
         const activity = row.original
@@ -298,14 +291,21 @@ export function ActivityList({
                 : "text-muted-foreground"
             }`}
           >
-            {formatDateTime(activity.dueDate)}
+            {format.dateTime(new Date(activity.dueDate), {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+              timeZoneName: 'short'
+            })}
           </span>
         )
       },
     },
     {
       accessorKey: "deal",
-      header: "Deal",
+      header: t('deal'),
       size: 150,
       cell: ({ row }) => {
         const deal = row.original.deal
@@ -371,7 +371,7 @@ export function ActivityList({
           <div className="flex items-center gap-2 mb-3">
             <AlertCircle className="h-5 w-5 text-red-600" />
             <span className="font-semibold text-red-700">
-              Overdue Activities ({overdueActivities.length})
+              {t('overdueActivities')} ({overdueActivities.length})
             </span>
           </div>
           <div className="space-y-2">
@@ -390,7 +390,14 @@ export function ActivityList({
                   <div>
                     <span className="font-medium text-red-700">{activity.title}</span>
                     <span className="text-sm text-muted-foreground ml-2">
-                      Due: {formatDateTime(activity.dueDate)}
+                      Due: {format.dateTime(new Date(activity.dueDate), {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        timeZoneName: 'short'
+                      })}
                     </span>
                   </div>
                 </div>
@@ -460,7 +467,7 @@ export function ActivityList({
                   colSpan={columns.length}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  No activities found.
+                  {t('noActivitiesFound')}
                 </TableCell>
               </TableRow>
             )}
@@ -472,21 +479,21 @@ export function ActivityList({
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Activity</AlertDialogTitle>
+            <AlertDialogTitle>{t('deleteActivity')}</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete "{activityToDelete?.title}"? This action
               cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>{tCommon('cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteConfirm}
               disabled={isDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Delete
+              {tCommon('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

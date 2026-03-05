@@ -5,28 +5,28 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 11 - Keyboard Control (Complete)
+**Current focus:** Phase 13 - Comprehensive Project Documentation (In Progress)
 
 ## Current Position
 
-Phase: 11 of 12 (Keyboard Control) - Complete
-Plan: 5 of 5 in current phase
-Status: Phase 11 complete
-Last activity: 2026-03-02 — Completed 11-05: Fixed 4 keyboard shortcut bugs (help overlay, search focus, event leakage, kanban wrapping)
+Phase: 13 of 13 (Comprehensive Project Documentation) - In Progress
+Plan: 3 of 4 in current phase
+Status: Plan 13-03 complete
+Last activity: 2026-03-04 — Completed 13-03: Administrator documentation with deployment guides, configuration reference, user management, operations guides, and troubleshooting
 
-Progress: [█████████████████████] 100% (46/46 plans in current roadmap)
+Progress: [█████████████████████ ] 96% (46/47 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 43
+- Total plans completed: 48
 - Average duration: 7min
-- Total execution time: 5.28 hours
+- Total execution time: 5.94 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
+| |-------|-------|----------|
 | 01-foundation-authentication | 6/6 | 30min | 5min |
 | 02-organizations | 3/3 | 34min | 11min |
 | 03-people | 3/3 | 6min | 2min |
@@ -35,11 +35,17 @@ Progress: [█████████████████████] 100%
 | 06-activities | 4/4 | 41min | 10min |
 | 07-custom-fields-formulas | 11/11 | 144min | 13min |
 | 08-search-filtering | 3/3 | 25min | 8min |
-| 09-import-export | 2/3 | TBD | TBD |
+| 09-import-export | 2/2 | 15min | 7.5min |
 | 10-rest-api | 4/4 | 30min | 7.5min |
 | 11-keyboard-control | 5/5 | 31min | 6.2min |
+| 12-localization | 5/5 | 65min | 13min |
+| 13-comprehensive-project-documentation | 3/4 | 32min | 10.7min |
 
 **Recent Trend:**
+- 13-03: 9min (3 tasks, 10 files, 3 commits) - Administrator documentation with deployment guides, configuration reference, user management, operations guides, and troubleshooting
+- 13-02: 10min (3 tasks, 7 files, 3 commits) - API documentation with authentication, pagination, webhooks, error handling guides
+- 13-01: 13min (3 tasks, 14 files, 3 commits) - User tutorials, documentation hub, and getting-started guide
+- 12-04: 31min (3 tasks, 15 files, 3 commits) - RelativeTime component, localized calendar, locale-aware date/time formatting across 15+ components
 - 11-05: 8min (4 tasks, 5 files, 4 commits) - Fixed ? shortcut binding, / search focus, action event leakage, kanban column wrapping
 - 11-04: 5min (4 tasks, 5 files, 5 commits) - useKanbanKeyboard hook with h/j/k/l 2D navigation, Enter/n actions, ring selection highlight
 - 11-03: 10min (5 tasks, 7 files, 6 commits) - useDataTableKeyboard hook with j/k/arrow/Enter/e/d/n across all 5 data tables
@@ -70,7 +76,9 @@ Progress: [█████████████████████] 100%
 - 06-01: 8min (5 tasks, 6 files, 5 commits)
 
 *Updated after each plan completion*
-| Phase 10-rest-api P03 | 25min | 2 tasks | 10 files |
+| Phase 13-comprehensive-project-documentation P03 | 9min | 3 tasks | 10 files |
+| Phase 13-comprehensive-project-documentation P02 | 10min | 3 tasks | 7 files |
+| Phase 13 P01 | 13min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -213,6 +221,21 @@ Recent decisions affecting current work:
 | 11-05 | preventDefault: true on action shortcuts prevents key events from leaking into dialog inputs
 - [11-05] enableOnFormTags: true allows global shortcuts to work even when form elements have focus
 - [11-05] Column wrapping for kanban up/down navigation (skips empty columns)
+- [12-01] Cookie-based locale detection instead of URL routing for simpler UX
+- [12-01] Three initial locales: en-US, pt-BR, es-ES (US, Brazil, Spain markets)
+- [12-01] ICU message format for pluralization in translation files
+- [Phase 12-02]: useCurrency hook provides reactive formatting for client components via next-intl useFormatter
+- [Phase 12-02]: Currency formatting uses Intl.NumberFormat with locale and currency parameters for correct symbol placement and separators
+- [12-03] User settings actions in src/actions/ module for shared access (not colocated with page)
+- [12-03] Immediate-save pattern for settings dropdowns instead of save button for better UX
+- [12-04] RelativeTime shows relative time for items < 24 hours, absolute date otherwise
+- [12-04] Activity due dates include timezone abbreviation for clarity
+- [12-04] Calendar uses dynamic localizer based on user's locale from next-intl
+- [12-04] Client components use useFormatter hook, server components use getFormatter
+- [Phase 13-comprehensive-project-documentation]: Linked to OpenAPI spec (/api/v1/docs) for authoritative endpoint reference rather than duplicating endpoint definitions
+- [13-03] Mixed audience approach: Quick-start sections for technical experts, detailed step-by-step for beginners
+- [13-03] Deployment decision guide: Docker recommended for most, VPS for full control, Vercel for easiest setup
+- [13-03] Troubleshooting format: Symptom-cause-solution pattern for clarity and actionable guidance
 
 ### Pending Todos
 
@@ -222,6 +245,7 @@ None yet.
 
 - Phase 11 added: add full keyboard control possibility on all screens all available actions should be keyboard-executable (may be via navigation and direct hotkey, evaluate each scenario to define the best solution)
 - Phase 12 added: Make the application fully localizable (language, currency, date formats, timezones)
+- Phase 13 added: comprehensive project documentation
 
 ### Blockers/Concerns
 
@@ -238,11 +262,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-03-02
-Stopped at: Completed 11-05-PLAN.md (Phase 11 complete with gap closure)
+Last session: 2026-03-04
+Stopped at: Completed 13-03-PLAN.md
 Resume file: None
 
-**Phase 11 COMPLETE.** All 5 plans executed: keyboard infrastructure (01), global shortcuts (02), data table navigation (03), kanban board navigation (04), bug fixes (05). Full keyboard control across all screens with vim-style navigation, action shortcuts, and visual selection feedback. All UAT issues resolved.
+**Phase 13 In Progress.** Plan 03 complete: Administrator documentation with deployment guides (Docker, VPS, Vercel), configuration reference, user management, operations guides (pipelines, custom fields, import/export), and troubleshooting. 3 of 4 plans in Phase 13 completed.
 
 ---
 *State initialized: 2026-02-22*

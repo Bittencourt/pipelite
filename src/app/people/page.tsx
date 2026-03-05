@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Users } from "lucide-react"
+import { getTranslations } from 'next-intl/server'
 
 async function getOrganizationsForSelect() {
   return db
@@ -51,6 +52,8 @@ async function getPeople() {
 }
 
 export default async function PeoplePage() {
+  const t = await getTranslations('people')
+  
   const [peopleData, orgsForSelect] = await Promise.all([
     getPeople(),
     getOrganizationsForSelect(),
@@ -64,16 +67,16 @@ export default async function PeoplePage() {
             <Users className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold">People</h1>
+            <h1 className="text-3xl font-bold">{t('title')}</h1>
             <p className="text-muted-foreground">
-              Manage your contacts and their details
+              {t('manageContacts')}
             </p>
           </div>
         </div>
 
         <Card>
           <CardHeader className="sr-only">
-            <CardTitle>People List</CardTitle>
+            <CardTitle>{t('title')} List</CardTitle>
             <CardDescription>
               A table of all people in your account
             </CardDescription>

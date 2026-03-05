@@ -3,6 +3,7 @@ import { users, stages, pipelines } from "@/db/schema"
 import { isNull, asc, eq } from "drizzle-orm"
 import { ExportForm } from "./export-form"
 import type { ExportFilters } from "@/lib/export/types"
+import { getTranslations } from 'next-intl/server'
 
 export default async function ExportPage({
   searchParams,
@@ -15,6 +16,7 @@ export default async function ExportPage({
   }>
 }) {
   const params = await searchParams
+  const t = await getTranslations('admin.export')
 
   // Build initial filters from URL params
   const initialFilters: ExportFilters = {}
@@ -45,9 +47,9 @@ export default async function ExportPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Export Data</h1>
+        <h1 className="text-3xl font-bold">{t('title')}</h1>
         <p className="text-muted-foreground">
-          Export your CRM data in CSV, JSON, or Pipedrive-compatible format
+          {t('description')}
         </p>
       </div>
 

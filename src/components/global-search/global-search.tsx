@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useDebouncedCallback } from "use-debounce"
+import { useTranslations } from "next-intl"
 import {
   Command,
   CommandEmpty,
@@ -34,6 +35,8 @@ interface SearchResults {
 
 export function GlobalSearch() {
   const router = useRouter()
+  const t = useTranslations("common")
+  const tNav = useTranslations("nav")
   const inputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResults | null>(null)
@@ -124,7 +127,7 @@ export function GlobalSearch() {
             <Input
               ref={inputRef}
               type="search"
-              placeholder="Search... (/ to focus)"
+              placeholder={`${t("search")}... (/)`}
               value={query}
               onChange={handleInputChange}
               onKeyDown={handleInputKeyDown}
@@ -144,7 +147,7 @@ export function GlobalSearch() {
             {hasResults ? (
               <>
                 {results!.organizations.length > 0 && (
-                  <CommandGroup heading="Organizations">
+                  <CommandGroup heading={tNav("organizations")}>
                     {results!.organizations.map((org) => (
                       <CommandItem
                         key={org.id}
@@ -154,7 +157,7 @@ export function GlobalSearch() {
                         <Building2 className="mr-2 h-4 w-4 text-muted-foreground" />
                         <SearchResultItem
                           label={org.name}
-                          detail="Organization"
+                          detail={tNav("organizations")}
                           query={query}
                         />
                       </CommandItem>
@@ -162,7 +165,7 @@ export function GlobalSearch() {
                   </CommandGroup>
                 )}
                 {results!.people.length > 0 && (
-                  <CommandGroup heading="People">
+                  <CommandGroup heading={tNav("people")}>
                     {results!.people.map((person) => (
                       <CommandItem
                         key={person.id}
@@ -172,7 +175,7 @@ export function GlobalSearch() {
                         <User className="mr-2 h-4 w-4 text-muted-foreground" />
                         <SearchResultItem
                           label={`${person.firstName} ${person.lastName}`}
-                          detail={person.organizationName || "No organization"}
+                          detail={person.organizationName || t("noResults")}
                           query={query}
                         />
                       </CommandItem>
@@ -180,7 +183,7 @@ export function GlobalSearch() {
                   </CommandGroup>
                 )}
                 {results!.deals.length > 0 && (
-                  <CommandGroup heading="Deals">
+                  <CommandGroup heading={tNav("deals")}>
                     {results!.deals.map((deal) => (
                       <CommandItem
                         key={deal.id}
@@ -200,7 +203,7 @@ export function GlobalSearch() {
               </>
             ) : (
               <CommandEmpty>
-                No results for &quot;{query}&quot;
+                {t("noResults")}
               </CommandEmpty>
             )}
           </CommandList>

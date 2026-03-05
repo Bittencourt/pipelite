@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useHotkeys } from "react-hotkeys-hook"
+import { useTranslations } from "next-intl"
 import { UserMenu } from "./user-menu"
 import { Button } from "@/components/ui/button"
 import { Building2, Users, Kanban, CheckCircle2 } from "lucide-react"
@@ -16,6 +17,8 @@ interface NavHeaderProps {
 
 export function NavHeader({ user }: NavHeaderProps) {
   const router = useRouter()
+  const t = useTranslations("nav")
+  const tAuth = useTranslations("auth")
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
   useHotkeys("alt+1", () => router.push("/deals"), { scopes: ["global"] })
@@ -39,28 +42,28 @@ export function NavHeader({ user }: NavHeaderProps) {
                   className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <Building2 className="h-4 w-4" />
-                  Organizations
+                  {t("organizations")}
                 </Link>
                 <Link
                   href="/people"
                   className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <Users className="h-4 w-4" />
-                  People
+                  {t("people")}
                 </Link>
                 <Link
                   href="/deals"
                   className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <Kanban className="h-4 w-4" />
-                  Deals
+                  {t("deals")}
                 </Link>
                 <Link
                   href="/activities"
                   className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <CheckCircle2 className="h-4 w-4" />
-                  Activities
+                  {t("activities")}
                 </Link>
               </nav>
             )}
@@ -72,10 +75,10 @@ export function NavHeader({ user }: NavHeaderProps) {
             ) : (
               <div className="flex items-center gap-2">
                 <a href="/login">
-                  <Button variant="ghost">Sign In</Button>
+                  <Button variant="ghost">{tAuth("login")}</Button>
                 </a>
                 <a href="/signup">
-                  <Button>Sign Up</Button>
+                  <Button>{tAuth("login")}</Button>
                 </a>
               </div>
             )}
