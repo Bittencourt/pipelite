@@ -24,14 +24,14 @@ Welcome to the Pipelite developer documentation. This guide is for contributors,
 
 | Layer | Technology | Version |
 |-------|------------|---------|
-| **Frontend** | Next.js | 15.x |
+| **Frontend** | Next.js | 16.x |
 | **UI Framework** | React | 19.x |
 | **Styling** | Tailwind CSS | 3.x |
 | **Component Library** | shadcn/ui | Latest |
 | **Backend** | Next.js API Routes & Server Actions | - |
 | **Database** | PostgreSQL | 15+ |
 | **ORM** | Drizzle ORM | Latest |
-| **Authentication** | NextAuth.js | v5 (beta) |
+| **Authentication** | Auth.js (NextAuth.js v5) | beta |
 | **Localization** | next-intl | 3.x |
 | **Testing** | Vitest | Latest |
 | **Cache/Rate Limiting** | Redis | 7+ (optional) |
@@ -57,12 +57,11 @@ pipelite/
 └── docs/                      # Documentation
 ```
 
-See the [Architecture Overview](./architecture.md) | System architecture, core systems, patterns, and data flows with [Database Schema](./database.md) reference.
+See the [Architecture Overview](./architecture.md) for system architecture, core systems, patterns, and data flows. See the [Database Schema](./database.md) for entity relationships and table documentation.
 
 ## Getting Help
 
-- **GitHub Issues**: Report bugs or request features at [github.com/pipelite/pipelite/issues](https://github.com/pipelite/pipelite/issues)
-- **Code of Conduct**: Please read and follow our [Code of Conduct](../CODE_OF_CONDUCT.md) when participating in the community
+- **GitHub Issues**: Report bugs or request features at [github.com/Bittencourt/pipelite/issues](https://github.com/Bittencourt/pipelite/issues)
 
 ## Getting Started
 

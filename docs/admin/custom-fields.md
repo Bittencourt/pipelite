@@ -18,7 +18,7 @@ Custom fields allow administrators to extend Pipelite entities with additional d
 
 ### Navigation
 1. **Open** admin panel: `/admin`
-2. **Click** "Custom Fields"** in the sidebar
+2. **Click "Custom Fields"** in the sidebar
 3. **Select entity type** from tabs:
    - Organizations
    - People
@@ -37,7 +37,7 @@ Custom fields allow administrators to extend Pipelite entities with additional d
 ## Creating Custom Fields
 
 ### Add Field Process
-1. **Click** "Add Field"** button
+1. **Click "Add Field"** button
 2. **Configure field**:
    - **Name**: Field label (displayed to users)
    - **Type**: Field data type (see Field Types)
@@ -138,11 +138,11 @@ Use field names in curly braces:
 {Annual Revenue} / {Employee Count}
 ```
 
-Referenced fields must to exist on the same entity.
+Referenced fields must exist on the same entity.
 
 ### Formula Examples
 
-- **Deal Value**: `{Deal Amount} * {Probability % / 100`
+- **Deal Value**: `{Deal Amount} * {Probability %} / 100`
 - **Days Since Contact**: `DAYS({First Contact Date}, DATE())`
 - **Full Name**: `CONCAT({First Name}, " ", {Last Name})`
 - **Completion Percentage**: `{Completed Activities} / {Total Activities} * 100`

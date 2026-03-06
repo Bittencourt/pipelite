@@ -14,7 +14,7 @@ Pipelite uses environment variables for configuration. This approach provides fl
 
 ### Configuration Changes
 
-- **Docker**: Edit `.env` file, restart with `docker-compose restart`
+- **Docker**: Edit `.env` file, restart with `docker compose restart`
 - **VPS**: Edit `.env` file, restart with `pm2 restart pipelite`
 - **Vercel**: Update in dashboard, redeploy automatically
 
@@ -51,7 +51,7 @@ DATABASE_URL=postgresql://pipelite:password@db.example.com:5432/pipelite
 - Run migrations: `npx drizzle-kit migrate`
 - Use SSL mode for production databases
 
-### NEXTAUTH_SECRET
+### AUTH_SECRET
 
 Secret key used to encrypt session tokens and cookies.
 
@@ -63,7 +63,7 @@ openssl rand -base64 32
 
 **Example:**
 ```bash
-NEXTAUTH_SECRET=your-generated-secret-key-here-keep-this-secret
+AUTH_SECRET=your-generated-secret-key-here-keep-this-secret
 ```
 
 **Security:**
@@ -110,7 +110,7 @@ Email sending configuration. Required for user registration, password reset, and
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=your-email@example.com
-SMTP_PASS=your-smtp-password
+SMTP_PASSWORD=your-smtp-password
 ```
 
 #### Transaction Email Services
@@ -120,7 +120,7 @@ SMTP_PASS=your-smtp-password
 SMTP_HOST=smtp.sendgrid.net
 SMTP_PORT=587
 SMTP_USER=apikey
-SMTP_PASS=your-sendgrid-api-key
+SMTP_PASSWORD=your-sendgrid-api-key
 ```
 
 **Mailgun:**
@@ -128,7 +128,7 @@ SMTP_PASS=your-sendgrid-api-key
 SMTP_HOST=smtp.mailgun.org
 SMTP_PORT=587
 SMTP_USER=postmaster@your-domain.mailgun.org
-SMTP_PASS=your-mailgun-password
+SMTP_PASSWORD=your-mailgun-password
 ```
 
 **Amazon SES:**
@@ -136,7 +136,7 @@ SMTP_PASS=your-mailgun-password
 SMTP_HOST=email-smtp.[region].amazonaws.com
 SMTP_PORT=587
 SMTP_USER=your-ses-access-key-id
-SMTP_PASS=your-ses-secret-access-key
+SMTP_PASSWORD=your-ses-secret-access-key
 ```
 
 **Testing SMTP:**
@@ -360,8 +360,8 @@ REDIS_URL=rediss://default:password@global-redis.upstash.io:6379
 - **If not set**: Rate limiting fails open (allows requests, logs warning)
 
 **Rate Limits:**
-- API endpoints: 100 requests per 15 minutes per IP
-- Authentication: 5 login attempts per 15 minutes per IP
+- API endpoints: 100 requests per minute per API key
+- Authentication: 10 login attempts per minute per IP
 
 ## Security Variables
 
@@ -369,16 +369,16 @@ REDIS_URL=rediss://default:password@global-redis.upstash.io:6379
 
 **Never commit or share:**
 - `DATABASE_URL` (contains database credentials)
-- `NEXTAUTH_SECRET` (encryption key)
-- `SMTP_PASS` (email credentials)
+- `AUTH_SECRET` (encryption key)
+- `SMTP_PASSWORD` (email credentials)
 - `S3_SECRET_KEY` (storage credentials)
 - `REDIS_URL` (if contains password)
 
 ### Rotation Recommendations
 
 **Rotate periodically:**
-- `NEXTAUTH_SECRET`: Every 6-12 months
-- `SMTP_PASS`: When changing email service
+- `AUTH_SECRET`: Every 6-12 months
+- `SMTP_PASSWORD`: When changing email service
 - `S3_SECRET_KEY`: According to security policy
 - `DATABASE_URL`: When database credentials change
 
@@ -398,7 +398,7 @@ REDIS_URL=rediss://default:password@global-redis.upstash.io:6379
 /pipelite/.env
 
 # After changes
-docker-compose restart
+docker compose restart
 ```
 
 **Docker Compose:**
@@ -451,12 +451,12 @@ vercel --prod
 Before going to production, ensure all required variables are set:
 
 - [ ] **DATABASE_URL** - PostgreSQL connection string
-- [ ] **NEXTAUTH_SECRET** - Generated secure secret
+- [ ] **AUTH_SECRET** - Generated secure secret
 - [ ] **NEXTAUTH_URL** - Public URL of deployment
 - [ ] **SMTP_HOST** - SMTP server hostname
 - [ ] **SMTP_PORT** - SMTP server port
 - [ ] **SMTP_USER** - SMTP authentication username
-- [ ] **SMTP_PASS** - SMTP authentication password
+- [ ] **SMTP_PASSWORD** - SMTP authentication password
 - [ ] **EMAIL_FROM** - Sender email address
 - [ ] **NODE_ENV** - Set to "production"
 - [ ] **FILE_STORAGE** - "local" or "s3"

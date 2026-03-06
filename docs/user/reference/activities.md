@@ -30,10 +30,10 @@ Activities are the action items in Pipelite. They represent tasks, calls, meetin
 ### Type Indicators
 
 Each type is color-coded throughout the interface:
-- **Call**: Blue
-- **Meeting**: Purple
-- **Task**: Green
-- **Email**: Orange
+- **Call**: Blue (#3B82F6)
+- **Meeting**: Green (#10B981)
+- **Task**: Yellow (#F59E0B)
+- **Email**: Purple (#8B5CF6)
 
 ---
 

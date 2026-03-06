@@ -2,7 +2,7 @@
 
 ## Overview
 
-User management in Pipelite follows a simple approval workflow. Administr review and signups and reject requests, and manage user roles.
+User management in Pipelite follows a simple approval workflow. Administrators review signups, approve or reject requests, and manage user roles.
 
 ### Who This Guide is for
 
@@ -25,7 +25,7 @@ User management in Pipelite follows a simple approval workflow. Administr review
 3. **Admin reviews application**:
    - Check email domain (if domain whitelist configured)
    - Verify user identity
-   - Appro or reject request
+   - Approve or reject request
 4. **User receives email**:
    - Approved: Welcome email with login instructions
    - Rejected: Notification with reason (optional)
@@ -35,7 +35,7 @@ User management in Pipelite follows a simple approval workflow. Administr review
 
 1. **Navigate to** `/admin/users`
 2. **Review pending users** (filtered by default)
-3. **Click "Appro"** for valid requests
+3. **Click "Approve"** for valid requests
 4. **Click "Reject"** for invalid requests
 5. **User receives notification** via email
 
@@ -76,9 +76,9 @@ User management in Pipelite follows a simple approval workflow. Administr review
 
 - **Only admins** can assign roles to users
 - **First user automatically** becomes admin
-- **Admin can promote members to admin role
-- **Admin can demote admins to member role
-- **Warning**: You be careful when removing your own admin role
+- **Admin can promote** members to admin role
+- **Admin can demote** admins to member role
+- **Warning**: Be careful when removing your own admin role
 
 - **At least one admin must always exist**
 
@@ -90,7 +90,7 @@ API keys allow users to authenticate API requests programmatically.
 
 - **Users generate** their own API keys from Settings
 - **Admins cannot view user API keys** (security feature)
-- **API keys are hashed and cannot be retrieved
+- **API keys are hashed** and cannot be retrieved
 
 ### Using API keys
 - **Include in request header**: `Authorization: Bearer <your-api-key>`
@@ -117,7 +117,7 @@ As an admin:
 ### Regular user reviews
 - **Check pending users daily** or weekly
 - **Process approvals promptly** for better user experience
-- **Communic with rejected users** if appropriate
+- **Communicate with rejected users** if appropriate
 
 ### Security considerations
 - **Use domain whitelist** to reduce spam signups
@@ -130,7 +130,7 @@ As an admin:
 ### First user setup
 - **First user automatically promoted to admin role**
 - **No approval needed** for the first user
-- **Admin can manage all subsequent users
+- **Admin can manage** all subsequent users
 - **Change admin credentials** immediately after first setup
 
 ### Handling rejected users

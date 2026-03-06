@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers common issues and Pipelite, their causes, and step-by-step solutions. Each issue follows the pattern: **Symptoms** → **Causes** → **Solutions**.
+This guide covers common issues in Pipelite, their causes, and step-by-step solutions. Each issue follows the pattern: **Symptoms** → **Causes** → **Solutions**.
 
 ### When to use this guide
 - **First**: Check the symptoms section for your issue
@@ -136,7 +136,7 @@ This guide covers common issues and Pipelite, their causes, and step-by-step sol
    DEBUG_EMAIL=true
    
    # Check application logs for SMTP errors
-   docker-compose logs app | grep -i smtp
+   docker compose logs app | grep -i smtp
    ```
 
 ## Authentication Errors
@@ -149,23 +149,23 @@ This guide covers common issues and Pipelite, their causes, and step-by-step sol
 - **Session not persisting**: Users logged out after refresh
 
 ### Causes
-1. **Wrong NEXTAUTH_SECRET**: Secret key changed or not matching
+1. **Wrong AUTH_SECRET**: Secret key changed or not matching
 2. **NEXTAUTH_URL mismatch**: URL doesn't match deployment URL
 3. **Cookie issues**: Browser blocking cookies or cookie misconfiguration
 4. **Database session errors**: Session table corrupted or missing
 5. **Clock drift**: Server time significantly different from actual time
 
 ### Solutions
-1. **Regenerate NEXTAUTH_SECRET**:
+1. **Regenerate AUTH_SECRET**:
    ```bash
    # Generate new secret
    openssl rand -base64 32
    
    # Update .env
-   NEXTAUTH_SECRET=<new-secret>
+   AUTH_SECRET=<new-secret>
    
    # Restart application
-   docker-compose restart  # or pm2 restart pipelite
+   docker compose restart  # or pm2 restart pipelite
    ```
    **Warning**: Changing secret invalidates all existing sessions. All users will need to log in again.
 
@@ -229,11 +229,11 @@ This guide covers common issues and Pipelite, their causes, and step-by-step sol
 1. **Verify Authorization header format**:
    ```bash
    # Correct format
-   Authorization: Bearer sk_live_abc123...
+   Authorization: Bearer pk_live_abc123...
    
    # Common mistakes
-   Authorization: sk_live_abc123...  # Missing "Bearer "
-   bearer sk_live_abc123...  # Wrong case
+   Authorization: pk_live_abc123...  # Missing "Bearer "
+   bearer pk_live_abc123...  # Wrong case
    ```
 
 2. **Check API key exists**:
@@ -395,14 +395,14 @@ This guide covers common issues and Pipelite, their causes, and step-by-step sol
 
 4. **Check rate limit settings**:
    - Rate limits are configured in the application
-   - Default: 100 requests per minute per user
+   - Default: 100 requests per minute per API key
    - Adjust if needed for your use case
    - Contact admin if limits too restrictive
 
 5. **Monitor rate limit usage**:
    ```bash
    # Check application logs
-   docker-compose logs app | grep -i "rate limit"
+   docker compose logs app | grep -i "rate limit"
    
    # Monitor Redis for rate limit keys
    redis-cli -u $REDIS_URL keys "ratelimit:*"
@@ -532,7 +532,7 @@ This guide covers common issues and Pipelite, their causes, and step-by-step sol
    htop  # If installed
    
    # Check logs for performance issues
-   docker-compose logs app | grep -i "slow\|timeout\|performance"
+   docker compose logs app | grep -i "slow\|timeout\|performance"
    ```
 
 ## General Diagnostic Steps
@@ -542,7 +542,7 @@ When facing any issue, follow these steps:
 ### 1. Check Application Logs
 ```bash
 # Docker
-docker-compose logs app
+docker compose logs app
 
 # VPS with PM2
 pm2 logs pipelite
@@ -558,7 +558,7 @@ pm2 logs pipelite
 tail -f /var/log/postgresql/postgresql-*.log
 
 # Docker
-docker-compose logs db
+docker compose logs db
 ```
 
 ### 3. Review Recent Changes
@@ -596,7 +596,7 @@ Gather this information:
 - **Community Chat**: For general questions
 
 ### What to Include
-``markdown
+```markdown
 **Issue**: [Brief description of the problem]
 
 **Deployment**: Docker / VPS / Vercel

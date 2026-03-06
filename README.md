@@ -17,9 +17,9 @@ A lightweight, self-hostable CRM with kanban-style pipeline management.
 
 ## Tech Stack
 
-- **Framework**: Next.js 15 (App Router)
+- **Framework**: Next.js 16 (App Router)
 - **Database**: PostgreSQL with Drizzle ORM
-- **Auth**: NextAuth.js with JWT strategy
+- **Auth**: Auth.js (NextAuth.js v5) with JWT strategy
 - **UI**: shadcn/ui + Tailwind CSS
 - **Deployment**: Docker Compose
 
@@ -78,7 +78,7 @@ npm run dev
 ```env
 DATABASE_URL="postgresql://user:password@localhost:5432/pipelite"
 AUTH_SECRET="generate-with-openssl-rand-base64-32"
-NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_URL="http://localhost:3001"
 
 # Email (optional for dev - use Mailhog)
 SMTP_HOST="localhost"
@@ -115,6 +115,19 @@ Full documentation is available in the [`docs/`](./docs/index.md) directory:
 - **[REST API](./docs/api/index.md)** - API reference, authentication, webhooks, and examples
 - **[Admin Guide](./docs/admin/index.md)** - Deployment, configuration, and operations
 - **[Developer Guide](./docs/development/index.md)** - Architecture, contributing, and coding standards
+
+## Roadmap
+
+- [x] Foundation & Authentication
+- [x] Organizations
+- [x] People
+- [x] Pipelines & Stages
+- [x] Deals & Kanban
+- [x] Activities
+- [x] Custom Fields & Formulas
+- [x] Search & Filtering
+- [x] Import/Export
+- [x] REST API
 
 ## License
 

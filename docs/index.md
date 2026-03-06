@@ -95,7 +95,7 @@ This documentation follows the [Diátaxis framework](https://diataxis.fr/), orga
 
 ## Getting Help
 
-- **Found a bug?** [Open an issue](https://github.com/your-org/pipelite/issues)
+- **Found a bug?** [Open an issue](https://github.com/Bittencourt/pipelite/issues)
 - **Have a question?** Check the reference docs or open a discussion
 - **Want to contribute?** See the [Contributing Guide](./development/contributing.md)
 

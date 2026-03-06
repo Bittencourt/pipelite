@@ -38,7 +38,7 @@ Docker provides a consistent, isolated environment for Pipelite. It's the recomm
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourorg/pipelite.git
+git clone https://github.com/Bittencourt/pipelite.git
 cd pipelite
 
 # 2. Configure environment
@@ -46,7 +46,7 @@ cp .env.example .env
 # Edit .env with your settings (see Configuration Reference)
 
 # 3. Start services
-docker-compose up -d
+docker compose up -d
 
 # 4. Access Pipelite
 # Open http://localhost:3000 in your browser
@@ -88,14 +88,14 @@ sudo usermod -aG docker $USER
 
 ```bash
 docker --version
-docker-compose --version
+docker compose version
 ```
 
 ### Step 2: Clone Repository
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourorg/pipelite.git
+git clone https://github.com/Bittencourt/pipelite.git
 
 # Navigate to directory
 cd pipelite
@@ -116,12 +116,12 @@ cp .env.example .env
 ```bash
 # Required variables (see Configuration Reference for details)
 DATABASE_URL=postgresql://pipelite:yourpassword@db:5432/pipelite
-NEXTAUTH_SECRET=your-secret-key-here
+AUTH_SECRET=your-secret-key-here
 NEXTAUTH_URL=http://localhost:3000
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=your-email@example.com
-SMTP_PASS=your-smtp-password
+SMTP_PASSWORD=your-smtp-password
 EMAIL_FROM=noreply@example.com
 ```
 
@@ -153,23 +153,23 @@ DATABASE_URL=postgresql://pipelite:yourpassword@your-db-host:5432/pipelite
 
 ```bash
 # Start only the app container (not db)
-docker-compose up -d app
+docker compose up -d app
 
 # Run migrations inside container
-docker-compose exec app npx drizzle-kit migrate
+docker compose exec app npx drizzle-kit migrate
 ```
 
 ### Step 5: Start Services
 
 ```bash
 # Start all services in background
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Check status
-docker-compose ps
+docker compose ps
 ```
 
 ### Step 6: First User
@@ -248,10 +248,10 @@ services:
 
 ```bash
 # Backup database
-docker-compose exec db pg_dump -U pipelite pipelite > backup_$(date +%Y%m%d).sql
+docker compose exec db pg_dump -U pipelite pipelite > backup_$(date +%Y%m%d).sql
 
 # Restore database
-cat backup_20260304.sql | docker-compose exec -T db psql -U pipelite pipelite
+cat backup_20260304.sql | docker compose exec -T db psql -U pipelite pipelite
 ```
 
 2. **Upload backups:** Sync uploads directory to S3 or backup server
@@ -262,19 +262,19 @@ cat backup_20260304.sql | docker-compose exec -T db psql -U pipelite pipelite
 
 ```bash
 # 1. Pull latest changes
-git pull origin main
+git pull origin master
 
 # 2. Rebuild containers
-docker-compose build
+docker compose build
 
 # 3. Restart services
-docker-compose up -d
+docker compose up -d
 
 # 4. Run migrations (if needed)
-docker-compose exec app npx drizzle-kit migrate
+docker compose exec app npx drizzle-kit migrate
 
 # 5. Check logs
-docker-compose logs -f app
+docker compose logs -f app
 ```
 
 ### Rollback
@@ -283,35 +283,35 @@ If an update causes issues:
 
 ```bash
 # 1. Stop containers
-docker-compose down
+docker compose down
 
 # 2. Checkout previous version
 git checkout <previous-commit-hash>
 
 # 3. Rebuild and restart
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 ## Common Commands
 
 ```bash
 # View logs
-docker-compose logs -f app
+docker compose logs -f app
 
 # Restart services
-docker-compose restart
+docker compose restart
 
 # Stop services
-docker-compose down
+docker compose down
 
 # Stop and remove volumes
-docker-compose down -v
+docker compose down -v
 
 # Execute command in container
-docker-compose exec app <command>
+docker compose exec app <command>
 
 # Check container status
-docker-compose ps
+docker compose ps
 ```
 
 ---

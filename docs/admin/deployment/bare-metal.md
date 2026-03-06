@@ -31,7 +31,7 @@ sudo apt-get install -y nodejs
 sudo apt-get install -y postgresql postgresql-contrib
 
 # 3. Clone and configure
-git clone https://github.com/yourorg/pipelite.git
+git clone https://github.com/Bittencourt/pipelite.git
 cd pipelite
 cp .env.example .env
 # Configure .env
@@ -154,7 +154,7 @@ pm2 --version
 
 ```bash
 # Clone repository
-git clone https://github.com/yourorg/pipelite.git
+git clone https://github.com/Bittencourt/pipelite.git
 
 # Navigate to directory
 cd pipelite
@@ -181,12 +181,12 @@ vim .env
 
 ```bash
 DATABASE_URL=postgresql://pipelite:your-secure-password@localhost:5432/pipelite
-NEXTAUTH_SECRET=your-secret-key-here
+AUTH_SECRET=your-secret-key-here
 NEXTAUTH_URL=https://yourdomain.com
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=your-email@example.com
-SMTP_PASS=your-smtp-password
+SMTP_PASSWORD=your-smtp-password
 EMAIL_FROM=noreply@example.com
 ```
 
@@ -371,7 +371,7 @@ Before going live, verify:
 cd pipelite
 
 # 2. Pull latest changes
-git pull origin main
+git pull origin master
 
 # 3. Install updated dependencies
 npm install

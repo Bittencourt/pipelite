@@ -140,9 +140,9 @@ The calendar view gives a visual timeline of your scheduled activities:
 | Type | Color |
 |------|-------|
 | Call | Blue |
-| Meeting | Purple |
-| Task | Green |
-| Email | Orange |
+| Meeting | Green |
+| Task | Yellow |
+| Email | Purple |
 
 ---
 

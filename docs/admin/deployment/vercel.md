@@ -102,14 +102,14 @@ Click "Environment Variables" and add all required variables:
 DATABASE_URL=postgresql://username:password@host:5432/pipelite
 
 # Authentication
-NEXTAUTH_SECRET=your-secret-key-here
+AUTH_SECRET=your-secret-key-here
 NEXTAUTH_URL=https://your-app.vercel.app
 
 # Email (SMTP)
 SMTP_HOST=smtp.sendgrid.net
 SMTP_PORT=587
 SMTP_USER=apikey
-SMTP_PASS=your-sendgrid-api-key
+SMTP_PASSWORD=your-sendgrid-api-key
 EMAIL_FROM=noreply@yourdomain.com
 
 # File Storage (for Vercel)
@@ -122,7 +122,7 @@ S3_SECRET_KEY=your-secret-key
 
 > **Important**: See [Configuration Reference](../configuration.md) for complete variable documentation.
 
-**Generate NEXTAUTH_SECRET:**
+**Generate AUTH_SECRET:**
 
 ```bash
 # Run locally to generate secret
