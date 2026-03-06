@@ -50,7 +50,7 @@ You can quickly navigate using keyboard shortcuts:
 - Press `Alt + 4` for Deals
 - Press `?` to see all available shortcuts
 
-![Navigation overview](../images/navigation-overview.png)
+![Navigation overview](images/navigation-overview.png)
 
 **Expected outcome:** You should see the main dashboard with navigation options at the top.
 
@@ -66,7 +66,7 @@ Organizations represent companies or accounts you work with.
 4. Optionally add notes about the organization
 5. Click **Create** to save
 
-![Create organization dialog](../images/create-organization.png)
+![Create organization dialog](images/create-organization.png)
 
 **Expected outcome:** The organization appears in the list and you can click it to view details.
 
@@ -86,7 +86,7 @@ People are individual contacts that can be associated with organizations.
    - **Organization**: Select "Acme Corporation" from the dropdown
 4. Click **Create** to save
 
-![Create person dialog](../images/create-person.png)
+![Create person dialog](images/create-person.png)
 
 **Expected outcome:** The person appears in your contacts list and is linked to the organization.
 
@@ -107,7 +107,7 @@ Deals represent sales opportunities that move through your pipeline stages.
    - **Stage**: The first stage should be pre-selected
 4. Click **Create** to save
 
-![Create deal dialog](../images/create-deal.png)
+![Create deal dialog](images/create-deal.png)
 
 **Expected outcome:** The deal appears in your pipeline's Kanban board in the first stage.
 
@@ -119,7 +119,7 @@ In the Kanban view:
 2. The deal's stage updates immediately
 3. All changes are saved automatically
 
-![Kanban board view](../images/kanban-board.png)
+![Kanban board view](images/kanban-board.png)
 
 ---
 
@@ -138,7 +138,7 @@ Activities help you track tasks, calls, meetings, and emails related to your dea
    - **Notes**: Add any relevant details
 4. Click **Create** to save
 
-![Create activity dialog](../images/create-activity.png)
+![Create activity dialog](images/create-activity.png)
 
 **Expected outcome:** The activity appears in your activities list and will show as overdue if the due date passes.
 
@@ -160,7 +160,7 @@ The global search lets you quickly find organizations, people, and deals.
 3. Results are grouped by type (Organizations, People, Deals)
 4. Click a result to navigate directly to that item
 
-![Global search results](../images/global-search.png)
+![Global search results](images/global-search.png)
 
 **Expected outcome:** Matching results appear instantly as you type.
 
