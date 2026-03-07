@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 Phase: 15 of 15 (Multi-User Collaboration) - In Progress
 Plan: 5 of 5 in current phase
 Status: Plan 15-05 complete
-Last activity: 2026-03-07 — Completed 15-05: Added assigneeId to activity server actions, Assignee Select in dialog, Assignee filter in ActivityFilters, assignee avatar in list rows
+Last activity: 2026-03-07 — Completed 15-03: AssigneePicker wired into DealDialog (Assignees field with form binding, edit pre-population, users prop) and AvatarGroup added to kanban DealCards (up to 3 avatars with name tooltips + overflow count)
 
 Progress: [█████████████████████] 100% (49/49 plans in current roadmap)
 
@@ -87,6 +87,7 @@ Progress: [█████████████████████] 100%
 | Phase 13-comprehensive-project-documentation P02 | 10min | 3 tasks | 7 files |
 | Phase 13 P01 | 13min | 3 tasks | 14 files |
 | Phase 14 P02 | 5min | 2 tasks | 2 files |
+| Phase 15-multi-user-collaboration P03 | 5min | 2 tasks | 2 files |
 | Phase 15-multi-user-collaboration P06 | 1 | 1 tasks | 3 files |
 | Phase 15-multi-user-collaboration P02 | 2min | 2 tasks | 3 files |
 
@@ -288,10 +289,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-07
-Stopped at: Completed 15-05-PLAN.md
+Stopped at: Completed 15-03-PLAN.md
 Resume file: None
 
-**Phase 15 IN PROGRESS.** Plans 15-01 through 15-05 complete. Plan 15-05: activity assignee UI — assigneeId in server actions, Assignee Select in dialog, Assignee filter in ActivityFilters, assignee avatar in list rows, wired end-to-end through page/client stack.
+**Phase 15 IN PROGRESS.** Plans 15-01, 15-02, 15-03 complete. Plan 15-03: AssigneePicker wired into DealDialog with form state binding and edit pre-population; AvatarGroup added to kanban DealCards showing up to 3 assignee avatars with name tooltips and +N overflow count.
 
 ---
 *State initialized: 2026-02-22*
