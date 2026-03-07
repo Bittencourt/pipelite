@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 15 - Multi-User Collaboration (In Progress)
+**Current focus:** Phase 15 - Multi-user Collaboration (Complete)
 
 ## Current Position
 
-Phase: 15 of 15 (Multi-User Collaboration) - In Progress
-Plan: 5 of 5 in current phase
-Status: Plan 15-05 complete
-Last activity: 2026-03-07 — Completed 15-04: Assignee filter wired into deals kanban (URL param → SQL subquery → kanban filter); /team page built with expandable user rows showing assigned deals and upcoming activities; Team nav link added to NavHeader
+Phase: 15 of 15 (Multi-user Collaboration) - Complete
+Plan: 6 of 6 in current phase
+Status: All plans complete, verification passed
+Last activity: 2026-03-07 — Completed Phase 15: deal_assignees schema, AssigneePicker, Owner+Assignees in deal dialog, AvatarGroup on deal cards, assignee filters on deals and activities, /team page, NavHeader Team link, translations in 3 locales
 
 Progress: [█████████████████████] 100% (49/49 plans in current roadmap)
 
@@ -294,7 +294,7 @@ Last session: 2026-03-07
 Stopped at: Completed 15-04-PLAN.md
 Resume file: None
 
-**Phase 15 IN PROGRESS.** Plans 15-01, 15-02, 15-03, 15-04 complete. Plan 15-04: Assignee filter wired into deals kanban with URL param support; /team page built with expandable user rows showing assigned deals and upcoming activities; Team nav link added to NavHeader.
+**Phase 15 COMPLETE.** All 6 plans done. Multi-user collaboration fully implemented: deal_assignees join table + activities.assigneeId migration, AssigneePicker component, Owner+Assignees fields in deal dialog, AvatarGroup on deal cards, assignee URL-param filters on deals and activities pages, /team page with expandable user rows, NavHeader Team link, and all translations in en-US/pt-BR/es-ES. Verification passed 12/12 (gap closure: Owner field restored in deal dialog).
 
 ---
 *State initialized: 2026-02-22*

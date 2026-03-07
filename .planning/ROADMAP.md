@@ -24,7 +24,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 10: REST API** - External integration via documented API ✅
 - [x] **Phase 11: Keyboard Control** - Full keyboard navigation across all screens ✅
 - [x] **Phase 14: Dashboard with Real Metrics** - Win rate, deal velocity, pipeline value by stage, activity completion rate ✅
-- [ ] **Phase 15: Multi-user Collaboration** - Assignees on deals and activities, shared team view
+- [x] **Phase 15: Multi-user Collaboration** - Assignees on deals and activities, shared team view ✅
 
 ## Phase Details
 
@@ -238,6 +238,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 9. Import/Export | 2/3 | Complete | 2026-02-28 |
 | 10. REST API | 4/4 | Complete    | 2026-03-01 |
 | 11. Keyboard Control | 5/5 | Complete    | 2026-03-02 |
+| 15. Multi-user Collaboration | 6/6 | Complete | 2026-03-07 |
 
 ### Phase 11: Keyboard Control
 
@@ -313,12 +314,12 @@ Plans:
 **Plans:** 6 plans in 3 waves
 
 Plans:
-- [ ] 15-01-PLAN.md — DB schema: deal_assignees join table, activities.assigneeId column, relations, migration
-- [ ] 15-02-PLAN.md — AssigneePicker component, deal actions with assignee persistence and auth fix
-- [ ] 15-03-PLAN.md — Deal dialog Owner + Assignees fields, deal card AvatarGroup with hover tooltips
-- [ ] 15-04-PLAN.md — Deals assignee filter, KanbanBoard users prop, /team page with expandable user rows, NavHeader Team link
-- [ ] 15-05-PLAN.md — Activity assignee: actions, dialog Select, ActivityFilters Assignee filter, page wiring
-- [ ] 15-06-PLAN.md — Translation strings for assignees and team in all three locales
+- [x] 15-01-PLAN.md — DB schema: deal_assignees join table, activities.assigneeId column, relations, migration ✅
+- [x] 15-02-PLAN.md — AssigneePicker component, deal actions with assignee persistence and auth fix ✅
+- [x] 15-03-PLAN.md — Deal dialog Owner + Assignees fields, deal card AvatarGroup with hover tooltips ✅
+- [x] 15-04-PLAN.md — Deals assignee filter, KanbanBoard users prop, /team page with expandable user rows, NavHeader Team link ✅
+- [x] 15-05-PLAN.md — Activity assignee: actions, dialog Select, ActivityFilters Assignee filter, page wiring ✅
+- [x] 15-06-PLAN.md — Translation strings for assignees and team in all three locales ✅
 
 ---
 *Roadmap created: 2026-02-22*
