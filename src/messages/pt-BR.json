@@ -105,7 +105,8 @@
     "settings": "Configurações",
     "apiKeys": "Chaves de API",
     "userManagement": "Gerenciamento de Usuários",
-    "team": "Equipe"
+    "team": "Equipe",
+    "analytics": "Análises"
   },
   "auth": {
     "login": "Entrar",

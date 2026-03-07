@@ -105,7 +105,8 @@
     "settings": "Settings",
     "apiKeys": "API Keys",
     "userManagement": "User Management",
-    "team": "Team"
+    "team": "Team",
+    "analytics": "Analytics"
   },
   "auth": {
     "login": "Login",

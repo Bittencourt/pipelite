@@ -6,7 +6,7 @@ import { useHotkeys } from "react-hotkeys-hook"
 import { useTranslations } from "next-intl"
 import { UserMenu } from "./user-menu"
 import { Button } from "@/components/ui/button"
-import { Building2, Users, Kanban, CheckCircle2, Users2 } from "lucide-react"
+import { Building2, Users, Kanban, BarChart3, CheckCircle2, Users2 } from "lucide-react"
 import Link from "next/link"
 import { GlobalSearch } from "./global-search"
 import { ShortcutsOverlay } from "@/components/keyboard"
@@ -57,6 +57,13 @@ export function NavHeader({ user }: NavHeaderProps) {
                 >
                   <Kanban className="h-4 w-4" />
                   {t("deals")}
+                </Link>
+                <Link
+                  href="/analytics"
+                  className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <BarChart3 className="h-4 w-4" />
+                  {t("analytics")}
                 </Link>
                 <Link
                   href="/activities"
