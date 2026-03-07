@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 15 of 15 (Multi-User Collaboration) - In Progress
-Plan: 2 of 4 in current phase
-Status: Plan 15-02 complete
-Last activity: 2026-03-07 — Completed 15-02: Created AssigneePicker component, updated deal actions with assignee persistence and owner-or-admin authorization
+Plan: 5 of 5 in current phase
+Status: Plan 15-05 complete
+Last activity: 2026-03-07 — Completed 15-05: Added assigneeId to activity server actions, Assignee Select in dialog, Assignee filter in ActivityFilters, assignee avatar in list rows
 
 Progress: [█████████████████████] 100% (49/49 plans in current roadmap)
 
@@ -80,6 +80,7 @@ Progress: [█████████████████████] 100%
 - 06-01: 8min (5 tasks, 6 files, 5 commits)
 
 *Updated after each plan completion*
+| Phase 15-multi-user-collaboration P05 | 5min | 3 tasks | 9 files |
 | Phase 15-multi-user-collaboration P01 | 4min | 3 tasks | 5 files |
 | Phase 14-dashboard-metrics P01 | 2min | 3 tasks | 8 files |
 | Phase 13-comprehensive-project-documentation P03 | 9min | 3 tasks | 10 files |
@@ -287,10 +288,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-07
-Stopped at: Completed 15-02-PLAN.md
+Stopped at: Completed 15-05-PLAN.md
 Resume file: None
 
-**Phase 15 IN PROGRESS.** Plan 15-02 complete: AssigneePicker component (Popover+Command multi-select) and deal actions updated with assignee persistence and owner-or-admin authorization across all four deal mutation actions.
+**Phase 15 IN PROGRESS.** Plans 15-01 through 15-05 complete. Plan 15-05: activity assignee UI — assigneeId in server actions, Assignee Select in dialog, Assignee filter in ActivityFilters, assignee avatar in list rows, wired end-to-end through page/client stack.
 
 ---
 *State initialized: 2026-02-22*
