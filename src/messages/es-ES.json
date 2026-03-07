@@ -104,7 +104,8 @@
     "admin": "Administración",
     "settings": "Configuración",
     "apiKeys": "Claves de API",
-    "userManagement": "Gestión de Usuarios"
+    "userManagement": "Gestión de Usuarios",
+    "team": "Equipo"
   },
   "auth": {
     "login": "Iniciar sesión",
@@ -182,7 +183,13 @@
     "kanban": {
       "moveToStage": "Mover a {stage}",
       "dealsCount": "{count} {count, plural, one {oferta} other {ofertas}}"
-    }
+    },
+    "assignees": "Asignados",
+    "noAssignees": "Sin asignados",
+    "selectAssignees": "Seleccionar asignados",
+    "assignee": "Asignado",
+    "allAssignees": "Todos los asignados",
+    "myDeals": "Mis Negocios"
   },
   "activities": {
     "title": "Actividades",
@@ -240,7 +247,11 @@
       "meeting": "Reunión",
       "task": "Tarea",
       "email": "Correo electrónico"
-    }
+    },
+    "assignee": "Asignado",
+    "assignedTo": "Asignado a",
+    "noAssignee": "Sin asignado",
+    "allAssignees": "Todos los asignados"
   },
   "settings": {
     "profile": {
@@ -394,5 +405,14 @@
     "hours": "{count} {count, plural, one {hora} other {horas}}",
     "days": "{count} {count, plural, one {día} other {días}}",
     "weeks": "{count} {count, plural, one {semana} other {semanas}}"
+  },
+  "team": {
+    "team": "Equipo",
+    "teamView": "Ve quién está asignado a qué en el equipo",
+    "assignedDeals": "Negocios Asignados",
+    "upcomingActivities": "Actividades Próximas",
+    "noUsers": "No se encontraron miembros del equipo",
+    "noDeals": "Sin negocios asignados",
+    "noActivities": "Sin actividades próximas"
   }
 }

@@ -104,7 +104,8 @@
     "admin": "Administração",
     "settings": "Configurações",
     "apiKeys": "Chaves de API",
-    "userManagement": "Gerenciamento de Usuários"
+    "userManagement": "Gerenciamento de Usuários",
+    "team": "Equipe"
   },
   "auth": {
     "login": "Entrar",
@@ -182,7 +183,13 @@
     "kanban": {
       "moveToStage": "Mover para {stage}",
       "dealsCount": "{count} {count, plural, one {negócio} other {negócios}}"
-    }
+    },
+    "assignees": "Responsáveis",
+    "noAssignees": "Sem responsáveis",
+    "selectAssignees": "Selecionar responsáveis",
+    "assignee": "Responsável",
+    "allAssignees": "Todos os responsáveis",
+    "myDeals": "Meus Negócios"
   },
   "activities": {
     "title": "Atividades",
@@ -240,7 +247,11 @@
       "meeting": "Reunião",
       "task": "Tarefa",
       "email": "E-mail"
-    }
+    },
+    "assignee": "Responsável",
+    "assignedTo": "Atribuído a",
+    "noAssignee": "Sem responsável",
+    "allAssignees": "Todos os responsáveis"
   },
   "settings": {
     "profile": {
@@ -394,5 +405,14 @@
     "hours": "{count} {count, plural, one {hora} other {horas}}",
     "days": "{count} {count, plural, one {dia} other {dias}}",
     "weeks": "{count} {count, plural, one {semana} other {semanas}}"
+  },
+  "team": {
+    "team": "Equipe",
+    "teamView": "Veja quem está atribuído ao quê na equipe",
+    "assignedDeals": "Negócios Atribuídos",
+    "upcomingActivities": "Próximas Atividades",
+    "noUsers": "Nenhum membro da equipe encontrado",
+    "noDeals": "Nenhum negócio atribuído",
+    "noActivities": "Nenhuma atividade próxima"
   }
 }

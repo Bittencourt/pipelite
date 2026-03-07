@@ -104,7 +104,8 @@
     "admin": "Admin",
     "settings": "Settings",
     "apiKeys": "API Keys",
-    "userManagement": "User Management"
+    "userManagement": "User Management",
+    "team": "Team"
   },
   "auth": {
     "login": "Login",
@@ -182,7 +183,13 @@
     "kanban": {
       "moveToStage": "Move to {stage}",
       "dealsCount": "{count, plural, one {# deal} other {# deals}}"
-    }
+    },
+    "assignees": "Assignees",
+    "noAssignees": "No assignees",
+    "selectAssignees": "Select assignees",
+    "assignee": "Assignee",
+    "allAssignees": "All assignees",
+    "myDeals": "My Deals"
   },
   "activities": {
     "title": "Activities",
@@ -240,7 +247,11 @@
       "meeting": "Meeting",
       "task": "Task",
       "email": "Email"
-    }
+    },
+    "assignee": "Assignee",
+    "assignedTo": "Assigned to",
+    "noAssignee": "No assignee",
+    "allAssignees": "All assignees"
   },
   "settings": {
     "profile": {
@@ -394,5 +405,14 @@
     "hours": "{count, plural, one {# hour} other {# hours}}",
     "days": "{count, plural, one {# day} other {# days}}",
     "weeks": "{count, plural, one {# week} other {# weeks}}"
+  },
+  "team": {
+    "team": "Team",
+    "teamView": "See who is assigned to what across the team",
+    "assignedDeals": "Assigned Deals",
+    "upcomingActivities": "Upcoming Activities",
+    "noUsers": "No team members found",
+    "noDeals": "No deals assigned",
+    "noActivities": "No upcoming activities"
   }
 }
