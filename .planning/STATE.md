@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 13 - Comprehensive Project Documentation (In Progress)
+**Current focus:** Phase 14 - Dashboard Metrics (In Progress)
 
 ## Current Position
 
-Phase: 13 of 13 (Comprehensive Project Documentation) - In Progress
-Plan: 3 of 4 in current phase
-Status: Plan 13-03 complete
-Last activity: 2026-03-04 — Completed 13-03: Administrator documentation with deployment guides, configuration reference, user management, operations guides, and troubleshooting
+Phase: 14 of 14 (Dashboard Metrics) - In Progress
+Plan: 1 of 3 in current phase
+Status: Plan 14-01 complete
+Last activity: 2026-03-06 — Completed 14-01: shadcn chart component, four SQL metric query functions, translation strings for win rate, deal velocity, pipeline value, and activity completion
 
-Progress: [█████████████████████ ] 96% (46/47 plans in current roadmap)
+Progress: [█████████████████████ ] 97% (47/48 plans in current roadmap)
 
 ## Performance Metrics
 
@@ -40,8 +40,10 @@ Progress: [█████████████████████ ] 96%
 | 11-keyboard-control | 5/5 | 31min | 6.2min |
 | 12-localization | 5/5 | 65min | 13min |
 | 13-comprehensive-project-documentation | 3/4 | 32min | 10.7min |
+| 14-dashboard-metrics | 1/3 | 2min | 2min |
 
 **Recent Trend:**
+- 14-01: 2min (3 tasks, 8 files, 3 commits) - shadcn chart component, four metric query functions, translation strings
 - 13-03: 9min (3 tasks, 10 files, 3 commits) - Administrator documentation with deployment guides, configuration reference, user management, operations guides, and troubleshooting
 - 13-02: 10min (3 tasks, 7 files, 3 commits) - API documentation with authentication, pagination, webhooks, error handling guides
 - 13-01: 13min (3 tasks, 14 files, 3 commits) - User tutorials, documentation hub, and getting-started guide
@@ -76,6 +78,7 @@ Progress: [█████████████████████ ] 96%
 - 06-01: 8min (5 tasks, 6 files, 5 commits)
 
 *Updated after each plan completion*
+| Phase 14-dashboard-metrics P01 | 2min | 3 tasks | 8 files |
 | Phase 13-comprehensive-project-documentation P03 | 9min | 3 tasks | 10 files |
 | Phase 13-comprehensive-project-documentation P02 | 10min | 3 tasks | 7 files |
 | Phase 13 P01 | 13min | 3 tasks | 14 files |
@@ -236,6 +239,12 @@ Recent decisions affecting current work:
 - [13-03] Mixed audience approach: Quick-start sections for technical experts, detailed step-by-step for beginners
 - [13-03] Deployment decision guide: Docker recommended for most, VPS for full control, Vercel for easiest setup
 - [13-03] Troubleshooting format: Symptom-cause-solution pattern for clarity and actionable guidance
+- [14-01] shadcn chart CLI install ensures correct CSS variable theming (not hand-rolled)
+- [14-01] updatedAt used as proxy for deal close date — deals table has no closedAt column
+- [14-01] Win rate/velocity rate returns null (not 0) when total=0 to distinguish no-data from 0%
+- [14-01] getPipelineValueByStage has no date filter — shows current open pipeline snapshot
+- [14-01] Activity overdue count is all-time; completed/total respect the selected period filter
+- [14-01] drizzle sum() returns string|null — coerce with parseFloat(r ?? '0')
 
 ### Pending Todos
 
@@ -246,6 +255,7 @@ None yet.
 - Phase 11 added: add full keyboard control possibility on all screens all available actions should be keyboard-executable (may be via navigation and direct hotkey, evaluate each scenario to define the best solution)
 - Phase 12 added: Make the application fully localizable (language, currency, date formats, timezones)
 - Phase 13 added: comprehensive project documentation
+- Phase 14 added: Dashboard with real metrics — win rate, deal velocity, pipeline value by stage, activity completion rate
 
 ### Blockers/Concerns
 
@@ -262,11 +272,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-03-04
-Stopped at: Completed 13-03-PLAN.md
+Last session: 2026-03-06
+Stopped at: Completed 14-01-PLAN.md
 Resume file: None
 
-**Phase 13 In Progress.** Plan 03 complete: Administrator documentation with deployment guides (Docker, VPS, Vercel), configuration reference, user management, operations guides (pipelines, custom fields, import/export), and troubleshooting. 3 of 4 plans in Phase 13 completed.
+**Phase 14 In Progress.** Plan 01 complete: shadcn chart component installed, four SQL metric query functions created (win rate, deal velocity, pipeline value by stage, activity completion), and 21-key translation namespace added to all three locales. 1 of 3 plans in Phase 14 completed.
 
 ---
 *State initialized: 2026-02-22*
