@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 15 of 15 (Multi-User Collaboration) - In Progress
-Plan: 1 of 4 in current phase
-Status: Plan 15-01 complete
-Last activity: 2026-03-07 — Completed 15-01: Created deal_assignees join table schema, added assigneeId FK to activities, updated all Drizzle relations, applied migration
+Plan: 2 of 4 in current phase
+Status: Plan 15-02 complete
+Last activity: 2026-03-07 — Completed 15-02: Created AssigneePicker component, updated deal actions with assignee persistence and owner-or-admin authorization
 
 Progress: [█████████████████████] 100% (49/49 plans in current roadmap)
 
@@ -87,6 +87,7 @@ Progress: [█████████████████████] 100%
 | Phase 13 P01 | 13min | 3 tasks | 14 files |
 | Phase 14 P02 | 5min | 2 tasks | 2 files |
 | Phase 15-multi-user-collaboration P06 | 1 | 1 tasks | 3 files |
+| Phase 15-multi-user-collaboration P02 | 2min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -256,6 +257,7 @@ Recent decisions affecting current work:
 - [15-01] dealAssignees uses pgTable with composite primaryKey([dealId, userId]) following Drizzle v2 array syntax
 - [15-01] assignee relation on activitiesRelations uses relationName: 'assignedActivities' to disambiguate two one(users) relations on the same table
 - [15-01] Migration applied directly via psql — drizzle-kit migrate tracking table was empty (migrations applied by Docker startup, not tracked)
+- [Phase 15-multi-user-collaboration]: AssigneePicker uses Popover+Command (not Select) for built-in text search; atomic assignee replacement via delete-all + bulk insert
 
 ### Pending Todos
 
@@ -285,10 +287,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-07
-Stopped at: Completed 15-06-PLAN.md
+Stopped at: Completed 15-02-PLAN.md
 Resume file: None
 
-**Phase 15 IN PROGRESS.** Plan 15-06 complete: translation strings for assignee UI and /team page added to all three locales (en-US, pt-BR, es-ES) — 23 new keys across deals, activities, nav, and team namespaces.
+**Phase 15 IN PROGRESS.** Plan 15-02 complete: AssigneePicker component (Popover+Command multi-select) and deal actions updated with assignee persistence and owner-or-admin authorization across all four deal mutation actions.
 
 ---
 *State initialized: 2026-02-22*
