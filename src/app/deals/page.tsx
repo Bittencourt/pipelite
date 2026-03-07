@@ -13,6 +13,7 @@ interface DealWithRelations {
   value: string | null
   stageId: string
   position: string
+  ownerId: string
   organizationId: string | null
   personId: string | null
   expectedCloseDate?: Date | null

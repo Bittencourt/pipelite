@@ -12,6 +12,7 @@ const dealSchema = z.object({
   title: z.string().min(1, "Title is required").max(200, "Title must be 200 characters or less"),
   value: z.number().min(0).optional().nullable(),
   stageId: z.string().min(1, "Stage is required"),
+  ownerId: z.string().optional(),
   organizationId: z.string().optional().nullable(),
   personId: z.string().optional().nullable(),
   expectedCloseDate: z.date().optional().nullable(),
@@ -110,7 +111,7 @@ export async function createDeal(
       stageId: validated.data.stageId,
       organizationId: validated.data.organizationId || null,
       personId: validated.data.personId || null,
-      ownerId: session.user.id,
+      ownerId: validated.data.ownerId || session.user.id,
       position,
     }).returning()
 
@@ -235,6 +236,9 @@ export async function updateDeal(
     }
     if (validated.data.notes !== undefined) {
       updateData.notes = validated.data.notes || null
+    }
+    if (validated.data.ownerId !== undefined) {
+      updateData.ownerId = validated.data.ownerId
     }
 
     await db

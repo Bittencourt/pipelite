@@ -43,6 +43,7 @@ const dealSchema = z.object({
   title: z.string().min(1, "Title is required").max(200, "Title must be 200 characters or less"),
   value: z.string().optional(),
   stageId: z.string().min(1, "Stage is required"),
+  ownerId: z.string().optional(),
   organizationId: z.string().optional(),
   personId: z.string().optional(),
   expectedCloseDate: z.string().optional(),
@@ -66,6 +67,7 @@ interface DealDialogProps {
     expectedCloseDate: Date | null
     notes: string | null
     stageId: string
+    ownerId?: string | null
     organizationId: string | null
     personId: string | null
     assigneeIds?: string[]
@@ -107,6 +109,7 @@ export function DealDialog({
       title: "",
       value: "",
       stageId: "",
+      ownerId: "",
       organizationId: "",
       personId: "",
       expectedCloseDate: "",
@@ -116,6 +119,7 @@ export function DealDialog({
   })
 
   const stageId = watch("stageId")
+  const ownerId = watch("ownerId")
   const organizationId = watch("organizationId")
   const personId = watch("personId")
   const valueInput = watch("value")
@@ -135,6 +139,7 @@ export function DealDialog({
           title: deal.title,
           value: deal.value?.toString() || "",
           stageId: deal.stageId,
+          ownerId: deal.ownerId || "",
           organizationId: deal.organizationId || "",
           personId: deal.personId || "",
           expectedCloseDate: deal.expectedCloseDate
@@ -148,6 +153,7 @@ export function DealDialog({
           title: "",
           value: "",
           stageId: defaultStageId || "",
+          ownerId: "",
           organizationId: "",
           personId: "",
           expectedCloseDate: "",
@@ -171,6 +177,7 @@ export function DealDialog({
         title: data.title,
         value: data.value ? parseFloat(data.value) : null,
         stageId: data.stageId,
+        ownerId: data.ownerId || undefined,
         organizationId: data.organizationId || null,
         personId: data.personId || null,
         expectedCloseDate: data.expectedCloseDate ? new Date(data.expectedCloseDate) : null,
@@ -293,6 +300,29 @@ export function DealDialog({
                 <p className="text-sm text-destructive">{errors.stageId.message}</p>
               )}
             </div>
+
+            {users.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="ownerId">Owner</Label>
+                <Select
+                  value={ownerId || ""}
+                  onValueChange={(value) => setValue("ownerId", value === "none" ? "" : value)}
+                  disabled={isLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an owner (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No owner</SelectItem>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.name || user.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="organizationId">Organization</Label>

@@ -423,8 +423,10 @@ export function KanbanBoard({
             expectedCloseDate: selectedDeal.expectedCloseDate || null,
             notes: selectedDeal.notes || null,
             stageId: selectedDeal.stageId,
+            ownerId: selectedDeal.ownerId,
             organizationId: selectedDeal.organizationId,
             personId: selectedDeal.personId,
+            assigneeIds: selectedDeal.assignees?.map(a => a.userId) ?? [],
           }}
           organizations={organizations}
           people={people}
