@@ -199,7 +199,6 @@ export default async function HomePage({
         <CardContent>
           <PipelineValueChart
             data={pipeline.stages}
-            formatValue={(v) => formatCurrency(v)}
           />
         </CardContent>
       </Card>

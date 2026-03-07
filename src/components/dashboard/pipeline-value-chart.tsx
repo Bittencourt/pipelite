@@ -6,7 +6,6 @@ import { BarChart, Bar, XAxis, YAxis, Cell } from "recharts"
 
 interface PipelineValueChartProps {
   data: Array<{ stage: string; color: string; value: number; count: number }>
-  formatValue: (value: number) => string
 }
 
 const chartConfig = {
@@ -16,7 +15,7 @@ const chartConfig = {
   },
 } satisfies ChartConfig
 
-export function PipelineValueChart({ data, formatValue }: PipelineValueChartProps) {
+export function PipelineValueChart({ data }: PipelineValueChartProps) {
   if (data.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center rounded-md border border-dashed">
