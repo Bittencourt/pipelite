@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 14 of 14 (Dashboard Metrics) - In Progress
-Plan: 2 of 3 in current phase
-Status: Plan 14-02 complete
-Last activity: 2026-03-07 — Completed 14-02: PipelineValueChart (horizontal bar chart with per-stage colors) and ActivityCompletionChart (donut chart with center percentage overlay) client components
+Plan: 3 of 3 in current phase
+Status: Plan 14-03 complete
+Last activity: 2026-03-07 — Completed 14-03: Rewrote authenticated home page with 4 metric stat cards, PipelineValueChart, ActivityCompletionChart, and URL-param time period filter
 
-Progress: [█████████████████████ ] 98% (48/49 plans in current roadmap)
+Progress: [█████████████████████] 100% (49/49 plans in current roadmap)
 
 ## Performance Metrics
 
@@ -40,9 +40,10 @@ Progress: [█████████████████████ ] 98%
 | 11-keyboard-control | 5/5 | 31min | 6.2min |
 | 12-localization | 5/5 | 65min | 13min |
 | 13-comprehensive-project-documentation | 3/4 | 32min | 10.7min |
-| 14-dashboard-metrics | 2/3 | 7min | 3.5min |
+| 14-dashboard-metrics | 3/3 | 9min | 3min |
 
 **Recent Trend:**
+- 14-03: 2min (1 task, 1 file, 1 commit) - Authenticated home page with sales metrics dashboard, period filter, stat cards, charts
 - 14-02: 5min (2 tasks, 2 files, 2 commits) - PipelineValueChart horizontal bar chart and ActivityCompletionChart donut with center overlay
 - 14-01: 2min (3 tasks, 8 files, 3 commits) - shadcn chart component, four metric query functions, translation strings
 - 13-03: 9min (3 tasks, 10 files, 3 commits) - Administrator documentation with deployment guides, configuration reference, user management, operations guides, and troubleshooting
@@ -249,6 +250,7 @@ Recent decisions affecting current work:
 - [14-01] drizzle sum() returns string|null — coerce with parseFloat(r ?? '0')
 - [Phase 14-02]: PipelineValueChart uses layout='vertical' on BarChart so stages appear on Y-axis (horizontal bars)
 - [Phase 14-02]: ActivityCompletionChart uses relative/absolute positioning for center percentage overlay rather than Recharts label prop
+- [14-03] Period selector rendered as inline Link elements styled conditionally — no client component needed since active state comes from server-rendered searchParam
 
 ### Pending Todos
 
@@ -277,10 +279,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-07
-Stopped at: Completed 14-02-PLAN.md
+Stopped at: Completed 14-03-PLAN.md
 Resume file: None
 
-**Phase 14 In Progress.** Plan 02 complete: PipelineValueChart (horizontal bar chart with per-stage Cell coloring) and ActivityCompletionChart (donut chart with absolute-positioned center percentage overlay) created as pure display client components. 2 of 3 plans in Phase 14 completed.
+**Phase 14 COMPLETE.** All 3 plans done. Final plan 14-03 rewrote the authenticated home page with a full sales dashboard: 4 metric stat cards (Win Rate, Deal Velocity, Pipeline Value, Activity Completion), PipelineValueChart, ActivityCompletionChart, URL-param period filter, and preserved guest landing page. All 49 plans in the roadmap are complete.
 
 ---
 *State initialized: 2026-02-22*
