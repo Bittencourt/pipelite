@@ -48,6 +48,7 @@ export default async function ActivitiesPage({
   searchParams: Promise<{
     type?: string
     owner?: string
+    assignee?: string
     status?: string
     dateFrom?: string
     dateTo?: string
@@ -65,6 +66,7 @@ export default async function ActivitiesPage({
   const filters: {
     typeId?: string
     ownerId?: string
+    assigneeId?: string
     completed?: boolean
   } = {}
 
@@ -73,6 +75,9 @@ export default async function ActivitiesPage({
   }
   if (params.owner) {
     filters.ownerId = params.owner
+  }
+  if (params.assignee) {
+    filters.assigneeId = params.assignee
   }
   if (params.status === "completed") {
     filters.completed = true
@@ -88,6 +93,7 @@ export default async function ActivitiesPage({
       columns: {
         id: true,
         name: true,
+        email: true,
       },
       orderBy: [users.name],
     }),
@@ -143,10 +149,18 @@ export default async function ActivitiesPage({
     name: u.name || "Unknown",
   }))
 
+  // Users list for assignee select and filter (same pool as owners)
+  const usersForAssignee = ownersResult.map((u) => ({
+    id: u.id,
+    name: u.name || "Unknown",
+    email: u.email,
+  }))
+
   // Calculate active filter count
   const activeFilters = {
     type: params.type || null,
     owner: params.owner || null,
+    assignee: params.assignee || null,
     status: params.status || null,
     dateFrom: params.dateFrom || null,
     dateTo: params.dateTo || null,
@@ -159,6 +173,7 @@ export default async function ActivitiesPage({
         activityTypes={activityTypes}
         deals={dealsForDropdown}
         owners={owners}
+        users={usersForAssignee}
         activeFilters={activeFilters}
       />
     </div>

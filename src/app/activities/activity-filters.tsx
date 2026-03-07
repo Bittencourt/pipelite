@@ -24,11 +24,13 @@ import { useTranslations } from "next-intl"
 interface ActivityFiltersProps {
   activityTypes: Array<{ id: string; name: string }>
   owners: Array<{ id: string; name: string }>
+  assignees?: Array<{ id: string; name: string }>
 }
 
 function ActivityFiltersInner({
   activityTypes,
   owners,
+  assignees = [],
 }: ActivityFiltersProps) {
   const searchParams = useSearchParams()
   const pathname = usePathname()
@@ -38,6 +40,7 @@ function ActivityFiltersInner({
   // Read filter values from URL
   const typeId = searchParams.get("type") || ""
   const ownerId = searchParams.get("owner") || ""
+  const assigneeId = searchParams.get("assignee") || ""
   const status = searchParams.get("status") || ""
   const dateFrom = searchParams.get("dateFrom") || ""
   const dateTo = searchParams.get("dateTo") || ""
@@ -46,6 +49,7 @@ function ActivityFiltersInner({
   const activeFilterCount = [
     typeId,
     ownerId,
+    assigneeId,
     status,
     dateFrom,
     dateTo,
@@ -78,6 +82,11 @@ function ActivityFiltersInner({
   const getOwnerName = (id: string) => {
     const owner = owners.find((o) => o.id === id)
     return owner?.name || id
+  }
+
+  const getAssigneeName = (id: string) => {
+    const assignee = assignees.find((a) => a.id === id)
+    return assignee?.name || id
   }
 
   const getStatusName = (value: string) => {
@@ -172,6 +181,26 @@ function ActivityFiltersInner({
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="assignee-filter">{t('assignee')}</Label>
+                <Select
+                  value={assigneeId || "all"}
+                  onValueChange={(value) => setFilter("assignee", value === "all" ? "" : value)}
+                >
+                  <SelectTrigger id="assignee-filter">
+                    <SelectValue placeholder={t('allAssignees')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t('allAssignees')}</SelectItem>
+                    {assignees.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
                 <Label>{t('dueDateRange')}</Label>
                 <div className="flex gap-2">
                   <div className="flex-1">
@@ -239,6 +268,17 @@ function ActivityFiltersInner({
                 {t('ownerLabel')}: {getOwnerName(ownerId)}
                 <button
                   onClick={() => setFilter("owner", "")}
+                  className="ml-1 hover:text-destructive"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
+            {assigneeId && (
+              <Badge variant="secondary" className="gap-1 font-normal">
+                {t('assigneeLabel')}: {getAssigneeName(assigneeId)}
+                <button
+                  onClick={() => setFilter("assignee", "")}
                   className="ml-1 hover:text-destructive"
                 >
                   <X className="h-3 w-3" />

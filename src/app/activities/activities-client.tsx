@@ -31,9 +31,11 @@ interface ActivitiesClientProps {
   activityTypes: ActivityType[]
   deals: DealInfo[]
   owners: Array<{ id: string; name: string }>
+  users: Array<{ id: string; name: string; email: string }>
   activeFilters: {
     type: string | null
     owner: string | null
+    assignee: string | null
     status: string | null
     dateFrom: string | null
     dateTo: string | null
@@ -45,6 +47,7 @@ export function ActivitiesClient({
   activityTypes,
   deals,
   owners,
+  users,
   activeFilters,
 }: ActivitiesClientProps) {
   const router = useRouter()
@@ -134,7 +137,11 @@ export function ActivitiesClient({
 
         <TabsContent value="list">
           <div className="space-y-4">
-            <ActivityFilters activityTypes={activityTypes} owners={owners} />
+            <ActivityFilters
+              activityTypes={activityTypes}
+              owners={owners}
+              assignees={users.map(u => ({ id: u.id, name: u.name || u.email }))}
+            />
 
             {hasActiveFilters && activities.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground border rounded-lg">
@@ -172,6 +179,7 @@ export function ActivitiesClient({
         activity={editingActivity}
         activityTypes={activityTypes}
         deals={deals}
+        users={users}
         onSuccess={handleSuccess}
       />
     </div>

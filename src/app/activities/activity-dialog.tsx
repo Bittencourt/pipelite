@@ -43,6 +43,7 @@ const activitySchema = z.object({
   dueDate: z.string().min(1, "Due date is required"),
   dueTime: z.string().optional(),
   dealId: z.string().optional(),
+  assigneeId: z.string().optional(),
   notes: z.string().max(2000, "Notes must be 2000 characters or less").optional(),
 })
 
@@ -71,6 +72,7 @@ interface Activity {
   title: string
   typeId: string
   dealId: string | null
+  assigneeId?: string | null
   dueDate: Date
   notes: string | null
 }
@@ -81,6 +83,7 @@ interface ActivityDialogProps {
   activity?: Activity | null // null = create mode, object = edit mode
   activityTypes: ActivityType[]
   deals: Deal[]
+  users?: { id: string; name: string | null; email: string }[]
   onSuccess?: () => void
 }
 
@@ -98,6 +101,7 @@ export function ActivityDialog({
   activity,
   activityTypes,
   deals,
+  users = [],
   onSuccess,
 }: ActivityDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
@@ -119,12 +123,14 @@ export function ActivityDialog({
       dueDate: "",
       dueTime: "09:00",
       dealId: "",
+      assigneeId: "",
       notes: "",
     },
   })
 
   const typeId = watch("typeId")
   const dealId = watch("dealId")
+  const assigneeId = watch("assigneeId")
 
   // Reset form when dialog opens or activity changes
   useEffect(() => {
@@ -141,6 +147,7 @@ export function ActivityDialog({
           dueDate: dateStr,
           dueTime: timeStr,
           dealId: activity.dealId || "",
+          assigneeId: activity.assigneeId || "",
           notes: activity.notes || "",
         })
       } else {
@@ -167,6 +174,7 @@ export function ActivityDialog({
         title: data.title,
         typeId: data.typeId,
         dealId: data.dealId || null,
+        assigneeId: data.assigneeId || null,
         dueDate,
         notes: data.notes || null,
       }
@@ -326,6 +334,27 @@ export function ActivityDialog({
                   {deals.map((deal) => (
                     <SelectItem key={deal.id} value={deal.id}>
                       {deal.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="assigneeId">Assignee</Label>
+              <Select
+                value={assigneeId || "none"}
+                onValueChange={(value) => setValue("assigneeId", value === "none" ? "" : value)}
+                disabled={isLoading}
+              >
+                <SelectTrigger id="assigneeId">
+                  <SelectValue placeholder="No assignee" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No assignee</SelectItem>
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name || u.email}
                     </SelectItem>
                   ))}
                 </SelectContent>
