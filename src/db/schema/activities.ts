@@ -9,6 +9,7 @@ export const activities = pgTable('activities', {
   typeId: text('type_id').notNull().references(() => activityTypes.id),
   dealId: text('deal_id').references(() => deals.id),
   ownerId: text('owner_id').notNull().references(() => users.id),
+  assigneeId: text('assignee_id').references(() => users.id),
   dueDate: timestamp('due_date', { mode: 'date' }).notNull(),
   completedAt: timestamp('completed_at', { mode: 'date' }), // null = not done, timestamp = done
   notes: text('notes'),

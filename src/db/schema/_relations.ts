@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm"
 import { users } from "./users"
+import { dealAssignees } from "./deal-assignees"
 import { sessions } from "./sessions"
 import { accounts } from "./accounts"
 import { apiKeys } from "./api-keys"
@@ -24,6 +25,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   deals: many(deals),
   activities: many(activities),
   webhooks: many(webhooks),
+  dealAssignments: many(dealAssignees),
+  assignedActivities: many(activities, { relationName: 'assignedActivities' }),
 }))
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -109,6 +112,7 @@ export const dealsRelations = relations(deals, ({ one, many }) => ({
     references: [users.id],
   }),
   activities: many(activities),
+  assignees: many(dealAssignees),
 }))
 
 export const activityTypesRelations = relations(activityTypes, ({ many }) => ({
@@ -128,11 +132,27 @@ export const activitiesRelations = relations(activities, ({ one }) => ({
     fields: [activities.ownerId],
     references: [users.id],
   }),
+  assignee: one(users, {
+    fields: [activities.assigneeId],
+    references: [users.id],
+    relationName: 'assignedActivities',
+  }),
 }))
 
 export const webhooksRelations = relations(webhooks, ({ one }) => ({
   user: one(users, {
     fields: [webhooks.userId],
+    references: [users.id],
+  }),
+}))
+
+export const dealAssigneesRelations = relations(dealAssignees, ({ one }) => ({
+  deal: one(deals, {
+    fields: [dealAssignees.dealId],
+    references: [deals.id],
+  }),
+  user: one(users, {
+    fields: [dealAssignees.userId],
     references: [users.id],
   }),
 }))
