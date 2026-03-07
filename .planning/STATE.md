@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 Phase: 15 of 15 (Multi-user Collaboration) - Complete
 Plan: 6 of 6 in current phase
 Status: All plans complete, verification passed
-Last activity: 2026-03-07 — Completed Phase 15: deal_assignees schema, AssigneePicker, Owner+Assignees in deal dialog, AvatarGroup on deal cards, assignee filters on deals and activities, /team page, NavHeader Team link, translations in 3 locales
+Last activity: 2026-03-07 — Completed quick task 3: make the layout of the home page more focused on the operation and create a new tab for the analytics dashboard
 
 Progress: [█████████████████████] 100% (49/49 plans in current roadmap)
 
@@ -288,7 +288,7 @@ Issues that affect future work:
 |---|-------------|------|--------|-----------|
 | 1 | fix the home dashboard to enable the Pipelines card/button | 2026-02-28 | 934784c | [1-fix-the-home-dashboard-to-enable-the-pip](./quick/1-fix-the-home-dashboard-to-enable-the-pip/) |
 | 2 | update admin panel navigation with Custom Fields and Admin Tools section | 2026-02-28 | 12a31f0 | [2-update-the-admin-panel-to-reflect-all-av](./quick/2-update-the-admin-panel-to-reflect-all-av/) |
-| 3 | operation-focused home page with Analytics tab | 2026-03-07 | d4b0ce9 | [3-make-the-layout-of-the-home-page-more-fo](./quick/3-make-the-layout-of-the-home-page-more-fo/) |
+| 3 | make the layout of the home page more focused on the operation and create a new tab for the analytics dashboard | 2026-03-07 | 29ee726 | [3-make-the-layout-of-the-home-page-more-fo](./quick/3-make-the-layout-of-the-home-page-more-fo/) |
 
 ## Session Continuity
 
