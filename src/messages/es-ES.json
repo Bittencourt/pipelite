@@ -47,7 +47,30 @@
     "manageOrganizations": "Gestiona tus empresas",
     "manageContacts": "Gestiona tus contactos",
     "viewPipeline": "Ve y gestiona tu pipeline de ventas",
-    "manageTasks": "Gestiona tareas, llamadas, reuniones y correos"
+    "manageTasks": "Gestiona tareas, llamadas, reuniones y correos",
+    "metrics": {
+      "title": "Resumen de Ventas",
+      "periodLabel": "Período",
+      "thisMonth": "Este Mes",
+      "thisQuarter": "Este Trimestre",
+      "last30Days": "Últimos 30 Días",
+      "allTime": "Todo el Período",
+      "winRate": "Tasa de Cierre",
+      "winRateSubtitle": "{won} ganados, {lost} perdidos",
+      "winRateNoData": "Sin negocios cerrados en este período",
+      "dealVelocity": "Velocidad de Negocios",
+      "dealVelocitySubtitle": "promedio de días para cerrar ({count} negocios)",
+      "dealVelocityNoData": "Sin negocios ganados en este período",
+      "dealVelocityDays": "{days} días",
+      "pipelineValue": "Valor del Pipeline",
+      "pipelineValueSubtitle": "en {count} etapas abiertas",
+      "pipelineValueEmpty": "Sin negocios abiertos",
+      "activityCompletion": "Tasa de Finalización de Actividades",
+      "activityCompletionSubtitle": "{completed} de {total} completadas",
+      "activityCompletionNoData": "Sin actividades en este período",
+      "overdueActivities": "{count} vencidas",
+      "totalValue": "Valor Total"
+    }
   },
   "dashboard": {
     "title": "Panel",

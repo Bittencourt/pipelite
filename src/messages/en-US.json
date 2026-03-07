@@ -47,7 +47,30 @@
     "manageOrganizations": "Manage your organizations",
     "manageContacts": "Manage your contacts",
     "viewPipeline": "View and manage your sales pipeline",
-    "manageTasks": "Manage tasks, calls, meetings, and emails"
+    "manageTasks": "Manage tasks, calls, meetings, and emails",
+    "metrics": {
+      "title": "Sales Overview",
+      "periodLabel": "Period",
+      "thisMonth": "This Month",
+      "thisQuarter": "This Quarter",
+      "last30Days": "Last 30 Days",
+      "allTime": "All Time",
+      "winRate": "Win Rate",
+      "winRateSubtitle": "{won} won, {lost} lost",
+      "winRateNoData": "No closed deals this period",
+      "dealVelocity": "Deal Velocity",
+      "dealVelocitySubtitle": "avg days to close ({count} deals)",
+      "dealVelocityNoData": "No won deals this period",
+      "dealVelocityDays": "{days} days",
+      "pipelineValue": "Pipeline Value",
+      "pipelineValueSubtitle": "across {count} open stages",
+      "pipelineValueEmpty": "No open deals",
+      "activityCompletion": "Activity Completion",
+      "activityCompletionSubtitle": "{completed} of {total} completed",
+      "activityCompletionNoData": "No activities this period",
+      "overdueActivities": "{count} overdue",
+      "totalValue": "Total Value"
+    }
   },
   "dashboard": {
     "title": "Dashboard",
