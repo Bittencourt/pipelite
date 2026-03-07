@@ -315,10 +315,10 @@ Plans:
 Plans:
 - [ ] 15-01-PLAN.md — DB schema: deal_assignees join table, activities.assigneeId column, relations, migration
 - [ ] 15-02-PLAN.md — AssigneePicker component, deal actions with assignee persistence and auth fix
-- [ ] 15-03-PLAN.md — Deal dialog with AssigneePicker field, deal card with AvatarGroup
-- [ ] 15-04-PLAN.md — Deals page assignee filter, DealFilters Assignee dropdown, KanbanBoard users prop
-- [ ] 15-05-PLAN.md — Activity assignee: actions, dialog Select field, page users fetch
-- [ ] 15-06-PLAN.md — Translation strings for assignees in all three locales
+- [ ] 15-03-PLAN.md — Deal dialog Owner + Assignees fields, deal card AvatarGroup with hover tooltips
+- [ ] 15-04-PLAN.md — Deals assignee filter, KanbanBoard users prop, /team page with expandable user rows, NavHeader Team link
+- [ ] 15-05-PLAN.md — Activity assignee: actions, dialog Select, ActivityFilters Assignee filter, page wiring
+- [ ] 15-06-PLAN.md — Translation strings for assignees and team in all three locales
 
 ---
 *Roadmap created: 2026-02-22*
