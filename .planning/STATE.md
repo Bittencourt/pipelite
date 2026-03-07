@@ -86,6 +86,7 @@ Progress: [█████████████████████] 100%
 | Phase 13-comprehensive-project-documentation P02 | 10min | 3 tasks | 7 files |
 | Phase 13 P01 | 13min | 3 tasks | 14 files |
 | Phase 14 P02 | 5min | 2 tasks | 2 files |
+| Phase 15-multi-user-collaboration P06 | 1 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -284,10 +285,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-07
-Stopped at: Completed 15-01-PLAN.md
+Stopped at: Completed 15-06-PLAN.md
 Resume file: None
 
-**Phase 15 IN PROGRESS.** Plan 15-01 complete: database layer for multi-user collaboration — deal_assignees join table, activities.assignee_id FK, full Drizzle relational query support, migration applied.
+**Phase 15 IN PROGRESS.** Plan 15-06 complete: translation strings for assignee UI and /team page added to all three locales (en-US, pt-BR, es-ES) — 23 new keys across deals, activities, nav, and team namespaces.
 
 ---
 *State initialized: 2026-02-22*
