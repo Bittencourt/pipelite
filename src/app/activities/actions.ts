@@ -12,6 +12,7 @@ const activitySchema = z.object({
   title: z.string().min(1, "Title is required").max(200, "Title must be 200 characters or less"),
   typeId: z.string().min(1, "Activity type is required"),
   dealId: z.string().optional().nullable(),
+  assigneeId: z.string().optional().nullable(),
   dueDate: z.date({ message: "Due date is required" }),
   notes: z.string().max(2000, "Notes must be 2000 characters or less").optional().nullable(),
   customFields: z.record(z.string(), z.unknown()).optional(),
@@ -69,6 +70,7 @@ export async function createActivity(
       title: validated.data.title,
       typeId: validated.data.typeId,
       dealId: validated.data.dealId || null,
+      assigneeId: validated.data.assigneeId || null,
       ownerId: session.user.id,
       dueDate: validated.data.dueDate,
       notes: validated.data.notes || null,
@@ -166,6 +168,9 @@ export async function updateActivity(
     }
     if (validated.data.notes !== undefined) {
       updateData.notes = validated.data.notes || null
+    }
+    if (validated.data.assigneeId !== undefined) {
+      updateData.assigneeId = validated.data.assigneeId || null
     }
 
     await db
@@ -301,6 +306,7 @@ export async function getActivities(filters?: {
   typeId?: string
   dealId?: string
   ownerId?: string
+  assigneeId?: string
   completed?: boolean
 }): Promise<{ success: true; data: unknown[] } | { success: false; error: string }> {
   const session = await auth()
@@ -323,6 +329,9 @@ export async function getActivities(filters?: {
     if (filters?.ownerId) {
       conditions.push(eq(activities.ownerId, filters.ownerId))
     }
+    if (filters?.assigneeId) {
+      conditions.push(eq(activities.assigneeId, filters.assigneeId))
+    }
     if (filters?.completed === true) {
       conditions.push(isNull(activities.deletedAt)) // completedAt is not null - need different approach
     }
@@ -333,6 +342,9 @@ export async function getActivities(filters?: {
         type: true,
         deal: true,
         owner: true,
+        assignee: {
+          columns: { id: true, name: true, email: true },
+        },
       },
       orderBy: [asc(activities.dueDate)],
     })
