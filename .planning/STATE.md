@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 Phase: 15 of 15 (Multi-User Collaboration) - In Progress
 Plan: 5 of 5 in current phase
 Status: Plan 15-05 complete
-Last activity: 2026-03-07 — Completed 15-03: AssigneePicker wired into DealDialog (Assignees field with form binding, edit pre-population, users prop) and AvatarGroup added to kanban DealCards (up to 3 avatars with name tooltips + overflow count)
+Last activity: 2026-03-07 — Completed 15-04: Assignee filter wired into deals kanban (URL param → SQL subquery → kanban filter); /team page built with expandable user rows showing assigned deals and upcoming activities; Team nav link added to NavHeader
 
 Progress: [█████████████████████] 100% (49/49 plans in current roadmap)
 
@@ -90,6 +90,7 @@ Progress: [█████████████████████] 100%
 | Phase 15-multi-user-collaboration P03 | 5min | 2 tasks | 2 files |
 | Phase 15-multi-user-collaboration P06 | 1 | 1 tasks | 3 files |
 | Phase 15-multi-user-collaboration P02 | 2min | 2 tasks | 3 files |
+| Phase 15-multi-user-collaboration P04 | 18min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -260,6 +261,7 @@ Recent decisions affecting current work:
 - [15-01] assignee relation on activitiesRelations uses relationName: 'assignedActivities' to disambiguate two one(users) relations on the same table
 - [15-01] Migration applied directly via psql — drizzle-kit migrate tracking table was empty (migrations applied by Docker startup, not tracked)
 - [Phase 15-multi-user-collaboration]: AssigneePicker uses Popover+Command (not Select) for built-in text search; atomic assignee replacement via delete-all + bulk insert
+- [Phase 15-multi-user-collaboration]: Drizzle relational where-in-with not supported: filter deleted deals in application layer instead of nested query
 
 ### Pending Todos
 
@@ -289,10 +291,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-07
-Stopped at: Completed 15-03-PLAN.md
+Stopped at: Completed 15-04-PLAN.md
 Resume file: None
 
-**Phase 15 IN PROGRESS.** Plans 15-01, 15-02, 15-03 complete. Plan 15-03: AssigneePicker wired into DealDialog with form state binding and edit pre-population; AvatarGroup added to kanban DealCards showing up to 3 assignee avatars with name tooltips and +N overflow count.
+**Phase 15 IN PROGRESS.** Plans 15-01, 15-02, 15-03, 15-04 complete. Plan 15-04: Assignee filter wired into deals kanban with URL param support; /team page built with expandable user rows showing assigned deals and upcoming activities; Team nav link added to NavHeader.
 
 ---
 *State initialized: 2026-02-22*
