@@ -41,6 +41,7 @@ import {
   Circle,
   AlertCircle,
 } from "lucide-react"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { deleteActivity, toggleActivityCompletion } from "./actions"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
@@ -70,11 +71,13 @@ export interface Activity {
   title: string
   typeId: string
   dealId: string | null
+  assigneeId?: string | null
   dueDate: Date
   completedAt: Date | null
   notes: string | null
   type: ActivityType
   deal: DealInfo | null
+  assignee?: { id: string; name: string | null; email: string } | null
 }
 
 interface ActivityListProps {
@@ -98,6 +101,16 @@ const colorMap: Record<string, string> = {
   Meeting: "bg-purple-100 text-purple-800",
   Task: "bg-green-100 text-green-800",
   Email: "bg-amber-100 text-amber-800",
+}
+
+// Helper to get user initials for avatar
+function getInitials(name: string | null, email: string): string {
+  if (name) {
+    const parts = name.trim().split(/\s+/)
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    return name.slice(0, 2).toUpperCase()
+  }
+  return email.slice(0, 2).toUpperCase()
 }
 
 // Helper to check if activity is overdue
@@ -320,6 +333,25 @@ export function ActivityList({
           >
             {deal.title}
           </Link>
+        )
+      },
+    },
+    {
+      id: "assignee",
+      header: "",
+      size: 40,
+      cell: ({ row }) => {
+        const activity = row.original
+        if (!activity.assignee) return null
+        return (
+          <Avatar
+            className="h-7 w-7"
+            title={activity.assignee.name || activity.assignee.email}
+          >
+            <AvatarFallback className="text-xs">
+              {getInitials(activity.assignee.name, activity.assignee.email)}
+            </AvatarFallback>
+          </Avatar>
         )
       },
     },
