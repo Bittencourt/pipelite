@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 14 - Dashboard Metrics (In Progress)
+**Current focus:** Phase 15 - Multi-User Collaboration (In Progress)
 
 ## Current Position
 
-Phase: 14 of 14 (Dashboard Metrics) - In Progress
-Plan: 3 of 3 in current phase
-Status: Plan 14-03 complete
-Last activity: 2026-03-07 — Completed 14-03: Rewrote authenticated home page with 4 metric stat cards, PipelineValueChart, ActivityCompletionChart, and URL-param time period filter
+Phase: 15 of 15 (Multi-User Collaboration) - In Progress
+Plan: 1 of 4 in current phase
+Status: Plan 15-01 complete
+Last activity: 2026-03-07 — Completed 15-01: Created deal_assignees join table schema, added assigneeId FK to activities, updated all Drizzle relations, applied migration
 
 Progress: [█████████████████████] 100% (49/49 plans in current roadmap)
 
@@ -80,6 +80,7 @@ Progress: [█████████████████████] 100%
 - 06-01: 8min (5 tasks, 6 files, 5 commits)
 
 *Updated after each plan completion*
+| Phase 15-multi-user-collaboration P01 | 4min | 3 tasks | 5 files |
 | Phase 14-dashboard-metrics P01 | 2min | 3 tasks | 8 files |
 | Phase 13-comprehensive-project-documentation P03 | 9min | 3 tasks | 10 files |
 | Phase 13-comprehensive-project-documentation P02 | 10min | 3 tasks | 7 files |
@@ -251,6 +252,9 @@ Recent decisions affecting current work:
 - [Phase 14-02]: PipelineValueChart uses layout='vertical' on BarChart so stages appear on Y-axis (horizontal bars)
 - [Phase 14-02]: ActivityCompletionChart uses relative/absolute positioning for center percentage overlay rather than Recharts label prop
 - [14-03] Period selector rendered as inline Link elements styled conditionally — no client component needed since active state comes from server-rendered searchParam
+- [15-01] dealAssignees uses pgTable with composite primaryKey([dealId, userId]) following Drizzle v2 array syntax
+- [15-01] assignee relation on activitiesRelations uses relationName: 'assignedActivities' to disambiguate two one(users) relations on the same table
+- [15-01] Migration applied directly via psql — drizzle-kit migrate tracking table was empty (migrations applied by Docker startup, not tracked)
 
 ### Pending Todos
 
@@ -262,6 +266,7 @@ None yet.
 - Phase 12 added: Make the application fully localizable (language, currency, date formats, timezones)
 - Phase 13 added: comprehensive project documentation
 - Phase 14 added: Dashboard with real metrics — win rate, deal velocity, pipeline value by stage, activity completion rate
+- Phase 15 added: Multi-user collaboration — assignees on deals and activities, shared team view
 
 ### Blockers/Concerns
 
@@ -279,10 +284,10 @@ Issues that affect future work:
 ## Session Continuity
 
 Last session: 2026-03-07
-Stopped at: Completed 14-03-PLAN.md
+Stopped at: Completed 15-01-PLAN.md
 Resume file: None
 
-**Phase 14 COMPLETE.** All 3 plans done. Final plan 14-03 rewrote the authenticated home page with a full sales dashboard: 4 metric stat cards (Win Rate, Deal Velocity, Pipeline Value, Activity Completion), PipelineValueChart, ActivityCompletionChart, URL-param period filter, and preserved guest landing page. All 49 plans in the roadmap are complete.
+**Phase 15 IN PROGRESS.** Plan 15-01 complete: database layer for multi-user collaboration — deal_assignees join table, activities.assignee_id FK, full Drizzle relational query support, migration applied.
 
 ---
 *State initialized: 2026-02-22*
