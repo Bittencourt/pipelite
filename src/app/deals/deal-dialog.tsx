@@ -166,6 +166,7 @@ export function DealDialog({
         personId: data.personId || null,
         expectedCloseDate: data.expectedCloseDate ? new Date(data.expectedCloseDate) : null,
         notes: data.notes || null,
+        assigneeIds: [] as string[],
       }
 
       const result = isEditMode

@@ -2,7 +2,7 @@
 
 import { auth } from "@/auth"
 import { db } from "@/db"
-import { deals, stages, organizations, people } from "@/db/schema"
+import { deals, stages, organizations, people, dealAssignees } from "@/db/schema"
 import { eq, and, isNull, sql, desc } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
@@ -17,6 +17,7 @@ const dealSchema = z.object({
   expectedCloseDate: z.date().optional().nullable(),
   notes: z.string().max(2000, "Notes must be 2000 characters or less").optional().nullable(),
   customFields: z.record(z.string(), z.unknown()).optional(),
+  assigneeIds: z.array(z.string()).optional().default([]),
 })
 
 const updateDealSchema = dealSchema.partial()
@@ -113,6 +114,13 @@ export async function createDeal(
       position,
     }).returning()
 
+    const newAssigneeIds = validated.data.assigneeIds ?? []
+    if (newAssigneeIds.length > 0) {
+      await db.insert(dealAssignees).values(
+        newAssigneeIds.map(userId => ({ dealId: deal.id, userId }))
+      )
+    }
+
     revalidatePath("/deals")
     revalidatePath(`/deals/${stage.pipelineId}`)
 
@@ -159,7 +167,7 @@ export async function updateDeal(
     return { success: false, error: "Deal not found" }
   }
 
-  if (deal.ownerId !== session.user.id) {
+  if (deal.ownerId !== session.user.id && session.user.role !== 'admin') {
     return { success: false, error: "Not authorized" }
   }
 
@@ -234,6 +242,15 @@ export async function updateDeal(
       .set(updateData)
       .where(eq(deals.id, id))
 
+    // Replace assignees (delete existing, insert new)
+    await db.delete(dealAssignees).where(eq(dealAssignees.dealId, id))
+    const updatedAssigneeIds = validated.data.assigneeIds ?? []
+    if (updatedAssigneeIds.length > 0) {
+      await db.insert(dealAssignees).values(
+        updatedAssigneeIds.map(userId => ({ dealId: id, userId }))
+      )
+    }
+
     revalidatePath("/deals")
     revalidatePath(`/deals/${id}`)
 
@@ -273,7 +290,7 @@ export async function deleteDeal(
     return { success: false, error: "Deal not found" }
   }
 
-  if (deal.ownerId !== session.user.id) {
+  if (deal.ownerId !== session.user.id && session.user.role !== 'admin') {
     return { success: false, error: "Not authorized" }
   }
 
@@ -326,7 +343,7 @@ export async function updateDealStage(
     return { success: false, error: "Deal not found" }
   }
 
-  if (deal.ownerId !== session.user.id) {
+  if (deal.ownerId !== session.user.id && session.user.role !== 'admin') {
     return { success: false, error: "Not authorized" }
   }
 
@@ -406,7 +423,7 @@ export async function reorderDeals(
       return { success: false, error: "Deal not found" }
     }
 
-    if (deal.ownerId !== session.user.id) {
+    if (deal.ownerId !== session.user.id && session.user.role !== 'admin') {
       return { success: false, error: "Not authorized" }
     }
 
