@@ -23,7 +23,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 9: Import/Export** - Data migration capabilities ✅
 - [x] **Phase 10: REST API** - External integration via documented API ✅
 - [x] **Phase 11: Keyboard Control** - Full keyboard navigation across all screens ✅
-- [ ] **Phase 14: Dashboard with Real Metrics** - Win rate, deal velocity, pipeline value by stage, activity completion rate
+- [x] **Phase 14: Dashboard with Real Metrics** - Win rate, deal velocity, pipeline value by stage, activity completion rate ✅
+- [ ] **Phase 15: Multi-user Collaboration** - Assignees on deals and activities, shared team view
 
 ## Phase Details
 
@@ -304,6 +305,20 @@ Plans:
 - [ ] 14-01-PLAN.md — Install shadcn chart, build metric query library, add translations
 - [ ] 14-02-PLAN.md — PipelineValueChart and ActivityCompletionChart client components
 - [ ] 14-03-PLAN.md — Home page rewrite with 4 metric cards, charts, and time period filter
+
+### Phase 15: Multi-user collaboration
+
+**Goal:** Add assignees to deals and activities so teams can collaborate — records have owners plus multiple assignees, with a shared team view of who owns what
+**Depends on:** Phase 14
+**Plans:** 6 plans in 3 waves
+
+Plans:
+- [ ] 15-01-PLAN.md — DB schema: deal_assignees join table, activities.assigneeId column, relations, migration
+- [ ] 15-02-PLAN.md — AssigneePicker component, deal actions with assignee persistence and auth fix
+- [ ] 15-03-PLAN.md — Deal dialog with AssigneePicker field, deal card with AvatarGroup
+- [ ] 15-04-PLAN.md — Deals page assignee filter, DealFilters Assignee dropdown, KanbanBoard users prop
+- [ ] 15-05-PLAN.md — Activity assignee: actions, dialog Select field, page users fetch
+- [ ] 15-06-PLAN.md — Translation strings for assignees in all three locales
 
 ---
 *Roadmap created: 2026-02-22*
