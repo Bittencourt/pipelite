@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-22)
 ## Current Position
 
 Phase: 14 of 14 (Dashboard Metrics) - In Progress
-Plan: 1 of 3 in current phase
-Status: Plan 14-01 complete
-Last activity: 2026-03-06 — Completed 14-01: shadcn chart component, four SQL metric query functions, translation strings for win rate, deal velocity, pipeline value, and activity completion
+Plan: 2 of 3 in current phase
+Status: Plan 14-02 complete
+Last activity: 2026-03-07 — Completed 14-02: PipelineValueChart (horizontal bar chart with per-stage colors) and ActivityCompletionChart (donut chart with center percentage overlay) client components
 
-Progress: [█████████████████████ ] 97% (47/48 plans in current roadmap)
+Progress: [█████████████████████ ] 98% (48/49 plans in current roadmap)
 
 ## Performance Metrics
 
@@ -40,9 +40,10 @@ Progress: [█████████████████████ ] 97%
 | 11-keyboard-control | 5/5 | 31min | 6.2min |
 | 12-localization | 5/5 | 65min | 13min |
 | 13-comprehensive-project-documentation | 3/4 | 32min | 10.7min |
-| 14-dashboard-metrics | 1/3 | 2min | 2min |
+| 14-dashboard-metrics | 2/3 | 7min | 3.5min |
 
 **Recent Trend:**
+- 14-02: 5min (2 tasks, 2 files, 2 commits) - PipelineValueChart horizontal bar chart and ActivityCompletionChart donut with center overlay
 - 14-01: 2min (3 tasks, 8 files, 3 commits) - shadcn chart component, four metric query functions, translation strings
 - 13-03: 9min (3 tasks, 10 files, 3 commits) - Administrator documentation with deployment guides, configuration reference, user management, operations guides, and troubleshooting
 - 13-02: 10min (3 tasks, 7 files, 3 commits) - API documentation with authentication, pagination, webhooks, error handling guides
@@ -82,6 +83,7 @@ Progress: [█████████████████████ ] 97%
 | Phase 13-comprehensive-project-documentation P03 | 9min | 3 tasks | 10 files |
 | Phase 13-comprehensive-project-documentation P02 | 10min | 3 tasks | 7 files |
 | Phase 13 P01 | 13min | 3 tasks | 14 files |
+| Phase 14 P02 | 5min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -245,6 +247,8 @@ Recent decisions affecting current work:
 - [14-01] getPipelineValueByStage has no date filter — shows current open pipeline snapshot
 - [14-01] Activity overdue count is all-time; completed/total respect the selected period filter
 - [14-01] drizzle sum() returns string|null — coerce with parseFloat(r ?? '0')
+- [Phase 14-02]: PipelineValueChart uses layout='vertical' on BarChart so stages appear on Y-axis (horizontal bars)
+- [Phase 14-02]: ActivityCompletionChart uses relative/absolute positioning for center percentage overlay rather than Recharts label prop
 
 ### Pending Todos
 
@@ -272,11 +276,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-03-06
-Stopped at: Completed 14-01-PLAN.md
+Last session: 2026-03-07
+Stopped at: Completed 14-02-PLAN.md
 Resume file: None
 
-**Phase 14 In Progress.** Plan 01 complete: shadcn chart component installed, four SQL metric query functions created (win rate, deal velocity, pipeline value by stage, activity completion), and 21-key translation namespace added to all three locales. 1 of 3 plans in Phase 14 completed.
+**Phase 14 In Progress.** Plan 02 complete: PipelineValueChart (horizontal bar chart with per-stage Cell coloring) and ActivityCompletionChart (donut chart with absolute-positioned center percentage overlay) created as pure display client components. 2 of 3 plans in Phase 14 completed.
 
 ---
 *State initialized: 2026-02-22*
