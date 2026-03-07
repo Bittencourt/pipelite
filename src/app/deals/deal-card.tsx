@@ -22,6 +22,18 @@ import { DealDialog } from "./deal-dialog"
 import { deleteDeal } from "./actions"
 import { toast } from "sonner"
 import { useFormatter, useTranslations } from 'next-intl'
+import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount } from "@/components/ui/avatar"
+
+function getInitials(name: string | null, email: string): string {
+  if (name) {
+    const parts = name.trim().split(/\s+/)
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    }
+    return name.slice(0, 2).toUpperCase()
+  }
+  return email.slice(0, 2).toUpperCase()
+}
 
 export interface Deal {
   id: string
@@ -35,6 +47,7 @@ export interface Deal {
   notes?: string | null
   organization: { id: string; name: string } | null
   person: { id: string; firstName: string; lastName: string } | null
+  assignees?: { userId: string; user: { name: string | null; email: string } }[]
 }
 
 interface DealCardProps {
@@ -141,6 +154,20 @@ export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col
             <div className="text-xs text-muted-foreground mt-0.5">
               {formattedValue}
             </div>
+            {deal.assignees && deal.assignees.length > 0 && (
+              <AvatarGroup className="mt-1.5">
+                {deal.assignees.slice(0, 3).map((a) => (
+                  <Avatar key={a.userId} size="sm" title={a.user.name || a.user.email}>
+                    <AvatarFallback>{getInitials(a.user.name, a.user.email)}</AvatarFallback>
+                  </Avatar>
+                ))}
+                {deal.assignees.length > 3 && (
+                  <AvatarGroupCount className="text-xs">
+                    +{deal.assignees.length - 3}
+                  </AvatarGroupCount>
+                )}
+              </AvatarGroup>
+            )}
           </div>
           <div className="flex-shrink-0">
             {isExpanded ? (
