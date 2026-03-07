@@ -1,6 +1,6 @@
 import { auth } from "@/auth"
 import { db } from "@/db"
-import { users, deals, activities } from "@/db/schema"
+import { users, activities } from "@/db/schema"
 import { isNull, and, gte, isNotNull } from "drizzle-orm"
 import { redirect } from "next/navigation"
 import { getTranslations } from "next-intl/server"
@@ -31,8 +31,7 @@ export default async function TeamPage() {
           with: {
             stage: { columns: { id: true, name: true } },
           },
-          columns: { id: true, title: true, value: true, stageId: true },
-          where: isNull(deals.deletedAt),
+          columns: { id: true, title: true, value: true, stageId: true, deletedAt: true },
         },
       },
     }),
@@ -53,7 +52,7 @@ export default async function TeamPage() {
   const userDataMap = allUsers.map((user) => ({
     ...user,
     assignedDeals: assignedDeals
-      .filter((da) => da.userId === user.id && da.deal !== null)
+      .filter((da) => da.userId === user.id && da.deal !== null && da.deal.deletedAt === null)
       .map((da) => da.deal!),
     upcomingActivities: upcomingActivities
       .filter((a) => a.assigneeId === user.id),

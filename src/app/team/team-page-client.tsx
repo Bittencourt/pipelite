@@ -10,7 +10,7 @@ interface TeamUser {
   id: string
   name: string | null
   email: string
-  assignedDeals: Array<{ id: string; title: string; value: string | null; stage: { id: string; name: string } }>
+  assignedDeals: Array<{ id: string; title: string; value: string | null; deletedAt?: Date | null; stage: { id: string; name: string } }>
   upcomingActivities: Array<{ id: string; title: string; dueDate: Date; type: { id: string; name: string; icon: string | null } | null }>
 }
 
