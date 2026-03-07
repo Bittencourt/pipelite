@@ -23,6 +23,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 9: Import/Export** - Data migration capabilities ✅
 - [x] **Phase 10: REST API** - External integration via documented API ✅
 - [x] **Phase 11: Keyboard Control** - Full keyboard navigation across all screens ✅
+- [ ] **Phase 14: Dashboard with Real Metrics** - Win rate, deal velocity, pipeline value by stage, activity completion rate
 
 ## Phase Details
 
@@ -292,6 +293,17 @@ Plans:
 - [ ] 13-02-PLAN.md — API documentation (guides and code examples)
 - [ ] 13-03-PLAN.md — Admin documentation (deployment and operations)
 - [ ] 13-04-PLAN.md — Developer/architecture documentation
+
+### Phase 14: Dashboard with Real Metrics
+
+**Goal:** Surface actionable sales insights on the home page — win rate, deal velocity, pipeline value by stage, and activity completion rate
+**Depends on:** Phase 13
+**Plans:** 3 plans in 3 waves
+
+Plans:
+- [ ] 14-01-PLAN.md — Install shadcn chart, build metric query library, add translations
+- [ ] 14-02-PLAN.md — PipelineValueChart and ActivityCompletionChart client components
+- [ ] 14-03-PLAN.md — Home page rewrite with 4 metric cards, charts, and time period filter
 
 ---
 *Roadmap created: 2026-02-22*
