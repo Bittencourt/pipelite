@@ -54,7 +54,8 @@ interface KanbanBoardProps {
   people: { id: string; firstName: string; lastName: string }[]
   defaultStageId?: string
   owners: Array<{ id: string; name: string }>
-  activeFilters: { stage?: string; owner?: string; dateFrom?: string; dateTo?: string }
+  users: { id: string; name: string | null; email: string }[]
+  activeFilters: { stage?: string; owner?: string; assignee?: string; dateFrom?: string; dateTo?: string }
 }
 
 export function KanbanBoard({
@@ -66,6 +67,7 @@ export function KanbanBoard({
   people,
   defaultStageId,
   owners,
+  users,
   activeFilters,
 }: KanbanBoardProps) {
   const router = useRouter()
@@ -271,7 +273,7 @@ export function KanbanBoard({
 
   // Calculate total deals for empty state check
   const totalDeals = Object.values(dealsByStage).reduce((sum, deals) => sum + deals.length, 0)
-  const hasActiveFilters = !!(activeFilters.stage || activeFilters.owner || activeFilters.dateFrom || activeFilters.dateTo)
+  const hasActiveFilters = !!(activeFilters.stage || activeFilters.owner || activeFilters.assignee || activeFilters.dateFrom || activeFilters.dateTo)
 
   return (
     <div className="space-y-6">
@@ -309,6 +311,7 @@ export function KanbanBoard({
         <DealFilters
           stages={stages.filter(s => s.pipelineId === selectedPipelineId && s.id).map(s => ({ id: s.id, name: s.name }))}
           owners={owners}
+          assignees={users.map(u => ({ id: u.id, name: u.name || u.email }))}
         />
       </Suspense>
 
@@ -426,6 +429,7 @@ export function KanbanBoard({
           organizations={organizations}
           people={people}
           stages={stages}
+          users={users}
           onSuccess={handleDealDialogSuccess}
         />
       )}
@@ -438,6 +442,7 @@ export function KanbanBoard({
         organizations={organizations}
         people={people}
         stages={stages}
+        users={users}
         defaultStageId={defaultStageId}
         onSuccess={handleCreateDialogSuccess}
       />

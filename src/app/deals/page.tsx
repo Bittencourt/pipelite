@@ -1,6 +1,6 @@
 import { auth } from "@/auth"
 import { db } from "@/db"
-import { deals, stages, pipelines, organizations, people, users } from "@/db/schema"
+import { deals, stages, pipelines, organizations, people, users, dealAssignees } from "@/db/schema"
 import { eq, and, isNull, gte, lte, asc, sql } from "drizzle-orm"
 import { redirect } from "next/navigation"
 import { KanbanBoard } from "./kanban-board"
@@ -19,6 +19,7 @@ interface DealWithRelations {
   notes?: string | null
   organization: { id: string; name: string } | null
   person: { id: string; firstName: string; lastName: string } | null
+  assignees: { userId: string; user: { id: string; name: string | null; email: string } }[]
 }
 
 export default async function DealsPage({
@@ -28,6 +29,7 @@ export default async function DealsPage({
     pipeline?: string
     stage?: string
     owner?: string
+    assignee?: string
     dateFrom?: string
     dateTo?: string
   }>
@@ -105,6 +107,10 @@ export default async function DealsPage({
     params.stage ? eq(deals.stageId, params.stage) : undefined,
     // Owner filter
     params.owner ? eq(deals.ownerId, params.owner) : undefined,
+    // Assignee filter
+    params.assignee
+      ? sql`${deals.id} IN (SELECT deal_id FROM deal_assignees WHERE user_id = ${params.assignee})`
+      : undefined,
     // Date range filters
     params.dateFrom ? gte(deals.expectedCloseDate, new Date(params.dateFrom)) : undefined,
     params.dateTo ? lte(deals.expectedCloseDate, new Date(params.dateTo)) : undefined,
@@ -126,6 +132,11 @@ export default async function DealsPage({
               id: true,
               firstName: true,
               lastName: true,
+            },
+          },
+          assignees: {
+            with: {
+              user: { columns: { id: true, name: true, email: true } },
             },
           },
         },
@@ -195,11 +206,13 @@ export default async function DealsPage({
         people={allPeople}
         defaultStageId={firstOpenStage?.id}
         owners={allUsers.map(u => ({ id: u.id, name: u.name || u.email }))}
-        activeFilters={{ 
-          stage: params.stage, 
-          owner: params.owner, 
-          dateFrom: params.dateFrom, 
-          dateTo: params.dateTo 
+        users={allUsers.map(u => ({ id: u.id, name: u.name, email: u.email }))}
+        activeFilters={{
+          stage: params.stage,
+          owner: params.owner,
+          assignee: params.assignee,
+          dateFrom: params.dateFrom,
+          dateTo: params.dateTo
         }}
       />
     </div>

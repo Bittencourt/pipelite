@@ -22,9 +22,10 @@ import { Filter, X } from "lucide-react"
 interface DealFiltersProps {
   stages: Array<{ id: string; name: string }>  // stages for the currently selected pipeline only
   owners: Array<{ id: string; name: string }>  // all users (for owner filter)
+  assignees: Array<{ id: string; name: string }>  // all users (for assignee filter)
 }
 
-export function DealFilters({ stages, owners }: DealFiltersProps) {
+export function DealFilters({ stages, owners, assignees }: DealFiltersProps) {
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const router = useRouter()
@@ -32,15 +33,17 @@ export function DealFilters({ stages, owners }: DealFiltersProps) {
   // Read current filter values from searchParams
   const stageId = searchParams.get("stage")
   const ownerId = searchParams.get("owner")
+  const assigneeId = searchParams.get("assignee") || ""
   const dateFrom = searchParams.get("dateFrom")
   const dateTo = searchParams.get("dateTo")
 
-  const hasFilters = !!(stageId || ownerId || dateFrom || dateTo)
-  const activeFilterCount = [stageId, ownerId, dateFrom, dateTo].filter(Boolean).length
+  const hasFilters = !!(stageId || ownerId || assigneeId || dateFrom || dateTo)
+  const activeFilterCount = [stageId, ownerId, assigneeId, dateFrom, dateTo].filter(Boolean).length
 
   // Find display names for active filters
   const stageName = stageId ? stages.find(s => s.id === stageId)?.name : null
   const ownerName = ownerId ? owners.find(o => o.id === ownerId)?.name : null
+  const assigneeName = assigneeId ? assignees.find(a => a.id === assigneeId)?.name : null
 
   const setFilter = (key: string, value: string | null) => {
     // Create new URLSearchParams from searchParams.toString() to preserve ?pipeline=
@@ -58,6 +61,7 @@ export function DealFilters({ stages, owners }: DealFiltersProps) {
     // Keep "pipeline" param, delete filter params
     params.delete("stage")
     params.delete("owner")
+    params.delete("assignee")
     params.delete("dateFrom")
     params.delete("dateTo")
     router.replace(`${pathname}?${params.toString()}`)
@@ -71,6 +75,7 @@ export function DealFilters({ stages, owners }: DealFiltersProps) {
   const getFilterLabel = (key: string, value: string): string => {
     if (key === "stage") return stageName || value
     if (key === "owner") return ownerName || value
+    if (key === "assignee") return assigneeName || value
     if (key === "dateFrom") return `From: ${value}`
     if (key === "dateTo") return `To: ${value}`
     return value
@@ -134,6 +139,26 @@ export function DealFilters({ stages, owners }: DealFiltersProps) {
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="assignee-filter">Assignee</Label>
+                <Select
+                  value={assigneeId || "all"}
+                  onValueChange={(value) => setFilter("assignee", value === "all" ? "" : value)}
+                >
+                  <SelectTrigger id="assignee-filter">
+                    <SelectValue placeholder="All assignees" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All assignees</SelectItem>
+                    {assignees.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="date-from">Close Date From</Label>
                 <Input
                   id="date-from"
@@ -182,6 +207,17 @@ export function DealFilters({ stages, owners }: DealFiltersProps) {
               Owner: {getFilterLabel("owner", ownerId)}
               <button
                 onClick={() => clearFilter("owner")}
+                className="ml-1 hover:bg-muted rounded-sm p-0.5"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {assigneeId && (
+            <Badge variant="secondary" className="gap-1 pr-1">
+              Assignee: {getFilterLabel("assignee", assigneeId)}
+              <button
+                onClick={() => clearFilter("assignee")}
                 className="ml-1 hover:bg-muted rounded-sm p-0.5"
               >
                 <X className="h-3 w-3" />
