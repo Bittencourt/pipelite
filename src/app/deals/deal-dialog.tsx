@@ -37,6 +37,7 @@ import { Loader2, Trash2 } from "lucide-react"
 import { createDeal, updateDeal, deleteDeal } from "./actions"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/currency"
+import { AssigneePicker } from "@/components/assignee-picker"
 
 const dealSchema = z.object({
   title: z.string().min(1, "Title is required").max(200, "Title must be 200 characters or less"),
@@ -46,6 +47,7 @@ const dealSchema = z.object({
   personId: z.string().optional(),
   expectedCloseDate: z.string().optional(),
   notes: z.string().max(2000, "Notes must be 2000 characters or less").optional(),
+  assigneeIds: z.array(z.string()).optional(),
 })
 
 type DealFormData = z.infer<typeof dealSchema>
@@ -66,11 +68,13 @@ interface DealDialogProps {
     stageId: string
     organizationId: string | null
     personId: string | null
+    assigneeIds?: string[]
   }
   // Dropdown data
   organizations: { id: string; name: string }[]
   people: { id: string; firstName: string; lastName: string }[]
   stages: { id: string; name: string; pipelineId: string }[]
+  users?: { id: string; name: string | null; email: string }[]
   onSuccess: () => void
 }
 
@@ -83,6 +87,7 @@ export function DealDialog({
   organizations,
   people,
   stages,
+  users = [],
   onSuccess,
 }: DealDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
@@ -106,6 +111,7 @@ export function DealDialog({
       personId: "",
       expectedCloseDate: "",
       notes: "",
+      assigneeIds: [],
     },
   })
 
@@ -113,6 +119,7 @@ export function DealDialog({
   const organizationId = watch("organizationId")
   const personId = watch("personId")
   const valueInput = watch("value")
+  const assigneeIds = watch("assigneeIds") ?? []
 
   // Parse value for currency preview
   const numericValue = valueInput ? parseFloat(valueInput) : null
@@ -134,6 +141,7 @@ export function DealDialog({
             ? new Date(deal.expectedCloseDate).toISOString().split("T")[0]
             : "",
           notes: deal.notes || "",
+          assigneeIds: deal.assigneeIds ?? [],
         })
       } else {
         reset({
@@ -144,6 +152,7 @@ export function DealDialog({
           personId: "",
           expectedCloseDate: "",
           notes: "",
+          assigneeIds: [],
         })
       }
     }
@@ -166,7 +175,7 @@ export function DealDialog({
         personId: data.personId || null,
         expectedCloseDate: data.expectedCloseDate ? new Date(data.expectedCloseDate) : null,
         notes: data.notes || null,
-        assigneeIds: [] as string[],
+        assigneeIds: data.assigneeIds ?? [],
       }
 
       const result = isEditMode
@@ -354,6 +363,16 @@ export function DealDialog({
               {errors.notes && (
                 <p className="text-sm text-destructive">{errors.notes.message}</p>
               )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Assignees</Label>
+              <AssigneePicker
+                users={users}
+                value={assigneeIds}
+                onChange={(ids) => setValue("assigneeIds", ids)}
+                disabled={isLoading}
+              />
             </div>
 
             <DialogFooter className={isEditMode ? "sm:justify-between" : ""}>
