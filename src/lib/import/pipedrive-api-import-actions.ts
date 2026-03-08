@@ -661,10 +661,14 @@ export async function importFromPipedrive(
         columns: { id: true, title: true, organizationId: true },
       })
 
-      // Load custom field definitions for deals
-      const dealFieldDefs = await db.query.customFieldDefinitions.findMany({
-        where: eq(customFieldDefinitions.entityType, 'deal'),
-      })
+      // Load custom field definitions for deals from Pipedrive
+      let pdDealFields: PipedriveFieldDefinition[] | undefined
+      try {
+        pdDealFields = (await client.fetchDealFields()) as PipedriveFieldDefinition[]
+      } catch {
+        // Field definitions are optional - continue without them
+        pdDealFields = undefined
+      }
 
       const newDeals: Array<NewDealData & { pdId: number }> = []
 
@@ -733,87 +737,13 @@ export async function importFromPipedrive(
             orgIdMap,
             personIdMap,
             ownerId,
-            dealFieldDefs as PipedriveFieldDefinition[]
-          )
-
-        // Load existing deals for duplicate detection
-        const existingDeals = await db.query.deals.findMany({
-          where: isNull(deals.deletedAt),
-          columns: { id: true, title: true, organizationId: true },
-        })
-
-        const newDeals: Array<NewDealData & { pdId: number }> = []
-
-        for (const pdDeal of pdDeals) {
-          // Deals: match by title + organization_id
-          const orgId = pdDeal.org_id?.id ? orgIdMap.get(pdDeal.org_id.id) : null
-
-          const existing = existingDeals.find(
-            (d) =>
-              d.title.toLowerCase() === pdDeal.title.toLowerCase() &&
-              d.organizationId === orgId
-          )
-
-          if (!existing) {
-            const ownerId = pdDeal.owner_id?.id
-              ? pdUserToPipeliteUser.get(pdDeal.owner_id.id) ?? importingUserId
-              : importingUserId
-
-            // Handle orphan references - create stubs if needed
-            let dealOrgId: string | null = pdDeal.org_id?.id ? (orgIdMap.get(pdDeal.org_id.id) ?? null) : null
-            let dealPersonId: string | null = pdDeal.person_id?.id ? (personIdMap.get(pdDeal.person_id.id) ?? null) : null
-
-            // Create stub org if missing
-            if (pdDeal.org_id?.id && !dealOrgId) {
-              const stubName = `[Pipedrive Import] ${pdDeal.org_id.name || 'Unknown Organization'}`
-              const [stubOrg] = await db
-                .insert(organizations)
-                .values({
-                  name: stubName,
-                  notes: `[Pipedrive Import] Auto-created stub for deal "${pdDeal.title}"`,
-                  ownerId: importingUserId,
-                  createdAt: now,
-                  updatedAt: now,
-                })
-                .returning()
-
-              dealOrgId = stubOrg.id
-              orgIdMap.set(pdDeal.org_id.id, stubOrg.id)
-              addReviewItem(importId, 'organization', stubOrg.id, `Stub created for deal "${pdDeal.title}"`)
-            }
-
-            // Create stub person if missing
-            if (pdDeal.person_id?.id && !dealPersonId) {
-              const [stubPerson] = await db
-                .insert(people)
-                .values({
-                  firstName: '[Pipedrive Import]',
-                  lastName: pdDeal.person_id.name || 'Unknown',
-                  email: pdDeal.person_id.email ?? null,
-                  notes: `[Pipedrive Import] Auto-created stub for deal "${pdDeal.title}"`,
-                  organizationId: dealOrgId,
-                  ownerId: importingUserId,
-                  createdAt: now
-                  updatedAt: now,
-                })
-                .returning()
-
-              dealPersonId = stubPerson.id
-              personIdMap.set(pdDeal.person_id.id, stubPerson.id)
-              addReviewItem(importId, 'person', stubPerson.id, `Stub created for deal "${pdDeal.title}"`)
-            }
-          }
-
-          const transformed = transformPipedriveDeal(
-            pdDeal,
-            stageIdMap,
-            orgIdMap,
-            personIdMap,
-            ownerId,
             pdDealFields
           )
+
+          if (transformed) {
+            newDeals.push({ ...transformed, pdId: pdDeal.id })
+          }
         } else {
-          // Map to existing for relationships
           dealIdMap.set(pdDeal.id, existing.id)
         }
       }
