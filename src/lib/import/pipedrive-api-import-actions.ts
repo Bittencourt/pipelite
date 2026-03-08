@@ -14,6 +14,7 @@ import type {
   PipedriveUser,
 } from "./pipedrive-api-types"
 import {
+  createImportState,
   getImportState,
   updateImportState,
   cancelImport,
@@ -196,10 +197,9 @@ export async function importFromPipedrive(
     return { success: false, error: "Not authenticated" }
   }
 
-  const state = getImportState(importId)
-  if (!state) {
-    return { success: false, error: "Import session not found" }
-  }
+  // Create state in server memory where this action runs
+  // (Previously created in client, but client/server have separate memory)
+  const state = createImportState(importId)
 
   updateImportState(importId, { status: 'running' })
   const client = createPipedriveClient(apiKey)
