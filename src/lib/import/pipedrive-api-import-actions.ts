@@ -277,6 +277,35 @@ export async function importFromPipedrive(
     const personIdMap = new Map<number, string>()
     const dealIdMap = new Map<number, string>()
 
+    // Pipedrive field definitions (needed for custom field extraction)
+    // Fetch these upfront so they're available for both custom field import and entity transformations
+    let pdDealFields: PipedriveFieldDefinition[] = []
+    let pdPersonFields: PipedriveFieldDefinition[] = []
+    let pdOrgFields: PipedriveFieldDefinition[] = []
+    let pdActivityFields: PipedriveFieldDefinition[] = []
+
+    // Fetch field definitions if custom fields or any entities with custom fields are enabled
+    const needsFieldDefs = config.entities.customFields ||
+      config.entities.organizations ||
+      config.entities.people ||
+      config.entities.deals ||
+      config.entities.activities
+
+    if (needsFieldDefs) {
+      const [dealFieldsData, personFieldsData, orgFieldsData, activityFieldsData] =
+        await Promise.all([
+          client.fetchDealFields(),
+          client.fetchPersonFields(),
+          client.fetchOrganizationFields(),
+          client.fetchActivityFields(),
+        ])
+
+      pdDealFields = dealFieldsData as PipedriveFieldDefinition[]
+      pdPersonFields = personFieldsData as PipedriveFieldDefinition[]
+      pdOrgFields = orgFieldsData as PipedriveFieldDefinition[]
+      pdActivityFields = activityFieldsData as PipedriveFieldDefinition[]
+    }
+
     // -----------------------------------------------------------------------
     // 1. Import Pipelines
     // -----------------------------------------------------------------------
@@ -557,11 +586,8 @@ export async function importFromPipedrive(
         columns: { id: true, email: true },
       })
 
-      // Load custom field definitions for people
-      const personFieldDefs = await db.query.customFieldDefinitions.findMany({
-        where: eq(customFieldDefinitions.entityType, 'person'),
-      })
-
+      // Use Pipedrive person field definitions for custom field extraction
+      // (these were fetched earlier in the custom fields import section)
       const newPeople: Array<NewPersonData & { pdId: number }> = []
 
       for (const pdPerson of pdPeople) {
@@ -582,7 +608,7 @@ export async function importFromPipedrive(
             pdPerson,
             orgIdMap,
             ownerId,
-            personFieldDefs as PipedriveFieldDefinition[]
+            pdPersonFields
           )
           newPeople.push({ ...transformed, pdId: pdPerson.id })
         } else {
@@ -710,21 +736,82 @@ export async function importFromPipedrive(
             dealFieldDefs as PipedriveFieldDefinition[]
           )
 
-          if (transformed) {
-            // Override with resolved IDs
-            newDeals.push({
-              ...transformed,
-              organizationId: dealOrgId,
-              personId: dealPersonId,
-              pdId: pdDeal.id,
-            })
-          } else {
-            addImportError(
-              importId,
-              'deal',
-              `Could not transform deal "${pdDeal.title}" - stage not found`
-            )
+        // Load existing deals for duplicate detection
+        const existingDeals = await db.query.deals.findMany({
+          where: isNull(deals.deletedAt),
+          columns: { id: true, title: true, organizationId: true },
+        })
+
+        const newDeals: Array<NewDealData & { pdId: number }> = []
+
+        for (const pdDeal of pdDeals) {
+          // Deals: match by title + organization_id
+          const orgId = pdDeal.org_id?.id ? orgIdMap.get(pdDeal.org_id.id) : null
+
+          const existing = existingDeals.find(
+            (d) =>
+              d.title.toLowerCase() === pdDeal.title.toLowerCase() &&
+              d.organizationId === orgId
+          )
+
+          if (!existing) {
+            const ownerId = pdDeal.owner_id?.id
+              ? pdUserToPipeliteUser.get(pdDeal.owner_id.id) ?? importingUserId
+              : importingUserId
+
+            // Handle orphan references - create stubs if needed
+            let dealOrgId: string | null = pdDeal.org_id?.id ? (orgIdMap.get(pdDeal.org_id.id) ?? null) : null
+            let dealPersonId: string | null = pdDeal.person_id?.id ? (personIdMap.get(pdDeal.person_id.id) ?? null) : null
+
+            // Create stub org if missing
+            if (pdDeal.org_id?.id && !dealOrgId) {
+              const stubName = `[Pipedrive Import] ${pdDeal.org_id.name || 'Unknown Organization'}`
+              const [stubOrg] = await db
+                .insert(organizations)
+                .values({
+                  name: stubName,
+                  notes: `[Pipedrive Import] Auto-created stub for deal "${pdDeal.title}"`,
+                  ownerId: importingUserId,
+                  createdAt: now,
+                  updatedAt: now,
+                })
+                .returning()
+
+              dealOrgId = stubOrg.id
+              orgIdMap.set(pdDeal.org_id.id, stubOrg.id)
+              addReviewItem(importId, 'organization', stubOrg.id, `Stub created for deal "${pdDeal.title}"`)
+            }
+
+            // Create stub person if missing
+            if (pdDeal.person_id?.id && !dealPersonId) {
+              const [stubPerson] = await db
+                .insert(people)
+                .values({
+                  firstName: '[Pipedrive Import]',
+                  lastName: pdDeal.person_id.name || 'Unknown',
+                  email: pdDeal.person_id.email ?? null,
+                  notes: `[Pipedrive Import] Auto-created stub for deal "${pdDeal.title}"`,
+                  organizationId: dealOrgId,
+                  ownerId: importingUserId,
+                  createdAt: now
+                  updatedAt: now,
+                })
+                .returning()
+
+              dealPersonId = stubPerson.id
+              personIdMap.set(pdDeal.person_id.id, stubPerson.id)
+              addReviewItem(importId, 'person', stubPerson.id, `Stub created for deal "${pdDeal.title}"`)
+            }
           }
+
+          const transformed = transformPipedriveDeal(
+            pdDeal,
+            stageIdMap,
+            orgIdMap,
+            personIdMap,
+            ownerId,
+            pdDealFields
+          )
         } else {
           // Map to existing for relationships
           dealIdMap.set(pdDeal.id, existing.id)
