@@ -338,7 +338,7 @@ Plans:
   9. Progress bar shows current entity and overall progress
   10. User can cancel mid-import and keep imported data
   11. Summary shows counts and entities needing review
-**Plans:** 5/5 plans complete
+**Plans:** 6/6 plans complete
 
 Plans:
 - [ ] 16-01-PLAN.md — Pipedrive API client, types, and data transformers
