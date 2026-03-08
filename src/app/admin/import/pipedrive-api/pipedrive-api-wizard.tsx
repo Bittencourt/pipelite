@@ -77,9 +77,7 @@ export function PipedriveApiWizard() {
     }
   }, [apiKey])
 
-  const handleStartImport = useCallback(async () => {
-    setIsLoading(true)
-
+  const handleStartImport = useCallback(() => {
     // Generate ID for tracking - state is created by server action
     const id = crypto.randomUUID()
     setImportId(id)
@@ -89,10 +87,10 @@ export function PipedriveApiWizard() {
       entities: selectedEntities,
     }
 
-    // Start import (server action creates its own state)
-    await importFromPipedrive(apiKey, config, id)
-
-    setIsLoading(false)
+    // Fire-and-forget: do NOT await. The server action runs independently
+    // and creates its own state. Switch to progress step immediately so
+    // ProgressStep can start polling.
+    importFromPipedrive(apiKey, config, id)
     setStep("progress")
   }, [apiKey, selectedEntities])
 
