@@ -12,7 +12,7 @@ import {
   importFromPipedrive,
   type PipedriveCounts,
 } from "@/lib/import/pipedrive-api-import-actions"
-import { createImportState, type ImportProgressState } from "@/lib/import/pipedrive-import-state"
+import type { ImportProgressState } from "@/lib/import/pipedrive-import-state"
 import type { PipedriveImportConfig } from "@/lib/import/pipedrive-api-types"
 
 const STEPS = [
@@ -80,9 +80,8 @@ export function PipedriveApiWizard() {
   const handleStartImport = useCallback(async () => {
     setIsLoading(true)
 
-    // Create import state
+    // Generate ID for tracking - state is created by server action
     const id = crypto.randomUUID()
-    createImportState(id)
     setImportId(id)
 
     const config: PipedriveImportConfig = {
@@ -90,7 +89,7 @@ export function PipedriveApiWizard() {
       entities: selectedEntities,
     }
 
-    // Start import (runs in background)
+    // Start import (server action creates its own state)
     await importFromPipedrive(apiKey, config, id)
 
     setIsLoading(false)
