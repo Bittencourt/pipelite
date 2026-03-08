@@ -83,6 +83,7 @@ Progress: [█████████████████████] 100%
 | Phase 15-multi-user-collaboration P04 | 18min | 2 tasks | 6 files |
 | Phase quick-3 P01 | 19min | 3 tasks | 5 files |
 | Phase 16-01 P01 | 4min | 3 tasks | 3 files |
+| Phase 16-pipedrive-api-importer P02 | 13min | 4 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -254,6 +255,7 @@ Recent decisions affecting current work:
 - [15-01] Migration applied directly via psql — drizzle-kit migrate tracking table was empty (migrations applied by Docker startup, not tracked)
 - [Phase 15-multi-user-collaboration]: AssigneePicker uses Popover+Command (not Select) for built-in text search; atomic assignee replacement via delete-all + bulk insert
 - [Phase 15-multi-user-collaboration]: Drizzle relational where-in-with not supported: filter deleted deals in application layer instead of nested query
+- [Phase 16]: In-memory Map for import state (single-instance), orphan stubs with review flag — Simple for single-instance deployment; stubs allow review of auto-created entities
 
 ### Pending Todos
 
