@@ -321,6 +321,32 @@ Plans:
 - [x] 15-05-PLAN.md — Activity assignee: actions, dialog Select, ActivityFilters Assignee filter, page wiring ✅
 - [x] 15-06-PLAN.md — Translation strings for assignees and team in all three locales ✅
 
+### Phase 16: Pipedrive API Importer
+
+**Goal:** Users can import all Pipedrive data via API key in a 5-step wizard, with automatic field mapping, deduplication, and progress tracking
+**Depends on:** Phase 15
+**Requirements:** IMPAPI-01, IMPAPI-02, IMPAPI-03, IMPAPI-04, IMPAPI-05, IMPAPI-06, IMPAPI-07, IMPAPI-08, IMPAPI-09, IMPAPI-10, IMPAPI-11, IMPAPI-12, IMPAPI-13
+**Success Criteria** (what must be TRUE):
+  1. User can enter Pipedrive API key in admin panel
+  2. User can select which entity types to import
+  3. System fetches all selected entities from Pipedrive API
+  4. Pipelines and stages are cloned from Pipedrive
+  5. Custom fields are imported with type mapping
+  6. Owners are matched by email (or fall back to importing user)
+  7. Duplicate records are skipped
+  8. Orphan references create stub entities
+  9. Progress bar shows current entity and overall progress
+  10. User can cancel mid-import and keep imported data
+  11. Summary shows counts and entities needing review
+**Plans:** 5 plans in 4 waves
+
+Plans:
+- [ ] 16-01-PLAN.md — Pipedrive API client, types, and data transformers
+- [ ] 16-02-PLAN.md — Import server actions with deduplication, stub creation, and progress tracking
+- [ ] 16-03-PLAN.md — 5-step import wizard UI with progress and cancellation
+- [ ] 16-04-PLAN.md — Admin panel integration and translations
+- [ ] 16-05-PLAN.md — Verification checkpoint (human verify)
+
 ---
 *Roadmap created: 2026-02-22*
 *Depth: comprehensive (10 phases)*
