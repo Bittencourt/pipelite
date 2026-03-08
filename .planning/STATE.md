@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-22)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 15 - Multi-user Collaboration (Complete)
+**Current focus:** Phase 16 - Pipedrive API Importer
 
 ## Current Position
 
-Phase: 15 of 15 (Multi-user Collaboration) - Complete
-Plan: 6 of 6 in current phase
-Status: All plans complete, verification passed
-Last activity: 2026-03-07 — Completed quick task 3: make the layout of the home page more focused on the operation and create a new tab for the analytics dashboard
+Phase: 16 of 16 (Pipedrive API Importer) - In Progress
+Plan: 1 of 5 in current phase
+Status: 16-01 complete, API client infrastructure ready
+Last activity: 2026-03-08 — Completed 16-01: Pipedrive API client infrastructure
 
-Progress: [█████████████████████] 100% (49/49 plans in current roadmap)
+Progress: [█████████████████████] 100% (50/54 plans in current roadmap)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 48
+- Total plans completed: 50
 - Average duration: 7min
-- Total execution time: 5.94 hours
+- Total execution time: 6.0 hours
 
 **By Phase:**
 
@@ -41,22 +41,12 @@ Progress: [█████████████████████] 100%
 | 12-localization | 5/5 | 65min | 13min |
 | 13-comprehensive-project-documentation | 3/4 | 32min | 10.7min |
 | 14-dashboard-metrics | 3/3 | 9min | 3min |
+| 15-multi-user-collaboration | 6/6 | 35min | 5.8min |
+| 16-pipedrive-api-importer | 1/5 | 4min | 4min |
 
 **Recent Trend:**
-- 14-03: 2min (1 task, 1 file, 1 commit) - Authenticated home page with sales metrics dashboard, period filter, stat cards, charts
-- 14-02: 5min (2 tasks, 2 files, 2 commits) - PipelineValueChart horizontal bar chart and ActivityCompletionChart donut with center overlay
-- 14-01: 2min (3 tasks, 8 files, 3 commits) - shadcn chart component, four metric query functions, translation strings
-- 13-03: 9min (3 tasks, 10 files, 3 commits) - Administrator documentation with deployment guides, configuration reference, user management, operations guides, and troubleshooting
-- 13-02: 10min (3 tasks, 7 files, 3 commits) - API documentation with authentication, pagination, webhooks, error handling guides
-- 13-01: 13min (3 tasks, 14 files, 3 commits) - User tutorials, documentation hub, and getting-started guide
-- 12-04: 31min (3 tasks, 15 files, 3 commits) - RelativeTime component, localized calendar, locale-aware date/time formatting across 15+ components
-- 11-05: 8min (4 tasks, 5 files, 4 commits) - Fixed ? shortcut binding, / search focus, action event leakage, kanban column wrapping
-- 11-04: 5min (4 tasks, 5 files, 5 commits) - useKanbanKeyboard hook with h/j/k/l 2D navigation, Enter/n actions, ring selection highlight
-- 11-03: 10min (5 tasks, 7 files, 6 commits) - useDataTableKeyboard hook with j/k/arrow/Enter/e/d/n across all 5 data tables
-- 11-02: 5min (4 tasks, 6 files, 5 commits) - Shortcuts overlay, Alt+1/2/3/4 navigation, / search focus, first-use hint
-- 11-01: 3min (3 tasks, 6 files, 3 commits) - react-hotkeys-hook infrastructure with HotkeysProvider and focus-visible CSS
-- 10-04: 11min (2 tasks, 2 files, 2 commits) - OpenAPI 3.1 specification and public documentation endpoint
-- 10-03: 25min (2 tasks, 10 files, 2 commits) - CRUD endpoints for activities, pipelines, stages, custom fields, webhooks
+- 16-01: 4min (3 tasks, 3 files, 3 commits) - Pipedrive SDK, API client wrapper with rate limiting, TypeScript types, data transformers
+- 15-06: 1min (1 task, 3 files, 1 commit) - Quick task: home page layout focused on operation, analytics dashboard tab
 - 10-02: 11min (3 tasks, 9 files, 3 commits) - CRUD endpoints for organizations, people, deals with pagination, expand, webhooks
 - 10-01: 8min (3 tasks, 10 files, 3 commits) - API infrastructure with auth, rate limiting, RFC 7807 errors, pagination, webhooks
 - 09-01: 9min (3 tasks, 18 files, 3 commits) - CSV import wizard with fuzzy matching and auto-create
@@ -92,6 +82,7 @@ Progress: [█████████████████████] 100%
 | Phase 15-multi-user-collaboration P02 | 2min | 2 tasks | 3 files |
 | Phase 15-multi-user-collaboration P04 | 18min | 2 tasks | 6 files |
 | Phase quick-3 P01 | 19min | 3 tasks | 5 files |
+| Phase 16-01 P01 | 4min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -275,6 +266,7 @@ None yet.
 - Phase 13 added: comprehensive project documentation
 - Phase 14 added: Dashboard with real metrics — win rate, deal velocity, pipeline value by stage, activity completion rate
 - Phase 15 added: Multi-user collaboration — assignees on deals and activities, shared team view
+- Phase 16 added: in the import options include an option that I simply provide an pipedrive API key and pipelite will clone the pipedrive info into the current instance, adapt where needed but focus on equivalence of functionality
 
 ### Blockers/Concerns
 
@@ -292,11 +284,11 @@ Issues that affect future work:
 
 ## Session Continuity
 
-Last session: 2026-03-07
-Stopped at: Completed quick task 3 - Operation-focused home page with Analytics tab
-Resume file: None
+Last session: 2026-03-08
+Stopped at: Completed 16-01-PLAN.md
+Resume file: .planning/phases/16-pipedrive-api-importer/16-02-PLAN.md
 
-**Phase 15 COMPLETE.** All 6 plans done. Multi-user collaboration fully implemented: deal_assignees join table + activities.assigneeId migration, AssigneePicker component, Owner+Assignees fields in deal dialog, AvatarGroup on deal cards, assignee URL-param filters on deals and activities pages, /team page with expandable user rows, NavHeader Team link, and all translations in en-US/pt-BR/es-ES. Verification passed 12/12 (gap closure: Owner field restored in deal dialog).
+**Phase 16 plan 01 complete.** API client infrastructure with rate limiting, TypeScript types, and data transformers ready for import wizard UI.
 
 ---
 *State initialized: 2026-02-22*
