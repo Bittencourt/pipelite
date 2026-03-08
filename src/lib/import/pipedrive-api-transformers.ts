@@ -475,6 +475,11 @@ export function transformPipedriveCustomField(
   f: PipedriveFieldDefinition,
   entityType: "deal" | "person" | "organization" | "activity"
 ): NewCustomFieldData | null {
+  // Only import user-created custom fields; built-in system fields have edit_flag: false
+  if (!f.edit_flag) {
+    return null
+  }
+
   // Map field type
   const pipeliteType = mapPipedriveFieldTypeInternal(f.field_type)
   if (!pipeliteType) {

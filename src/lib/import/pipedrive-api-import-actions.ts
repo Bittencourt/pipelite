@@ -464,7 +464,7 @@ export async function importFromPipedrive(
         if (!existing) {
           const transformed = transformPipedriveCustomField(field, entityType)
           if (transformed) {
-            await db.insert(customFieldDefinitions).values({
+            const inserted = await db.insert(customFieldDefinitions).values({
               entityType: transformed.entityType as EntityType,
               name: transformed.name,
               type: transformed.type as FieldType,
@@ -474,8 +474,10 @@ export async function importFromPipedrive(
               showInList: transformed.showInList,
               createdAt: now,
               updatedAt: now,
-            })
-            incrementImportedCount(importId, 'customFields')
+            }).onConflictDoNothing().returning()
+            if (inserted.length > 0) {
+              incrementImportedCount(importId, 'customFields')
+            }
           }
         }
       }
