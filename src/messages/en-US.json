@@ -314,7 +314,9 @@
       "customFields": "Custom Fields",
       "configureCustomFields": "Configure custom fields for organizations, people, deals, and activities",
       "exportData": "Export Data",
-      "exportDescription": "Export organizations, people, deals, and activities"
+      "exportDescription": "Export organizations, people, deals, and activities",
+      "pipedriveImport": "Pipedrive Import",
+      "pipedriveImportDescription": "Import data directly from Pipedrive using API"
     },
     "users": {
       "title": "Users",
@@ -383,6 +385,67 @@
     "export": {
       "title": "Export Data",
       "description": "Export your CRM data in CSV, JSON, or Pipedrive-compatible format"
+    },
+    "import": {
+      "title": "Import from Pipedrive",
+      "steps": {
+        "apiKey": {
+          "title": "Enter your Pipedrive API Key",
+          "description": "Your API key is used only for this import session and is not stored.",
+          "tokenLabel": "API Token",
+          "tokenPlaceholder": "Enter your Pipedrive API token",
+          "findToken": "Find your API token in",
+          "pipedriveSettings": "Pipedrive Settings",
+          "validating": "Validating...",
+          "continue": "Continue"
+        },
+        "select": {
+          "title": "Select Data to Import",
+          "description": "Choose which types of data to import from your Pipedrive account.",
+          "pipelinesStages": "Pipelines & Stages",
+          "pipelinesStagesDesc": "Sales pipeline structure",
+          "customFields": "Custom Fields",
+          "customFieldsDesc": "Field definitions and values",
+          "organizations": "Organizations",
+          "organizationsDesc": "Companies and accounts",
+          "people": "People",
+          "peopleDesc": "Contacts and leads",
+          "deals": "Deals",
+          "dealsDesc": "Opportunities and sales",
+          "activities": "Activities",
+          "activitiesDesc": "Tasks, calls, meetings",
+          "required": "(required)",
+          "back": "Back",
+          "continue": "Continue"
+        },
+        "preview": {
+          "title": "Preview Import",
+          "description": "Review the data that will be imported from Pipedrive.",
+          "totalRecords": "Total records to import:",
+          "startImport": "Start Import"
+        },
+        "progress": {
+          "importing": "Importing Data...",
+          "importComplete": "Import Complete",
+          "importCancelled": "Import Cancelled",
+          "importingEntity": "Importing {entity}...",
+          "cancelImport": "Cancel Import",
+          "cancelling": "Cancelling...",
+          "errors": "{count} Error(s)",
+          "reviewNeeded": "{count} Item(s) Need Review",
+          "reviewDescription": "Some imported items may need manual attention.",
+          "done": "Done"
+        }
+      },
+      "counts": {
+        "pipelines": "Pipelines",
+        "stages": "Stages",
+        "customFields": "Custom Fields",
+        "organizations": "Organizations",
+        "people": "People",
+        "deals": "Deals",
+        "activities": "Activities"
+      }
     }
   },
   "import": {
