@@ -50,8 +50,6 @@ interface KanbanBoardProps {
     type: 'open' | 'won' | 'lost'
   }>
   dealsByStage: Record<string, Deal[]>
-  organizations: { id: string; name: string }[]
-  people: { id: string; firstName: string; lastName: string }[]
   defaultStageId?: string
   owners: Array<{ id: string; name: string }>
   users: { id: string; name: string | null; email: string }[]
@@ -63,8 +61,6 @@ export function KanbanBoard({
   pipelines,
   stages,
   dealsByStage: initialDealsByStage,
-  organizations,
-  people,
   defaultStageId,
   owners,
   users,
@@ -428,8 +424,6 @@ export function KanbanBoard({
             personId: selectedDeal.personId,
             assigneeIds: selectedDeal.assignees?.map(a => a.userId) ?? [],
           }}
-          organizations={organizations}
-          people={people}
           stages={stages}
           users={users}
           onSuccess={handleDealDialogSuccess}
@@ -441,8 +435,6 @@ export function KanbanBoard({
         mode="create"
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
-        organizations={organizations}
-        people={people}
         stages={stages}
         users={users}
         defaultStageId={defaultStageId}

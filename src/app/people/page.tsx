@@ -15,14 +15,6 @@ import { getTranslations } from 'next-intl/server'
 
 const PAGE_SIZE = 50
 
-async function getOrganizationsForSelect() {
-  return db
-    .select({ id: organizations.id, name: organizations.name })
-    .from(organizations)
-    .where(isNull(organizations.deletedAt))
-    .orderBy(organizations.name)
-}
-
 async function getPeople(search?: string, pageNum: number = 1) {
   const limit = PAGE_SIZE * pageNum + 1
 
@@ -85,10 +77,7 @@ export default async function PeoplePage({
 
   const t = await getTranslations('people')
 
-  const [{ rows: peopleData, hasMore }, orgsForSelect] = await Promise.all([
-    getPeople(search || undefined, pageNum),
-    getOrganizationsForSelect(),
-  ])
+  const { rows: peopleData, hasMore } = await getPeople(search || undefined, pageNum)
 
   return (
     <div className="container py-8">
@@ -116,7 +105,6 @@ export default async function PeoplePage({
             <DataTable
               columns={columns}
               data={peopleData}
-              organizations={orgsForSelect}
               hasMore={hasMore}
               search={search}
               currentPage={pageNum}

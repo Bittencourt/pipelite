@@ -1,6 +1,6 @@
 import { auth } from "@/auth"
 import { db } from "@/db"
-import { deals, stages, pipelines, organizations, people, users, dealAssignees } from "@/db/schema"
+import { deals, stages, pipelines, users, dealAssignees } from "@/db/schema"
 import { eq, and, isNull, gte, lte, asc, sql } from "drizzle-orm"
 import { redirect } from "next/navigation"
 import { KanbanBoard } from "./kanban-board"
@@ -155,27 +155,6 @@ export default async function DealsPage({
     }
   }
 
-  // Fetch all organizations (not deleted, for dropdown)
-  const allOrganizations = await db.query.organizations.findMany({
-    where: isNull(organizations.deletedAt),
-    orderBy: [organizations.name],
-    columns: {
-      id: true,
-      name: true,
-    },
-  })
-
-  // Fetch all people (not deleted, for dropdown)
-  const allPeople = await db.query.people.findMany({
-    where: isNull(people.deletedAt),
-    orderBy: [people.firstName, people.lastName],
-    columns: {
-      id: true,
-      firstName: true,
-      lastName: true,
-    },
-  })
-
   // Fetch all users (for owner filter dropdown)
   const allUsers = await db.query.users.findMany({
     where: isNull(users.deletedAt),
@@ -203,8 +182,6 @@ export default async function DealsPage({
           type: s.type,
         }))}
         dealsByStage={dealsByStage}
-        organizations={allOrganizations}
-        people={allPeople}
         defaultStageId={firstOpenStage?.id}
         owners={allUsers.map(u => ({ id: u.id, name: u.name || u.email }))}
         users={allUsers.map(u => ({ id: u.id, name: u.name, email: u.email }))}

@@ -38,6 +38,7 @@ import { createDeal, updateDeal, deleteDeal } from "./actions"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/currency"
 import { AssigneePicker } from "@/components/assignee-picker"
+import { EntityCombobox } from "@/components/ui/entity-combobox"
 
 const dealSchema = z.object({
   title: z.string().min(1, "Title is required").max(200, "Title must be 200 characters or less"),
@@ -73,8 +74,6 @@ interface DealDialogProps {
     assigneeIds?: string[]
   }
   // Dropdown data
-  organizations: { id: string; name: string }[]
-  people: { id: string; firstName: string; lastName: string }[]
   stages: { id: string; name: string; pipelineId: string }[]
   users?: { id: string; name: string | null; email: string }[]
   onSuccess: () => void
@@ -86,8 +85,6 @@ export function DealDialog({
   onOpenChange,
   defaultStageId,
   deal,
-  organizations,
-  people,
   stages,
   users = [],
   onSuccess,
@@ -326,44 +323,26 @@ export function DealDialog({
 
             <div className="space-y-2">
               <Label htmlFor="organizationId">Organization</Label>
-              <Select
-                value={organizationId || ""}
-                onValueChange={(value) => setValue("organizationId", value === "none" ? "" : value)}
+              <EntityCombobox
+                entityType="organization"
+                value={organizationId || null}
+                onChange={(value) => setValue("organizationId", value ?? "")}
+                placeholder="Select an organization (optional)"
+                clearLabel="No organization"
                 disabled={isLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select an organization (optional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No organization</SelectItem>
-                  {organizations.map((org) => (
-                    <SelectItem key={org.id} value={org.id}>
-                      {org.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="personId">Person</Label>
-              <Select
-                value={personId || ""}
-                onValueChange={(value) => setValue("personId", value === "none" ? "" : value)}
+              <EntityCombobox
+                entityType="person"
+                value={personId || null}
+                onChange={(value) => setValue("personId", value ?? "")}
+                placeholder="Select a person (optional)"
+                clearLabel="No person"
                 disabled={isLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a person (optional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No person</SelectItem>
-                  {people.map((person) => (
-                    <SelectItem key={person.id} value={person.id}>
-                      {person.firstName} {person.lastName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
               {!organizationId && !personId && (
                 <p className="text-xs text-muted-foreground">
                   At least one of organization or person is required

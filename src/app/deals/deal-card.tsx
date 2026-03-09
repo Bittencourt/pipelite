@@ -247,8 +247,6 @@ export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col
             organizationId: deal.organizationId,
             personId: deal.personId,
           }}
-          organizations={[]}
-          people={[]}
           stages={[]}
           onSuccess={() => {
             setEditDialogOpen(false)

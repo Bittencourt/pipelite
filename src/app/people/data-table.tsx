@@ -29,14 +29,13 @@ import { useDataTableKeyboard } from "@/components/keyboard"
 interface DataTableProps {
   columns: ColumnDef<Person, unknown>[]
   data: Person[]
-  organizations: { id: string; name: string }[]
   hasMore?: boolean
   search?: string
   currentPage?: number
   refresh?: () => void
 }
 
-export function DataTable({ columns, data, organizations, hasMore = false, search = "", currentPage = 1, refresh }: DataTableProps) {
+export function DataTable({ columns, data, hasMore = false, search = "", currentPage = 1, refresh }: DataTableProps) {
   const router = useRouter()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingPerson, setEditingPerson] = useState<Person | null>(null)
@@ -212,7 +211,6 @@ export function DataTable({ columns, data, organizations, hasMore = false, searc
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         person={editingPerson}
-        organizations={organizations}
         onSuccess={handleSuccess}
       />
 
