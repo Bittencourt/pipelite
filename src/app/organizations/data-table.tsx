@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
   ColumnDef,
@@ -17,8 +17,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Organization } from "./columns"
-import { Plus } from "lucide-react"
+import { Plus, Search } from "lucide-react"
 import { OrganizationDialog } from "./organization-dialog"
 import { DeleteDialog } from "./delete-dialog"
 import { deleteOrganization } from "./actions"
@@ -28,16 +29,20 @@ import { useDataTableKeyboard } from "@/components/keyboard"
 interface DataTableProps {
   columns: ColumnDef<Organization, unknown>[]
   data: Organization[]
+  hasMore?: boolean
+  search?: string
+  currentPage?: number
   refresh?: () => void
 }
 
-export function DataTable({ columns, data, refresh }: DataTableProps) {
+export function DataTable({ columns, data, hasMore = false, search = "", currentPage = 1, refresh }: DataTableProps) {
   const router = useRouter()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [orgToDelete, setOrgToDelete] = useState<Organization | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleAddNew = () => {
     setEditingOrg(null)
@@ -82,6 +87,17 @@ export function DataTable({ columns, data, refresh }: DataTableProps) {
     refresh?.()
   }
 
+  const handleSearchChange = (value: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      if (value) {
+        router.push(`/organizations?search=${encodeURIComponent(value)}&page=1`)
+      } else {
+        router.push("/organizations")
+      }
+    }, 300)
+  }
+
   const { containerProps, rowProps } = useDataTableKeyboard({
     data,
     onEdit: handleEdit,
@@ -104,7 +120,16 @@ export function DataTable({ columns, data, refresh }: DataTableProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search organizations..."
+            defaultValue={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="max-w-sm"
+          />
+        </div>
         <Button onClick={handleAddNew}>
           <Plus className="h-4 w-4 mr-2" />
           Add Organization
@@ -166,6 +191,21 @@ export function DataTable({ columns, data, refresh }: DataTableProps) {
           </TableBody>
         </Table>
       </div>
+
+      {hasMore && (
+        <div className="flex justify-center pt-2">
+          <Button
+            variant="outline"
+            onClick={() =>
+              router.push(
+                `/organizations?search=${encodeURIComponent(search)}&page=${currentPage + 1}`
+              )
+            }
+          >
+            Load More
+          </Button>
+        </div>
+      )}
 
       <OrganizationDialog
         open={dialogOpen}
