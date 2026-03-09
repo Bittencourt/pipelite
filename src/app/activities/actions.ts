@@ -3,7 +3,7 @@
 import { auth } from "@/auth"
 import { db } from "@/db"
 import { activities, activityTypes, deals } from "@/db/schema"
-import { eq, and, isNull, desc, asc } from "drizzle-orm"
+import { eq, and, isNull, desc, asc, or, ilike } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
@@ -308,6 +308,8 @@ export async function getActivities(filters?: {
   ownerId?: string
   assigneeId?: string
   completed?: boolean
+  search?: string
+  limit?: number
 }): Promise<{ success: true; data: unknown[] } | { success: false; error: string }> {
   const session = await auth()
 
@@ -319,7 +321,7 @@ export async function getActivities(filters?: {
   try {
     // Build where conditions
     const conditions = [isNull(activities.deletedAt)]
-    
+
     if (filters?.typeId) {
       conditions.push(eq(activities.typeId, filters.typeId))
     }
@@ -335,6 +337,14 @@ export async function getActivities(filters?: {
     if (filters?.completed === true) {
       conditions.push(isNull(activities.deletedAt)) // completedAt is not null - need different approach
     }
+    if (filters?.search) {
+      conditions.push(
+        or(
+          ilike(activities.title, `%${filters.search}%`),
+          ilike(activities.notes, `%${filters.search}%`)
+        )!
+      )
+    }
 
     const result = await db.query.activities.findMany({
       where: and(...conditions),
@@ -347,12 +357,13 @@ export async function getActivities(filters?: {
         },
       },
       orderBy: [asc(activities.dueDate)],
+      limit: filters?.limit,
     })
 
     // Filter by completion status if specified (Drizzle doesn't have isNotNull easily)
     let filteredResults = result
     if (filters?.completed !== undefined) {
-      filteredResults = result.filter(a => 
+      filteredResults = result.filter(a =>
         filters.completed ? a.completedAt !== null : a.completedAt === null
       )
     }

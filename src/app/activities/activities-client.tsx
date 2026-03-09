@@ -40,6 +40,9 @@ interface ActivitiesClientProps {
     dateFrom: string | null
     dateTo: string | null
   }
+  hasMore?: boolean
+  search?: string
+  currentPage?: number
 }
 
 export function ActivitiesClient({
@@ -49,6 +52,9 @@ export function ActivitiesClient({
   owners,
   users,
   activeFilters,
+  hasMore = false,
+  search = "",
+  currentPage = 1,
 }: ActivitiesClientProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -78,6 +84,12 @@ export function ActivitiesClient({
     startTransition(() => {
       router.refresh()
     })
+  }
+
+  const handleLoadMore = () => {
+    const sp = new URLSearchParams(window.location.search)
+    sp.set("page", String(currentPage + 1))
+    router.push(`/activities?${sp.toString()}`)
   }
 
   // Calculate stats
@@ -141,6 +153,7 @@ export function ActivitiesClient({
               activityTypes={activityTypes}
               owners={owners}
               assignees={users.map(u => ({ id: u.id, name: u.name || u.email }))}
+              search={search}
             />
 
             {hasActiveFilters && activities.length === 0 ? (
@@ -153,12 +166,21 @@ export function ActivitiesClient({
                 </Button>
               </div>
             ) : (
-              <ActivityList
-                activities={activities}
-                activityTypes={activityTypes}
-                onEdit={handleEdit}
-                onRefresh={handleRefresh}
-              />
+              <>
+                <ActivityList
+                  activities={activities}
+                  activityTypes={activityTypes}
+                  onEdit={handleEdit}
+                  onRefresh={handleRefresh}
+                />
+                {hasMore && (
+                  <div className="flex justify-center pt-4">
+                    <Button variant="outline" onClick={handleLoadMore}>
+                      Load More
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </TabsContent>
