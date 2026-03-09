@@ -115,31 +115,9 @@ export interface NewCustomFieldData {
 }
 
 // ---------------------------------------------------------------------------
-// Standard Fields by Entity Type
+// (Standard field sets removed: v2 API nests custom fields under entity.custom_fields,
+//  so there is no need to filter standard fields from a flat entity object.)
 // ---------------------------------------------------------------------------
-
-/** Standard fields for organizations that should not be treated as custom fields */
-const ORGANIZATION_STANDARD_FIELDS = new Set([
-  "id", "name", "owner_id", "address", "website", "add_time", "update_time",
-])
-
-/** Standard fields for persons that should not be treated as custom fields */
-const PERSON_STANDARD_FIELDS = new Set([
-  "id", "name", "first_name", "last_name", "owner_id", "org_id", "email", "phone",
-  "add_time", "update_time",
-])
-
-/** Standard fields for deals that should not be treated as custom fields */
-const DEAL_STANDARD_FIELDS = new Set([
-  "id", "title", "value", "currency", "stage_id", "pipeline_id", "org_id",
-  "person_id", "owner_id", "expected_close_date", "status", "add_time", "update_time",
-])
-
-/** Standard fields for activities that should not be treated as custom fields */
-const ACTIVITY_STANDARD_FIELDS = new Set([
-  "id", "subject", "type", "due_date", "due_time", "deal_id", "org_id",
-  "person_id", "owner_id", "note", "done", "add_time", "update_time",
-])
 
 // ---------------------------------------------------------------------------
 // Pipeline Transformer
@@ -223,15 +201,19 @@ export function transformPipedriveOrganization(
   ownerId: string,
   fieldDefinitions?: PipedriveFieldDefinition[]
 ): NewOrganizationData {
+  // v2 API: custom fields are in a nested custom_fields sub-object
   const customFields = fieldDefinitions
-    ? extractCustomFieldValues(o, fieldDefinitions, ORGANIZATION_STANDARD_FIELDS)
+    ? extractCustomFieldValues(o.custom_fields ?? {}, fieldDefinitions)
     : {}
+
+  // v2 API: address is an object with street/city/etc sub-fields
+  const addressStr = o.address?.value || null
 
   return {
     name: o.name,
     website: o.website || null,
     industry: null, // Pipedrive doesn't have a standard industry field
-    notes: o.address || null, // Map address to notes (address is often used for additional info)
+    notes: addressStr, // Map address to notes
     ownerId,
     defaultCurrency: "USD",
     customFields,
@@ -257,16 +239,16 @@ export function transformPipedrivePerson(
   ownerId: string,
   fieldDefinitions?: PipedriveFieldDefinition[]
 ): NewPersonData {
-  // Extract primary email and phone
-  const primaryEmail = p.email?.find((e) => e.primary)?.value || p.email?.[0]?.value || null
-  const primaryPhone = p.phone?.find((ph) => ph.primary)?.value || p.phone?.[0]?.value || null
+  // v2 API: email/phone arrays are named 'emails'/'phones' (plural)
+  const primaryEmail = p.emails?.find((e) => e.primary)?.value || p.emails?.[0]?.value || null
+  const primaryPhone = p.phones?.find((ph) => ph.primary)?.value || p.phones?.[0]?.value || null
 
-  // Get organization ID from map
-  const organizationId = p.org_id?.id ? orgIdMap.get(p.org_id.id) || null : null
+  // v2 API: org_id is a plain number (not an object)
+  const organizationId = p.org_id ? orgIdMap.get(p.org_id) || null : null
 
-  // Extract custom fields
+  // v2 API: custom fields are in a nested custom_fields sub-object
   const customFields = fieldDefinitions
-    ? extractCustomFieldValues(p, fieldDefinitions, PERSON_STANDARD_FIELDS)
+    ? extractCustomFieldValues(p.custom_fields ?? {}, fieldDefinitions)
     : {}
 
   return {
@@ -327,18 +309,18 @@ export function transformPipedriveDeal(
     return null
   }
 
-  // Get related entity IDs from maps
-  const organizationId = d.org_id?.id ? orgIdMap.get(d.org_id.id) || null : null
-  const personId = d.person_id?.id ? personIdMap.get(d.person_id.id) || null : null
+  // v2 API: org_id and person_id are plain numbers (not objects)
+  const organizationId = d.org_id ? orgIdMap.get(d.org_id) || null : null
+  const personId = d.person_id ? personIdMap.get(d.person_id) || null : null
 
   // Parse expected close date
   const expectedCloseDate = d.expected_close_date
     ? parseDate(d.expected_close_date)
     : null
 
-  // Extract custom fields
+  // v2 API: custom fields are in a nested custom_fields sub-object
   const customFields = fieldDefinitions
-    ? extractCustomFieldValues(d, fieldDefinitions, DEAL_STANDARD_FIELDS)
+    ? extractCustomFieldValues(d.custom_fields ?? {}, fieldDefinitions)
     : {}
 
   return {
@@ -429,10 +411,8 @@ export function transformPipedriveActivity(
   // Set completedAt if activity is done
   const completedAt = a.done ? new Date() : null
 
-  // Extract custom fields
-  const customFields = fieldDefinitions
-    ? extractCustomFieldValues(a, fieldDefinitions, ACTIVITY_STANDARD_FIELDS)
-    : {}
+  // v2 API: activities do not have a custom_fields sub-object in v2
+  const customFields: Record<string, unknown> = {}
 
   return {
     title: a.subject || "Untitled Activity",
@@ -548,37 +528,33 @@ function mapPipedriveFieldTypeInternal(pipedriveType: string): string | null {
 // ---------------------------------------------------------------------------
 
 /**
- * Extract custom field values from a Pipedrive entity.
+ * Extract custom field values from a Pipedrive entity's custom_fields sub-object.
  *
- * This function iterates through the entity's properties and extracts values
- * for fields that match the provided field definitions (i.e., custom fields).
+ * In the Pipedrive v2 API, all custom field values are nested under a
+ * `custom_fields` property on each entity (not flat on the entity itself).
+ * Each key is a randomly generated 40-character hash matching `field.key`
+ * in the field definitions.
  *
- * @param entity - The Pipedrive entity (deal, person, organization, activity)
+ * @param customFieldsObj - The entity's custom_fields sub-object (e.g. entity.custom_fields ?? {})
  * @param fieldDefinitions - The custom field definitions for this entity type
- * @param standardFields - Set of standard field names to exclude
- * @returns Object containing only custom field key-value pairs
+ * @returns Object containing only custom field key-value pairs with non-null values
  */
 export function extractCustomFieldValues(
-  entity: Record<string, unknown>,
-  fieldDefinitions: PipedriveFieldDefinition[],
-  standardFields: Set<string>
+  customFieldsObj: Record<string, unknown>,
+  fieldDefinitions: PipedriveFieldDefinition[]
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {}
 
-  // Create a set of custom field keys for quick lookup
+  // Create a set of known custom field keys for quick lookup
   const customFieldKeys = new Set(fieldDefinitions.map((f) => f.key))
 
-  for (const [key, value] of Object.entries(entity)) {
-    // Skip standard fields
-    if (standardFields.has(key)) continue
-
-    // Skip if not a custom field
+  for (const [key, value] of Object.entries(customFieldsObj)) {
+    // Skip if not a known custom field key
     if (!customFieldKeys.has(key)) continue
 
     // Skip null/undefined values
     if (value === null || value === undefined) continue
 
-    // Use the field key as the custom field name
     result[key] = value
   }
 

@@ -584,8 +584,9 @@ export async function importFromPipedrive(
         )
 
         if (!existing) {
-          const ownerId = pdOrg.owner_id?.id
-            ? pdUserToPipeliteUser.get(pdOrg.owner_id.id) ?? importingUserId
+          // v2 API: owner_id is a plain number (not an object)
+          const ownerId = pdOrg.owner_id
+            ? pdUserToPipeliteUser.get(pdOrg.owner_id) ?? importingUserId
             : importingUserId
 
           const transformed = transformPipedriveOrganization(pdOrg, ownerId, orgFieldDefs as any)
@@ -645,16 +646,18 @@ export async function importFromPipedrive(
 
       for (const pdPerson of pdPeople) {
         // People: match by email (case-insensitive)
+        // v2 API: email array is named 'emails' (plural)
         const primaryEmail =
-          pdPerson.email?.find((e) => e.primary)?.value || pdPerson.email?.[0]?.value
+          pdPerson.emails?.find((e) => e.primary)?.value || pdPerson.emails?.[0]?.value
 
         const existing = primaryEmail
           ? existingPeople.find((p) => p.email?.toLowerCase() === primaryEmail.toLowerCase())
           : null
 
         if (!existing) {
-          const ownerId = pdPerson.owner_id?.id
-            ? pdUserToPipeliteUser.get(pdPerson.owner_id.id) ?? importingUserId
+          // v2 API: owner_id is a plain number (not an object)
+          const ownerId = pdPerson.owner_id
+            ? pdUserToPipeliteUser.get(pdPerson.owner_id) ?? importingUserId
             : importingUserId
 
           const transformed = transformPipedrivePerson(
@@ -714,20 +717,15 @@ export async function importFromPipedrive(
         columns: { id: true, title: true, organizationId: true },
       })
 
-      // Load custom field definitions for deals from Pipedrive
-      let pdDealFields: PipedriveFieldDefinition[] | undefined
-      try {
-        pdDealFields = (await client.fetchDealFields()) as PipedriveFieldDefinition[]
-      } catch {
-        // Field definitions are optional - continue without them
-        pdDealFields = undefined
-      }
+      // Use the deal field definitions fetched earlier (avoid re-fetching / variable shadowing)
+      // pdDealFields is already populated in the upfront field definitions fetch above.
 
       const newDeals: Array<NewDealData & { pdId: number }> = []
 
       for (const pdDeal of pdDeals) {
         // Deals: match by title + organization_id
-        const orgId = pdDeal.org_id?.id ? orgIdMap.get(pdDeal.org_id.id) : null
+        // v2 API: org_id is a plain number (not an object)
+        const orgId = pdDeal.org_id ? orgIdMap.get(pdDeal.org_id) : null
 
         const existing = existingDeals.find(
           (d) =>
@@ -736,17 +734,19 @@ export async function importFromPipedrive(
         )
 
         if (!existing) {
-          const ownerId = pdDeal.owner_id?.id
-            ? pdUserToPipeliteUser.get(pdDeal.owner_id.id) ?? importingUserId
+          // v2 API: owner_id is a plain number (not an object)
+          const ownerId = pdDeal.owner_id
+            ? pdUserToPipeliteUser.get(pdDeal.owner_id) ?? importingUserId
             : importingUserId
 
           // Handle orphan references - create stubs if needed
-          let dealOrgId: string | null = pdDeal.org_id?.id ? (orgIdMap.get(pdDeal.org_id.id) ?? null) : null
-          let dealPersonId: string | null = pdDeal.person_id?.id ? (personIdMap.get(pdDeal.person_id.id) ?? null) : null
+          // v2 API: org_id and person_id are plain numbers (not objects)
+          let dealOrgId: string | null = pdDeal.org_id ? (orgIdMap.get(pdDeal.org_id) ?? null) : null
+          let dealPersonId: string | null = pdDeal.person_id ? (personIdMap.get(pdDeal.person_id) ?? null) : null
 
-          // Create stub org if missing
-          if (pdDeal.org_id?.id && !dealOrgId) {
-            const stubName = `[Pipedrive Import] ${pdDeal.org_id.name || 'Unknown Organization'}`
+          // Create stub org if missing (org referenced by deal but not imported)
+          if (pdDeal.org_id && !dealOrgId) {
+            const stubName = `[Pipedrive Import] Organization #${pdDeal.org_id}`
             const [stubOrg] = await db
               .insert(organizations)
               .values({
@@ -759,18 +759,17 @@ export async function importFromPipedrive(
               .returning()
 
             dealOrgId = stubOrg.id
-            orgIdMap.set(pdDeal.org_id.id, stubOrg.id)
+            orgIdMap.set(pdDeal.org_id, stubOrg.id)
             addReviewItem(importId, 'organization', stubOrg.id, `Stub created for deal "${pdDeal.title}"`)
           }
 
-          // Create stub person if missing
-          if (pdDeal.person_id?.id && !dealPersonId) {
+          // Create stub person if missing (person referenced by deal but not imported)
+          if (pdDeal.person_id && !dealPersonId) {
             const [stubPerson] = await db
               .insert(people)
               .values({
                 firstName: '[Pipedrive Import]',
-                lastName: pdDeal.person_id.name || 'Unknown',
-                email: pdDeal.person_id.email ?? null,
+                lastName: `Person #${pdDeal.person_id}`,
                 notes: `[Pipedrive Import] Auto-created stub for deal "${pdDeal.title}"`,
                 organizationId: dealOrgId,
                 ownerId: importingUserId,
@@ -780,7 +779,7 @@ export async function importFromPipedrive(
               .returning()
 
             dealPersonId = stubPerson.id
-            personIdMap.set(pdDeal.person_id.id, stubPerson.id)
+            personIdMap.set(pdDeal.person_id, stubPerson.id)
             addReviewItem(importId, 'person', stubPerson.id, `Stub created for deal "${pdDeal.title}"`)
           }
 

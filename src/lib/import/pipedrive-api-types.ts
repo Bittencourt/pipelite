@@ -41,65 +41,84 @@ export interface PipedriveStage {
 }
 
 /**
- * Pipedrive Organization entity.
+ * Pipedrive Organization entity (v2 API shape).
  * @see https://developers.pipedrive.com/docs/api/v2/#!/Organizations
+ *
+ * NOTE: v2 API returns owner_id as a plain number (not {id,name} object).
+ * Custom fields are nested under the custom_fields sub-object, not flat.
  */
 export interface PipedriveOrganization {
   id: number
   name: string
-  owner_id: { id: number; name: string } | null
-  address: string | null
-  website: string | null
+  owner_id: number | null
+  address?: {
+    value?: string | null
+    street?: string | null
+    city?: string | null
+    state?: string | null
+    country?: string | null
+  } | null
+  website?: string | null
   add_time?: string
   update_time?: string
-  // Custom fields - Pipedrive uses field keys as property names
-  [key: string]: unknown
+  // v2: custom field values are nested under custom_fields
+  custom_fields?: Record<string, unknown>
 }
 
 /**
- * Pipedrive Person entity.
+ * Pipedrive Person entity (v2 API shape).
  * @see https://developers.pipedrive.com/docs/api/v2/#!/Persons
+ *
+ * NOTE: v2 API returns owner_id and org_id as plain numbers.
+ * Email/phone arrays are named 'emails'/'phones' (plural).
+ * Custom fields are nested under the custom_fields sub-object.
  */
 export interface PipedrivePerson {
   id: number
   name: string
-  first_name: string
-  last_name: string
-  owner_id: { id: number; name: string } | null
-  org_id: { id: number; name: string } | null
-  email: Array<{ value: string; primary: boolean; label?: string }>
-  phone: Array<{ value: string; primary: boolean; label?: string }>
+  first_name?: string
+  last_name?: string
+  owner_id: number | null
+  org_id: number | null
+  emails?: Array<{ value: string; primary: boolean; label?: string }>
+  phones?: Array<{ value: string; primary: boolean; label?: string }>
   add_time?: string
   update_time?: string
-  // Custom fields - Pipedrive uses field keys as property names
-  [key: string]: unknown
+  // v2: custom field values are nested under custom_fields
+  custom_fields?: Record<string, unknown>
 }
 
 /**
- * Pipedrive Deal entity.
+ * Pipedrive Deal entity (v2 API shape).
  * @see https://developers.pipedrive.com/docs/api/v2/#!/Deals
+ *
+ * NOTE: v2 API returns owner_id, org_id, person_id as plain numbers.
+ * Custom fields are nested under the custom_fields sub-object.
  */
 export interface PipedriveDeal {
   id: number
   title: string
   value: number | null
-  currency: string
+  currency?: string
   stage_id: number
-  pipeline_id: number
-  org_id: { id: number; name: string } | null
-  person_id: { id: number; name: string; email: string } | null
-  owner_id: { id: number; name: string } | null
-  expected_close_date: string | null
-  status: "open" | "won" | "lost" | "deleted"
+  pipeline_id?: number
+  org_id: number | null
+  person_id: number | null
+  owner_id: number | null
+  expected_close_date?: string | null
+  status?: "open" | "won" | "lost" | "deleted"
   add_time?: string
   update_time?: string
-  // Custom fields - Pipedrive uses field keys as property names
-  [key: string]: unknown
+  // v2: custom field values are nested under custom_fields
+  custom_fields?: Record<string, unknown>
 }
 
 /**
- * Pipedrive Activity entity.
+ * Pipedrive Activity entity (v2 API shape).
  * @see https://developers.pipedrive.com/docs/api/v2/#!/Activities
+ *
+ * NOTE: v2 API returns owner_id as a plain number.
+ * Activities do not have custom_fields in v2 API.
  */
 export interface PipedriveActivity {
   id: number
@@ -115,8 +134,6 @@ export interface PipedriveActivity {
   done: boolean
   add_time?: string
   update_time?: string
-  // Custom fields - Pipedrive uses field keys as property names
-  [key: string]: unknown
 }
 
 /**
