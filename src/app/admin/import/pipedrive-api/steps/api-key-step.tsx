@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ExternalLink, AlertCircle, Loader2 } from "lucide-react"
-import { fetchPipedriveCounts } from "@/lib/import/pipedrive-api-import-actions"
+import { validatePipedriveApiKey } from "@/lib/import/pipedrive-api-import-actions"
 
 interface ApiKeyStepProps {
   onConfirm: (apiKey: string) => void
@@ -26,8 +26,8 @@ export function ApiKeyStep({ onConfirm }: ApiKeyStepProps) {
     setIsValidating(true)
     setError(null)
 
-    // Validate by fetching counts
-    const result = await fetchPipedriveCounts(apiKey.trim())
+    // Validate by making a single lightweight API call to verify the key
+    const result = await validatePipedriveApiKey(apiKey.trim())
 
     setIsValidating(false)
 

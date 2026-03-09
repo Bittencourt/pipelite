@@ -519,6 +519,77 @@ export class PipedriveApiClient {
       return response.data || []
     })
   }
+
+  // ---------------------------------------------------------------------------
+  // Count-Only Methods (single page, no full pagination)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fetches one page of organizations (up to 500) for count estimation.
+   * Returns the number of items on the first page plus a flag indicating
+   * whether more pages exist. Used in fetchPipedriveCounts to avoid
+   * paginating through thousands of records just to get a total.
+   */
+  async fetchOrganizationsCount(): Promise<{ count: number; hasMore: boolean }> {
+    return withRetry(async () => {
+      const request: v2.OrganizationsApiGetOrganizationsRequest = { limit: 500 }
+      const response = (await this.organizationsApi.getOrganizations(
+        request
+      )) as V2PaginatedResponse<unknown>
+      return {
+        count: response.data?.length ?? 0,
+        hasMore: !!response.additional_data?.next_cursor,
+      }
+    })
+  }
+
+  /**
+   * Fetches one page of persons (up to 500) for count estimation.
+   */
+  async fetchPeopleCount(): Promise<{ count: number; hasMore: boolean }> {
+    return withRetry(async () => {
+      const request: v2.PersonsApiGetPersonsRequest = { limit: 500 }
+      const response = (await this.personsApi.getPersons(
+        request
+      )) as V2PaginatedResponse<unknown>
+      return {
+        count: response.data?.length ?? 0,
+        hasMore: !!response.additional_data?.next_cursor,
+      }
+    })
+  }
+
+  /**
+   * Fetches one page of deals (up to 500) for count estimation.
+   */
+  async fetchDealsCount(): Promise<{ count: number; hasMore: boolean }> {
+    return withRetry(async () => {
+      const request: v2.DealsApiGetDealsRequest = { limit: 500 }
+      const response = (await this.dealsApi.getDeals(
+        request
+      )) as V2PaginatedResponse<unknown>
+      return {
+        count: response.data?.length ?? 0,
+        hasMore: !!response.additional_data?.next_cursor,
+      }
+    })
+  }
+
+  /**
+   * Fetches one page of activities (up to 500) for count estimation.
+   */
+  async fetchActivitiesCount(): Promise<{ count: number; hasMore: boolean }> {
+    return withRetry(async () => {
+      const request: v2.ActivitiesApiGetActivitiesRequest = { limit: 500 }
+      const response = (await this.activitiesApi.getActivities(
+        request
+      )) as V2PaginatedResponse<unknown>
+      return {
+        count: response.data?.length ?? 0,
+        hasMore: !!response.additional_data?.next_cursor,
+      }
+    })
+  }
 }
 
 // ---------------------------------------------------------------------------

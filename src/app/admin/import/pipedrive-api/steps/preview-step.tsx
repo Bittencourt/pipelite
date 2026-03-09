@@ -14,22 +14,28 @@ interface PreviewStepProps {
   isLoading?: boolean
 }
 
+function formatCount(count: number, hasMore?: boolean): string {
+  if (hasMore) return `${count.toLocaleString()}+`
+  return count.toLocaleString()
+}
+
 export function PreviewStep({ counts, selectedEntities, onBack, onConfirm, isLoading }: PreviewStepProps) {
   const items = [
-    { key: "pipelines", label: "Pipelines", count: counts.pipelines, icon: Layers, alwaysShow: true },
-    { key: "stages", label: "Stages", count: counts.stages, icon: Layers, alwaysShow: true },
-    { key: "customFields", label: "Custom Fields", count: counts.dealFields + counts.personFields + counts.organizationFields + counts.activityFields, icon: Settings },
-    { key: "organizations", label: "Organizations", count: counts.organizations, icon: Building2 },
-    { key: "people", label: "People", count: counts.people, icon: Users },
-    { key: "deals", label: "Deals", count: counts.deals, icon: Briefcase },
-    { key: "activities", label: "Activities", count: counts.activities, icon: Calendar },
+    { key: "pipelines", label: "Pipelines", count: counts.pipelines, hasMore: false, icon: Layers, alwaysShow: true },
+    { key: "stages", label: "Stages", count: counts.stages, hasMore: false, icon: Layers, alwaysShow: true },
+    { key: "customFields", label: "Custom Fields", count: counts.dealFields + counts.personFields + counts.organizationFields + counts.activityFields, hasMore: false, icon: Settings },
+    { key: "organizations", label: "Organizations", count: counts.organizations, hasMore: counts.organizationsHasMore, icon: Building2 },
+    { key: "people", label: "People", count: counts.people, hasMore: counts.peopleHasMore, icon: Users },
+    { key: "deals", label: "Deals", count: counts.deals, hasMore: counts.dealsHasMore, icon: Briefcase },
+    { key: "activities", label: "Activities", count: counts.activities, hasMore: counts.activitiesHasMore, icon: Calendar },
   ]
 
-  const filteredItems = items.filter(item => 
+  const filteredItems = items.filter(item =>
     item.alwaysShow || selectedEntities[item.key as keyof typeof selectedEntities]
   )
 
   const totalCount = filteredItems.reduce((sum, item) => sum + item.count, 0)
+  const anyHasMore = filteredItems.some(item => item.hasMore)
 
   return (
     <div className="space-y-6">
@@ -48,14 +54,15 @@ export function PreviewStep({ counts, selectedEntities, onBack, onConfirm, isLoa
                 <item.icon className="h-5 w-5 text-muted-foreground" />
                 <span>{item.label}</span>
               </div>
-              <span className="font-medium">{item.count.toLocaleString()}</span>
+              <span className="font-medium">{formatCount(item.count, item.hasMore)}</span>
             </CardContent>
           </Card>
         ))}
       </div>
 
       <p className="text-sm text-muted-foreground">
-        Total records to import: <strong>{totalCount.toLocaleString()}</strong>
+        Total records to import: <strong>{anyHasMore ? `${totalCount.toLocaleString()}+` : totalCount.toLocaleString()}</strong>
+        {anyHasMore && " (exact count determined during import)"}
       </p>
 
       <div className="flex justify-between">

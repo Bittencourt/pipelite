@@ -61,9 +61,13 @@ export interface PipedriveCounts {
   pipelines: number
   stages: number
   organizations: number
+  organizationsHasMore: boolean
   people: number
+  peopleHasMore: boolean
   deals: number
+  dealsHasMore: boolean
   activities: number
+  activitiesHasMore: boolean
   dealFields: number
   personFields: number
   organizationFields: number
@@ -101,10 +105,44 @@ function updateCompletedCount(importId: string, additionalCount: number): void {
 // ---------------------------------------------------------------------------
 
 /**
+ * Validate a Pipedrive API key by making a single lightweight API call.
+ *
+ * Used in step 1 of the import wizard to verify the key before proceeding.
+ * Much faster than fetchPipedriveCounts because it fetches only 1 record.
+ */
+export async function validatePipedriveApiKey(
+  apiKey: string
+): Promise<{ success: true } | { success: false; error: string }> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return { success: false, error: "Not authenticated" }
+  }
+
+  try {
+    const client = createPipedriveClient(apiKey)
+    // Fetch a single pipeline to confirm the key is valid.
+    // This is a fast single-request check with no pagination.
+    await client.fetchPipelines()
+    return { success: true }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Invalid API key or failed to connect to Pipedrive",
+    }
+  }
+}
+
+/**
  * Fetch entity counts from Pipedrive for the import preview step.
  *
- * This action validates authentication, creates the API client, and fetches
- * counts for all entity types in parallel for speed.
+ * For large entity types (organizations, people, deals, activities), fetches
+ * only the first page (up to 500 items) rather than paginating all records.
+ * This avoids server action timeouts on large accounts while still providing
+ * useful count estimates. When more than 500 records exist, the hasMore flag
+ * is set on the corresponding count field.
+ *
+ * For small entity types (pipelines, stages, field definitions), fetches all
+ * records since these are always small datasets.
  */
 export async function fetchPipedriveCounts(
   apiKey: string
@@ -117,14 +155,15 @@ export async function fetchPipedriveCounts(
   try {
     const client = createPipedriveClient(apiKey)
 
-    // Fetch counts in parallel for speed
+    // Fetch small entities fully (always small datasets) and large entities
+    // using a single-page count to avoid paginating through thousands of records.
     const [
       pipelinesData,
       stagesData,
-      organizationsData,
-      peopleData,
-      dealsData,
-      activitiesData,
+      orgsCount,
+      peopleCount,
+      dealsCount,
+      activitiesCount,
       dealFieldsData,
       personFieldsData,
       organizationFieldsData,
@@ -132,10 +171,10 @@ export async function fetchPipedriveCounts(
     ] = await Promise.all([
       client.fetchPipelines(),
       client.fetchStages(),
-      client.fetchOrganizations(),
-      client.fetchPeople(),
-      client.fetchDeals(),
-      client.fetchActivities(),
+      client.fetchOrganizationsCount(),
+      client.fetchPeopleCount(),
+      client.fetchDealsCount(),
+      client.fetchActivitiesCount(),
       client.fetchDealFields(),
       client.fetchPersonFields(),
       client.fetchOrganizationFields(),
@@ -147,10 +186,14 @@ export async function fetchPipedriveCounts(
       counts: {
         pipelines: pipelinesData.length,
         stages: stagesData.length,
-        organizations: organizationsData.length,
-        people: peopleData.length,
-        deals: dealsData.length,
-        activities: activitiesData.length,
+        organizations: orgsCount.count,
+        organizationsHasMore: orgsCount.hasMore,
+        people: peopleCount.count,
+        peopleHasMore: peopleCount.hasMore,
+        deals: dealsCount.count,
+        dealsHasMore: dealsCount.hasMore,
+        activities: activitiesCount.count,
+        activitiesHasMore: activitiesCount.hasMore,
         dealFields: dealFieldsData.length,
         personFields: personFieldsData.length,
         organizationFields: organizationFieldsData.length,
