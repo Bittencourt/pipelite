@@ -15,17 +15,24 @@ async function withRetry<T>(
   fn: () => Promise<T>,
   maxAttempts: number = MAX_RETRY_ATTEMPTS
 ): Promise<T> {
-  let lastError: Error | null = null
+  let lastError: unknown = null
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       return await fn()
     } catch (error: unknown) {
-      lastError = error instanceof Error ? error : new Error(String(error))
+      lastError = error
 
-      // Check for rate limit (HTTP 429)
-      const axiosError = error as { response?: { status?: number }; status?: number }
-      const status = axiosError?.response?.status || axiosError?.status
+      // Check for rate limit (HTTP 429).
+      // The Pipedrive SDK can throw in two formats:
+      // 1. Axios-style Error: { response: { status: 429 } } or { status: 429 }
+      // 2. SDK plain object: { success: false, errorCode: 429, error: 'request over limit' }
+      const sdkError = error as { response?: { status?: number }; status?: number; errorCode?: number }
+      const status =
+        sdkError?.response?.status ||
+        sdkError?.status ||
+        sdkError?.errorCode
+
       if (status === 429 && attempt < maxAttempts - 1) {
         const delayMs = Math.pow(2, attempt) * BASE_DELAY_MS
         console.warn(

@@ -90,9 +90,10 @@ export function PipedriveApiWizard() {
     // Fire-and-forget: do NOT await. The server action runs independently
     // and creates its own state. Switch to progress step immediately so
     // ProgressStep can start polling.
-    importFromPipedrive(apiKey, config, id)
+    // Pass preloaded counts to avoid redundant API calls that can hit rate limits.
+    importFromPipedrive(apiKey, config, id, counts ?? undefined)
     setStep("progress")
-  }, [apiKey, selectedEntities])
+  }, [apiKey, selectedEntities, counts])
 
   const handleImportComplete = useCallback(() => {
     router.push("/admin")

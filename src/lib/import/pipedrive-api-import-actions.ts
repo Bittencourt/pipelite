@@ -190,7 +190,8 @@ export async function fetchPipedriveCounts(
 export async function importFromPipedrive(
   apiKey: string,
   config: PipedriveImportConfig,
-  importId: string
+  importId: string,
+  preloadedCounts?: PipedriveCounts
 ): Promise<{ success: true } | { success: false; error: string }> {
   const session = await auth()
   if (!session?.user?.id) {
@@ -238,34 +239,41 @@ export async function importFromPipedrive(
 
     // -----------------------------------------------------------------------
     // Calculate total entities for progress tracking
+    // Use preloaded counts from the wizard preview step if available,
+    // otherwise fetch them (avoids extra API calls that can hit rate limits)
     // -----------------------------------------------------------------------
-    const counts = await fetchPipedriveCounts(apiKey)
-    if (!counts.success) {
-      throw new Error(counts.error)
+    let countsData: PipedriveCounts
+    if (preloadedCounts) {
+      countsData = preloadedCounts
+    } else {
+      const countsResult = await fetchPipedriveCounts(apiKey)
+      if (!countsResult.success) {
+        throw new Error(countsResult.error)
+      }
+      countsData = countsResult.counts
     }
-
     let totalEntities = 0
     if (config.entities.pipelines) {
-      totalEntities += counts.counts.pipelines + counts.counts.stages
+      totalEntities += countsData.pipelines + countsData.stages
     }
     if (config.entities.customFields) {
       totalEntities +=
-        counts.counts.dealFields +
-        counts.counts.personFields +
-        counts.counts.organizationFields +
-        counts.counts.activityFields
+        countsData.dealFields +
+        countsData.personFields +
+        countsData.organizationFields +
+        countsData.activityFields
     }
     if (config.entities.organizations) {
-      totalEntities += counts.counts.organizations
+      totalEntities += countsData.organizations
     }
     if (config.entities.people) {
-      totalEntities += counts.counts.people
+      totalEntities += countsData.people
     }
     if (config.entities.deals) {
-      totalEntities += counts.counts.deals
+      totalEntities += countsData.deals
     }
     if (config.entities.activities) {
-      totalEntities += counts.counts.activities
+      totalEntities += countsData.activities
     }
 
     updateImportState(importId, { totalEntities })
@@ -884,7 +892,22 @@ export async function importFromPipedrive(
 
     return { success: true }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Import failed"
+    // Handle both Error instances and SDK plain-object errors
+    // Pipedrive SDK can throw: { success: false, errorCode: 429, error: 'request over limit' }
+    let errorMessage = "Import failed"
+    if (error instanceof Error) {
+      errorMessage = error.message
+    } else if (error && typeof error === 'object') {
+      const sdkError = error as { error?: string; errorCode?: number; message?: string }
+      if (sdkError.error) {
+        errorMessage = sdkError.errorCode
+          ? `Pipedrive API error ${sdkError.errorCode}: ${sdkError.error}`
+          : sdkError.error
+      } else if (sdkError.message) {
+        errorMessage = sdkError.message
+      }
+    }
+    console.error('[importFromPipedrive] Error:', errorMessage, error)
     addImportError(importId, 'general', errorMessage)
     updateImportState(importId, {
       status: 'error',
