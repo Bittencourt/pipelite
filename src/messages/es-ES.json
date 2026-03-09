@@ -314,7 +314,9 @@
       "customFields": "Campos Personalizados",
       "configureCustomFields": "Configurar campos personalizados para empresas, personas, ofertas y actividades",
       "exportData": "Exportar Datos",
-      "exportDescription": "Exportar empresas, personas, ofertas y actividades"
+      "exportDescription": "Exportar empresas, personas, ofertas y actividades",
+      "pipedriveImport": "Importar desde Pipedrive",
+      "pipedriveImportDescription": "Importar datos directamente desde Pipedrive usando API"
     },
     "users": {
       "title": "Usuarios",
@@ -383,6 +385,67 @@
     "export": {
       "title": "Exportar Datos",
       "description": "Exporta tus datos de CRM en formato CSV, JSON o compatible con Pipedrive"
+    },
+    "import": {
+      "title": "Importar desde Pipedrive",
+      "steps": {
+        "apiKey": {
+          "title": "Ingrese su clave de API de Pipedrive",
+          "description": "Su clave de API se usa solo para esta sesión de importación y no se almacena.",
+          "tokenLabel": "Token de API",
+          "tokenPlaceholder": "Ingrese su token de API de Pipedrive",
+          "findToken": "Encuentre su token de API en",
+          "pipedriveSettings": "Configuración de Pipedrive",
+          "validating": "Validando...",
+          "continue": "Continuar"
+        },
+        "select": {
+          "title": "Seleccione datos para importar",
+          "description": "Elija qué tipos de datos importar de su cuenta de Pipedrive.",
+          "pipelinesStages": "Pipelines y Etapas",
+          "pipelinesStagesDesc": "Estructura de pipelines de ventas",
+          "customFields": "Campos Personalizados",
+          "customFieldsDesc": "Definiciones y valores de campos",
+          "organizations": "Organizaciones",
+          "organizationsDesc": "Empresas y cuentas",
+          "people": "Personas",
+          "peopleDesc": "Contactos y leads",
+          "deals": "Negocios",
+          "dealsDesc": "Oportunidades y ventas",
+          "activities": "Actividades",
+          "activitiesDesc": "Tareas, llamadas, reuniones",
+          "required": "(requerido)",
+          "back": "Atrás",
+          "continue": "Continuar"
+        },
+        "preview": {
+          "title": "Vista Previa de Importación",
+          "description": "Revise los datos que se importarán desde Pipedrive.",
+          "totalRecords": "Total de registros a importar:",
+          "startImport": "Iniciar Importación"
+        },
+        "progress": {
+          "importing": "Importando Datos...",
+          "importComplete": "Importación Completada",
+          "importCancelled": "Importación Cancelada",
+          "importingEntity": "Importando {entity}...",
+          "cancelImport": "Cancelar Importación",
+          "cancelling": "Cancelando...",
+          "errors": "{count} Error(es)",
+          "reviewNeeded": "{count} Elemento(s) Necesitan Revisión",
+          "reviewDescription": "Algunos elementos importados pueden necesitar atención manual.",
+          "done": "Listo"
+        }
+      },
+      "counts": {
+        "pipelines": "Pipelines",
+        "stages": "Etapas",
+        "customFields": "Campos Personalizados",
+        "organizations": "Organizaciones",
+        "people": "Personas",
+        "deals": "Negocios",
+        "activities": "Actividades"
+      }
     }
   },
   "import": {

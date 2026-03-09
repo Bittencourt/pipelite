@@ -24,12 +24,10 @@ interface Person {
 
 interface PersonDetailClientProps {
   person: Person
-  organizations: { id: string; name: string }[]
 }
 
 export function PersonDetailClient({
   person,
-  organizations,
 }: PersonDetailClientProps) {
   const router = useRouter()
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -101,7 +99,6 @@ export function PersonDetailClient({
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
         person={person}
-        organizations={organizations}
         onSuccess={handleEditSuccess}
       />
 

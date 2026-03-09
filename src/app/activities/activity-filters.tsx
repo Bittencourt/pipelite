@@ -1,6 +1,7 @@
 "use client"
 
 import { useSearchParams, usePathname, useRouter } from "next/navigation"
+import { useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -17,7 +18,7 @@ import {
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
-import { Filter, X } from "lucide-react"
+import { Filter, Search, X } from "lucide-react"
 import { Suspense } from "react"
 import { useTranslations } from "next-intl"
 
@@ -25,17 +26,20 @@ interface ActivityFiltersProps {
   activityTypes: Array<{ id: string; name: string }>
   owners: Array<{ id: string; name: string }>
   assignees?: Array<{ id: string; name: string }>
+  search?: string
 }
 
 function ActivityFiltersInner({
   activityTypes,
   owners,
   assignees = [],
+  search = "",
 }: ActivityFiltersProps) {
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const router = useRouter()
   const t = useTranslations('activities')
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Read filter values from URL
   const typeId = searchParams.get("type") || ""
@@ -73,6 +77,21 @@ function ActivityFiltersInner({
     router.push(pathname)
   }
 
+  // Debounced search handler
+  const handleSearchChange = (value: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString())
+      if (value) {
+        params.set("search", value)
+      } else {
+        params.delete("search")
+      }
+      params.delete("page")
+      router.push(`${pathname}?${params.toString()}`)
+    }, 300)
+  }
+
   // Get display name for a filter value
   const getTypeName = (id: string) => {
     const type = activityTypes.find((t) => t.id === id)
@@ -105,6 +124,15 @@ function ActivityFiltersInner({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search activities..."
+            defaultValue={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="pl-8 max-w-sm"
+          />
+        </div>
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">

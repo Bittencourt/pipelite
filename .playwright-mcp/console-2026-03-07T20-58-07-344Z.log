@@ -1,0 +1,20 @@
+[     681ms] Error: Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings.
+    at rK (http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:46792)
+    at io (http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:97513)
+    at sc (http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:137984)
+    at http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:132874
+    at u9 (http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:132975)
+    at sV (http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:159357)
+    at MessagePort.O (http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:8316)
+[  709291ms] [ERROR] Failed to save field: Annual revenue is required @ http://localhost:3001/_next/static/chunks/d9d0ca9b7f004f9f.js:56
+[  710435ms] [ERROR] Failed to save field: Annual revenue is required @ http://localhost:3001/_next/static/chunks/d9d0ca9b7f004f9f.js:56
+[  713463ms] [ERROR] Failed to save field: Annual revenue is required @ http://localhost:3001/_next/static/chunks/d9d0ca9b7f004f9f.js:56
+[  725835ms] [ERROR] Failed to save field: Annual revenue is required @ http://localhost:3001/_next/static/chunks/d9d0ca9b7f004f9f.js:56
+[  953313ms] Error: Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings.
+    at rK (http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:46792)
+    at io (http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:97513)
+    at sc (http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:137984)
+    at http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:132874
+    at u9 (http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:132975)
+    at sV (http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:159357)
+    at MessagePort.O (http://localhost:3001/_next/static/chunks/03e033fbe7651128.js:1:8316)

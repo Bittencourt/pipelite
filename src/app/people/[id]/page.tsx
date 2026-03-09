@@ -55,14 +55,6 @@ async function getPerson(id: string) {
   }
 }
 
-async function getOrganizationsForSelect() {
-  return db
-    .select({ id: organizations.id, name: organizations.name })
-    .from(organizations)
-    .where(isNull(organizations.deletedAt))
-    .orderBy(organizations.name)
-}
-
 async function getCustomFieldDefinitions() {
   return db.select()
     .from(customFieldDefinitions)
@@ -78,9 +70,8 @@ export default async function PersonDetailPage({ params }: PageProps) {
   const format = await getFormatter()
   const t = await getTranslations('people')
   
-  const [person, orgsForSelect, customFieldDefs] = await Promise.all([
+  const [person, customFieldDefs] = await Promise.all([
     getPerson(id),
-    getOrganizationsForSelect(),
     getCustomFieldDefinitions(),
   ])
 
@@ -90,7 +81,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
 
   return (
     <div className="container py-8">
-      <PersonDetailClient person={person} organizations={orgsForSelect} />
+      <PersonDetailClient person={person} />
 
       <Card>
         <CardHeader>

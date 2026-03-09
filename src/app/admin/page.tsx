@@ -4,7 +4,7 @@ import { users } from "@/db/schema/users"
 import { eq, count, and, isNull } from "drizzle-orm"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, UserCheck, Layers, SlidersHorizontal, Database } from "lucide-react"
+import { Users, UserCheck, Layers, SlidersHorizontal, Database, Key } from "lucide-react"
 import { getTranslations } from 'next-intl/server'
 
 export default async function AdminDashboard() {
@@ -177,6 +177,19 @@ export default async function AdminDashboard() {
                 </div>
                 <CardDescription>
                   {t('exportDescription')}
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+          <Link href="/admin/import/pipedrive-api">
+            <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">{t('pipedriveImport')}</CardTitle>
+                  <Key className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <CardDescription>
+                  {t('pipedriveImportDescription')}
                 </CardDescription>
               </CardHeader>
             </Card>

@@ -16,16 +16,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Loader2 } from "lucide-react"
 import { createPerson, updatePerson } from "./actions"
 import { toast } from "sonner"
+import { EntityCombobox } from "@/components/ui/entity-combobox"
 
 const personSchema = z.object({
   firstName: z.string().min(1, "First name is required").max(50, "First name must be 50 characters or less"),
@@ -48,16 +42,10 @@ interface Person {
   organizationId: string | null
 }
 
-interface OrganizationOption {
-  id: string
-  name: string
-}
-
 interface PersonDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   person?: Person | null
-  organizations: OrganizationOption[]
   onSuccess: () => void
 }
 
@@ -65,7 +53,6 @@ export function PersonDialog({
   open,
   onOpenChange,
   person,
-  organizations,
   onSuccess,
 }: PersonDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
@@ -219,23 +206,14 @@ export function PersonDialog({
 
           <div className="space-y-2">
             <Label htmlFor="organizationId">Organization</Label>
-            <Select
-              value={organizationId || ""}
-              onValueChange={(value) => setValue("organizationId", value === "none" ? "" : value)}
+            <EntityCombobox
+              entityType="organization"
+              value={organizationId || null}
+              onChange={(value) => setValue("organizationId", value ?? "")}
+              placeholder="Select an organization (optional)"
+              clearLabel="No organization"
               disabled={isLoading}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select an organization (optional)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No organization</SelectItem>
-                {organizations.map((org) => (
-                  <SelectItem key={org.id} value={org.id}>
-                    {org.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            />
           </div>
 
           <div className="space-y-2">

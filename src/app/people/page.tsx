@@ -1,6 +1,6 @@
 import { db } from "@/db"
 import { people, organizations, users } from "@/db/schema"
-import { isNull, desc, eq, and } from "drizzle-orm"
+import { isNull, desc, eq, and, or, ilike } from "drizzle-orm"
 import { DataTable } from "./data-table"
 import { columns } from "./columns"
 import {
@@ -13,16 +13,24 @@ import {
 import { Users } from "lucide-react"
 import { getTranslations } from 'next-intl/server'
 
-async function getOrganizationsForSelect() {
-  return db
-    .select({ id: organizations.id, name: organizations.name })
-    .from(organizations)
-    .where(isNull(organizations.deletedAt))
-    .orderBy(organizations.name)
-}
+const PAGE_SIZE = 50
 
-async function getPeople() {
-  const result = await db
+async function getPeople(search?: string, pageNum: number = 1) {
+  const limit = PAGE_SIZE * pageNum + 1
+
+  const whereClause = search
+    ? and(
+        isNull(people.deletedAt),
+        or(
+          ilike(people.firstName, `%${search}%`),
+          ilike(people.lastName, `%${search}%`),
+          ilike(people.email, `%${search}%`),
+          ilike(people.phone, `%${search}%`)
+        )
+      )
+    : isNull(people.deletedAt)
+
+  const rows = await db
     .select({
       id: people.id,
       firstName: people.firstName,
@@ -41,23 +49,35 @@ async function getPeople() {
       and(eq(people.organizationId, organizations.id), isNull(organizations.deletedAt))
     )
     .leftJoin(users, eq(people.ownerId, users.id))
-    .where(isNull(people.deletedAt))
+    .where(whereClause)
     .orderBy(desc(people.createdAt))
+    .limit(limit)
 
-  return result.map((person) => ({
-    ...person,
-    organizationName: person.organizationName || null,
-    ownerName: person.ownerName || null,
-  }))
+  const hasMore = rows.length > PAGE_SIZE * pageNum
+  const result = hasMore ? rows.slice(0, PAGE_SIZE * pageNum) : rows
+
+  return {
+    rows: result.map((person) => ({
+      ...person,
+      organizationName: person.organizationName || null,
+      ownerName: person.ownerName || null,
+    })),
+    hasMore,
+  }
 }
 
-export default async function PeoplePage() {
+export default async function PeoplePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string; page?: string }>
+}) {
+  const params = await searchParams
+  const pageNum = Math.max(1, parseInt(params.page ?? "1"))
+  const search = params.search ?? ""
+
   const t = await getTranslations('people')
-  
-  const [peopleData, orgsForSelect] = await Promise.all([
-    getPeople(),
-    getOrganizationsForSelect(),
-  ])
+
+  const { rows: peopleData, hasMore } = await getPeople(search || undefined, pageNum)
 
   return (
     <div className="container py-8">
@@ -82,7 +102,13 @@ export default async function PeoplePage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <DataTable columns={columns} data={peopleData} organizations={orgsForSelect} />
+            <DataTable
+              columns={columns}
+              data={peopleData}
+              hasMore={hasMore}
+              search={search}
+              currentPage={pageNum}
+            />
           </CardContent>
         </Card>
       </div>
