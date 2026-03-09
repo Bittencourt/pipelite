@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
   ColumnDef,
@@ -17,8 +17,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Person } from "./columns"
-import { Plus } from "lucide-react"
+import { Plus, Search } from "lucide-react"
 import { PersonDialog } from "./person-dialog"
 import { DeleteDialog } from "./delete-dialog"
 import { deletePerson } from "./actions"
@@ -29,16 +30,20 @@ interface DataTableProps {
   columns: ColumnDef<Person, unknown>[]
   data: Person[]
   organizations: { id: string; name: string }[]
+  hasMore?: boolean
+  search?: string
+  currentPage?: number
   refresh?: () => void
 }
 
-export function DataTable({ columns, data, organizations, refresh }: DataTableProps) {
+export function DataTable({ columns, data, organizations, hasMore = false, search = "", currentPage = 1, refresh }: DataTableProps) {
   const router = useRouter()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingPerson, setEditingPerson] = useState<Person | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [personToDelete, setPersonToDelete] = useState<Person | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleAddNew = () => {
     setEditingPerson(null)
@@ -83,6 +88,17 @@ export function DataTable({ columns, data, organizations, refresh }: DataTablePr
     refresh?.()
   }
 
+  const handleSearchChange = (value: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      if (value) {
+        router.push(`/people?search=${encodeURIComponent(value)}&page=1`)
+      } else {
+        router.push("/people")
+      }
+    }, 300)
+  }
+
   const { containerProps, rowProps } = useDataTableKeyboard({
     data,
     onEdit: handleEdit,
@@ -105,7 +121,16 @@ export function DataTable({ columns, data, organizations, refresh }: DataTablePr
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search people..."
+            defaultValue={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="max-w-sm"
+          />
+        </div>
         <Button onClick={handleAddNew}>
           <Plus className="h-4 w-4 mr-2" />
           Add Person
@@ -167,6 +192,21 @@ export function DataTable({ columns, data, organizations, refresh }: DataTablePr
           </TableBody>
         </Table>
       </div>
+
+      {hasMore && (
+        <div className="flex justify-center pt-2">
+          <Button
+            variant="outline"
+            onClick={() =>
+              router.push(
+                `/people?search=${encodeURIComponent(search)}&page=${currentPage + 1}`
+              )
+            }
+          >
+            Load More
+          </Button>
+        </div>
+      )}
 
       <PersonDialog
         open={dialogOpen}
