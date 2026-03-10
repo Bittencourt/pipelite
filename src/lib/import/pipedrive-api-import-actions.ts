@@ -36,7 +36,7 @@ import {
   activityTypes,
   customFieldDefinitions,
 } from "@/db/schema"
-import { eq, isNull } from "drizzle-orm"
+import { isNull } from "drizzle-orm"
 import {
   transformPipedrivePipeline,
   transformPipedriveStage,
@@ -570,11 +570,6 @@ export async function importFromPipedrive(
         columns: { id: true, name: true },
       })
 
-      // Load custom field definitions for organizations
-      const orgFieldDefs = await db.query.customFieldDefinitions.findMany({
-        where: eq(customFieldDefinitions.entityType, 'organization'),
-      })
-
       const newOrgs: Array<NewOrganizationData & { pdId: number }> = []
 
       for (const pdOrg of pdOrgs) {
@@ -589,7 +584,9 @@ export async function importFromPipedrive(
             ? pdUserToPipeliteUser.get(pdOrg.owner_id) ?? importingUserId
             : importingUserId
 
-          const transformed = transformPipedriveOrganization(pdOrg, ownerId, orgFieldDefs as any)
+          // Pass Pipedrive field definitions (pdOrgFields) so extractCustomFieldValues
+          // can map hash keys → field names. These are fetched upfront in needsFieldDefs block.
+          const transformed = transformPipedriveOrganization(pdOrg, ownerId, pdOrgFields)
           newOrgs.push({ ...transformed, pdId: pdOrg.id })
         } else {
           // Map to existing for relationships
@@ -848,11 +845,6 @@ export async function importFromPipedrive(
       if (!defaultTypeId) {
         addImportError(importId, 'activities', 'No activity types found')
       } else {
-        // Load custom field definitions for activities
-        const activityFieldDefs = await db.query.customFieldDefinitions.findMany({
-          where: eq(customFieldDefinitions.entityType, 'activity'),
-        })
-
         const newActivities: Array<{
           title: string
           typeId: string
@@ -880,12 +872,11 @@ export async function importFromPipedrive(
           const dueDate = pdActivity.due_date ? new Date(pdActivity.due_date) : new Date()
           const completedAt = pdActivity.done ? new Date() : null
 
-          // Extract custom fields
-      const transformed = transformPipedriveActivity(
+          // Extract custom fields (activities have no custom_fields in Pipedrive v2)
+          const transformed = transformPipedriveActivity(
             pdActivity,
             dealIdMap,
             ownerId,
-            activityFieldDefs as any
           )
 
           newActivities.push({

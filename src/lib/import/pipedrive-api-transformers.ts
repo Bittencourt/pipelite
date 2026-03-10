@@ -535,9 +535,12 @@ function mapPipedriveFieldTypeInternal(pipedriveType: string): string | null {
  * Each key is a randomly generated 40-character hash matching `field.key`
  * in the field definitions.
  *
+ * The output uses the Pipelite field name as the key (matching the convention
+ * used by the custom fields UI and custom-fields.ts), NOT the Pipedrive hash key.
+ *
  * @param customFieldsObj - The entity's custom_fields sub-object (e.g. entity.custom_fields ?? {})
  * @param fieldDefinitions - The custom field definitions for this entity type
- * @returns Object containing only custom field key-value pairs with non-null values
+ * @returns Object containing custom field values keyed by field name, with non-null values only
  */
 export function extractCustomFieldValues(
   customFieldsObj: Record<string, unknown>,
@@ -545,17 +548,19 @@ export function extractCustomFieldValues(
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {}
 
-  // Create a set of known custom field keys for quick lookup
-  const customFieldKeys = new Set(fieldDefinitions.map((f) => f.key))
+  // Build a map from Pipedrive hash key → field name for quick lookup
+  const keyToName = new Map(fieldDefinitions.map((f) => [f.key, f.name]))
 
   for (const [key, value] of Object.entries(customFieldsObj)) {
     // Skip if not a known custom field key
-    if (!customFieldKeys.has(key)) continue
+    const fieldName = keyToName.get(key)
+    if (!fieldName) continue
 
     // Skip null/undefined values
     if (value === null || value === undefined) continue
 
-    result[key] = value
+    // Store by field name (Pipelite convention) rather than Pipedrive hash key
+    result[fieldName] = value
   }
 
   return result
