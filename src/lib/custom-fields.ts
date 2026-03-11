@@ -66,13 +66,16 @@ export async function validateFieldValues(
         if (config?.options) {
           const validOptions = config.options
           if (def.type === 'single_select') {
-            if (!validOptions.includes(value as string)) {
+            // Only validate string values — legacy numeric IDs from old imports
+            // are non-string and are allowed through so users can overwrite them.
+            if (typeof value === 'string' && !validOptions.includes(value)) {
               errors.push(`${def.name} must be one of: ${validOptions.join(', ')}`)
             }
           } else {
             const values = Array.isArray(value) ? value : [value]
             for (const v of values) {
-              if (!validOptions.includes(v as string)) {
+              // Only validate string elements; skip numeric legacy IDs.
+              if (typeof v === 'string' && !validOptions.includes(v)) {
                 errors.push(`${def.name} contains invalid option: ${v}`)
               }
             }

@@ -586,7 +586,7 @@ export function extractCustomFieldValues(
  *
  * @param value - The raw value from the Pipedrive API
  * @param field - The Pipedrive field definition (may contain an options array)
- * @returns The resolved label string, comma-separated labels, or the original value
+ * @returns The resolved label string, string[] of labels for set fields, or the original value
  */
 function resolveSelectFieldValue(
   value: unknown,
@@ -629,7 +629,9 @@ function resolveSelectFieldValue(
     })
     .filter(Boolean)
 
-  return labels.join(", ")
+  // Return string[] so the multi_select component and validateFieldValues
+  // both receive the correct format (string[]) rather than a comma-joined string.
+  return labels
 }
 
 // ---------------------------------------------------------------------------
