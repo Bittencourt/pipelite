@@ -578,8 +578,11 @@ export function extractCustomFieldValues(
  * Resolve a Pipedrive select field value from option ID(s) to label string(s).
  *
  * Pipedrive v2 API returns:
- *   - enum (single_select): a single numeric option ID (number or numeric string)
- *   - set (multi_select): a comma-separated string of numeric option IDs
+ *   - enum (single_select): a single numeric option ID (bare number, e.g. 1787)
+ *   - set (multi_select): an array of numeric option IDs (e.g. [3433, 3434])
+ *
+ * Older v1-style responses may return set values as comma-separated strings
+ * (e.g. "3433,3434"), so both forms are handled.
  *
  * If the field has no options defined, or the ID is not found, the raw value
  * is returned unchanged so data is not silently lost.
@@ -613,19 +616,29 @@ function resolveSelectFieldValue(
     return value
   }
 
-  // fieldType === "set": API returns comma-separated option IDs
-  if (typeof value !== "string") {
+  // fieldType === "set": Pipedrive v2 API returns an array of numeric option IDs
+  // (e.g. [3433, 3434]).  Older integrations or the v1 API may return a
+  // comma-separated string instead (e.g. "3433,3434"), so we handle both forms.
+  let idParts: Array<string | number>
+
+  if (Array.isArray(value)) {
+    // v2 API: array of numbers (or possibly strings)
+    idParts = value as Array<string | number>
+  } else if (typeof value === "string") {
+    // Legacy / v1 API: comma-separated numeric string
+    idParts = value.split(",").map((p) => p.trim())
+  } else {
+    // Unknown shape — return as-is so data is not silently lost
     return value
   }
 
-  const labels = value
-    .split(",")
+  const labels = idParts
     .map((part) => {
-      const optionId = Number(part.trim())
+      const optionId = typeof part === "number" ? part : Number(part)
       if (!isNaN(optionId) && idToLabel.has(optionId)) {
         return idToLabel.get(optionId) as string
       }
-      return part.trim() // Fall back to raw fragment if ID not found
+      return String(part) // Fall back to raw fragment if ID not found
     })
     .filter(Boolean)
 
