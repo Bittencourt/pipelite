@@ -538,6 +538,11 @@ function mapPipedriveFieldTypeInternal(pipedriveType: string): string | null {
  * The output uses the Pipelite field name as the key (matching the convention
  * used by the custom fields UI and custom-fields.ts), NOT the Pipedrive hash key.
  *
+ * For enum (single_select) fields the Pipedrive v2 API returns the selected
+ * option's numeric ID, not its label. For set (multi_select) fields it returns
+ * a comma-separated string of numeric option IDs. Both cases are resolved to
+ * human-readable label strings using the options array on the field definition.
+ *
  * @param customFieldsObj - The entity's custom_fields sub-object (e.g. entity.custom_fields ?? {})
  * @param fieldDefinitions - The custom field definitions for this entity type
  * @returns Object containing custom field values keyed by field name, with non-null values only
@@ -548,22 +553,83 @@ export function extractCustomFieldValues(
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {}
 
-  // Build a map from Pipedrive hash key → field name for quick lookup
-  const keyToName = new Map(fieldDefinitions.map((f) => [f.key, f.name]))
+  // Build lookup structures from field definitions
+  const keyToField = new Map(fieldDefinitions.map((f) => [f.key, f]))
 
   for (const [key, value] of Object.entries(customFieldsObj)) {
     // Skip if not a known custom field key
-    const fieldName = keyToName.get(key)
-    if (!fieldName) continue
+    const field = keyToField.get(key)
+    if (!field) continue
 
     // Skip null/undefined values
     if (value === null || value === undefined) continue
 
+    // Resolve enum/set option IDs to human-readable labels
+    const resolvedValue = resolveSelectFieldValue(value, field)
+
     // Store by field name (Pipelite convention) rather than Pipedrive hash key
-    result[fieldName] = value
+    result[field.name] = resolvedValue
   }
 
   return result
+}
+
+/**
+ * Resolve a Pipedrive select field value from option ID(s) to label string(s).
+ *
+ * Pipedrive v2 API returns:
+ *   - enum (single_select): a single numeric option ID (number or numeric string)
+ *   - set (multi_select): a comma-separated string of numeric option IDs
+ *
+ * If the field has no options defined, or the ID is not found, the raw value
+ * is returned unchanged so data is not silently lost.
+ *
+ * @param value - The raw value from the Pipedrive API
+ * @param field - The Pipedrive field definition (may contain an options array)
+ * @returns The resolved label string, comma-separated labels, or the original value
+ */
+function resolveSelectFieldValue(
+  value: unknown,
+  field: PipedriveFieldDefinition
+): unknown {
+  const fieldType = field.field_type
+  if (fieldType !== "enum" && fieldType !== "set") {
+    return value
+  }
+
+  if (!field.options || field.options.length === 0) {
+    return value
+  }
+
+  // Build a numeric-id → label map for this field
+  const idToLabel = new Map(field.options.map((opt) => [opt.id, opt.label]))
+
+  if (fieldType === "enum") {
+    // API returns the option ID as a number or numeric string
+    const optionId = typeof value === "number" ? value : Number(value)
+    if (!isNaN(optionId) && idToLabel.has(optionId)) {
+      return idToLabel.get(optionId)
+    }
+    return value
+  }
+
+  // fieldType === "set": API returns comma-separated option IDs
+  if (typeof value !== "string") {
+    return value
+  }
+
+  const labels = value
+    .split(",")
+    .map((part) => {
+      const optionId = Number(part.trim())
+      if (!isNaN(optionId) && idToLabel.has(optionId)) {
+        return idToLabel.get(optionId) as string
+      }
+      return part.trim() // Fall back to raw fragment if ID not found
+    })
+    .filter(Boolean)
+
+  return labels.join(", ")
 }
 
 // ---------------------------------------------------------------------------
