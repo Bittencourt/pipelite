@@ -2,19 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-22)
+See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** Phase 16 - Pipedrive API Importer
+**Current focus:** v1.0 shipped — planning v1.1
 
 ## Current Position
 
-Phase: 16 of 16 (Pipedrive API Importer) - Complete
-Plan: 6 of 6 in current phase
-Status: 16-06 complete, Fixed import stuck bug by moving state creation to server action
-Last activity: 2026-03-08 — Completed 16-06: Fixed import stuck at "initializing import..." bug
+Milestone: v1.0 MVP — SHIPPED 2026-03-14
+Phase: 16 of 16 — all complete
+Status: Milestone archived. Ready for next milestone.
+Last activity: 2026-03-14 — Completed v1.0 milestone (16 phases, 73 plans)
 
-Progress: [█████████████████████] 100% (54/54 plans in current roadmap)
+Progress: [█████████████████████] 100% (73/73 plans)
 
 ## Performance Metrics
 

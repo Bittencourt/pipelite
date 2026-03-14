@@ -1,352 +1,56 @@
 # Roadmap: Pipelite
 
-## Overview
+## Milestones
 
-Build a lightweight, self-hostable CRM with kanban-style pipeline management. Start with authentication and core entities (organizations, people), then add pipeline/deal management with visual kanban views. Implement the key differentiator—custom fields with formulas—before adding search, import/export, and the external REST API that enables third-party integrations.
+- ✅ **v1.0 MVP** — Phases 1-16 (shipped 2026-03-14)
+- 📋 **v1.1** — TBD (start with `/gsd:new-milestone`)
 
 ## Phases
 
-**Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+<details>
+<summary>✅ v1.0 MVP (Phases 1-16) — SHIPPED 2026-03-14</summary>
 
-Decimal phases appear between their surrounding integers in numeric order.
+- [x] Phase 1: Foundation & Authentication (6/6 plans) — completed 2026-02-22
+- [x] Phase 2: Organizations (3/3 plans) — completed 2026-02-22
+- [x] Phase 3: People (3/3 plans) — completed 2026-02-22
+- [x] Phase 4: Pipelines & Stages (4/4 plans) — completed 2026-02-23
+- [x] Phase 5: Deals & Kanban (3/3 plans) — completed 2026-02-24
+- [x] Phase 6: Activities (4/4 plans) — completed 2026-02-25
+- [x] Phase 7: Custom Fields & Formulas (11/11 plans) — completed 2026-02-28
+- [x] Phase 8: Search & Filtering (3/3 plans) — completed 2026-02-28
+- [x] Phase 9: Import/Export (3/3 plans) — completed 2026-02-28
+- [x] Phase 10: REST API (4/4 plans) — completed 2026-03-01
+- [x] Phase 11: Keyboard Control (5/5 plans) — completed 2026-03-02
+- [x] Phase 12: Localization (5/5 plans) — completed 2026-03-05
+- [x] Phase 13: Comprehensive Documentation (4/4 plans) — completed 2026-03-06
+- [x] Phase 14: Dashboard Metrics (3/3 plans) — completed 2026-03-07
+- [x] Phase 15: Multi-user Collaboration (6/6 plans) — completed 2026-03-07
+- [x] Phase 16: Pipedrive API Importer (6/6 plans) — completed 2026-03-08
 
-- [x] **Phase 1: Foundation & Authentication** - User accounts with admin approval workflow ✅
-- [x] **Phase 2: Organizations** - Company management for B2B sales tracking ✅
-- [x] **Phase 3: People** - Contact management linked to organizations ✅
-- [x] **Phase 4: Pipelines & Stages** - Sales pipeline configuration ✅
-- [x] **Phase 5: Deals & Kanban** - Deal management with visual pipeline board ✅
-- [x] **Phase 6: Activities** - Follow-up tracking with calendar view ✅
-- [x] **Phase 7: Custom Fields & Formulas** - Extensible entities with calculated fields ✅
-- [x] **Phase 8: Search & Filtering** - Finding and filtering records ✅
-- [x] **Phase 9: Import/Export** - Data migration capabilities ✅
-- [x] **Phase 10: REST API** - External integration via documented API ✅
-- [x] **Phase 11: Keyboard Control** - Full keyboard navigation across all screens ✅
-- [x] **Phase 14: Dashboard with Real Metrics** - Win rate, deal velocity, pipeline value by stage, activity completion rate ✅
-- [x] **Phase 15: Multi-user Collaboration** - Assignees on deals and activities, shared team view ✅
+Full archive: `.planning/milestones/v1.0-ROADMAP.md`
 
-## Phase Details
-
-### Phase 1: Foundation & Authentication
-**Goal**: Users can securely access the system with appropriate role-based permissions
-**Depends on**: Nothing (first phase)
-**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-06
-**Success Criteria** (what must be TRUE):
-  1. User can sign up with email/password and see "pending approval" status
-  2. Admin can view pending signups and approve or reject them from an admin panel
-  3. Approved user can log in and stay logged in across browser sessions
-  4. User can log out from any page in the application
-  5. Admin and member roles show different available actions in the UI
-  6. User can generate, view, and regenerate their API key for external access
-**Plans**: 6 plans in 4 waves
-
-Plans:
-- [x] 01-01-PLAN.md — Project scaffolding, dependencies, and database schema ✅
-- [x] 01-02-PLAN.md — Auth.js configuration and core utilities ✅
-- [x] 01-03-PLAN.md — Signup flow with email verification ✅
-- [x] 01-04-PLAN.md — Login, session management, and password reset ✅
-- [x] 01-05-PLAN.md — Admin approval workflow ✅
-- [x] 01-06-PLAN.md — API key management ✅
-
-### Phase 2: Organizations
-**Goal**: Users can manage the companies they sell to
-**Depends on**: Phase 1
-**Requirements**: ORG-01, ORG-02
-**Success Criteria** (what must be TRUE):
-  1. User can create a new organization with name and basic details
-  2. User can view a paginated list of all organizations
-  3. User can view full details of a single organization
-  4. User can edit organization details
-  5. User can delete an organization with confirmation dialog
-**Plans**: 3 plans in 3 waves
-
-Plans:
-- [x] 02-01-PLAN.md — Organizations schema and server actions ✅
-- [x] 02-02-PLAN.md — Organizations list page and navigation ✅
-- [x] 02-03-PLAN.md — Organization detail, create/edit dialog, delete ✅
-
-### Phase 3: People
-**Goal**: Users can manage contacts and link them to organizations
-**Depends on**: Phase 2
-**Requirements**: PPL-01, PPL-02, PPL-03
-**Success Criteria** (what must be TRUE):
-  1. User can create a new person with name, email, and phone
-  2. User can link a person to an existing organization
-  3. User can view a paginated list of all people
-  4. User can view person details including their linked organization
-  5. User can edit and delete people records
-**Plans**: 3 plans in 3 waves
-
-Plans:
-- [x] 03-01-PLAN.md — People schema, relations, and CRUD server actions ✅
-- [x] 03-02-PLAN.md — People list page, navigation, and shadcn Select component ✅
-- [x] 03-03-PLAN.md — Person CRUD dialogs, detail page, and linked people on org detail ✅
-
-### Phase 4: Pipelines & Stages
-**Goal**: Admins can configure sales pipelines with stages for deal progression
-**Depends on**: Phase 1
-**Requirements**: PIPE-01, PIPE-03
-**Success Criteria** (what must be TRUE):
-  1. Admin can create a new pipeline with a name
-  2. Admin can add stages to a pipeline with custom names
-  3. Admin can rename and delete stages within a pipeline
-  4. User can view a list of all configured pipelines
-  5. User can see all stages within each pipeline
-**Plans**: 4 plans in 4 waves
-
-Plans:
-- [x] 04-01-PLAN.md — Database schema, relations, and stage colors utility ✅
-- [x] 04-02-PLAN.md — Server actions for pipeline and stage CRUD ✅
-- [x] 04-03-PLAN.md — Pipeline list page with create/edit/delete dialogs ✅
-- [x] 04-04-PLAN.md — Pipeline detail and drag-drop stage configurator ✅
-
-### Phase 5: Deals & Kanban
-**Goal**: Users can manage deals through a visual pipeline board with drag-and-drop
-**Depends on**: Phase 2, Phase 3, Phase 4
-**Requirements**: PIPE-02, DEAL-01, DEAL-02, DEAL-03, DEAL-04, DEAL-05
-**Success Criteria** (what must be TRUE):
-  1. User can create a deal with title, value, linked to organization, person, and pipeline stage
-  2. User can view all deals in a kanban board organized by pipeline stages
-  3. User can drag and drop deals between stages to update their status
-  4. Kanban board shows deal counts and total values per stage
-  5. User can click a deal card to view and edit its full details
-  6. User can delete a deal with confirmation
-**Plans**: 3 plans in 3 waves
-
-Plans:
-- [x] 05-01-PLAN.md — Deals schema, server actions, and currency utility ✅
-- [x] 05-02-PLAN.md — Deal create/edit dialog with delete confirmation ✅
-- [x] 05-03-PLAN.md — Kanban board with drag-drop and inline expansion ✅
-
-### Phase 6: Activities
-**Goal**: Users can track follow-up activities with a calendar view
-**Depends on**: Phase 5
-**Requirements**: ACT-01, ACT-02, ACT-03, ACT-04
-**Success Criteria** (what must be TRUE):
-  1. User can create activities (calls, meetings, tasks, emails) with due dates
-  2. User can link activities to specific deals
-  3. User can view a list of all activities with filtering by type and date
-  4. User can view activities in a calendar view organized by due date
-  5. User can edit and delete activities
-  6. Activity views show context of their linked deals
-**Plans**: 4 plans in 3 waves (1 gap closure)
-
-Plans:
-- [x] 06-01-PLAN.md — Activities data layer (schema, actions, seed) ✅
-- [x] 06-02-PLAN.md — Activity list view and CRUD dialog ✅
-- [x] 06-03-PLAN.md — Calendar view with react-big-calendar ✅
-- [x] 06-04-PLAN.md — Fix Type dropdown (seed activity types, fallback UI) ✅
-
-### Phase 7: Custom Fields & Formulas
-**Goal**: Users can extend any entity with custom fields including calculated values
-**Depends on**: Phase 6
-**Requirements**: CF-01, CF-02, CF-03, CF-04, CF-05, CF-06, ORG-03, PPL-04, DEAL-06, ACT-05
-**Success Criteria** (what must be TRUE):
-  1. User can add text, number, date, boolean, and single-select fields to any entity
-  2. User can add multi-select dropdown fields with configurable options
-  3. User can add file attachment fields and upload files
-  4. User can add URL/link fields to any entity
-  5. User can add lookup fields that reference other entities (e.g., link deal to another deal)
-  6. User can add formula fields that calculate values from other field values
-  7. Custom fields appear on entity detail pages and can be edited
-  8. Formula fields recalculate when dependent fields change
-**Plans**: 11 plans in 5 waves (1 gap closure)
-
-Plans:
-- [ ] 07-01-PLAN.md — Schema & field definition data layer
-- [ ] 07-02-PLAN.md — Definition actions & field utilities
-- [ ] 07-03-PLAN.md — Formula engine with sandboxed execution (TDD)
-- [ ] 07-04-PLAN.md — File upload/download API
-- [ ] 07-05-PLAN.md — Field settings UI with drag-drop
-- [ ] 07-06-PLAN.md — Basic field type components
-- [ ] 07-07-PLAN.md — Advanced field types (multi-select, URL, lookup)
-- [ ] 07-08-PLAN.md — Formula field UI with live preview
-- [ ] 07-09-PLAN.md — File field component
-- [ ] 07-10-PLAN.md — Entity page integration (checkpoint)
-- [ ] 07-11-PLAN.md — Fix activity lookup queries (gap closure)
-
-### Phase 8: Search & Filtering
-**Goal**: Users can quickly find specific records and filter lists by criteria
-**Depends on**: Phase 7
-**Requirements**: SRCH-01, SRCH-02
-**Success Criteria** (what must be TRUE):
-  1. User can search by name/title across organizations, people, and deals from a global search bar
-  2. User can filter deal lists by stage, owner, and date range
-  3. User can filter activity lists by type, owner, and date range
-  4. Search results are limited to 5 per entity type and grouped by Organizations, People, Deals categories
-**Plans**: 3 plans in 1 wave
-
-Plans:
-- [x] 08-01-PLAN.md — Global search: API route, GlobalSearch component, NavHeader integration ✅
-- [x] 08-02-PLAN.md — Deals filtering: DealFilters component and server-side deal query filtering ✅
-- [x] 08-03-PLAN.md — Activities filtering: ActivityFilters component, server-side filtering, remove useState filters ✅
-
-### Phase 9: Import/Export
-**Goal**: Users can migrate data in and out of the system with Pipedrive compatibility
-**Depends on**: Phase 8
-**Requirements**: IMP-01, IMP-02, IMP-03, IMP-04
-**Success Criteria** (what must be TRUE):
-  1. User can import organizations, people, deals, and activities from CSV with 4-step wizard (Upload → Map → Preview → Confirm)
-  2. User can export any entity list to CSV or JSON format from admin panel
-  3. User can import data from JSON format
-  4. Export respects active filters and includes relationship names alongside IDs
-  5. Import preview shows 50 rows with errors highlighted in red and error list below
-  6. User can choose to block on errors or import partial data
-  7. Missing organizations and people are auto-created with flags for review
-  8. Pipedrive compatibility mode with auto-suggested field mapping
-**Plans**: 3 plans in 2 waves
-
-Plans:
-- [x] 09-01-PLAN.md — CSV import with 4-step wizard, fuzzy matching, auto-create, error handling ✅
-- [x] 09-02-PLAN.md — CSV/JSON export with filters, Pipedrive format, admin panel integration ✅
-- [ ] 09-03-PLAN.md — JSON import and Pipedrive compatibility mode
-
-### Phase 10: REST API
-**Goal**: External tools can fully interact with the CRM via a documented API
-**Depends on**: Phase 9
-**Requirements**: API-01, API-02, API-03
-**Success Criteria** (what must be TRUE):
-  1. External client can authenticate using API key and perform full CRUD on all entities
-  2. OpenAPI documentation is available showing all endpoints with request/response schemas
-  3. Webhooks fire to configured URLs when deals change stages
-  4. Webhooks fire when activities are created
-  5. API returns proper HTTP status codes and error messages for invalid requests
-**Plans**: 4 plans in 3 waves
-
-Plans:
-- [x] 10-01-PLAN.md — API infrastructure (auth, errors, pagination, webhooks) ✅
-- [x] 10-02-PLAN.md — Organizations, People, Deals CRUD endpoints ✅
-- [x] 10-03-PLAN.md — Activities, Pipelines, Stages, Custom Fields, Webhook subscriptions ✅
-- [x] 10-04-PLAN.md — OpenAPI documentation ✅
+</details>
 
 ## Progress
 
-**Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10
-
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Foundation & Authentication | 6/6 | Complete | 2026-02-22 |
-| 2. Organizations | 3/3 | Complete | 2026-02-22 |
-| 3. People | 3/3 | Complete | 2026-02-22 |
-| 4. Pipelines & Stages | 4/4 | Complete | 2026-02-23 |
-| 5. Deals & Kanban | 3/3 | Complete | 2026-02-24 |
-| 6. Activities | 4/4 | Complete | 2026-02-25 |
-| 7. Custom Fields & Formulas | 11/11 | Complete | 2026-02-28 |
-| 8. Search & Filtering | 3/3 | Complete | 2026-02-28 |
-| 9. Import/Export | 2/3 | Complete | 2026-02-28 |
-| 10. REST API | 4/4 | Complete    | 2026-03-01 |
-| 11. Keyboard Control | 5/5 | Complete    | 2026-03-02 |
-| 15. Multi-user Collaboration | 6/6 | Complete | 2026-03-07 |
-
-### Phase 11: Keyboard Control
-
-**Goal:** Users can fully navigate and interact with the application using only keyboard - all actions are keyboard-executable via navigation and contextual hotkeys
-**Depends on:** Phase 10
-**Requirements:** (new feature area - keyboard accessibility)
-**Success Criteria** (what must be TRUE):
-  1. User can navigate between major sections using Alt+1/2/3/4 shortcuts
-  2. User can focus search by pressing / from anywhere in the app
-  3. User can press ? to see all available keyboard shortcuts
-  4. User can navigate data tables with j/k (or arrow keys) and use n/e/d for create/edit/delete
-  5. User can navigate kanban board with h/j/k/l and use n/Enter for create/edit
-  6. Focus indicators appear only during keyboard navigation, not mouse clicks
-  7. First-time users see a hint about keyboard shortcuts
-**Plans:** 5/5 plans complete
-
-Plans:
-- [x] 11-01-PLAN.md — Install react-hotkeys-hook, HotkeysProvider, focus-visible CSS ✅
-- [x] 11-02-PLAN.md — Shortcuts overlay (?), global navigation (Alt+1/2/3/4), search focus (/) ✅
-- [x] 11-03-PLAN.md — Data table keyboard navigation (j/k, n/e/d/Enter) ✅
-- [x] 11-04-PLAN.md — Kanban board keyboard navigation (h/j/k/l, n/Enter) ✅
-
-### Phase 12: Make the application fully localizable (language, currency, date formats, timezones)
-
-**Goal:** Users can configure their preferred language, and the UI adapts accordingly. Currency and date formatting respects both user preferences and organizational settings. All dates stored in UTC, displayed in user's timezone.
-**Depends on:** Phase 11
-**Requirements:** L10N-01, L10N-02, L10N-03, L10N-04, L10N-05, L10N-06, L10N-07, L10N-08, L10N-09, L10N-10, L10N-11
-**Success Criteria** (what must be TRUE):
-  1. User can select language (en-US, pt-BR, es-ES) from profile settings
-  2. User can select timezone from profile settings or auto-detect from browser
-  3. Dates display in user's locale format (MM/DD/YYYY vs DD/MM/YYYY)
-  4. Currency displays with correct symbol placement based on locale
-  5. Activity due dates show timezone information
-  6. Recent activities show relative time ("3 hours ago")
-  7. Calendar shows localized day/month names
-  8. All UI text is translatable (user content stays in original language)
-**Plans:** 5/5 plans complete
-
-Plans:
-- [ ] 12-01-PLAN.md — i18n infrastructure: next-intl, config, schema, en.json
-- [ ] 12-02-PLAN.md — Provider setup, locale-aware currency and date formatters
-- [ ] 12-03-PLAN.md — Profile settings page with language/timezone selection
-- [ ] 12-04-PLAN.md — Date formatting updates across components, calendar localization
-- [ ] 12-05-PLAN.md — pt-BR and es-ES translations, final verification
-
-### Phase 13: Comprehensive Project Documentation
-
-**Goal:** Create comprehensive documentation for all audiences (users, API developers, administrators, and code contributors) with markdown files, visual content, and exhaustive coverage of all features and systems
-**Depends on:** Phase 12
-**Plans:** 4/4 plans complete
-
-Plans:
-- [ ] 13-01-PLAN.md — User documentation (tutorials and reference guides)
-- [ ] 13-02-PLAN.md — API documentation (guides and code examples)
-- [ ] 13-03-PLAN.md — Admin documentation (deployment and operations)
-- [ ] 13-04-PLAN.md — Developer/architecture documentation
-
-### Phase 14: Dashboard with Real Metrics
-
-**Goal:** Surface actionable sales insights on the home page — win rate, deal velocity, pipeline value by stage, and activity completion rate
-**Depends on:** Phase 13
-**Plans:** 3 plans in 3 waves
-
-Plans:
-- [ ] 14-01-PLAN.md — Install shadcn chart, build metric query library, add translations
-- [ ] 14-02-PLAN.md — PipelineValueChart and ActivityCompletionChart client components
-- [ ] 14-03-PLAN.md — Home page rewrite with 4 metric cards, charts, and time period filter
-
-### Phase 15: Multi-user collaboration
-
-**Goal:** Add assignees to deals and activities so teams can collaborate — records have owners plus multiple assignees, with a shared team view of who owns what
-**Depends on:** Phase 14
-**Plans:** 6 plans in 3 waves
-
-Plans:
-- [x] 15-01-PLAN.md — DB schema: deal_assignees join table, activities.assigneeId column, relations, migration ✅
-- [x] 15-02-PLAN.md — AssigneePicker component, deal actions with assignee persistence and auth fix ✅
-- [x] 15-03-PLAN.md — Deal dialog Owner + Assignees fields, deal card AvatarGroup with hover tooltips ✅
-- [x] 15-04-PLAN.md — Deals assignee filter, KanbanBoard users prop, /team page with expandable user rows, NavHeader Team link ✅
-- [x] 15-05-PLAN.md — Activity assignee: actions, dialog Select, ActivityFilters Assignee filter, page wiring ✅
-- [x] 15-06-PLAN.md — Translation strings for assignees and team in all three locales ✅
-
-### Phase 16: Pipedrive API Importer
-
-**Goal:** Users can import all Pipedrive data via API key in a 5-step wizard, with automatic field mapping, deduplication, and progress tracking
-**Depends on:** Phase 15
-**Requirements:** IMPAPI-01, IMPAPI-02, IMPAPI-03, IMPAPI-04, IMPAPI-05, IMPAPI-06, IMPAPI-07, IMPAPI-08, IMPAPI-09, IMPAPI-10, IMPAPI-11, IMPAPI-12, IMPAPI-13
-**Success Criteria** (what must be TRUE):
-  1. User can enter Pipedrive API key in admin panel
-  2. User can select which entity types to import
-  3. System fetches all selected entities from Pipedrive API
-  4. Pipelines and stages are cloned from Pipedrive
-  5. Custom fields are imported with type mapping
-  6. Owners are matched by email (or fall back to importing user)
-  7. Duplicate records are skipped
-  8. Orphan references create stub entities
-  9. Progress bar shows current entity and overall progress
-  10. User can cancel mid-import and keep imported data
-  11. Summary shows counts and entities needing review
-**Plans:** 6/6 plans complete
-
-Plans:
-- [ ] 16-01-PLAN.md — Pipedrive API client, types, and data transformers
-- [ ] 16-02-PLAN.md — Import server actions with deduplication, stub creation, and progress tracking
-- [ ] 16-03-PLAN.md — 5-step import wizard UI with progress and cancellation
-- [ ] 16-04-PLAN.md — Admin panel integration and translations
-- [ ] 16-05-PLAN.md — Verification checkpoint (human verify)
+| Phase | Milestone | Plans | Status | Completed |
+|-------|-----------|-------|--------|-----------|
+| 1. Foundation & Authentication | v1.0 | 6/6 | ✅ Complete | 2026-02-22 |
+| 2. Organizations | v1.0 | 3/3 | ✅ Complete | 2026-02-22 |
+| 3. People | v1.0 | 3/3 | ✅ Complete | 2026-02-22 |
+| 4. Pipelines & Stages | v1.0 | 4/4 | ✅ Complete | 2026-02-23 |
+| 5. Deals & Kanban | v1.0 | 3/3 | ✅ Complete | 2026-02-24 |
+| 6. Activities | v1.0 | 4/4 | ✅ Complete | 2026-02-25 |
+| 7. Custom Fields & Formulas | v1.0 | 11/11 | ✅ Complete | 2026-02-28 |
+| 8. Search & Filtering | v1.0 | 3/3 | ✅ Complete | 2026-02-28 |
+| 9. Import/Export | v1.0 | 3/3 | ✅ Complete | 2026-02-28 |
+| 10. REST API | v1.0 | 4/4 | ✅ Complete | 2026-03-01 |
+| 11. Keyboard Control | v1.0 | 5/5 | ✅ Complete | 2026-03-02 |
+| 12. Localization | v1.0 | 5/5 | ✅ Complete | 2026-03-05 |
+| 13. Documentation | v1.0 | 4/4 | ✅ Complete | 2026-03-06 |
+| 14. Dashboard Metrics | v1.0 | 3/3 | ✅ Complete | 2026-03-07 |
+| 15. Multi-user Collaboration | v1.0 | 6/6 | ✅ Complete | 2026-03-07 |
+| 16. Pipedrive API Importer | v1.0 | 6/6 | ✅ Complete | 2026-03-08 |
 
 ---
-*Roadmap created: 2026-02-22*
-*Depth: comprehensive (10 phases)*
+*Roadmap updated: 2026-03-14 after v1.0 milestone*
