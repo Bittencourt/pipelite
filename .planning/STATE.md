@@ -5,14 +5,15 @@
 See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** v1.0 shipped — planning v1.1
+**Current focus:** v1.1 Reliability & Operations
 
 ## Current Position
 
-Milestone: v1.0 MVP — SHIPPED 2026-03-14
-Phase: 16 of 16 — all complete
-Status: Milestone archived. Ready for next milestone.
-Last activity: 2026-03-14 — Completed v1.0 milestone (16 phases, 73 plans)
+Milestone: v1.1 Reliability & Operations
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-14 — Milestone v1.1 started
 
 Progress: [█████████████████████] 100% (73/73 plans)
 
