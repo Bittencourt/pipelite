@@ -76,9 +76,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | TSFIX-01 | Phase 17 | Pending |
-| WHOOK-01 | Phase 18–19 | Pending |
-| WHOOK-02 | Phase 18–19 | Pending |
-| WHOOK-03 | Phase 18–19 | Pending |
+| WHOOK-01 | Phase 19 | Pending |
+| WHOOK-02 | Phase 19 | Pending |
+| WHOOK-03 | Phase 19 | Pending |
 | IMPORT-01 | Phase 20 | Pending |
 | IMPORT-02 | Phase 20 | Pending |
 | FORMULA-01 | Phase 21 | Pending |
@@ -93,6 +93,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 - Mapped to phases: 12
 - Unmapped: 0 ✓
 
+Note: Phase 18 (DB Infrastructure) is a prerequisite phase that contains no requirements of its own. It delivers the `webhook_deliveries` and `import_sessions` tables that WHOOK-01 and IMPORT-01 build upon.
+
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-14 after initial v1.1 definition*
+*Last updated: 2026-03-14 — traceability updated for v1.1 roadmap (Phases 17-22)*
