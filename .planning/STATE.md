@@ -5,17 +5,17 @@
 See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
-**Current focus:** v1.1 Reliability & Operations — Phase 17: TypeScript Cleanup
+**Current focus:** v1.1 Reliability & Operations — Phase 18: DB Infrastructure
 
 ## Current Position
 
 Milestone: v1.1 Reliability & Operations
-Phase: 17 of 22 (TypeScript Cleanup)
+Phase: 18 of 22 (DB Infrastructure)
 Plan: 1 of 1 in current phase
-Status: Phase 17 complete — ready for Phase 18
-Last activity: 2026-03-14 — Phase 17 plan 01 complete (TypeScript cleanup)
+Status: Phase 18 complete — ready for Phase 19
+Last activity: 2026-03-14 — Phase 18 plan 01 complete (DB infrastructure: webhook_deliveries and import_sessions tables)
 
-Progress (v1.1): [█░░░░░░░░░] ~5% (1/~20 plans est.)
+Progress (v1.1): [██░░░░░░░░] ~10% (2/~20 plans est.)
 
 ## Performance Metrics
 
@@ -29,7 +29,7 @@ Progress (v1.1): [█░░░░░░░░░] ~5% (1/~20 plans est.)
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 17. TypeScript Cleanup | 1 | ~15min | ~15min |
-| 18. DB Infrastructure | TBD | - | - |
+| 18. DB Infrastructure | 1 | ~20min | ~20min |
 | 19. Webhook Reliability | TBD | - | - |
 | 20. Import State Reliability | TBD | - | - |
 | 21. Formula Reactivity | TBD | - | - |
@@ -48,6 +48,8 @@ Recent decisions affecting current work:
 - [v1.0 Phase 10]: Webhook delivery is fire-and-forget via setTimeout — Phase 19 replaces with durable pg-boss queue
 - [v1.0 Phase 7]: Formula fields evaluated client-side only — Phase 21 adds server-side evaluation on save
 - [v1.1 Phase 17]: Removed `ignoreBuildErrors: true` from next.config.ts — tsc was already clean, removal safe; Docker build confirmed passing
+- [v1.1 Phase 18]: No FK from webhook_deliveries.webhookId to webhooks.id — Phase 19 owns delivery relationships; plain text avoids constraint issues
+- [v1.1 Phase 18]: progress column in import_sessions kept as plain jsonb — Phase 20 defines ImportProgressState to avoid forward dependency
 
 ### Pending Todos
 
@@ -61,8 +63,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-14
-Stopped at: Completed 17-01-PLAN.md — Phase 17 TypeScript Cleanup done
+Stopped at: Completed 18-01-PLAN.md — Phase 18 DB Infrastructure done
 Resume file: None
 
 ---
-*State updated: 2026-03-14 — Phase 17 complete, ready for Phase 18*
+*State updated: 2026-03-14 — Phase 18 complete, ready for Phase 19*
