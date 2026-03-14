@@ -57,10 +57,10 @@ Full archive: `.planning/milestones/v1.0-ROADMAP.md`
 2. Running `npx tsc --noEmit` in the project root exits with code 0 and zero diagnostic output
 3. The Docker build succeeds (`next build`) without any TypeScript error suppression in effect
 
-**Plans:** TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 17-01: Remove `ignoreBuildErrors` from `next.config.ts` and fix any revealed type errors
+- [ ] 17-01-PLAN.md — Remove `ignoreBuildErrors` from `next.config.ts`, verify `tsc --noEmit` and Docker build pass clean
 
 ---
 
@@ -191,7 +191,7 @@ Plans:
 | 14. Dashboard Metrics | v1.0 | 3/3 | Complete | 2026-03-07 |
 | 15. Multi-user Collaboration | v1.0 | 6/6 | Complete | 2026-03-07 |
 | 16. Pipedrive API Importer | v1.0 | 6/6 | Complete | 2026-03-08 |
-| 17. TypeScript Cleanup | v1.1 | 0/TBD | Not started | - |
+| 17. TypeScript Cleanup | v1.1 | 0/1 | Not started | - |
 | 18. DB Infrastructure | v1.1 | 0/TBD | Not started | - |
 | 19. Webhook Reliability | v1.1 | 0/TBD | Not started | - |
 | 20. Import State Reliability | v1.1 | 0/TBD | Not started | - |
