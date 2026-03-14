@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-03-14)
 
 Milestone: v1.1 Reliability & Operations
 Phase: 17 of 22 (TypeScript Cleanup)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-03-14 — v1.1 roadmap created (Phases 17-22)
+Plan: 1 of 1 in current phase
+Status: Phase 17 complete — ready for Phase 18
+Last activity: 2026-03-14 — Phase 17 plan 01 complete (TypeScript cleanup)
 
-Progress (v1.1): [░░░░░░░░░░] 0% (0/TBD plans)
+Progress (v1.1): [█░░░░░░░░░] ~5% (1/~20 plans est.)
 
 ## Performance Metrics
 
@@ -28,7 +28,7 @@ Progress (v1.1): [░░░░░░░░░░] 0% (0/TBD plans)
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 17. TypeScript Cleanup | TBD | - | - |
+| 17. TypeScript Cleanup | 1 | ~15min | ~15min |
 | 18. DB Infrastructure | TBD | - | - |
 | 19. Webhook Reliability | TBD | - | - |
 | 20. Import State Reliability | TBD | - | - |
@@ -47,7 +47,7 @@ Recent decisions affecting current work:
 - [v1.0 Phase 16]: In-memory Map for import state — won't survive restarts; Phase 20 replaces with DB-backed sessions
 - [v1.0 Phase 10]: Webhook delivery is fire-and-forget via setTimeout — Phase 19 replaces with durable pg-boss queue
 - [v1.0 Phase 7]: Formula fields evaluated client-side only — Phase 21 adds server-side evaluation on save
-- [v1.0 build]: `ignoreBuildErrors: true` in next.config.ts — Phase 17 removes this; tsc already exits clean per research
+- [v1.1 Phase 17]: Removed `ignoreBuildErrors: true` from next.config.ts — tsc was already clean, removal safe; Docker build confirmed passing
 
 ### Pending Todos
 
@@ -61,8 +61,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-14
-Stopped at: v1.1 roadmap created — Phases 17-22 defined, ready to plan Phase 17
+Stopped at: Completed 17-01-PLAN.md — Phase 17 TypeScript Cleanup done
 Resume file: None
 
 ---
-*State updated: 2026-03-14 — v1.1 milestone start*
+*State updated: 2026-03-14 — Phase 17 complete, ready for Phase 18*
