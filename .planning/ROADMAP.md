@@ -35,7 +35,7 @@ Full archive: `.planning/milestones/v1.0-ROADMAP.md`
 
 **Milestone Goal:** Resolve accumulated tech debt and bring operational reliability to webhooks, import state, and formula recalculation. Add bulk operations for efficient record management.
 
-- [ ] **Phase 17: TypeScript Cleanup** — Remove `ignoreBuildErrors`, verify clean `tsc --noEmit`
+- [x] **Phase 17: TypeScript Cleanup** — Remove `ignoreBuildErrors`, verify clean `tsc --noEmit` (completed 2026-03-14)
 - [ ] **Phase 18: DB Infrastructure** — Migrate `webhook_deliveries` and `import_sessions` tables
 - [ ] **Phase 19: Webhook Reliability** — Durable delivery, delivery history UI, DLQ with manual replay
 - [ ] **Phase 20: Import State Reliability** — DB-backed import sessions, cancellation persists across restarts
@@ -77,10 +77,10 @@ Plans:
 2. `import_sessions` table exists with JSONB progress column, status, and cancellation flag
 3. Drizzle schema files export both tables via `src/db/schema/index.ts` and the app starts without migration errors
 
-**Plans:** TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 18-01: Define Drizzle schema for `webhook_deliveries` and `import_sessions`, generate and run migrations
+- [ ] 18-01-PLAN.md — Create `webhook-deliveries.ts` and `import-sessions.ts` schema files, export from barrel, apply migration via Docker restart
 
 ---
 
@@ -191,12 +191,12 @@ Plans:
 | 14. Dashboard Metrics | v1.0 | 3/3 | Complete | 2026-03-07 |
 | 15. Multi-user Collaboration | v1.0 | 6/6 | Complete | 2026-03-07 |
 | 16. Pipedrive API Importer | v1.0 | 6/6 | Complete | 2026-03-08 |
-| 17. TypeScript Cleanup | v1.1 | 0/1 | Not started | - |
-| 18. DB Infrastructure | v1.1 | 0/TBD | Not started | - |
+| 17. TypeScript Cleanup | v1.1 | 1/1 | Complete | 2026-03-14 |
+| 18. DB Infrastructure | v1.1 | 1 plan | Not started | - |
 | 19. Webhook Reliability | v1.1 | 0/TBD | Not started | - |
 | 20. Import State Reliability | v1.1 | 0/TBD | Not started | - |
 | 21. Formula Reactivity | v1.1 | 0/TBD | Not started | - |
 | 22. Bulk Operations | v1.1 | 0/TBD | Not started | - |
 
 ---
-*Roadmap updated: 2026-03-14 — v1.1 Reliability & Operations phases added (17-22)*
+*Roadmap updated: 2026-03-14 — Phase 18 plan created*
