@@ -1,12 +1,9 @@
 import { db } from "@/db"
 import { webhooks } from "@/db/schema/webhooks"
+import { webhookDeliveries } from "@/db/schema/webhook-deliveries"
 import { eq, and } from "drizzle-orm"
-import { signWebhook } from "./sign"
 
-// Retry delays: 1min, 5min, 15min, 1hr, 6hr (in milliseconds)
-const RETRY_DELAYS = [60000, 300000, 900000, 3600000, 21600000]
-
-interface WebhookPayload {
+export interface WebhookPayload {
   event: string
   entity: string
   entityId: string
@@ -17,10 +14,10 @@ interface WebhookPayload {
 
 /**
  * Trigger webhook delivery to all active subscriptions for a user
- * 
- * Fire-and-forget pattern - does not block the calling request
- * Queries active webhooks matching the event and delivers with HMAC signature
- * Implements exponential backoff retry on failure
+ *
+ * Fire-and-forget pattern - does not block the calling request.
+ * Inserts pending rows into webhook_deliveries for each matching subscription.
+ * The cron processor picks them up and delivers with retry logic.
  */
 export function triggerWebhook(
   userId: string,
@@ -31,7 +28,7 @@ export function triggerWebhook(
   data: unknown
 ): void {
   // Fire-and-forget - don't await
-  deliverWebhooks(userId, {
+  enqueueDeliveries(userId, {
     event,
     entity,
     entityId,
@@ -39,11 +36,11 @@ export function triggerWebhook(
     data,
     timestamp: new Date().toISOString(),
   }).catch((error) => {
-    console.error("Webhook delivery failed:", error)
+    console.error("Webhook enqueue failed:", error)
   })
 }
 
-async function deliverWebhooks(
+async function enqueueDeliveries(
   userId: string,
   payload: WebhookPayload
 ): Promise<void> {
@@ -57,68 +54,16 @@ async function deliverWebhooks(
     (sub) => sub.events && sub.events.includes(payload.event)
   )
 
-  // Deliver to each matching subscription
-  await Promise.all(
-    matchingSubscriptions.map((sub) => sendToEndpoint(sub, payload, 0))
+  if (matchingSubscriptions.length === 0) return
+
+  // Insert one delivery row per matching subscription
+  await db.insert(webhookDeliveries).values(
+    matchingSubscriptions.map((sub) => ({
+      webhookId: sub.id,
+      status: "pending" as const,
+      payload: payload as unknown as Record<string, unknown>,
+      retryCount: 0,
+      nextAttemptAt: new Date(),
+    }))
   )
-}
-
-async function sendToEndpoint(
-  subscription: { id: string; url: string; secret: string },
-  payload: WebhookPayload,
-  attempt: number
-): Promise<void> {
-  const body = JSON.stringify(payload)
-  const signature = signWebhook(subscription.secret, body)
-
-  try {
-    const response = await fetch(subscription.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Webhook-Signature": signature,
-        "X-Webhook-Event": payload.event,
-      },
-      body,
-    })
-
-    // Success - 2xx response
-    if (response.ok) {
-      return
-    }
-
-    // Non-2xx response - schedule retry if attempts remaining
-    console.warn(
-      `Webhook to ${subscription.url} returned ${response.status} (attempt ${attempt + 1})`
-    )
-
-    if (attempt < RETRY_DELAYS.length) {
-      setTimeout(
-        () => sendToEndpoint(subscription, payload, attempt + 1),
-        RETRY_DELAYS[attempt]
-      )
-    } else {
-      console.error(
-        `Webhook to ${subscription.url} failed after ${RETRY_DELAYS.length} retries`
-      )
-    }
-  } catch (error) {
-    // Network or other error - schedule retry if attempts remaining
-    console.error(
-      `Webhook to ${subscription.url} error:`,
-      error,
-      `(attempt ${attempt + 1})`
-    )
-
-    if (attempt < RETRY_DELAYS.length) {
-      setTimeout(
-        () => sendToEndpoint(subscription, payload, attempt + 1),
-        RETRY_DELAYS[attempt]
-      )
-    } else {
-      console.error(
-        `Webhook to ${subscription.url} failed after ${RETRY_DELAYS.length} retries`
-      )
-    }
-  }
 }

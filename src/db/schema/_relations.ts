@@ -14,6 +14,7 @@ import { activityTypes } from "./activity-types"
 import { activities } from "./activities"
 import { customFieldDefinitions } from "./custom-fields"
 import { webhooks } from "./webhooks"
+import { webhookDeliveries } from "./webhook-deliveries"
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
@@ -139,10 +140,18 @@ export const activitiesRelations = relations(activities, ({ one }) => ({
   }),
 }))
 
-export const webhooksRelations = relations(webhooks, ({ one }) => ({
+export const webhooksRelations = relations(webhooks, ({ one, many }) => ({
   user: one(users, {
     fields: [webhooks.userId],
     references: [users.id],
+  }),
+  deliveries: many(webhookDeliveries),
+}))
+
+export const webhookDeliveriesRelations = relations(webhookDeliveries, ({ one }) => ({
+  webhook: one(webhooks, {
+    fields: [webhookDeliveries.webhookId],
+    references: [webhooks.id],
   }),
 }))
 

@@ -98,12 +98,12 @@ Plans:
 3. Admin can see dead-letter entries (deliveries that exhausted all retries) as a distinct DLQ section and click "Replay" on any entry to re-queue it for immediate delivery
 4. A 4xx response from the subscriber endpoint does not trigger retries (only 5xx and network errors do), visible from the delivery log status
 
-**Plans:** TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 19-01: Rewrite `triggerWebhook` / `deliver.ts` to insert into `webhook_deliveries` instead of scheduling `setTimeout`; add jitter and 4xx vs 5xx retry logic
-- [ ] 19-02: Implement cron processor route (`api/internal/webhooks/process`) that reads pending rows and delivers them; configure scheduling mechanism
-- [ ] 19-03: Add delivery history and DLQ UI in the webhook admin settings page with manual replay action
+- [ ] 19-01-PLAN.md — Rewrite deliver.ts to INSERT into webhook_deliveries; create cron processor and self-scheduling startup hook
+- [ ] 19-02-PLAN.md — Admin webhook list page with CRUD (create, edit, delete) and sidebar navigation
+- [ ] 19-03-PLAN.md — Webhook detail page with delivery history log, DLQ tab, and manual replay
 
 ---
 
@@ -193,10 +193,10 @@ Plans:
 | 16. Pipedrive API Importer | v1.0 | 6/6 | Complete | 2026-03-08 |
 | 17. TypeScript Cleanup | v1.1 | 1/1 | Complete | 2026-03-14 |
 | 18. DB Infrastructure | v1.1 | 1 plan | Not started | - |
-| 19. Webhook Reliability | v1.1 | 0/TBD | Not started | - |
+| 19. Webhook Reliability | v1.1 | 0/3 | Not started | - |
 | 20. Import State Reliability | v1.1 | 0/TBD | Not started | - |
 | 21. Formula Reactivity | v1.1 | 0/TBD | Not started | - |
 | 22. Bulk Operations | v1.1 | 0/TBD | Not started | - |
 
 ---
-*Roadmap updated: 2026-03-14 — Phase 18 plan created*
+*Roadmap updated: 2026-03-22 — Phase 19 plans created (3 plans, 3 waves)*
