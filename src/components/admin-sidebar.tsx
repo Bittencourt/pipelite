@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Users, Home, Layers, SlidersHorizontal, Database, Key } from "lucide-react"
+import { Users, Home, Layers, SlidersHorizontal, Database, Key, Radio } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
@@ -26,6 +26,11 @@ const sidebarItems = [
     title: "Custom Fields",
     href: "/admin/fields",
     icon: SlidersHorizontal,
+  },
+  {
+    title: "Webhooks",
+    href: "/admin/webhooks",
+    icon: Radio,
   },
   {
     title: "Export Data",
