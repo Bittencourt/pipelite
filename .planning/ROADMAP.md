@@ -98,7 +98,7 @@ Plans:
 3. Admin can see dead-letter entries (deliveries that exhausted all retries) as a distinct DLQ section and click "Replay" on any entry to re-queue it for immediate delivery
 4. A 4xx response from the subscriber endpoint does not trigger retries (only 5xx and network errors do), visible from the delivery log status
 
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] 19-01-PLAN.md — Rewrite deliver.ts to INSERT into webhook_deliveries; create cron processor and self-scheduling startup hook
@@ -193,7 +193,7 @@ Plans:
 | 16. Pipedrive API Importer | v1.0 | 6/6 | Complete | 2026-03-08 |
 | 17. TypeScript Cleanup | v1.1 | 1/1 | Complete | 2026-03-14 |
 | 18. DB Infrastructure | v1.1 | 1 plan | Not started | - |
-| 19. Webhook Reliability | v1.1 | 0/3 | Not started | - |
+| 19. Webhook Reliability | 1/3 | In Progress|  | - |
 | 20. Import State Reliability | v1.1 | 0/TBD | Not started | - |
 | 21. Formula Reactivity | v1.1 | 0/TBD | Not started | - |
 | 22. Bulk Operations | v1.1 | 0/TBD | Not started | - |
