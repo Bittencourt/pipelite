@@ -37,7 +37,7 @@ Full archive: `.planning/milestones/v1.0-ROADMAP.md`
 
 - [x] **Phase 17: TypeScript Cleanup** — Remove `ignoreBuildErrors`, verify clean `tsc --noEmit` (completed 2026-03-14)
 - [ ] **Phase 18: DB Infrastructure** — Migrate `webhook_deliveries` and `import_sessions` tables
-- [ ] **Phase 19: Webhook Reliability** — Durable delivery, delivery history UI, DLQ with manual replay
+- [x] **Phase 19: Webhook Reliability** — Durable delivery, delivery history UI, DLQ with manual replay (completed 2026-03-22)
 - [ ] **Phase 20: Import State Reliability** — DB-backed import sessions, cancellation persists across restarts
 - [ ] **Phase 21: Formula Reactivity** — Server-side recalculation on save, dependency-aware fan-out control
 - [ ] **Phase 22: Bulk Operations** — Checkbox selection, bulk delete, bulk assign owner, bulk CSV export
@@ -98,12 +98,12 @@ Plans:
 3. Admin can see dead-letter entries (deliveries that exhausted all retries) as a distinct DLQ section and click "Replay" on any entry to re-queue it for immediate delivery
 4. A 4xx response from the subscriber endpoint does not trigger retries (only 5xx and network errors do), visible from the delivery log status
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans executed
 
 Plans:
 - [x] 19-01-PLAN.md — Rewrite deliver.ts to INSERT into webhook_deliveries; create cron processor and self-scheduling startup hook
 - [x] 19-02-PLAN.md — Admin webhook list page with CRUD (create, edit, delete) and sidebar navigation
-- [ ] 19-03-PLAN.md — Webhook detail page with delivery history log, DLQ tab, and manual replay
+- [x] 19-03-PLAN.md — Webhook detail page with delivery history log, DLQ tab, and manual replay
 
 ---
 
@@ -193,7 +193,7 @@ Plans:
 | 16. Pipedrive API Importer | v1.0 | 6/6 | Complete | 2026-03-08 |
 | 17. TypeScript Cleanup | v1.1 | 1/1 | Complete | 2026-03-14 |
 | 18. DB Infrastructure | v1.1 | 1 plan | Not started | - |
-| 19. Webhook Reliability | v1.1 | 2/3 | In Progress | - |
+| 19. Webhook Reliability | v1.1 | 3/3 | Complete | 2026-03-22 |
 | 20. Import State Reliability | v1.1 | 0/TBD | Not started | - |
 | 21. Formula Reactivity | v1.1 | 0/TBD | Not started | - |
 | 22. Bulk Operations | v1.1 | 0/TBD | Not started | - |

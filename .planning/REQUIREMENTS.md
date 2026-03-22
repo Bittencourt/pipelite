@@ -14,8 +14,8 @@ Requirements for Reliability & Operations milestone. Each maps to roadmap phases
 ### Webhooks
 
 - [x] **WHOOK-01**: Webhook delivery retries survive container restarts (durable DB-backed delivery via `webhook_deliveries` table — replaces in-process `setTimeout` retries)
-- [ ] **WHOOK-02**: Admin can view delivery history (success/failure log with HTTP status and timestamp) per webhook endpoint in the admin UI
-- [ ] **WHOOK-03**: Admin can see dead-letter entries (exhausted retries) and manually replay a failed delivery from the admin UI
+- [x] **WHOOK-02**: Admin can view delivery history (success/failure log with HTTP status and timestamp) per webhook endpoint in the admin UI
+- [x] **WHOOK-03**: Admin can see dead-letter entries (exhausted retries) and manually replay a failed delivery from the admin UI
 
 ### Import State
 
@@ -77,8 +77,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | TSFIX-01 | Phase 17 | Pending |
 | WHOOK-01 | Phase 19 | Complete |
-| WHOOK-02 | Phase 19 | Pending |
-| WHOOK-03 | Phase 19 | Pending |
+| WHOOK-02 | Phase 19 | Complete |
+| WHOOK-03 | Phase 19 | Complete |
 | IMPORT-01 | Phase 20 | Pending |
 | IMPORT-02 | Phase 20 | Pending |
 | FORMULA-01 | Phase 21 | Pending |
