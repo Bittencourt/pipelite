@@ -480,7 +480,24 @@
       "create": "Crear",
       "saving": "Guardando...",
       "deleting": "Eliminando...",
-      "delete": "Eliminar"
+      "delete": "Eliminar",
+      "deliveryHistory": "Historial de Entregas",
+      "allDeliveries": "Todas las Entregas",
+      "deadLetter": "Cola Muerta ({count})",
+      "timestamp": "Fecha/Hora",
+      "event": "Evento",
+      "httpStatus": "Estado HTTP",
+      "attempt": "Intento",
+      "statusHeader": "Estado",
+      "payload": "Carga",
+      "response": "Respuesta",
+      "replay": "Reenviar",
+      "replaySuccess": "Entrega reencolada",
+      "replayError": "Error al reencolar la entrega",
+      "noDeliveries": "No se encontraron entregas.",
+      "backToWebhooks": "Volver a Webhooks",
+      "webhookNotFound": "Webhook no encontrado",
+      "webhookDetail": "Detalle del Webhook"
     }
   },
   "import": {

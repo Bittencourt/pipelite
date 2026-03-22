@@ -3,7 +3,8 @@
 import { auth } from "@/auth"
 import { db } from "@/db"
 import { webhooks, webhookDeliveries } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { eq, desc } from "drizzle-orm"
+import { users } from "@/db/schema"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import crypto from "crypto"
@@ -84,4 +85,66 @@ export async function deleteWebhook(id: string) {
 
   revalidatePath("/admin/webhooks")
   return { success: true, id }
+}
+
+export async function replayDelivery(deliveryId: string) {
+  const session = await auth()
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, error: "Unauthorized: Admin access required" }
+  }
+
+  await db
+    .update(webhookDeliveries)
+    .set({
+      status: "pending",
+      retryCount: 0,
+      nextAttemptAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(webhookDeliveries.id, deliveryId))
+
+  revalidatePath("/admin/webhooks")
+  return { success: true, id: deliveryId }
+}
+
+export async function getWebhookWithDeliveries(webhookId: string) {
+  const [webhook] = await db
+    .select({
+      id: webhooks.id,
+      url: webhooks.url,
+      events: webhooks.events,
+      active: webhooks.active,
+      createdAt: webhooks.createdAt,
+      userId: webhooks.userId,
+      ownerEmail: users.email,
+    })
+    .from(webhooks)
+    .leftJoin(users, eq(webhooks.userId, users.id))
+    .where(eq(webhooks.id, webhookId))
+    .limit(1)
+
+  if (!webhook) {
+    return null
+  }
+
+  const allDeliveries = await db
+    .select()
+    .from(webhookDeliveries)
+    .where(eq(webhookDeliveries.webhookId, webhookId))
+    .orderBy(desc(webhookDeliveries.createdAt))
+
+  const dlqDeliveries = allDeliveries.filter(
+    (d) => d.status === "failed" && d.retryCount >= 5
+  )
+
+  return {
+    webhook: {
+      ...webhook,
+      events: webhook.events ?? [],
+      ownerEmail: webhook.ownerEmail ?? "Unknown",
+    },
+    allDeliveries,
+    dlqDeliveries,
+    dlqCount: dlqDeliveries.length,
+  }
 }

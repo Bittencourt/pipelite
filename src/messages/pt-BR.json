@@ -480,7 +480,24 @@
       "create": "Criar",
       "saving": "Salvando...",
       "deleting": "Excluindo...",
-      "delete": "Excluir"
+      "delete": "Excluir",
+      "deliveryHistory": "Historico de Entregas",
+      "allDeliveries": "Todas as Entregas",
+      "deadLetter": "Fila Morta ({count})",
+      "timestamp": "Data/Hora",
+      "event": "Evento",
+      "httpStatus": "Status HTTP",
+      "attempt": "Tentativa",
+      "statusHeader": "Status",
+      "payload": "Payload",
+      "response": "Resposta",
+      "replay": "Reenviar",
+      "replaySuccess": "Entrega reenfileirada",
+      "replayError": "Erro ao reenfileirar a entrega",
+      "noDeliveries": "Nenhuma entrega encontrada.",
+      "backToWebhooks": "Voltar para Webhooks",
+      "webhookNotFound": "Webhook nao encontrado",
+      "webhookDetail": "Detalhe do Webhook"
     }
   },
   "import": {

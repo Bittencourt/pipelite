@@ -480,7 +480,24 @@
       "create": "Create",
       "saving": "Saving...",
       "deleting": "Deleting...",
-      "delete": "Delete"
+      "delete": "Delete",
+      "deliveryHistory": "Delivery History",
+      "allDeliveries": "All Deliveries",
+      "deadLetter": "Dead Letter ({count})",
+      "timestamp": "Timestamp",
+      "event": "Event",
+      "httpStatus": "HTTP Status",
+      "attempt": "Attempt",
+      "statusHeader": "Status",
+      "payload": "Payload",
+      "response": "Response",
+      "replay": "Replay",
+      "replaySuccess": "Delivery re-queued",
+      "replayError": "Failed to re-queue delivery",
+      "noDeliveries": "No deliveries found.",
+      "backToWebhooks": "Back to Webhooks",
+      "webhookNotFound": "Webhook not found",
+      "webhookDetail": "Webhook Detail"
     }
   },
   "import": {
