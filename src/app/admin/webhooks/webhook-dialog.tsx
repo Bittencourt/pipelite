@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -84,6 +84,17 @@ export function WebhookDialog({ open, onOpenChange, webhook, users }: WebhookDia
       userId: webhook?.userId ?? "",
     },
   })
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        url: webhook?.url ?? "",
+        events: webhook?.events ?? [],
+        active: webhook?.active ?? true,
+        userId: webhook?.userId ?? "",
+      })
+    }
+  }, [open, webhook, form])
 
   const selectedEvents = form.watch("events")
 
