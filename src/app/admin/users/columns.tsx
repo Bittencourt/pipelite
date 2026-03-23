@@ -114,6 +114,100 @@ export function useColumns(): ColumnDef<PendingUser>[] {
   ]
 }
 
+// All Users types and columns
+export type AllUser = {
+  id: string
+  email: string
+  name: string | null
+  role: "admin" | "member"
+  status: "pending_verification" | "pending_approval" | "approved" | "rejected"
+  createdAt: Date
+  deletedAt: Date | null
+}
+
+// Client component for formatted date display (short)
+function FormattedDateShort({ date }: { date: Date }) {
+  const format = useFormatter()
+  return format.dateTime(date, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+}
+
+export function useAllUsersColumns(onEdit: (user: AllUser) => void): ColumnDef<AllUser>[] {
+  const t = useTranslations('admin.users')
+
+  return [
+    {
+      accessorKey: "name",
+      header: t('name'),
+      cell: ({ row }) => {
+        const name = row.getValue("name") as string | null
+        if (!name) {
+          return <span className="text-muted-foreground">{t('noName')}</span>
+        }
+        return <span>{name}</span>
+      },
+    },
+    {
+      accessorKey: "email",
+      header: t('email'),
+      cell: ({ row }) => {
+        return <span className="font-medium">{row.getValue("email")}</span>
+      },
+    },
+    {
+      accessorKey: "role",
+      header: t('role'),
+      cell: ({ row }) => {
+        const role = row.getValue("role") as AllUser["role"]
+        return (
+          <Badge variant={role === "admin" ? "default" : "secondary"}>
+            {t(`roles.${role}`)}
+          </Badge>
+        )
+      },
+    },
+    {
+      id: "status",
+      header: t('status'),
+      cell: ({ row }) => {
+        const user = row.original
+        if (user.deletedAt) {
+          return <Badge variant="destructive">{t('deactivated')}</Badge>
+        }
+        const status = user.status
+        const variantMap: Record<AllUser["status"], "default" | "secondary" | "outline" | "destructive"> = {
+          approved: "default",
+          pending_approval: "secondary",
+          pending_verification: "outline",
+          rejected: "destructive",
+        }
+        return (
+          <Badge
+            variant={variantMap[status]}
+            className={status === "approved" ? "bg-green-500" : undefined}
+          >
+            {t(`statuses.${status}`)}
+          </Badge>
+        )
+      },
+    },
+    {
+      id: "actions",
+      header: t('actions'),
+      cell: ({ row }) => {
+        return (
+          <Button size="sm" variant="outline" onClick={() => onEdit(row.original)}>
+            {t('editUser')}
+          </Button>
+        )
+      },
+    },
+  ]
+}
+
 // Keep legacy export for backward compatibility (without translations)
 export const columns: ColumnDef<PendingUser>[] = [
   {

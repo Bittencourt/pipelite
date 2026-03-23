@@ -14,19 +14,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { PendingUser } from "./columns"
 import { useDataTableKeyboard } from "@/components/keyboard"
 
-interface DataTableProps {
-  columns: ColumnDef<PendingUser, unknown>[]
-  data: PendingUser[]
+interface DataTableProps<T extends { id: string }> {
+  columns: ColumnDef<T, unknown>[]
+  data: T[]
   refresh?: () => void
+  emptyMessage?: string
 }
 
-export function DataTable({ columns, data, refresh }: DataTableProps) {
+export function DataTable<T extends { id: string }>({
+  columns,
+  data,
+  refresh,
+  emptyMessage = "No results.",
+}: DataTableProps<T>) {
   const { containerProps, rowProps } = useDataTableKeyboard({
     data,
-    getId: (user) => user.id,
+    getId: (item) => item.id,
   })
 
   const table = useReactTable({
@@ -88,7 +93,7 @@ export function DataTable({ columns, data, refresh }: DataTableProps) {
                 colSpan={columns.length}
                 className="h-24 text-center"
               >
-                No pending users.
+                {emptyMessage}
               </TableCell>
             </TableRow>
           )}
