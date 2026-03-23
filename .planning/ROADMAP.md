@@ -38,7 +38,7 @@ Full archive: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 17: TypeScript Cleanup** — Remove `ignoreBuildErrors`, verify clean `tsc --noEmit` (completed 2026-03-14)
 - [ ] **Phase 18: DB Infrastructure** — Migrate `webhook_deliveries` and `import_sessions` tables
 - [x] **Phase 19: Webhook Reliability** — Durable delivery, delivery history UI, DLQ with manual replay (completed 2026-03-22)
-- [ ] **Phase 20: Import State Reliability** — DB-backed import sessions, cancellation persists across restarts
+- [x] **Phase 20: Import State Reliability** — DB-backed import sessions, cancellation persists across restarts (completed 2026-03-23)
 - [ ] **Phase 21: Formula Reactivity** — Server-side recalculation on save, dependency-aware fan-out control
 - [ ] **Phase 22: Bulk Operations** — Checkbox selection, bulk delete, bulk assign owner, bulk CSV export
 
@@ -120,7 +120,7 @@ Plans:
 2. Clicking "Cancel import" and then restarting the container results in the import not resuming — cancellation is durable
 3. On app startup, any `import_sessions` rows still in `running` status are automatically transitioned to `error` (stale session cleanup), preventing phantom "in progress" indicators after a crash
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 20-01-PLAN.md — Schema migration for userId column, rewrite pipedrive-import-state.ts to DB-backed Drizzle queries, startup cleanup module, instrumentation.ts hook
@@ -195,7 +195,7 @@ Plans:
 | 17. TypeScript Cleanup | v1.1 | 1/1 | Complete | 2026-03-14 |
 | 18. DB Infrastructure | v1.1 | 1 plan | Not started | - |
 | 19. Webhook Reliability | v1.1 | Complete    | 2026-03-22 | 2026-03-22 |
-| 20. Import State Reliability | 1/2 | In Progress|  | - |
+| 20. Import State Reliability | 2/2 | Complete   | 2026-03-23 | - |
 | 21. Formula Reactivity | v1.1 | 0/TBD | Not started | - |
 | 22. Bulk Operations | v1.1 | 0/TBD | Not started | - |
 
