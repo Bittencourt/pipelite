@@ -349,8 +349,12 @@
       "cancel": "Cancelar",
       "name": "Nome",
       "noName": "Sem nome",
-      "confirmDeactivate": "Tem certeza de que deseja desativar este usuario?",
-      "confirmReactivate": "Tem certeza de que deseja reativar este usuario?",
+      "confirmDeactivateTitle": "Desativar Usuario",
+      "confirmReactivateTitle": "Reativar Usuario",
+      "confirmDeactivate": "Tem certeza de que deseja desativar {email}? O usuario nao podera mais fazer login.",
+      "confirmReactivate": "Tem certeza de que deseja reativar {email}? O usuario podera fazer login novamente.",
+      "deactivating": "Desativando...",
+      "reactivating": "Reativando...",
       "userUpdated": "Usuario atualizado com sucesso",
       "userDeactivated": "Usuario desativado",
       "userReactivated": "Usuario reativado",
@@ -454,7 +458,13 @@
           "errors": "{count} Erro(s)",
           "reviewNeeded": "{count} Item(ns) Precisam de Revisão",
           "reviewDescription": "Alguns itens importados podem precisar de atenção manual.",
-          "done": "Concluído"
+          "done": "Concluído",
+          "interrupted": {
+            "title": "Importacao Interrompida",
+            "description": "O servidor reiniciou enquanto a importacao estava em andamento. Os dados importados antes da interrupcao foram salvos.",
+            "hint": "Voce pode iniciar uma nova importacao com seguranca. Registros importados anteriormente serao detectados como duplicatas e ignorados.",
+            "startNew": "Iniciar Nova Importacao"
+          }
         }
       },
       "counts": {

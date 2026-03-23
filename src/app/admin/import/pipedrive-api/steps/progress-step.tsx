@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { CheckCircle2, XCircle, AlertTriangle, Loader2, X } from "lucide-react"
@@ -17,6 +18,7 @@ interface ProgressStepProps {
 }
 
 export function ProgressStep({ importId, onComplete }: ProgressStepProps) {
+  const t = useTranslations("admin.import.steps.progress")
   const [state, setState] = useState<ImportProgressState | null>(null)
   const [isCancelling, setIsCancelling] = useState(false)
 
@@ -68,6 +70,8 @@ export function ProgressStep({ importId, onComplete }: ProgressStepProps) {
   const isRunning = state.status === "running"
   const isCompleted = state.status === "completed"
   const isCancelled = state.status === "cancelled"
+  const isInterrupted = state.status === "error" && state.errors.length === 0
+  const isError = state.status === "error" && state.errors.length > 0
   const hasErrors = state.errors.length > 0
   const hasReviewItems = state.reviewItems.length > 0
 
@@ -83,17 +87,24 @@ export function ProgressStep({ importId, onComplete }: ProgressStepProps) {
         {isRunning && <Loader2 className="h-8 w-8 animate-spin text-primary" />}
         {isCompleted && <CheckCircle2 className="h-8 w-8 text-green-600" />}
         {isCancelled && <XCircle className="h-8 w-8 text-orange-500" />}
-        {state.status === "error" && <XCircle className="h-8 w-8 text-destructive" />}
+        {isInterrupted && <AlertTriangle className="h-8 w-8 text-orange-500" />}
+        {isError && <XCircle className="h-8 w-8 text-destructive" />}
         <div>
           <h3 className="text-lg font-medium">
             {isRunning && "Importing Data..."}
             {isCompleted && "Import Complete"}
             {isCancelled && "Import Cancelled"}
-            {state.status === "error" && "Import Failed"}
+            {isInterrupted && t("interrupted.title")}
+            {isError && "Import Failed"}
           </h3>
           {isRunning && state.currentEntity && (
             <p className="text-muted-foreground text-sm">
               Importing {state.currentEntity}...
+            </p>
+          )}
+          {isInterrupted && (
+            <p className="text-muted-foreground text-sm mt-1">
+              {t("interrupted.description")}
             </p>
           )}
         </div>
@@ -144,6 +155,13 @@ export function ProgressStep({ importId, onComplete }: ProgressStepProps) {
             ))}
           </div>
 
+          {/* Interrupted hint */}
+          {isInterrupted && (
+            <p className="text-sm text-muted-foreground">
+              {t("interrupted.hint")}
+            </p>
+          )}
+
           {/* Errors */}
           {hasErrors && (
             <Alert variant="destructive">
@@ -191,7 +209,9 @@ export function ProgressStep({ importId, onComplete }: ProgressStepProps) {
             </Alert>
           )}
 
-          <Button onClick={onComplete}>Done</Button>
+          <Button onClick={onComplete}>
+            {isInterrupted ? t("interrupted.startNew") : "Done"}
+          </Button>
         </div>
       )}
     </div>

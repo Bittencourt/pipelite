@@ -349,8 +349,12 @@
       "cancel": "Cancel",
       "name": "Name",
       "noName": "No name",
-      "confirmDeactivate": "Are you sure you want to deactivate this user?",
-      "confirmReactivate": "Are you sure you want to reactivate this user?",
+      "confirmDeactivateTitle": "Deactivate User",
+      "confirmReactivateTitle": "Reactivate User",
+      "confirmDeactivate": "Are you sure you want to deactivate {email}? They will no longer be able to sign in.",
+      "confirmReactivate": "Are you sure you want to reactivate {email}? They will be able to sign in again.",
+      "deactivating": "Deactivating...",
+      "reactivating": "Reactivating...",
       "userUpdated": "User updated successfully",
       "userDeactivated": "User deactivated",
       "userReactivated": "User reactivated",
@@ -454,7 +458,13 @@
           "errors": "{count} Error(s)",
           "reviewNeeded": "{count} Item(s) Need Review",
           "reviewDescription": "Some imported items may need manual attention.",
-          "done": "Done"
+          "done": "Done",
+          "interrupted": {
+            "title": "Import Interrupted",
+            "description": "The server restarted while your import was in progress. The data imported before the interruption has been saved.",
+            "hint": "You can safely start a new import. Previously imported records will be detected as duplicates and skipped.",
+            "startNew": "Start New Import"
+          }
         }
       },
       "counts": {
