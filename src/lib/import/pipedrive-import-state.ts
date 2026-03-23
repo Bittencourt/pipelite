@@ -1,19 +1,14 @@
 /**
- * In-memory import state tracking for progress and cancellation.
+ * DB-backed import state tracking for progress and cancellation.
  *
- * NOTE: This uses a Map for single-instance deployment. For production with
- * multiple instances, this would need Redis or database backing.
- *
- * This module provides helper functions for state management that are called
- * by server actions, not directly by the client.
+ * All state is persisted in the import_sessions table via Drizzle ORM.
+ * This replaces the previous in-memory Map implementation to ensure
+ * import progress survives container restarts.
  */
 
-/**
- * In-memory import state tracking for progress and cancellation.
- *
- * NOTE: This uses a Map for single-instance deployment. For production with
- * multiple instances, this would need Redis or database backing.
- */
+import { db } from "@/db"
+import { importSessions } from "@/db/schema"
+import { eq } from "drizzle-orm"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,10 +38,70 @@ export interface ImportProgressState {
 }
 
 // ---------------------------------------------------------------------------
-// State Storage (In-Memory)
+// Internal JSONB shape (stored in import_sessions.progress column)
 // ---------------------------------------------------------------------------
 
-const importStates = new Map<string, ImportProgressState>()
+interface ImportProgressData {
+  imported: {
+    pipelines: number
+    stages: number
+    customFields: number
+    organizations: number
+    people: number
+    deals: number
+    activities: number
+  }
+  currentEntity: string | null
+  completedEntities: number
+  totalEntities: number
+  errors: Array<{ entity: string; message: string }>
+  reviewItems: Array<{ type: string; id: string; reason: string }>
+}
+
+const DEFAULT_IMPORTED = {
+  pipelines: 0,
+  stages: 0,
+  customFields: 0,
+  organizations: 0,
+  people: 0,
+  deals: 0,
+  activities: 0,
+}
+
+const DEFAULT_PROGRESS: ImportProgressData = {
+  imported: { ...DEFAULT_IMPORTED },
+  currentEntity: null,
+  completedEntities: 0,
+  totalEntities: 0,
+  errors: [],
+  reviewItems: [],
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function toProgressState(
+  session: { id: string; status: string; progress: unknown; cancelled: boolean; createdAt: Date; updatedAt: Date }
+): ImportProgressState {
+  const progress = (session.progress ?? DEFAULT_PROGRESS) as ImportProgressData
+  return {
+    importId: session.id,
+    status: session.status as ImportProgressState['status'],
+    currentEntity: progress.currentEntity ?? null,
+    currentProgress: (progress.totalEntities ?? 0) > 0
+      ? Math.round(((progress.completedEntities ?? 0) / progress.totalEntities) * 100)
+      : 0,
+    totalEntities: progress.totalEntities ?? 0,
+    completedEntities: progress.completedEntities ?? 0,
+    imported: progress.imported ?? { ...DEFAULT_IMPORTED },
+    errors: progress.errors ?? [],
+    reviewItems: progress.reviewItems ?? [],
+    cancelled: session.cancelled,
+    startedAt: session.createdAt,
+    completedAt: session.updatedAt,
+  }
+}
 
 // ---------------------------------------------------------------------------
 // State Management Functions
@@ -54,74 +109,115 @@ const importStates = new Map<string, ImportProgressState>()
 
 /**
  * Create a new import state with default values.
+ * Rejects if a running session already exists.
  */
-export function createImportState(importId: string): ImportProgressState {
-  const state: ImportProgressState = {
+export async function createImportState(importId: string, userId: string): Promise<ImportProgressState> {
+  // Check for existing running session
+  const existing = await db.query.importSessions.findFirst({
+    where: eq(importSessions.status, 'running'),
+  })
+  if (existing) {
+    throw new Error("An import is already in progress")
+  }
+
+  const now = new Date()
+  await db.insert(importSessions).values({
+    id: importId,
+    userId,
+    status: 'idle',
+    progress: { ...DEFAULT_PROGRESS },
+    cancelled: false,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  return {
     importId,
     status: 'idle',
     currentEntity: null,
     currentProgress: 0,
     totalEntities: 0,
     completedEntities: 0,
-    imported: {
-      pipelines: 0,
-      stages: 0,
-      customFields: 0,
-      organizations: 0,
-      people: 0,
-      deals: 0,
-      activities: 0
-    },
+    imported: { ...DEFAULT_IMPORTED },
     errors: [],
     reviewItems: [],
     cancelled: false,
-    startedAt: new Date()
+    startedAt: now,
   }
-  importStates.set(importId, state)
-  return state
 }
 
 /**
  * Get the current import state by ID.
  */
-export function getImportState(importId: string): ImportProgressState | undefined {
-  return importStates.get(importId)
+export async function getImportState(importId: string): Promise<ImportProgressState | undefined> {
+  const session = await db.query.importSessions.findFirst({
+    where: eq(importSessions.id, importId),
+  })
+  if (!session) return undefined
+
+  return toProgressState(session)
 }
 
 /**
  * Update the import state with partial updates.
  */
-export function updateImportState(importId: string, updates: Partial<ImportProgressState>): void {
-  const state = importStates.get(importId)
-  if (state) {
-    importStates.set(importId, { ...state, ...updates })
+export async function updateImportState(importId: string, updates: Partial<ImportProgressState>): Promise<void> {
+  const session = await db.query.importSessions.findFirst({
+    where: eq(importSessions.id, importId),
+  })
+  if (!session) return
+
+  const currentProgress = (session.progress ?? DEFAULT_PROGRESS) as ImportProgressData
+
+  // Merge updates into progress JSONB
+  const newProgress: ImportProgressData = {
+    ...currentProgress,
+    ...(updates.currentEntity !== undefined && { currentEntity: updates.currentEntity }),
+    ...(updates.completedEntities !== undefined && { completedEntities: updates.completedEntities }),
+    ...(updates.totalEntities !== undefined && { totalEntities: updates.totalEntities }),
+    ...(updates.imported && { imported: updates.imported }),
+    ...(updates.errors && { errors: updates.errors.slice(0, 50).map(e => ({ entity: e.entity, message: e.message })) }),
+    ...(updates.reviewItems && { reviewItems: updates.reviewItems }),
   }
+
+  await db
+    .update(importSessions)
+    .set({
+      ...(updates.status && { status: updates.status }),
+      ...(updates.cancelled !== undefined && { cancelled: updates.cancelled }),
+      progress: newProgress,
+      updatedAt: new Date(),
+    })
+    .where(eq(importSessions.id, importId))
 }
 
 /**
  * Mark an import as cancelled.
  */
-export function cancelImport(importId: string): void {
-  const state = importStates.get(importId)
-  if (state && state.status === 'running') {
-    state.cancelled = true
-    updateImportState(importId, { cancelled: true })
-  }
+export async function cancelImport(importId: string): Promise<void> {
+  await db
+    .update(importSessions)
+    .set({ cancelled: true, updatedAt: new Date() })
+    .where(eq(importSessions.id, importId))
 }
 
 /**
  * Check if an import has been cancelled.
  */
-export function isImportCancelled(importId: string): boolean {
-  return importStates.get(importId)?.cancelled ?? false
+export async function isImportCancelled(importId: string): Promise<boolean> {
+  const session = await db.query.importSessions.findFirst({
+    where: eq(importSessions.id, importId),
+    columns: { cancelled: true },
+  })
+  return session?.cancelled ?? false
 }
 
 /**
- * Clear the import state from memory.
- * Call this after import completion or when state is no longer needed.
+ * Clear the import state.
+ * No-op: sessions are kept for audit trail.
  */
-export function clearImportState(importId: string): void {
-  importStates.delete(importId)
+export async function clearImportState(_importId: string): Promise<void> {
+  // Sessions kept for audit trail -- no-op
 }
 
 // ---------------------------------------------------------------------------
@@ -139,46 +235,82 @@ export function calculateProgress(state: ImportProgressState): number {
 /**
  * Increment the count for an imported entity type.
  */
-export function incrementImportedCount(
+export async function incrementImportedCount(
   importId: string,
   entityType: keyof ImportProgressState['imported'],
   count: number = 1
-): void {
-  const state = importStates.get(importId)
-  if (state) {
-    state.imported[entityType] += count
-    importStates.set(importId, { ...state })
-  }
+): Promise<void> {
+  const session = await db.query.importSessions.findFirst({
+    where: eq(importSessions.id, importId),
+  })
+  if (!session) return
+
+  const progress = (session.progress ?? DEFAULT_PROGRESS) as ImportProgressData
+  const imported = { ...progress.imported }
+  imported[entityType] = (imported[entityType] ?? 0) + count
+
+  await db
+    .update(importSessions)
+    .set({
+      progress: { ...progress, imported },
+      updatedAt: new Date(),
+    })
+    .where(eq(importSessions.id, importId))
 }
 
 /**
- * Add an error to the import state.
+ * Add an error to the import state (capped at 50 entries).
  */
-export function addImportError(
+export async function addImportError(
   importId: string,
   entity: string,
   message: string,
-  details?: unknown
-): void {
-  const state = importStates.get(importId)
-  if (state) {
-    state.errors.push({ entity, message, details })
-    importStates.set(importId, { ...state })
+  _details?: unknown
+): Promise<void> {
+  const session = await db.query.importSessions.findFirst({
+    where: eq(importSessions.id, importId),
+  })
+  if (!session) return
+
+  const progress = (session.progress ?? DEFAULT_PROGRESS) as ImportProgressData
+  const errors = [...(progress.errors ?? [])]
+
+  if (errors.length < 50) {
+    errors.push({ entity, message })
   }
+
+  await db
+    .update(importSessions)
+    .set({
+      progress: { ...progress, errors },
+      updatedAt: new Date(),
+    })
+    .where(eq(importSessions.id, importId))
 }
 
 /**
  * Add a review item (e.g., orphan stub created) to the import state.
  */
-export function addReviewItem(
+export async function addReviewItem(
   importId: string,
   type: string,
   id: string,
   reason: string
-): void {
-  const state = importStates.get(importId)
-  if (state) {
-    state.reviewItems.push({ type, id, reason })
-    importStates.set(importId, { ...state })
-  }
+): Promise<void> {
+  const session = await db.query.importSessions.findFirst({
+    where: eq(importSessions.id, importId),
+  })
+  if (!session) return
+
+  const progress = (session.progress ?? DEFAULT_PROGRESS) as ImportProgressData
+  const reviewItems = [...(progress.reviewItems ?? [])]
+  reviewItems.push({ type, id, reason })
+
+  await db
+    .update(importSessions)
+    .set({
+      progress: { ...progress, reviewItems },
+      updatedAt: new Date(),
+    })
+    .where(eq(importSessions.id, importId))
 }
