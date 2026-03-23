@@ -120,10 +120,11 @@ Plans:
 2. Clicking "Cancel import" and then restarting the container results in the import not resuming — cancellation is durable
 3. On app startup, any `import_sessions` rows still in `running` status are automatically transitioned to `error` (stale session cleanup), preventing phantom "in progress" indicators after a crash
 
-**Plans:** TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 20-01: Rewrite `pipedrive-import-state.ts` as Drizzle queries against `import_sessions`; add startup cleanup for stale sessions; make `isImportCancelled` async
+- [ ] 20-01-PLAN.md — Schema migration for userId column, rewrite pipedrive-import-state.ts to DB-backed Drizzle queries, startup cleanup module, instrumentation.ts hook
+- [ ] 20-02-PLAN.md — Wire DB-backed state into import actions (await all calls, pass userId), interrupted state UI with i18n
 
 ---
 
@@ -194,9 +195,19 @@ Plans:
 | 17. TypeScript Cleanup | v1.1 | 1/1 | Complete | 2026-03-14 |
 | 18. DB Infrastructure | v1.1 | 1 plan | Not started | - |
 | 19. Webhook Reliability | v1.1 | Complete    | 2026-03-22 | 2026-03-22 |
-| 20. Import State Reliability | v1.1 | 0/TBD | Not started | - |
+| 20. Import State Reliability | v1.1 | 0/2 | Not started | - |
 | 21. Formula Reactivity | v1.1 | 0/TBD | Not started | - |
 | 22. Bulk Operations | v1.1 | 0/TBD | Not started | - |
 
+### Phase 23: Resend email integration for production
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 22
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 23 to break down)
+
 ---
-*Roadmap updated: 2026-03-22 — Phase 19 plans created (3 plans, 3 waves)*
+*Roadmap updated: 2026-03-23 — Phase 20 plans created (2 plans, 2 waves)*
