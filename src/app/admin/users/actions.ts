@@ -3,9 +3,15 @@
 import { auth } from "@/auth"
 import { db } from "@/db"
 import { users, rejectedSignups } from "@/db/schema"
-import { eq, and, isNull } from "drizzle-orm"
+import { eq, and, isNull, isNotNull } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { sendApprovalEmail } from "@/lib/email/send"
+import { z } from "zod"
+
+const updateUserSchema = z.object({
+  role: z.enum(["admin", "member"]).optional(),
+  status: z.enum(["pending_verification", "pending_approval", "approved", "rejected"]).optional(),
+})
 
 /**
  * Approve a pending user
@@ -104,4 +110,115 @@ export async function rejectUser(
   // Revalidate the page to show updated data
   revalidatePath("/admin/users")
   revalidatePath("/admin")
+}
+
+/**
+ * Update a user's role and/or status
+ * - Validates input with Zod
+ * - Prevents admin from changing their own role
+ * - Revalidates the admin users page
+ */
+export async function updateUser(
+  userId: string,
+  data: z.infer<typeof updateUserSchema>
+): Promise<{ success: boolean; error?: string }> {
+  const session = await auth()
+
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, error: "Unauthorized: Admin access required" }
+  }
+
+  const parsed = updateUserSchema.safeParse(data)
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0].message }
+  }
+
+  // Prevent admin from changing their own role
+  if (parsed.data.role && session.user.id === userId) {
+    return { success: false, error: "Cannot change your own role" }
+  }
+
+  await db
+    .update(users)
+    .set({
+      ...parsed.data,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId))
+
+  revalidatePath("/admin/users")
+  return { success: true }
+}
+
+/**
+ * Deactivate a user (soft delete)
+ * - Sets deletedAt timestamp
+ * - Prevents self-deactivation
+ * - Only operates on active users (deletedAt IS NULL)
+ */
+export async function deactivateUser(
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  const session = await auth()
+
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, error: "Unauthorized: Admin access required" }
+  }
+
+  if (session.user.id === userId) {
+    return { success: false, error: "Cannot deactivate yourself" }
+  }
+
+  const user = await db.query.users.findFirst({
+    where: and(eq(users.id, userId), isNull(users.deletedAt)),
+  })
+
+  if (!user) {
+    return { success: false, error: "User not found or already deactivated" }
+  }
+
+  await db
+    .update(users)
+    .set({
+      deletedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId))
+
+  revalidatePath("/admin/users")
+  return { success: true }
+}
+
+/**
+ * Reactivate a previously deactivated user
+ * - Clears deletedAt timestamp
+ * - Only operates on deactivated users (deletedAt IS NOT NULL)
+ */
+export async function reactivateUser(
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  const session = await auth()
+
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, error: "Unauthorized: Admin access required" }
+  }
+
+  const user = await db.query.users.findFirst({
+    where: and(eq(users.id, userId), isNotNull(users.deletedAt)),
+  })
+
+  if (!user) {
+    return { success: false, error: "User not found or not deactivated" }
+  }
+
+  await db
+    .update(users)
+    .set({
+      deletedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId))
+
+  revalidatePath("/admin/users")
+  return { success: true }
 }
