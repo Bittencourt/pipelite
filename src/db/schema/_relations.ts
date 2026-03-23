@@ -15,6 +15,7 @@ import { activities } from "./activities"
 import { customFieldDefinitions } from "./custom-fields"
 import { webhooks } from "./webhooks"
 import { webhookDeliveries } from "./webhook-deliveries"
+import { importSessions } from "./import-sessions"
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
@@ -28,6 +29,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   webhooks: many(webhooks),
   dealAssignments: many(dealAssignees),
   assignedActivities: many(activities, { relationName: 'assignedActivities' }),
+  importSessions: many(importSessions),
 }))
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -162,6 +164,13 @@ export const dealAssigneesRelations = relations(dealAssignees, ({ one }) => ({
   }),
   user: one(users, {
     fields: [dealAssignees.userId],
+    references: [users.id],
+  }),
+}))
+
+export const importSessionsRelations = relations(importSessions, ({ one }) => ({
+  user: one(users, {
+    fields: [importSessions.userId],
     references: [users.id],
   }),
 }))

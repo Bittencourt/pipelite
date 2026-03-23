@@ -43,6 +43,13 @@
       "when": 1772908440470,
       "tag": "0005_happy_joseph",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774267074360,
+      "tag": "0006_import-sessions-user-id",
+      "breakpoints": true
     }
   ]
 }
