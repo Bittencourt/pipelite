@@ -5,7 +5,7 @@ milestone_name: Reliability & Operations
 current_phase: 19-webhook-reliability
 current_plan: 19-03 (done)
 status: planning
-last_updated: "2026-03-22T16:50:04.925Z"
+last_updated: "2026-03-23T08:27:23Z"
 progress:
   total_phases: 6
   completed_phases: 3
@@ -36,6 +36,8 @@ See: .planning/PROJECT.md
 - Separate webhooks-client.tsx wrapper for client-side create button state management
 - Used local state Set for row expansion instead of TanStack Table expansion API for simplicity
 - DLQ filtering done in-memory after fetching all deliveries (avoids separate query)
+- Generic DataTable with T extends { id: string } for admin users (supports PendingUser and AllUser)
+- Client-side filtering for deactivated users toggle (avoids separate server query)
 
 ## Session Log
 
@@ -43,3 +45,4 @@ See: .planning/PROJECT.md
 - 2026-03-22: Completed 19-01 (durable webhook delivery, cron processor, instrumentation hook)
 - 2026-03-22: Completed 19-02 (admin webhook management UI with CRUD, i18n)
 - 2026-03-22: Completed 19-03 (delivery history log, DLQ tab, manual replay)
+- 2026-03-23: Completed quick-5 (admin user management complete CRUD)
