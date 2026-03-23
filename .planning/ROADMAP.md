@@ -120,7 +120,7 @@ Plans:
 2. Clicking "Cancel import" and then restarting the container results in the import not resuming — cancellation is durable
 3. On app startup, any `import_sessions` rows still in `running` status are automatically transitioned to `error` (stale session cleanup), preventing phantom "in progress" indicators after a crash
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 20-01-PLAN.md — Schema migration for userId column, rewrite pipedrive-import-state.ts to DB-backed Drizzle queries, startup cleanup module, instrumentation.ts hook
@@ -195,7 +195,7 @@ Plans:
 | 17. TypeScript Cleanup | v1.1 | 1/1 | Complete | 2026-03-14 |
 | 18. DB Infrastructure | v1.1 | 1 plan | Not started | - |
 | 19. Webhook Reliability | v1.1 | Complete    | 2026-03-22 | 2026-03-22 |
-| 20. Import State Reliability | v1.1 | 0/2 | Not started | - |
+| 20. Import State Reliability | 1/2 | In Progress|  | - |
 | 21. Formula Reactivity | v1.1 | 0/TBD | Not started | - |
 | 22. Bulk Operations | v1.1 | 0/TBD | Not started | - |
 

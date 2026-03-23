@@ -9,7 +9,7 @@ Requirements for Reliability & Operations milestone. Each maps to roadmap phases
 
 ### TypeScript Hygiene
 
-- [ ] **TSFIX-01**: Admin can build the project without suppressed TypeScript errors (`ignoreBuildErrors` removed from `next.config.ts`, `tsc --noEmit` passes clean)
+- [x] **TSFIX-01**: Admin can build the project without suppressed TypeScript errors (`ignoreBuildErrors` removed from `next.config.ts`, `tsc --noEmit` passes clean)
 
 ### Webhooks
 
@@ -19,8 +19,8 @@ Requirements for Reliability & Operations milestone. Each maps to roadmap phases
 
 ### Import State
 
-- [ ] **IMPORT-01**: Pipedrive import progress survives container restarts (DB-backed `import_sessions` table replaces in-memory Map)
-- [ ] **IMPORT-02**: User can cancel an in-progress import and have that cancellation persist across restarts
+- [x] **IMPORT-01**: Pipedrive import progress survives container restarts (DB-backed `import_sessions` table replaces in-memory Map)
+- [x] **IMPORT-02**: User can cancel an in-progress import and have that cancellation persist across restarts
 
 ### Formula Reactivity
 
@@ -75,12 +75,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TSFIX-01 | Phase 17 | Pending |
+| TSFIX-01 | Phase 17 | Complete |
 | WHOOK-01 | Phase 19 | Complete |
 | WHOOK-02 | Phase 19 | Complete |
 | WHOOK-03 | Phase 19 | Complete |
-| IMPORT-01 | Phase 20 | Pending |
-| IMPORT-02 | Phase 20 | Pending |
+| IMPORT-01 | Phase 20 | Complete |
+| IMPORT-02 | Phase 20 | Complete |
 | FORMULA-01 | Phase 21 | Pending |
 | FORMULA-02 | Phase 21 | Pending |
 | BULK-01 | Phase 22 | Pending |
