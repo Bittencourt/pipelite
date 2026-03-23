@@ -91,10 +91,10 @@ async function batchInsert<T extends Record<string, unknown>>(
 }
 
 // Helper to update completed entities count
-function updateCompletedCount(importId: string, additionalCount: number): void {
-  const currentState = getImportState(importId)
+async function updateCompletedCount(importId: string, additionalCount: number): Promise<void> {
+  const currentState = await getImportState(importId)
   if (currentState) {
-    updateImportState(importId, {
+    await updateImportState(importId, {
       completedEntities: currentState.completedEntities + additionalCount,
     })
   }
@@ -241,19 +241,26 @@ export async function importFromPipedrive(
     return { success: false, error: "Not authenticated" }
   }
 
-  // Create state in server memory where this action runs
-  // (Previously created in client, but client/server have separate memory)
-  const state = createImportState(importId)
-
-  updateImportState(importId, { status: 'running' })
-  const client = createPipedriveClient(apiKey)
   const importingUserId = session.user.id
+
+  // Create state in DB where it survives container restarts
+  try {
+    await createImportState(importId, importingUserId)
+  } catch (error) {
+    if (error instanceof Error && error.message === "An import is already in progress") {
+      return { success: false, error: "An import is already in progress" }
+    }
+    throw error
+  }
+
+  await updateImportState(importId, { status: 'running' })
+  const client = createPipedriveClient(apiKey)
   const now = new Date()
 
   // Helper to check cancellation
-  const checkCancelled = () => {
-    if (isImportCancelled(importId)) {
-      updateImportState(importId, { status: 'cancelled', completedAt: new Date() })
+  const checkCancelled = async () => {
+    if (await isImportCancelled(importId)) {
+      await updateImportState(importId, { status: 'cancelled', completedAt: new Date() })
       return true
     }
     return false
@@ -319,7 +326,7 @@ export async function importFromPipedrive(
       totalEntities += countsData.activities
     }
 
-    updateImportState(importId, { totalEntities })
+    await updateImportState(importId, { totalEntities })
 
     // ID maps for entity relationships
     const pipelineIdMap = new Map<number, string>()
@@ -361,9 +368,9 @@ export async function importFromPipedrive(
     // 1. Import Pipelines
     // -----------------------------------------------------------------------
     if (config.entities.pipelines) {
-      if (checkCancelled()) return { success: false, error: "Import cancelled" }
+      if (await checkCancelled()) return { success: false, error: "Import cancelled" }
 
-      updateImportState(importId, { currentEntity: 'pipelines' })
+      await updateImportState(importId, { currentEntity: 'pipelines' })
 
       const pipelinesData = await client.fetchPipelines()
       const pdPipelines = pipelinesData as PipedrivePipeline[]
@@ -404,20 +411,20 @@ export async function importFromPipedrive(
             .returning()
 
           pipelineIdMap.set(pipelineData.pdId, inserted.id)
-          incrementImportedCount(importId, 'pipelines')
+          await incrementImportedCount(importId, 'pipelines')
         }
       }
 
-      updateCompletedCount(importId, pdPipelines.length)
+      await updateCompletedCount(importId, pdPipelines.length)
     }
 
     // -----------------------------------------------------------------------
     // 2. Import Stages
     // -----------------------------------------------------------------------
     if (config.entities.pipelines) {
-      if (checkCancelled()) return { success: false, error: "Import cancelled" }
+      if (await checkCancelled()) return { success: false, error: "Import cancelled" }
 
-      updateImportState(importId, { currentEntity: 'stages' })
+      await updateImportState(importId, { currentEntity: 'stages' })
 
       const stagesData = await client.fetchStages()
       const pdStages = stagesData as PipedriveStage[]
@@ -468,20 +475,20 @@ export async function importFromPipedrive(
             .returning()
 
           stageIdMap.set(stageData.pdId, inserted.id)
-          incrementImportedCount(importId, 'stages')
+          await incrementImportedCount(importId, 'stages')
         }
       }
 
-      updateCompletedCount(importId, pdStages.length)
+      await updateCompletedCount(importId, pdStages.length)
     }
 
     // -----------------------------------------------------------------------
     // 3. Import Custom Field Definitions
     // -----------------------------------------------------------------------
     if (config.entities.customFields) {
-      if (checkCancelled()) return { success: false, error: "Import cancelled" }
+      if (await checkCancelled()) return { success: false, error: "Import cancelled" }
 
-      updateImportState(importId, { currentEntity: 'customFields' })
+      await updateImportState(importId, { currentEntity: 'customFields' })
 
       // Fetch all custom field definitions
       const [dealFieldsData, personFieldsData, orgFieldsData, activityFieldsData] =
@@ -527,7 +534,7 @@ export async function importFromPipedrive(
               updatedAt: now,
             }).onConflictDoNothing().returning()
             if (inserted.length > 0) {
-              incrementImportedCount(importId, 'customFields')
+              await incrementImportedCount(importId, 'customFields')
             }
           }
         }
@@ -547,7 +554,7 @@ export async function importFromPipedrive(
         await insertCustomField(field, 'activity')
       }
 
-      updateCompletedCount(
+      await updateCompletedCount(
         importId,
         pdDealFields.length + pdPersonFields.length + pdOrgFields.length + pdActivityFields.length
       )
@@ -557,9 +564,9 @@ export async function importFromPipedrive(
     // 4. Import Organizations
     // -----------------------------------------------------------------------
     if (config.entities.organizations) {
-      if (checkCancelled()) return { success: false, error: "Import cancelled" }
+      if (await checkCancelled()) return { success: false, error: "Import cancelled" }
 
-      updateImportState(importId, { currentEntity: 'organizations' })
+      await updateImportState(importId, { currentEntity: 'organizations' })
 
       const orgsData = await client.fetchOrganizations()
       const pdOrgs = orgsData as PipedriveOrganization[]
@@ -613,20 +620,20 @@ export async function importFromPipedrive(
             .returning()
 
           orgIdMap.set(orgData.pdId, inserted.id)
-          incrementImportedCount(importId, 'organizations')
+          await incrementImportedCount(importId, 'organizations')
         }
       }
 
-      updateCompletedCount(importId, pdOrgs.length)
+      await updateCompletedCount(importId, pdOrgs.length)
     }
 
     // -----------------------------------------------------------------------
     // 5. Import People
     // -----------------------------------------------------------------------
     if (config.entities.people) {
-      if (checkCancelled()) return { success: false, error: "Import cancelled" }
+      if (await checkCancelled()) return { success: false, error: "Import cancelled" }
 
-      updateImportState(importId, { currentEntity: 'people' })
+      await updateImportState(importId, { currentEntity: 'people' })
 
       const peopleData = await client.fetchPeople()
       const pdPeople = peopleData as PipedrivePerson[]
@@ -690,20 +697,20 @@ export async function importFromPipedrive(
             .returning()
 
           personIdMap.set(personData.pdId, inserted.id)
-          incrementImportedCount(importId, 'people')
+          await incrementImportedCount(importId, 'people')
         }
       }
 
-      updateCompletedCount(importId, pdPeople.length)
+      await updateCompletedCount(importId, pdPeople.length)
     }
 
     // -----------------------------------------------------------------------
     // 6. Import Deals
     // -----------------------------------------------------------------------
     if (config.entities.deals) {
-      if (checkCancelled()) return { success: false, error: "Import cancelled" }
+      if (await checkCancelled()) return { success: false, error: "Import cancelled" }
 
-      updateImportState(importId, { currentEntity: 'deals' })
+      await updateImportState(importId, { currentEntity: 'deals' })
 
       const dealsData = await client.fetchDeals()
       const pdDeals = dealsData as PipedriveDeal[]
@@ -757,7 +764,7 @@ export async function importFromPipedrive(
 
             dealOrgId = stubOrg.id
             orgIdMap.set(pdDeal.org_id, stubOrg.id)
-            addReviewItem(importId, 'organization', stubOrg.id, `Stub created for deal "${pdDeal.title}"`)
+            await addReviewItem(importId, 'organization', stubOrg.id, `Stub created for deal "${pdDeal.title}"`)
           }
 
           // Create stub person if missing (person referenced by deal but not imported)
@@ -777,7 +784,7 @@ export async function importFromPipedrive(
 
             dealPersonId = stubPerson.id
             personIdMap.set(pdDeal.person_id, stubPerson.id)
-            addReviewItem(importId, 'person', stubPerson.id, `Stub created for deal "${pdDeal.title}"`)
+            await addReviewItem(importId, 'person', stubPerson.id, `Stub created for deal "${pdDeal.title}"`)
           }
 
           const transformed = transformPipedriveDeal(
@@ -819,20 +826,20 @@ export async function importFromPipedrive(
             .returning()
 
           dealIdMap.set(dealData.pdId, inserted.id)
-          incrementImportedCount(importId, 'deals')
+          await incrementImportedCount(importId, 'deals')
         }
       }
 
-      updateCompletedCount(importId, pdDeals.length)
+      await updateCompletedCount(importId, pdDeals.length)
     }
 
     // -----------------------------------------------------------------------
     // 7. Import Activities
     // -----------------------------------------------------------------------
     if (config.entities.activities) {
-      if (checkCancelled()) return { success: false, error: "Import cancelled" }
+      if (await checkCancelled()) return { success: false, error: "Import cancelled" }
 
-      updateImportState(importId, { currentEntity: 'activities' })
+      await updateImportState(importId, { currentEntity: 'activities' })
 
       const activitiesData = await client.fetchActivities()
       const pdActivities = activitiesData as PipedriveActivity[]
@@ -843,7 +850,7 @@ export async function importFromPipedrive(
       const defaultTypeId = types.find((t) => t.name.toLowerCase() === 'task')?.id || types[0]?.id
 
       if (!defaultTypeId) {
-        addImportError(importId, 'activities', 'No activity types found')
+        await addImportError(importId, 'activities', 'No activity types found')
       } else {
         const newActivities: Array<{
           title: string
@@ -906,18 +913,18 @@ export async function importFromPipedrive(
               createdAt: now,
               updatedAt: now,
             })
-            incrementImportedCount(importId, 'activities')
+            await incrementImportedCount(importId, 'activities')
           }
         }
       }
 
-      updateCompletedCount(importId, pdActivities.length)
+      await updateCompletedCount(importId, pdActivities.length)
     }
 
     // -----------------------------------------------------------------------
     // Complete Import
     // -----------------------------------------------------------------------
-    updateImportState(importId, {
+    await updateImportState(importId, {
       status: 'completed',
       completedAt: new Date(),
       currentEntity: null,
@@ -941,8 +948,8 @@ export async function importFromPipedrive(
       }
     }
     console.error('[importFromPipedrive] Error:', errorMessage, error)
-    addImportError(importId, 'general', errorMessage)
-    updateImportState(importId, {
+    await addImportError(importId, 'general', errorMessage)
+    await updateImportState(importId, {
       status: 'error',
       completedAt: new Date(),
     })
@@ -965,12 +972,12 @@ export async function cancelPipedriveImport(
     return { success: false, error: "Not authenticated" }
   }
 
-  const state = getImportState(importId)
+  const state = await getImportState(importId)
   if (!state) {
     return { success: false, error: "Import session not found" }
   }
 
-  cancelImport(importId)
+  await cancelImport(importId)
 
   return { success: true }
 }
@@ -990,7 +997,7 @@ export async function getImportProgress(
     return { success: false, error: "Not authenticated" }
   }
 
-  const state = getImportState(importId)
+  const state = await getImportState(importId)
 
   return { success: true, state: state ?? null }
 }
