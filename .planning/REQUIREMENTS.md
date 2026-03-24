@@ -39,10 +39,10 @@ Requirements for Reliability & Operations milestone. Each maps to roadmap phases
 - [x] **EMAIL-01**: When SMTP_HOST is not configured, all email send functions log a warning and return without error (silent fail -- registration and other flows still complete)
 - [x] **EMAIL-02**: All email templates render content in the recipient's profile language (en-US, pt-BR, es-ES) with app default locale as fallback
 - [x] **EMAIL-03**: DB tables exist for notification preferences (per-user toggles) and user invites (token, email, invitedBy, expiresAt)
-- [ ] **EMAIL-04**: Admin can invite a user by email; invited user receives email with registration link; invited user who registers via invite link is auto-approved (skips pending_approval)
-- [ ] **EMAIL-05**: When a deal is assigned to a new user, that user receives a deal-assigned email (respecting notification preferences)
-- [ ] **EMAIL-06**: Activities due within 1 hour receive a single reminder email (cron checks every 5 minutes, reminderSentAt column prevents duplicates)
-- [ ] **EMAIL-07**: Monday morning, opted-in users receive a weekly digest email with deals summary (new, stage moves, won, lost) and activities due (overdue + upcoming week)
+- [x] **EMAIL-04**: Admin can invite a user by email; invited user receives email with registration link; invited user who registers via invite link is auto-approved (skips pending_approval)
+- [x] **EMAIL-05**: When a deal is assigned to a new user, that user receives a deal-assigned email (respecting notification preferences)
+- [x] **EMAIL-06**: Activities due within 1 hour receive a single reminder email (cron checks every 5 minutes, reminderSentAt column prevents duplicates)
+- [x] **EMAIL-07**: Monday morning, opted-in users receive a weekly digest email with deals summary (new, stage moves, won, lost) and activities due (overdue + upcoming week)
 - [ ] **EMAIL-08**: Users can toggle deal-assigned, activity-reminder, and weekly-digest notifications independently at /settings/notifications
 - [ ] **EMAIL-09**: Notification preferences default to all-enabled; users who never visit settings receive all notification types
 - [ ] **EMAIL-10**: Email cron processor starts automatically on server boot via instrumentation.ts using setTimeout chaining pattern
@@ -103,10 +103,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EMAIL-01 | Phase 23 | Complete |
 | EMAIL-02 | Phase 23 | Complete |
 | EMAIL-03 | Phase 23 | Complete |
-| EMAIL-04 | Phase 23 | Pending |
-| EMAIL-05 | Phase 23 | Pending |
-| EMAIL-06 | Phase 23 | Pending |
-| EMAIL-07 | Phase 23 | Pending |
+| EMAIL-04 | Phase 23 | Complete |
+| EMAIL-05 | Phase 23 | Complete |
+| EMAIL-06 | Phase 23 | Complete |
+| EMAIL-07 | Phase 23 | Complete |
 | EMAIL-08 | Phase 23 | Pending |
 | EMAIL-09 | Phase 23 | Pending |
 | EMAIL-10 | Phase 23 | Pending |
