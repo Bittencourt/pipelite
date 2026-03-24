@@ -23,8 +23,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { updateUser, deactivateUser, reactivateUser } from "./actions"
+import { updateUser } from "./actions"
 import type { AllUser } from "./columns"
+import { DeactivateDialog } from "./deactivate-dialog"
 
 const formSchema = z.object({
   role: z.enum(["admin", "member"]),
@@ -43,6 +44,8 @@ interface EditUserDialogProps {
 export function EditUserDialog({ open, onOpenChange, user, currentUserId }: EditUserDialogProps) {
   const t = useTranslations("admin.users")
   const [isPending, startTransition] = useTransition()
+  const [deactivateDialogOpen, setDeactivateDialogOpen] = useState(false)
+  const [deactivateAction, setDeactivateAction] = useState<"deactivate" | "reactivate">("deactivate")
   const isSelf = user?.id === currentUserId
 
   const form = useForm<FormValues>({
@@ -85,31 +88,17 @@ export function EditUserDialog({ open, onOpenChange, user, currentUserId }: Edit
   }
 
   function handleDeactivate() {
-    if (!user) return
-    if (!window.confirm(t("confirmDeactivate"))) return
-    startTransition(async () => {
-      const result = await deactivateUser(user.id)
-      if (result.success) {
-        toast.success(t("userDeactivated"))
-        onOpenChange(false)
-      } else {
-        toast.error(result.error || t("updateFailed"))
-      }
-    })
+    setDeactivateAction("deactivate")
+    setDeactivateDialogOpen(true)
   }
 
   function handleReactivate() {
-    if (!user) return
-    if (!window.confirm(t("confirmReactivate"))) return
-    startTransition(async () => {
-      const result = await reactivateUser(user.id)
-      if (result.success) {
-        toast.success(t("userReactivated"))
-        onOpenChange(false)
-      } else {
-        toast.error(result.error || t("updateFailed"))
-      }
-    })
+    setDeactivateAction("reactivate")
+    setDeactivateDialogOpen(true)
+  }
+
+  function handleDeactivateComplete() {
+    onOpenChange(false)
   }
 
   if (!user) return null
@@ -117,6 +106,7 @@ export function EditUserDialog({ open, onOpenChange, user, currentUserId }: Edit
   const isDeactivated = user.deletedAt !== null
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
@@ -203,5 +193,13 @@ export function EditUserDialog({ open, onOpenChange, user, currentUserId }: Edit
         </form>
       </DialogContent>
     </Dialog>
+    <DeactivateDialog
+      open={deactivateDialogOpen}
+      onOpenChange={setDeactivateDialogOpen}
+      user={user}
+      action={deactivateAction}
+      onComplete={handleDeactivateComplete}
+    />
+  </>
   )
 }

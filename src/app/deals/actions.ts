@@ -11,9 +11,8 @@ import { users, notificationPreferences } from "@/db/schema"
 
 /**
  * Compute IDs of truly new assignees (not re-saved existing ones).
- * Exported for testability.
  */
-export function computeNewAssigneeIds(
+function computeNewAssigneeIds(
   currentIds: string[],
   updatedIds: string[]
 ): string[] {
