@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Reliability & Operations
 current_phase: 23-resend-email-integration-for-production
-current_plan: 23-02 (done)
+current_plan: 23-03 (done)
 status: executing
-last_updated: "2026-03-24T01:16:33.574Z"
+last_updated: "2026-03-24T01:24:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 12
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Session State
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md
 
 **Milestone:** v1.1 Reliability & Operations
 **Current phase:** 23-resend-email-integration-for-production
-**Current plan:** 23-02 (done)
+**Current plan:** 23-03 (done)
 **Status:** Executing
 
 ## Decisions
@@ -49,6 +49,11 @@ See: .planning/PROJECT.md
 - Cast createTranslator return type for dynamic namespace keys in email i18n helper
 - Applied migration SQL directly via psql (drizzle-kit migrate journal empty with existing schema)
 - [Phase 23]: WeeklyDigestData type co-located with weekly-digest template, re-exported from index
+- [Phase 23]: Signup page at (auth)/signup used instead of /register (plan referenced non-existent path)
+- [Phase 23]: Invite token validated via separate GET API endpoint for client-side pre-fill
+- [Phase 23]: Invited users set to approved status at creation (skip pending_approval)
+- [Phase 23]: Domain whitelist check skipped for valid invited users
+- [Phase 23]: Used Checkbox for notification toggles (no Switch component available)
 
 ### Quick Tasks Completed
 
@@ -74,3 +79,4 @@ See: .planning/PROJECT.md
 - 2026-03-24: Completed 23-00 (vitest config + 28 RED test skeletons for phase 23)
 - 2026-03-24: Completed 23-01 (DB foundation + email infrastructure: 3 tables, safeSend, i18n templates)
 - 2026-03-24: Completed 23-02 (4 email templates + send functions with i18n in 3 locales)
+- 2026-03-24: Completed 23-03 (invite user flow + notification preferences settings page)
