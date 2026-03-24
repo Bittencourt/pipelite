@@ -189,7 +189,7 @@ Plans:
 6. Monday morning, opted-in users receive a weekly digest with deals summary and activity counts
 7. Users can toggle deal-assigned, activity-reminder, and weekly-digest notifications at /settings/notifications
 
-**Plans:** 4 plans
+**Plans:** 1/5 plans executed
 
 Plans:
 - [ ] 23-01-PLAN.md — DB schemas (notification preferences, user invites, reminder column) + safe send wrapper + i18n email infrastructure + i18n existing templates
@@ -225,7 +225,7 @@ Plans:
 | 20. Import State Reliability | 2/2 | Complete    | 2026-03-23 | - |
 | 21. Formula Reactivity | v1.1 | 0/TBD | Not started | - |
 | 22. Bulk Operations | v1.1 | 0/TBD | Not started | - |
-| 23. Resend Email Integration | - | 0/4 | Not started | - |
+| 23. Resend Email Integration | 1/5 | In Progress|  | - |
 
 ---
 *Roadmap updated: 2026-03-23 — Phase 23 plans created (4 plans, 3 waves)*
