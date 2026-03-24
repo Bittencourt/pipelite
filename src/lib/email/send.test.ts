@@ -62,29 +62,133 @@ describe('safeSend', () => {
 })
 
 describe('sendInviteEmail', () => {
-  it('builds invite URL and calls safeSend with correct template', () => {
-    // TODO: implement in plan 23-02 (invite email template not yet created)
-    expect(true).toBe(true)
+  beforeEach(() => {
+    vi.resetModules()
+    mockSendMail.mockClear()
+  })
+
+  it('builds invite URL and calls safeSend with correct template', async () => {
+    process.env.SMTP_HOST = 'smtp.test.com'
+    process.env.NEXTAUTH_URL = 'https://app.test'
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    const { sendInviteEmail } = await import('./send')
+    await sendInviteEmail('user@example.com', 'abc123', 'John Doe', 'en-US')
+
+    expect(mockSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'user@example.com',
+      })
+    )
+    const call = mockSendMail.mock.calls[0][0]
+    expect(call.html).toContain('https://app.test/register?invite=abc123')
+    expect(call.html).toContain('John Doe')
+    expect(call.subject).toContain('app.test')
+    logSpy.mockRestore()
+  })
+
+  it('passes locale through to the template function', async () => {
+    process.env.SMTP_HOST = 'smtp.test.com'
+    process.env.NEXTAUTH_URL = 'https://app.test'
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    const { sendInviteEmail } = await import('./send')
+    await sendInviteEmail('user@example.com', 'abc123', 'John Doe', 'pt-BR')
+
+    const call = mockSendMail.mock.calls[0][0]
+    // pt-BR subject should be different from en-US
+    expect(call.subject).toContain('app.test')
+    expect(call.html).toContain('John Doe')
+    logSpy.mockRestore()
   })
 })
 
 describe('sendDealAssignedEmail', () => {
-  it('builds deal URL and calls safeSend', () => {
-    // TODO: implement in plan 23-02 (deal assigned template not yet created)
-    expect(true).toBe(true)
+  beforeEach(() => {
+    vi.resetModules()
+    mockSendMail.mockClear()
+  })
+
+  it('builds deal URL and calls safeSend', async () => {
+    process.env.SMTP_HOST = 'smtp.test.com'
+    process.env.NEXTAUTH_URL = 'https://app.test'
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    const { sendDealAssignedEmail } = await import('./send')
+    await sendDealAssignedEmail('user@example.com', 'deal-456', 'Big Deal', 'Jane Smith', 'en-US')
+
+    expect(mockSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'user@example.com',
+      })
+    )
+    const call = mockSendMail.mock.calls[0][0]
+    expect(call.html).toContain('https://app.test/deals/deal-456')
+    expect(call.html).toContain('Big Deal')
+    expect(call.html).toContain('Jane Smith')
+    expect(call.subject).toContain('Big Deal')
+    logSpy.mockRestore()
   })
 })
 
 describe('sendActivityReminderEmail', () => {
-  it('formats due date and calls safeSend', () => {
-    // TODO: implement in plan 23-02 (activity reminder template not yet created)
-    expect(true).toBe(true)
+  beforeEach(() => {
+    vi.resetModules()
+    mockSendMail.mockClear()
+  })
+
+  it('formats due date and calls safeSend', async () => {
+    process.env.SMTP_HOST = 'smtp.test.com'
+    process.env.NEXTAUTH_URL = 'https://app.test'
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    const { sendActivityReminderEmail } = await import('./send')
+    const dueDate = new Date('2026-03-25T14:00:00Z')
+    await sendActivityReminderEmail('user@example.com', 'Follow up call', dueDate, 'en-US')
+
+    expect(mockSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'user@example.com',
+      })
+    )
+    const call = mockSendMail.mock.calls[0][0]
+    expect(call.html).toContain('https://app.test/activities')
+    expect(call.html).toContain('Follow up call')
+    expect(call.subject).toContain('Follow up call')
+    logSpy.mockRestore()
   })
 })
 
 describe('sendWeeklyDigestEmail', () => {
-  it('calls safeSend with digest data', () => {
-    // TODO: implement in plan 23-02 (weekly digest template not yet created)
-    expect(true).toBe(true)
+  beforeEach(() => {
+    vi.resetModules()
+    mockSendMail.mockClear()
+  })
+
+  it('calls safeSend with digest data', async () => {
+    process.env.SMTP_HOST = 'smtp.test.com'
+    process.env.NEXTAUTH_URL = 'https://app.test'
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    const { sendWeeklyDigestEmail } = await import('./send')
+    await sendWeeklyDigestEmail('user@example.com', {
+      newDeals: 5,
+      dealsMovedStage: 3,
+      dealsWon: 2,
+      dealsLost: 1,
+      overdueActivities: 4,
+      upcomingActivities: 7,
+    }, 'en-US')
+
+    expect(mockSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'user@example.com',
+      })
+    )
+    const call = mockSendMail.mock.calls[0][0]
+    expect(call.html).toContain('https://app.test/dashboard')
+    expect(call.html).toContain('5')
+    expect(call.subject).toContain('app.test')
+    logSpy.mockRestore()
   })
 })
