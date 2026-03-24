@@ -16,8 +16,14 @@ import { customFieldDefinitions } from "./custom-fields"
 import { webhooks } from "./webhooks"
 import { webhookDeliveries } from "./webhook-deliveries"
 import { importSessions } from "./import-sessions"
+import { notificationPreferences } from "./notification-preferences"
+import { userInvites } from "./user-invites"
 
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
+  notificationPreferences: one(notificationPreferences, {
+    fields: [users.id],
+    references: [notificationPreferences.userId],
+  }),
   sessions: many(sessions),
   accounts: many(accounts),
   apiKeys: many(apiKeys),
@@ -171,6 +177,20 @@ export const dealAssigneesRelations = relations(dealAssignees, ({ one }) => ({
 export const importSessionsRelations = relations(importSessions, ({ one }) => ({
   user: one(users, {
     fields: [importSessions.userId],
+    references: [users.id],
+  }),
+}))
+
+export const notificationPreferencesRelations = relations(notificationPreferences, ({ one }) => ({
+  user: one(users, {
+    fields: [notificationPreferences.userId],
+    references: [users.id],
+  }),
+}))
+
+export const userInvitesRelations = relations(userInvites, ({ one }) => ({
+  inviter: one(users, {
+    fields: [userInvites.invitedBy],
     references: [users.id],
   }),
 }))

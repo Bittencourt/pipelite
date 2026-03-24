@@ -12,6 +12,7 @@ export const activities = pgTable('activities', {
   assigneeId: text('assignee_id').references(() => users.id),
   dueDate: timestamp('due_date', { mode: 'date' }).notNull(),
   completedAt: timestamp('completed_at', { mode: 'date' }), // null = not done, timestamp = done
+  reminderSentAt: timestamp('reminder_sent_at', { mode: 'date' }),
   notes: text('notes'),
   customFields: jsonb('custom_fields').$type<Record<string, unknown>>().default({}),
   createdAt: timestamp('created_at').defaultNow().notNull(),

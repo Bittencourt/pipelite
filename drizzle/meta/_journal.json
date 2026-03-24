@@ -50,6 +50,13 @@
       "when": 1774267074360,
       "tag": "0006_import-sessions-user-id",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1774314236633,
+      "tag": "0007_faithful_sunfire",
+      "breakpoints": true
     }
   ]
 }
