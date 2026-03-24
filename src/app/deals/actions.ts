@@ -6,6 +6,20 @@ import { deals, stages, organizations, people, dealAssignees } from "@/db/schema
 import { eq, and, isNull, sql, desc } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import { sendDealAssignedEmail } from "@/lib/email/send"
+import { users, notificationPreferences } from "@/db/schema"
+
+/**
+ * Compute IDs of truly new assignees (not re-saved existing ones).
+ * Exported for testability.
+ */
+export function computeNewAssigneeIds(
+  currentIds: string[],
+  updatedIds: string[]
+): string[] {
+  const currentSet = new Set(currentIds)
+  return updatedIds.filter((id) => !currentSet.has(id))
+}
 
 // Validation schema for deal data
 const dealSchema = z.object({
@@ -246,6 +260,13 @@ export async function updateDeal(
       .set(updateData)
       .where(eq(deals.id, id))
 
+    // Query current assignees BEFORE replacing
+    const currentAssignees = await db
+      .select({ userId: dealAssignees.userId })
+      .from(dealAssignees)
+      .where(eq(dealAssignees.dealId, id))
+    const currentAssigneeIds = currentAssignees.map((a) => a.userId)
+
     // Replace assignees (delete existing, insert new)
     await db.delete(dealAssignees).where(eq(dealAssignees.dealId, id))
     const updatedAssigneeIds = validated.data.assigneeIds ?? []
@@ -253,6 +274,43 @@ export async function updateDeal(
       await db.insert(dealAssignees).values(
         updatedAssigneeIds.map(userId => ({ dealId: id, userId }))
       )
+    }
+
+    // Send deal-assigned email to truly new assignees (fire-and-forget)
+    const newAssigneeUserIds = computeNewAssigneeIds(currentAssigneeIds, updatedAssigneeIds)
+    if (newAssigneeUserIds.length > 0) {
+      const dealName = deal.title
+      const assignerName = session.user.name || "Someone"
+
+      for (const assigneeUserId of newAssigneeUserIds) {
+        // Look up assignee user and notification preferences
+        const [assigneeUser] = await db
+          .select({ email: users.email, locale: users.locale })
+          .from(users)
+          .where(eq(users.id, assigneeUserId))
+          .limit(1)
+
+        if (!assigneeUser) continue
+
+        // Check notification preferences (default true if no row)
+        const [prefs] = await db
+          .select({ emailDealAssigned: notificationPreferences.emailDealAssigned })
+          .from(notificationPreferences)
+          .where(eq(notificationPreferences.userId, assigneeUserId))
+          .limit(1)
+
+        if (prefs && !prefs.emailDealAssigned) continue
+
+        sendDealAssignedEmail(
+          assigneeUser.email,
+          id,
+          dealName,
+          assignerName,
+          assigneeUser.locale
+        ).catch((error) => {
+          console.error("Failed to send deal-assigned email:", error)
+        })
+      }
     }
 
     revalidatePath("/deals")
