@@ -585,6 +585,38 @@
       "body": "Recibimos una solicitud para restablecer tu contraseña. Haz clic en el botón de abajo para crear una nueva contraseña.",
       "buttonText": "Restablecer Contraseña",
       "expiryNote": "Este enlace expira en 1 hora. Si no solicitaste restablecer tu contraseña, puedes ignorar este correo de forma segura."
+    },
+    "inviteUser": {
+      "subject": "Has sido invitado a {host}",
+      "heading": "Estas Invitado!",
+      "body": "{inviterName} te ha invitado a unirte a {host}. Haz clic en el botón de abajo para crear tu cuenta.",
+      "buttonText": "Crear Cuenta",
+      "expiryNote": "Esta invitación expira en 7 días."
+    },
+    "dealAssigned": {
+      "subject": "Negocio asignado a ti: {dealName}",
+      "heading": "Negocio Asignado",
+      "body": "{assignerName} te asignó el negocio \"{dealName}\".",
+      "buttonText": "Ver Negocio"
+    },
+    "activityReminder": {
+      "subject": "Recordatorio: {activityTitle} vence pronto",
+      "heading": "Recordatorio de Actividad",
+      "body": "Tu actividad \"{activityTitle}\" vence a las {dueDate}.",
+      "buttonText": "Ver Actividad"
+    },
+    "weeklyDigest": {
+      "subject": "Resumen Semanal - {host}",
+      "heading": "Tu Resumen Semanal",
+      "dealsHeading": "Negocios Esta Semana",
+      "newDeals": "Nuevos negocios: {count}",
+      "dealsMovedStage": "Negocios que cambiaron de etapa: {count}",
+      "dealsWon": "Negocios ganados: {count}",
+      "dealsLost": "Negocios perdidos: {count}",
+      "activitiesHeading": "Actividades",
+      "overdueActivities": "Atrasadas: {count}",
+      "upcomingActivities": "Próximas esta semana: {count}",
+      "buttonText": "Ir al Panel"
     }
   }
 }

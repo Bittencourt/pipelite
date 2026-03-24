@@ -585,6 +585,38 @@
       "body": "Recebemos uma solicitação para redefinir sua senha. Clique no botão abaixo para criar uma nova senha.",
       "buttonText": "Redefinir Senha",
       "expiryNote": "Este link expira em 1 hora. Se você não solicitou a redefinição de senha, pode ignorar este e-mail com segurança."
+    },
+    "inviteUser": {
+      "subject": "Você foi convidado para {host}",
+      "heading": "Você Foi Convidado!",
+      "body": "{inviterName} convidou você para participar de {host}. Clique no botão abaixo para criar sua conta.",
+      "buttonText": "Criar Conta",
+      "expiryNote": "Este convite expira em 7 dias."
+    },
+    "dealAssigned": {
+      "subject": "Negócio atribuído a você: {dealName}",
+      "heading": "Negócio Atribuído",
+      "body": "{assignerName} atribuiu o negócio \"{dealName}\" a você.",
+      "buttonText": "Ver Negócio"
+    },
+    "activityReminder": {
+      "subject": "Lembrete: {activityTitle} vence em breve",
+      "heading": "Lembrete de Atividade",
+      "body": "Sua atividade \"{activityTitle}\" vence em {dueDate}.",
+      "buttonText": "Ver Atividade"
+    },
+    "weeklyDigest": {
+      "subject": "Resumo Semanal - {host}",
+      "heading": "Seu Resumo Semanal",
+      "dealsHeading": "Negócios Esta Semana",
+      "newDeals": "Novos negócios: {count}",
+      "dealsMovedStage": "Negócios que mudaram de etapa: {count}",
+      "dealsWon": "Negócios ganhos: {count}",
+      "dealsLost": "Negócios perdidos: {count}",
+      "activitiesHeading": "Atividades",
+      "overdueActivities": "Atrasadas: {count}",
+      "upcomingActivities": "Próximas esta semana: {count}",
+      "buttonText": "Ir para o Painel"
     }
   }
 }

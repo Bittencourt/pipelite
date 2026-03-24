@@ -1,3 +1,8 @@
 export { getVerifyEmailTemplate } from "./verify-email"
 export { getApprovedEmailTemplate } from "./approved"
 export { getPasswordResetTemplate } from "./password-reset"
+export { getInviteUserTemplate } from "./invite-user"
+export { getDealAssignedTemplate } from "./deal-assigned"
+export { getActivityReminderTemplate } from "./activity-reminder"
+export { getWeeklyDigestTemplate } from "./weekly-digest"
+export type { WeeklyDigestData } from "./weekly-digest"

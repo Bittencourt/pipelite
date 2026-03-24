@@ -585,6 +585,38 @@
       "body": "We received a request to reset your password. Click the button below to create a new password.",
       "buttonText": "Reset Password",
       "expiryNote": "This link will expire in 1 hour. If you did not request a password reset, you can safely ignore this email."
+    },
+    "inviteUser": {
+      "subject": "You've been invited to {host}",
+      "heading": "You're Invited!",
+      "body": "{inviterName} has invited you to join {host}. Click the button below to create your account.",
+      "buttonText": "Create Account",
+      "expiryNote": "This invitation expires in 7 days."
+    },
+    "dealAssigned": {
+      "subject": "Deal assigned to you: {dealName}",
+      "heading": "Deal Assigned",
+      "body": "{assignerName} assigned the deal \"{dealName}\" to you.",
+      "buttonText": "View Deal"
+    },
+    "activityReminder": {
+      "subject": "Reminder: {activityTitle} due soon",
+      "heading": "Activity Reminder",
+      "body": "Your activity \"{activityTitle}\" is due at {dueDate}.",
+      "buttonText": "View Activity"
+    },
+    "weeklyDigest": {
+      "subject": "Weekly Summary - {host}",
+      "heading": "Your Weekly Summary",
+      "dealsHeading": "Deals This Week",
+      "newDeals": "New deals: {count}",
+      "dealsMovedStage": "Deals moved stage: {count}",
+      "dealsWon": "Deals won: {count}",
+      "dealsLost": "Deals lost: {count}",
+      "activitiesHeading": "Activities",
+      "overdueActivities": "Overdue: {count}",
+      "upcomingActivities": "Upcoming this week: {count}",
+      "buttonText": "Go to Dashboard"
     }
   }
 }
