@@ -269,6 +269,20 @@
       "localization": "Localization",
       "localizationDescription": "Customize how the application displays language, dates, and times"
     },
+    "notifications": {
+      "title": "Notification Preferences",
+      "subtitle": "Choose which email notifications you receive",
+      "dealAssigned": "Deal assigned to me",
+      "dealAssignedDescription": "Receive an email when a deal is assigned to you",
+      "activityReminder": "Activity reminders",
+      "activityReminderDescription": "Receive reminders for upcoming activities",
+      "weeklyDigest": "Weekly digest",
+      "weeklyDigestDescription": "Receive a weekly summary of your deals and activities",
+      "save": "Save",
+      "saving": "Saving...",
+      "saved": "Notification preferences saved",
+      "saveFailed": "Failed to save notification preferences"
+    },
     "apiKeys": {
       "title": "API Keys",
       "subtitle": "Manage API keys for external tool access",

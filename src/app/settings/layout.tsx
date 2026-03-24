@@ -1,7 +1,7 @@
 import { auth } from "@/auth"
 import { redirect } from "next/navigation"
 import { headers } from "next/headers"
-import { Key, UserCircle } from "lucide-react"
+import { Bell, Key, UserCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const settingsNav = [
@@ -14,6 +14,11 @@ const settingsNav = [
     title: "API Keys",
     href: "/settings/api-keys",
     icon: Key,
+  },
+  {
+    title: "Notifications",
+    href: "/settings/notifications",
+    icon: Bell,
   },
 ]
 

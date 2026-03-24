@@ -269,6 +269,20 @@
       "localization": "Localização",
       "localizationDescription": "Personalize como o aplicativo exibe idioma, datas e horários"
     },
+    "notifications": {
+      "title": "Preferencias de Notificacao",
+      "subtitle": "Escolha quais notificacoes por e-mail voce recebe",
+      "dealAssigned": "Negocio atribuido a mim",
+      "dealAssignedDescription": "Receber e-mail quando um negocio for atribuido a voce",
+      "activityReminder": "Lembretes de atividades",
+      "activityReminderDescription": "Receber lembretes para atividades proximas",
+      "weeklyDigest": "Resumo semanal",
+      "weeklyDigestDescription": "Receber um resumo semanal de seus negocios e atividades",
+      "save": "Salvar",
+      "saving": "Salvando...",
+      "saved": "Preferencias de notificacao salvas",
+      "saveFailed": "Falha ao salvar preferencias de notificacao"
+    },
     "apiKeys": {
       "title": "Chaves de API",
       "subtitle": "Gerencie chaves de API para acesso de ferramentas externas",
