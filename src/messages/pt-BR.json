@@ -563,5 +563,28 @@
     "noUsers": "Nenhum membro da equipe encontrado",
     "noDeals": "Nenhum negócio atribuído",
     "noActivities": "Nenhuma atividade próxima"
+  },
+  "emails": {
+    "verifyEmail": {
+      "subject": "Verifique seu e-mail para {host}",
+      "heading": "Verifique Seu E-mail",
+      "body": "Clique no botão abaixo para verificar seu endereço de e-mail e continuar seu cadastro.",
+      "buttonText": "Verificar Endereço de E-mail",
+      "expiryNote": "Este link expira em 24 horas. Se você não criou uma conta, pode ignorar este e-mail com segurança."
+    },
+    "approved": {
+      "subject": "Sua conta foi aprovada - {host}",
+      "heading": "Conta Aprovada!",
+      "body": "Ótimas notícias! Sua conta foi aprovada por um administrador. Agora você pode entrar e começar a usar a plataforma.",
+      "buttonText": "Entrar Agora",
+      "contactNote": "Se você tiver alguma dúvida, entre em contato com seu administrador."
+    },
+    "passwordReset": {
+      "subject": "Redefinir sua senha - {host}",
+      "heading": "Redefinir Sua Senha",
+      "body": "Recebemos uma solicitação para redefinir sua senha. Clique no botão abaixo para criar uma nova senha.",
+      "buttonText": "Redefinir Senha",
+      "expiryNote": "Este link expira em 1 hora. Se você não solicitou a redefinição de senha, pode ignorar este e-mail com segurança."
+    }
   }
 }

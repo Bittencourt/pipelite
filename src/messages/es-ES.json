@@ -563,5 +563,28 @@
     "noUsers": "No se encontraron miembros del equipo",
     "noDeals": "Sin negocios asignados",
     "noActivities": "Sin actividades próximas"
+  },
+  "emails": {
+    "verifyEmail": {
+      "subject": "Verifica tu correo para {host}",
+      "heading": "Verifica Tu Correo",
+      "body": "Haz clic en el botón de abajo para verificar tu dirección de correo y continuar tu registro.",
+      "buttonText": "Verificar Correo",
+      "expiryNote": "Este enlace expira en 24 horas. Si no creaste una cuenta, puedes ignorar este correo de forma segura."
+    },
+    "approved": {
+      "subject": "Tu cuenta ha sido aprobada - {host}",
+      "heading": "Cuenta Aprobada!",
+      "body": "Buenas noticias! Tu cuenta ha sido aprobada por un administrador. Ahora puedes iniciar sesión y comenzar a usar la plataforma.",
+      "buttonText": "Iniciar Sesión",
+      "contactNote": "Si tienes alguna pregunta, contacta a tu administrador."
+    },
+    "passwordReset": {
+      "subject": "Restablecer tu contraseña - {host}",
+      "heading": "Restablecer Tu Contraseña",
+      "body": "Recibimos una solicitud para restablecer tu contraseña. Haz clic en el botón de abajo para crear una nueva contraseña.",
+      "buttonText": "Restablecer Contraseña",
+      "expiryNote": "Este enlace expira en 1 hora. Si no solicitaste restablecer tu contraseña, puedes ignorar este correo de forma segura."
+    }
   }
 }

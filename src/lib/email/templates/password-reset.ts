@@ -1,9 +1,13 @@
-export function getPasswordResetTemplate(
+import { getEmailTranslator } from '../i18n'
+
+export async function getPasswordResetTemplate(
   resetUrl: string,
-  host: string
+  host: string,
+  locale: string = 'en-US'
 ) {
+  const t = await getEmailTranslator(locale, 'emails.passwordReset')
   return {
-    subject: `Reset your password - ${host}`,
+    subject: t('subject', { host }),
     html: `
       <!DOCTYPE html>
       <html>
@@ -14,15 +18,15 @@ export function getPasswordResetTemplate(
         <table width="100%" style="max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
           <tr>
             <td style="padding: 40px; text-align: center;">
-              <h1 style="margin: 0 0 20px; color: #333;">Reset Your Password</h1>
+              <h1 style="margin: 0 0 20px; color: #333;">${t('heading')}</h1>
               <p style="color: #666; margin-bottom: 30px;">
-                We received a request to reset your password. Click the button below to create a new password.
+                ${t('body')}
               </p>
               <a href="${resetUrl}" style="display: inline-block; background: #346df1; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 500;">
-                Reset Password
+                ${t('buttonText')}
               </a>
               <p style="color: #999; font-size: 13px; margin-top: 30px;">
-                This link will expire in 1 hour. If you did not request a password reset, you can safely ignore this email.
+                ${t('expiryNote')}
               </p>
             </td>
           </tr>
@@ -30,6 +34,6 @@ export function getPasswordResetTemplate(
       </body>
       </html>
     `,
-    text: `Reset your password for ${host}\n\nClick this link to reset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you did not request this, ignore this email.`,
+    text: `${t('subject', { host })}\n\n${t('body')}\n\n${resetUrl}\n\n${t('expiryNote')}`,
   }
 }
