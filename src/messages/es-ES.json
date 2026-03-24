@@ -366,6 +366,18 @@
         "pending_approval": "Pendiente de Aprobación",
         "pending_verification": "Verificacion Pendiente",
         "rejected": "Rechazado"
+      },
+      "invite": {
+        "inviteUser": "Invitar Usuario",
+        "inviteDescription": "Enviar una invitacion por correo a un nuevo usuario",
+        "emailLabel": "Correo Electronico",
+        "emailPlaceholder": "usuario@ejemplo.com",
+        "sendInvite": "Enviar Invitacion",
+        "sending": "Enviando...",
+        "cancel": "Cancelar",
+        "inviteSent": "Invitacion enviada exitosamente",
+        "inviteFailed": "Error al enviar la invitacion",
+        "invalidEmail": "Por favor, ingrese un correo electronico valido"
       }
     },
     "pipelines": {

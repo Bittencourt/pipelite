@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
-import { users, verificationTokens } from "@/db/schema"
+import { users, verificationTokens, userInvites } from "@/db/schema"
 import { hashPassword } from "@/lib/password"
 import { sendVerificationEmail } from "@/lib/email/send"
 import { isDomainAllowed } from "@/lib/domain-whitelist"
-import { eq } from "drizzle-orm"
+import { eq, and, isNull, gt } from "drizzle-orm"
 import { z } from "zod"
 import { createHash } from "crypto"
 
 const signupSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters").max(128),
+  inviteToken: z.string().optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -26,17 +27,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { email, password } = result.data
+    const { email, password, inviteToken } = result.data
     const normalizedEmail = email.toLowerCase().trim()
 
+    // Validate invite token if provided
+    let validInvite: typeof userInvites.$inferSelect | null = null
+    if (inviteToken) {
+      const invite = await db.query.userInvites.findFirst({
+        where: and(
+          eq(userInvites.token, inviteToken),
+          isNull(userInvites.acceptedAt),
+          gt(userInvites.expiresAt, new Date())
+        ),
+      })
+      if (invite && invite.email === normalizedEmail) {
+        validInvite = invite
+      }
+      // If invite is invalid, continue with normal signup flow
+    }
+
     // Check domain whitelist BEFORE checking if user exists
-    // This prevents leaking whether an email is registered
-    const domainAllowed = await isDomainAllowed(normalizedEmail)
-    if (!domainAllowed) {
-      return NextResponse.json(
-        { error: "Signups from this email domain are not allowed" },
-        { status: 400 }
-      )
+    // Skip domain check for valid invited users
+    if (!validInvite) {
+      const domainAllowed = await isDomainAllowed(normalizedEmail)
+      if (!domainAllowed) {
+        return NextResponse.json(
+          { error: "Signups from this email domain are not allowed" },
+          { status: 400 }
+        )
+      }
     }
 
     // Check for existing user
@@ -61,15 +80,24 @@ export async function POST(request: NextRequest) {
 
     // Create user with pending_verification status
     // First user becomes admin automatically (self-hosted bootstrapping pattern)
+    // Invited users are set to approved status (skip pending_approval after email verification)
     const [user] = await db
       .insert(users)
       .values({
         email: normalizedEmail,
         passwordHash,
-        status: "pending_verification",
+        status: validInvite ? "approved" : "pending_verification",
         role: isFirstUser ? "admin" : "member",
       })
       .returning()
+
+    // If this was a valid invite, mark it as accepted
+    if (validInvite) {
+      await db
+        .update(userInvites)
+        .set({ acceptedAt: new Date() })
+        .where(eq(userInvites.id, validInvite.id))
+    }
 
     // Generate verification token
     const rawToken = crypto.randomUUID()
@@ -82,7 +110,7 @@ export async function POST(request: NextRequest) {
       expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
     })
 
-    // Send verification email
+    // Send verification email (still required even for invited users)
     await sendVerificationEmail(normalizedEmail, rawToken)
 
     return NextResponse.json({

@@ -9,6 +9,7 @@ import { AllUsersClient } from "./all-users-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { UserCheck, Users } from "lucide-react"
 import { getTranslations } from 'next-intl/server'
+import { InviteDialog } from "./invite-dialog"
 
 async function getPendingUsers(): Promise<PendingUser[]> {
   const pendingUsers = await db
@@ -61,11 +62,14 @@ export default async function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">{t('userManagement')}</h1>
-        <p className="text-muted-foreground">
-          {t('reviewApprove')}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">{t('userManagement')}</h1>
+          <p className="text-muted-foreground">
+            {t('reviewApprove')}
+          </p>
+        </div>
+        <InviteDialog />
       </div>
 
       <Card>

@@ -2,10 +2,10 @@
 
 import { auth } from "@/auth"
 import { db } from "@/db"
-import { users, rejectedSignups } from "@/db/schema"
-import { eq, and, isNull, isNotNull } from "drizzle-orm"
+import { users, rejectedSignups, userInvites } from "@/db/schema"
+import { eq, and, isNull, isNotNull, gt } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
-import { sendApprovalEmail } from "@/lib/email/send"
+import { sendApprovalEmail, sendInviteEmail } from "@/lib/email/send"
 import { z } from "zod"
 
 const updateUserSchema = z.object({
@@ -218,6 +218,82 @@ export async function reactivateUser(
       updatedAt: new Date(),
     })
     .where(eq(users.id, userId))
+
+  revalidatePath("/admin/users")
+  return { success: true }
+}
+
+const inviteEmailSchema = z.object({
+  email: z.string().email("Invalid email address"),
+})
+
+/**
+ * Invite a user by email
+ * - Validates email format
+ * - Checks no active user exists with that email
+ * - Checks no pending (non-expired, non-accepted) invite exists
+ * - Creates invite record with 7-day expiry
+ * - Fire-and-forget sends invite email
+ */
+export async function inviteUser(
+  email: string
+): Promise<{ success: boolean; error?: string }> {
+  const session = await auth()
+
+  if (!session?.user || session.user.role !== "admin") {
+    return { success: false, error: "Unauthorized: Admin access required" }
+  }
+
+  const parsed = inviteEmailSchema.safeParse({ email })
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0].message }
+  }
+
+  const normalizedEmail = parsed.data.email.toLowerCase().trim()
+
+  // Check if email already has an active user
+  const existingUser = await db.query.users.findFirst({
+    where: and(
+      eq(users.email, normalizedEmail),
+      isNull(users.deletedAt)
+    ),
+  })
+
+  if (existingUser) {
+    return { success: false, error: "A user with this email already exists" }
+  }
+
+  // Check if a pending invite already exists (not expired, not accepted)
+  const existingInvite = await db.query.userInvites.findFirst({
+    where: and(
+      eq(userInvites.email, normalizedEmail),
+      isNull(userInvites.acceptedAt),
+      gt(userInvites.expiresAt, new Date())
+    ),
+  })
+
+  if (existingInvite) {
+    return { success: false, error: "A pending invite already exists for this email" }
+  }
+
+  // Generate token and set expiry (7 days)
+  const token = crypto.randomUUID()
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+
+  // Insert invite record
+  await db.insert(userInvites).values({
+    email: normalizedEmail,
+    token,
+    invitedBy: session.user.id,
+    expiresAt,
+  })
+
+  // Fire-and-forget email send
+  sendInviteEmail(normalizedEmail, token, session.user.name || "Admin").catch(
+    (error) => {
+      console.error("Failed to send invite email:", error)
+    }
+  )
 
   revalidatePath("/admin/users")
   return { success: true }
