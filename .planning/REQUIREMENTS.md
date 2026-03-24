@@ -34,6 +34,19 @@ Requirements for Reliability & Operations milestone. Each maps to roadmap phases
 - [ ] **BULK-03**: User can bulk reassign owner for selected records (member picker; partial failure surfaced per record)
 - [ ] **BULK-04**: User can export only the currently selected records to CSV (scoped export, not full table)
 
+### Email & Notifications (Phase 23)
+
+- [ ] **EMAIL-01**: When SMTP_HOST is not configured, all email send functions log a warning and return without error (silent fail -- registration and other flows still complete)
+- [ ] **EMAIL-02**: All email templates render content in the recipient's profile language (en-US, pt-BR, es-ES) with app default locale as fallback
+- [ ] **EMAIL-03**: DB tables exist for notification preferences (per-user toggles) and user invites (token, email, invitedBy, expiresAt)
+- [ ] **EMAIL-04**: Admin can invite a user by email; invited user receives email with registration link; invited user who registers via invite link is auto-approved (skips pending_approval)
+- [ ] **EMAIL-05**: When a deal is assigned to a new user, that user receives a deal-assigned email (respecting notification preferences)
+- [ ] **EMAIL-06**: Activities due within 1 hour receive a single reminder email (cron checks every 5 minutes, reminderSentAt column prevents duplicates)
+- [ ] **EMAIL-07**: Monday morning, opted-in users receive a weekly digest email with deals summary (new, stage moves, won, lost) and activities due (overdue + upcoming week)
+- [ ] **EMAIL-08**: Users can toggle deal-assigned, activity-reminder, and weekly-digest notifications independently at /settings/notifications
+- [ ] **EMAIL-09**: Notification preferences default to all-enabled; users who never visit settings receive all notification types
+- [ ] **EMAIL-10**: Email cron processor starts automatically on server boot via instrumentation.ts using setTimeout chaining pattern
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -87,14 +100,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BULK-02 | Phase 22 | Pending |
 | BULK-03 | Phase 22 | Pending |
 | BULK-04 | Phase 22 | Pending |
+| EMAIL-01 | Phase 23 | Pending |
+| EMAIL-02 | Phase 23 | Pending |
+| EMAIL-03 | Phase 23 | Pending |
+| EMAIL-04 | Phase 23 | Pending |
+| EMAIL-05 | Phase 23 | Pending |
+| EMAIL-06 | Phase 23 | Pending |
+| EMAIL-07 | Phase 23 | Pending |
+| EMAIL-08 | Phase 23 | Pending |
+| EMAIL-09 | Phase 23 | Pending |
+| EMAIL-10 | Phase 23 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 12 total
-- Mapped to phases: 12
-- Unmapped: 0 ✓
+- Phase 23 requirements: 10 total
+- Mapped to phases: 22
+- Unmapped: 0
 
 Note: Phase 18 (DB Infrastructure) is a prerequisite phase that contains no requirements of its own. It delivers the `webhook_deliveries` and `import_sessions` tables that WHOOK-01 and IMPORT-01 build upon.
 
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-14 — traceability updated for v1.1 roadmap (Phases 17-22)*
+*Last updated: 2026-03-23 — added EMAIL-01 through EMAIL-10 for Phase 23*

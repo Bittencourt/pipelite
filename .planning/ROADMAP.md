@@ -172,6 +172,33 @@ Plans:
 
 ---
 
+### Phase 23: Resend Email Integration for Production
+
+**Goal:** Email delivery is production-ready with Resend SMTP, all templates support i18n, 4 new transactional email types are wired (invite user, deal assigned, activity reminder, weekly digest), and users can manage notification preferences.
+
+**Depends on:** None (standalone feature phase, uses existing email infrastructure)
+
+**Requirements:** EMAIL-01, EMAIL-02, EMAIL-03, EMAIL-04, EMAIL-05, EMAIL-06, EMAIL-07, EMAIL-08, EMAIL-09, EMAIL-10
+
+**Success Criteria** (what must be TRUE when this phase completes):
+1. When SMTP_HOST is not configured, all email functions log a warning and return without error -- registration and other flows still complete
+2. All email templates (existing and new) render content in the recipient's locale (en-US, pt-BR, es-ES)
+3. Admin can invite a user by email; invited user who registers via the invite link is auto-approved
+4. Assigning a deal to a new user triggers a deal-assigned email notification (respecting preferences)
+5. Activities due within 1 hour receive a single reminder email; no duplicates on subsequent cron ticks
+6. Monday morning, opted-in users receive a weekly digest with deals summary and activity counts
+7. Users can toggle deal-assigned, activity-reminder, and weekly-digest notifications at /settings/notifications
+
+**Plans:** 4 plans
+
+Plans:
+- [ ] 23-01-PLAN.md — DB schemas (notification preferences, user invites, reminder column) + safe send wrapper + i18n email infrastructure + i18n existing templates
+- [ ] 23-02-PLAN.md — 4 new email templates with i18n + send functions
+- [ ] 23-03-PLAN.md — Invite user flow + notification preferences settings page
+- [ ] 23-04-PLAN.md — Deal-assigned trigger + email cron processor (activity reminders + weekly digest)
+
+---
+
 ## Progress
 
 | Phase | Milestone | Plans | Status | Completed |
@@ -195,19 +222,10 @@ Plans:
 | 17. TypeScript Cleanup | v1.1 | 1/1 | Complete | 2026-03-14 |
 | 18. DB Infrastructure | v1.1 | 1 plan | Not started | - |
 | 19. Webhook Reliability | v1.1 | Complete    | 2026-03-22 | 2026-03-22 |
-| 20. Import State Reliability | 2/2 | Complete   | 2026-03-23 | - |
+| 20. Import State Reliability | 2/2 | Complete    | 2026-03-23 | - |
 | 21. Formula Reactivity | v1.1 | 0/TBD | Not started | - |
 | 22. Bulk Operations | v1.1 | 0/TBD | Not started | - |
-
-### Phase 23: Resend email integration for production
-
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 22
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (run /gsd:plan-phase 23 to break down)
+| 23. Resend Email Integration | - | 0/4 | Not started | - |
 
 ---
-*Roadmap updated: 2026-03-23 — Phase 20 plans created (2 plans, 2 waves)*
+*Roadmap updated: 2026-03-23 — Phase 23 plans created (4 plans, 3 waves)*
