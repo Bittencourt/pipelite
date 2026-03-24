@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Reliability & Operations
 current_phase: 23-resend-email-integration-for-production
-current_plan: 23-00 (done)
+current_plan: 23-01 (done)
 status: executing
 last_updated: "2026-03-24T01:04:34.431Z"
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 12
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Session State
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md
 
 **Milestone:** v1.1 Reliability & Operations
 **Current phase:** 23-resend-email-integration-for-production
-**Current plan:** 23-00 (done)
+**Current plan:** 23-01 (done)
 **Status:** Executing
 
 ## Decisions
@@ -46,6 +46,8 @@ See: .planning/PROJECT.md
 - Only new interrupted-state strings use i18n; existing hardcoded strings left as-is
 - All placeholder tests use expect(true).toBe(false) to ensure RED until implementation
 - vitest environment set to node (no jsdom needed for server-side email tests)
+- Cast createTranslator return type for dynamic namespace keys in email i18n helper
+- Applied migration SQL directly via psql (drizzle-kit migrate journal empty with existing schema)
 
 ### Quick Tasks Completed
 
@@ -69,3 +71,4 @@ See: .planning/PROJECT.md
 - 2026-03-23: Completed 20-01 (DB-backed import state, userId column, startup cleanup)
 - 2026-03-23: Completed 20-02 (wire DB-backed state into import actions, interrupted UX)
 - 2026-03-24: Completed 23-00 (vitest config + 28 RED test skeletons for phase 23)
+- 2026-03-24: Completed 23-01 (DB foundation + email infrastructure: 3 tables, safeSend, i18n templates)

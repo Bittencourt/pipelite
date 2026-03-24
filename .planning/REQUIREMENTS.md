@@ -36,9 +36,9 @@ Requirements for Reliability & Operations milestone. Each maps to roadmap phases
 
 ### Email & Notifications (Phase 23)
 
-- [ ] **EMAIL-01**: When SMTP_HOST is not configured, all email send functions log a warning and return without error (silent fail -- registration and other flows still complete)
-- [ ] **EMAIL-02**: All email templates render content in the recipient's profile language (en-US, pt-BR, es-ES) with app default locale as fallback
-- [ ] **EMAIL-03**: DB tables exist for notification preferences (per-user toggles) and user invites (token, email, invitedBy, expiresAt)
+- [x] **EMAIL-01**: When SMTP_HOST is not configured, all email send functions log a warning and return without error (silent fail -- registration and other flows still complete)
+- [x] **EMAIL-02**: All email templates render content in the recipient's profile language (en-US, pt-BR, es-ES) with app default locale as fallback
+- [x] **EMAIL-03**: DB tables exist for notification preferences (per-user toggles) and user invites (token, email, invitedBy, expiresAt)
 - [ ] **EMAIL-04**: Admin can invite a user by email; invited user receives email with registration link; invited user who registers via invite link is auto-approved (skips pending_approval)
 - [ ] **EMAIL-05**: When a deal is assigned to a new user, that user receives a deal-assigned email (respecting notification preferences)
 - [ ] **EMAIL-06**: Activities due within 1 hour receive a single reminder email (cron checks every 5 minutes, reminderSentAt column prevents duplicates)
@@ -100,9 +100,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BULK-02 | Phase 22 | Pending |
 | BULK-03 | Phase 22 | Pending |
 | BULK-04 | Phase 22 | Pending |
-| EMAIL-01 | Phase 23 | Pending |
-| EMAIL-02 | Phase 23 | Pending |
-| EMAIL-03 | Phase 23 | Pending |
+| EMAIL-01 | Phase 23 | Complete |
+| EMAIL-02 | Phase 23 | Complete |
+| EMAIL-03 | Phase 23 | Complete |
 | EMAIL-04 | Phase 23 | Pending |
 | EMAIL-05 | Phase 23 | Pending |
 | EMAIL-06 | Phase 23 | Pending |
