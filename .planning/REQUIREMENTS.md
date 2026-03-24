@@ -45,7 +45,7 @@ Requirements for Reliability & Operations milestone. Each maps to roadmap phases
 - [x] **EMAIL-07**: Monday morning, opted-in users receive a weekly digest email with deals summary (new, stage moves, won, lost) and activities due (overdue + upcoming week)
 - [x] **EMAIL-08**: Users can toggle deal-assigned, activity-reminder, and weekly-digest notifications independently at /settings/notifications
 - [x] **EMAIL-09**: Notification preferences default to all-enabled; users who never visit settings receive all notification types
-- [ ] **EMAIL-10**: Email cron processor starts automatically on server boot via instrumentation.ts using setTimeout chaining pattern
+- [x] **EMAIL-10**: Email cron processor starts automatically on server boot via instrumentation.ts using setTimeout chaining pattern
 
 ## v2 Requirements
 
@@ -109,7 +109,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EMAIL-07 | Phase 23 | Complete |
 | EMAIL-08 | Phase 23 | Complete |
 | EMAIL-09 | Phase 23 | Complete |
-| EMAIL-10 | Phase 23 | Pending |
+| EMAIL-10 | Phase 23 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 12 total

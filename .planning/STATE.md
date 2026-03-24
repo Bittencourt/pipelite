@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Reliability & Operations
 current_phase: 23-resend-email-integration-for-production
-current_plan: 23-03 (done)
+current_plan: 23-04 (done)
 status: executing
-last_updated: "2026-03-24T01:24:00.000Z"
+last_updated: "2026-03-24T01:30:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # Session State
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md
 
 **Milestone:** v1.1 Reliability & Operations
 **Current phase:** 23-resend-email-integration-for-production
-**Current plan:** 23-03 (done)
+**Current plan:** 23-04 (done)
 **Status:** Executing
 
 ## Decisions
@@ -54,6 +54,8 @@ See: .planning/PROJECT.md
 - [Phase 23]: Invited users set to approved status at creation (skip pending_approval)
 - [Phase 23]: Domain whitelist check skipped for valid invited users
 - [Phase 23]: Used Checkbox for notification toggles (no Switch component available)
+- [Phase 23]: Won/lost deals derived from stage.type enum (no status field on deals table)
+- [Phase 23]: Deal stats queried once globally, activity data per-user for weekly digest efficiency
 
 ### Quick Tasks Completed
 
@@ -80,3 +82,4 @@ See: .planning/PROJECT.md
 - 2026-03-24: Completed 23-01 (DB foundation + email infrastructure: 3 tables, safeSend, i18n templates)
 - 2026-03-24: Completed 23-02 (4 email templates + send functions with i18n in 3 locales)
 - 2026-03-24: Completed 23-03 (invite user flow + notification preferences settings page)
+- 2026-03-24: Completed 23-04 (email triggers + cron processor for reminders and weekly digest)
