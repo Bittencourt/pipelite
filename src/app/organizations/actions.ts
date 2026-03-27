@@ -6,23 +6,18 @@ import { organizations } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
-
-// Validation schema for organization data
-const organizationSchema = z.object({
-  name: z.string().min(1, "Name is required").max(100, "Name must be 100 characters or less"),
-  website: z.string().url("Invalid website URL").optional().or(z.literal("")),
-  industry: z.string().max(50, "Industry must be 50 characters or less").optional(),
-  notes: z.string().max(2000, "Notes must be 2000 characters or less").optional(),
-  customFields: z.record(z.string(), z.unknown()).optional(),
-})
-
-const updateOrganizationSchema = organizationSchema.partial()
+import {
+  createOrganizationMutation,
+  updateOrganizationMutation,
+  deleteOrganizationMutation,
+  organizationSchema,
+  updateOrganizationSchema,
+} from "@/lib/mutations/organizations"
 
 /**
  * Create a new organization
  * - Validates user is authenticated
- * - Validates input with organizationSchema
- * - Creates organization with current user as owner
+ * - Delegates to mutation layer for validation, insert, and event emission
  * - Returns success with organization ID or error
  */
 export async function createOrganization(
@@ -35,35 +30,25 @@ export async function createOrganization(
     return { success: false, error: "Not authenticated" }
   }
 
-  // Validate input
-  const validated = organizationSchema.safeParse(data)
-  if (!validated.success) {
-    return { success: false, error: validated.error.issues[0]?.message || "Invalid input" }
+  const result = await createOrganizationMutation({
+    ...data,
+    userId: session.user.id,
+  })
+
+  if (!result.success) {
+    return result
   }
 
-  try {
-    const [organization] = await db.insert(organizations).values({
-      name: validated.data.name,
-      website: validated.data.website || null,
-      industry: validated.data.industry || null,
-      notes: validated.data.notes || null,
-      ownerId: session.user.id,
-    }).returning()
+  revalidatePath("/organizations")
 
-    revalidatePath("/organizations")
-
-    return { success: true, id: organization.id }
-  } catch (error) {
-    console.error("Failed to create organization:", error)
-    return { success: false, error: "Failed to create organization" }
-  }
+  return { success: true, id: result.id }
 }
 
 /**
  * Update an existing organization
  * - Validates user is authenticated
  * - Verifies user owns the organization
- * - Updates organization with validated data
+ * - Delegates to mutation layer for update and event emission
  * - Returns success or error
  */
 export async function updateOrganization(
@@ -77,13 +62,7 @@ export async function updateOrganization(
     return { success: false, error: "Not authenticated" }
   }
 
-  // Validate input
-  const validated = updateOrganizationSchema.safeParse(data)
-  if (!validated.success) {
-    return { success: false, error: validated.error.issues[0]?.message || "Invalid input" }
-  }
-
-  // Check if organization exists and user owns it
+  // Check ownership
   const organization = await db.query.organizations.findFirst({
     where: and(
       eq(organizations.id, id),
@@ -99,30 +78,23 @@ export async function updateOrganization(
     return { success: false, error: "Not authorized" }
   }
 
-  try {
-    await db
-      .update(organizations)
-      .set({
-        ...validated.data,
-        updatedAt: new Date(),
-      })
-      .where(eq(organizations.id, id))
+  const result = await updateOrganizationMutation(id, data, session.user.id)
 
-    revalidatePath("/organizations")
-    revalidatePath(`/organizations/${id}`)
-
-    return { success: true }
-  } catch (error) {
-    console.error("Failed to update organization:", error)
-    return { success: false, error: "Failed to update organization" }
+  if (!result.success) {
+    return result
   }
+
+  revalidatePath("/organizations")
+  revalidatePath(`/organizations/${id}`)
+
+  return { success: true }
 }
 
 /**
  * Delete an organization (soft delete)
  * - Validates user is authenticated
  * - Verifies user owns the organization
- * - Sets deletedAt timestamp (soft delete)
+ * - Delegates to mutation layer for delete and event emission
  * - Returns success or error
  */
 export async function deleteOrganization(
@@ -135,7 +107,7 @@ export async function deleteOrganization(
     return { success: false, error: "Not authenticated" }
   }
 
-  // Check if organization exists and user owns it
+  // Check ownership
   const organization = await db.query.organizations.findFirst({
     where: and(
       eq(organizations.id, id),
@@ -151,21 +123,13 @@ export async function deleteOrganization(
     return { success: false, error: "Not authorized" }
   }
 
-  try {
-    // Soft delete - set deletedAt timestamp
-    await db
-      .update(organizations)
-      .set({
-        deletedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(organizations.id, id))
+  const result = await deleteOrganizationMutation(id, session.user.id)
 
-    revalidatePath("/organizations")
-
-    return { success: true }
-  } catch (error) {
-    console.error("Failed to delete organization:", error)
-    return { success: false, error: "Failed to delete organization" }
+  if (!result.success) {
+    return result
   }
+
+  revalidatePath("/organizations")
+
+  return { success: true }
 }
