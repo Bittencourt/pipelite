@@ -57,6 +57,13 @@
       "when": 1774314236633,
       "tag": "0007_faithful_sunfire",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1774574184636,
+      "tag": "0008_cuddly_sprite",
+      "breakpoints": true
     }
   ]
 }

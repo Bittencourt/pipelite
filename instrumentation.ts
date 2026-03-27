@@ -8,5 +8,8 @@ export async function register() {
 
     const { cleanupStaleImportSessions } = await import("@/lib/import/import-session-cleanup")
     await cleanupStaleImportSessions()
+
+    const { registerWebhookSubscriber } = await import("@/lib/events/subscribers/webhook")
+    registerWebhookSubscriber()
   }
 }
