@@ -4,7 +4,7 @@ import { Problems } from "@/lib/api/errors"
 import { parsePagination } from "@/lib/api/pagination"
 import { paginatedResponse, createdResponse } from "@/lib/api/response"
 import { serializeCustomFieldDefinition } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
+
 import { db } from "@/db"
 import { customFieldDefinitions } from "@/db/schema"
 import { eq, and, isNull, desc, sql, asc } from "drizzle-orm"
@@ -101,9 +101,6 @@ export async function POST(request: NextRequest) {
       createdAt: now,
       updatedAt: now,
     }).returning()
-
-    // Trigger webhook
-    triggerWebhook(ctx.userId, "custom_field_definition.created", "custom_field_definition", field.id, "created", serializeCustomFieldDefinition(field))
 
     return createdResponse(serializeCustomFieldDefinition(field))
   })

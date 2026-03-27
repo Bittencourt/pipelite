@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
     // Insert all people
     const inserted = await db.insert(people).values(insertValues).returning()
 
-    // Emit CRM events for each created person (replaces direct triggerWebhook)
+    // Emit CRM events for each created person via bus
     for (const person of inserted) {
       crmBus.emit("person.created", {
         entity: "person",

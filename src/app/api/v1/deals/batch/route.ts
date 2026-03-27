@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
     // Insert all deals
     const inserted = await db.insert(deals).values(insertValues).returning()
 
-    // Emit CRM events for each created deal (replaces direct triggerWebhook)
+    // Emit CRM events for each created deal via bus
     for (const deal of inserted) {
       crmBus.emit("deal.created", {
         entity: "deal",

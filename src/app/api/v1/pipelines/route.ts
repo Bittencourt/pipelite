@@ -5,7 +5,7 @@ import { parsePagination } from "@/lib/api/pagination"
 import { parseExpand } from "@/lib/api/expand"
 import { paginatedResponse, createdResponse } from "@/lib/api/response"
 import { serializePipeline, serializeStage } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
+
 import { db } from "@/db"
 import { pipelines } from "@/db/schema"
 import { eq, and, isNull, desc, sql } from "drizzle-orm"
@@ -110,9 +110,6 @@ export async function POST(request: NextRequest) {
       createdAt: now,
       updatedAt: now,
     }).returning()
-
-    // Trigger webhook
-    triggerWebhook(ctx.userId, "pipeline.created", "pipeline", pipeline.id, "created", serializePipeline(pipeline))
 
     return createdResponse(serializePipeline(pipeline))
   })

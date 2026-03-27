@@ -5,7 +5,7 @@ import { parseExpand } from "@/lib/api/expand"
 import { paginatedResponse, createdResponse } from "@/lib/api/response"
 import { Problems } from "@/lib/api/errors"
 import { serializeOrganization } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
+import { createOrganizationMutation } from "@/lib/mutations/organizations"
 import { db } from "@/db"
 import { organizations } from "@/db/schema/organizations"
 import { and, eq, isNull, count, sql } from "drizzle-orm"
@@ -92,29 +92,20 @@ export async function POST(request: NextRequest) {
 
     const { name, website, industry, notes, custom_fields } = parseResult.data
 
-    // Insert organization
-    const [org] = await db
-      .insert(organizations)
-      .values({
-        name,
-        website,
-        industry,
-        notes,
-        ownerId: context.userId,
-        customFields: custom_fields || {},
-      })
-      .returning()
+    // Use mutation (handles insert + event emission)
+    const result = await createOrganizationMutation({
+      name,
+      website,
+      industry,
+      notes,
+      customFields: custom_fields,
+      userId: context.userId,
+    })
 
-    // Trigger webhook
-    triggerWebhook(
-      context.userId,
-      "organization.created",
-      "organization",
-      org.id,
-      "created",
-      serializeOrganization(org)
-    )
+    if (!result.success) {
+      return Problems.validation([{ field: "body", code: "mutation_error", message: result.error }])
+    }
 
-    return createdResponse(serializeOrganization(org))
+    return createdResponse(serializeOrganization(result.organization))
   })
 }

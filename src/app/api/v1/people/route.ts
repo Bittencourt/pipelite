@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
       })
       .returning()
 
-    // Emit CRM event via bus (replaces direct triggerWebhook)
+    // Emit CRM event via bus
     crmBus.emit("person.created", {
       entity: "person",
       entityId: person.id,

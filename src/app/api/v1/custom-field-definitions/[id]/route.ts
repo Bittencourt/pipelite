@@ -3,7 +3,7 @@ import { withApiAuth, ApiAuthContext } from "@/lib/api/auth"
 import { Problems } from "@/lib/api/errors"
 import { singleResponse, noContentResponse } from "@/lib/api/response"
 import { serializeCustomFieldDefinition } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
+
 import { db } from "@/db"
 import { customFieldDefinitions } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
@@ -89,9 +89,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .where(eq(customFieldDefinitions.id, id))
       .returning()
 
-    // Trigger webhook
-    triggerWebhook(ctx.userId, "custom_field_definition.updated", "custom_field_definition", updatedField.id, "updated", serializeCustomFieldDefinition(updatedField))
-
     return singleResponse(serializeCustomFieldDefinition(updatedField))
   })
 }
@@ -114,9 +111,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     await db.update(customFieldDefinitions)
       .set({ deletedAt: new Date() })
       .where(eq(customFieldDefinitions.id, id))
-
-    // Trigger webhook
-    triggerWebhook(ctx.userId, "custom_field_definition.deleted", "custom_field_definition", id, "deleted", { id })
 
     return noContentResponse()
   })

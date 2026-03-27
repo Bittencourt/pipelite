@@ -181,7 +181,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .where(eq(people.id, id))
       .returning()
 
-    // Emit CRM event via bus (replaces direct triggerWebhook)
+    // Emit CRM event via bus
     crmBus.emit("person.updated", {
       entity: "person",
       entityId: updated.id,
@@ -222,7 +222,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       })
       .where(eq(people.id, id))
 
-    // Emit CRM event via bus (replaces direct triggerWebhook)
+    // Emit CRM event via bus
     crmBus.emit("person.deleted", {
       entity: "person",
       entityId: id,

@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { withApiAuth, ApiAuthContext } from "@/lib/api/auth"
 import { Problems } from "@/lib/api/errors"
 import { serializeOrganization } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
-import { db } from "@/db"
-import { organizations } from "@/db/schema/organizations"
+import { createOrganizationMutation } from "@/lib/mutations/organizations"
 import { z } from "zod"
 
 const MAX_BATCH_SIZE = 100
@@ -52,35 +50,24 @@ export async function POST(request: NextRequest) {
 
     const items = parseResult.data
 
-    // Insert all organizations
-    const inserted = await db
-      .insert(organizations)
-      .values(
-        items.map((item) => ({
-          ...item,
-          ownerId: context.userId,
-        }))
-      )
-      .returning()
-
-    // Trigger webhooks for each created organization
-    for (const org of inserted) {
-      triggerWebhook(
-        context.userId,
-        "organization.created",
-        "organization",
-        org.id,
-        "created",
-        serializeOrganization(org)
-      )
+    // Create each organization via mutation (handles insert + event emission)
+    const created = []
+    for (const item of items) {
+      const result = await createOrganizationMutation({
+        ...item,
+        userId: context.userId,
+      })
+      if (result.success) {
+        created.push(result.organization)
+      }
     }
 
     // Return response with created items and meta
     return NextResponse.json({
-      data: inserted.map(serializeOrganization),
+      data: created.map(serializeOrganization),
       meta: {
-        created: inserted.length,
-        total: inserted.length,
+        created: created.length,
+        total: created.length,
       },
     })
   })

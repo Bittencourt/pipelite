@@ -4,7 +4,7 @@ import { Problems } from "@/lib/api/errors"
 import { parseExpand } from "@/lib/api/expand"
 import { singleResponse, noContentResponse } from "@/lib/api/response"
 import { serializePipeline, serializeStage } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
+
 import { db } from "@/db"
 import { pipelines } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
@@ -130,9 +130,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .where(eq(pipelines.id, id))
       .returning()
 
-    // Trigger webhook
-    triggerWebhook(ctx.userId, "pipeline.updated", "pipeline", updatedPipeline.id, "updated", serializePipeline(updatedPipeline))
-
     return singleResponse(serializePipeline(updatedPipeline))
   })
 }
@@ -160,9 +157,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     await db.update(pipelines)
       .set({ deletedAt: new Date() })
       .where(eq(pipelines.id, id))
-
-    // Trigger webhook
-    triggerWebhook(ctx.userId, "pipeline.deleted", "pipeline", id, "deleted", { id })
 
     return noContentResponse()
   })

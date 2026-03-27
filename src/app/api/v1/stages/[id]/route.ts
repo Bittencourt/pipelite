@@ -4,7 +4,7 @@ import { Problems } from "@/lib/api/errors"
 import { parseExpand } from "@/lib/api/expand"
 import { singleResponse, noContentResponse } from "@/lib/api/response"
 import { serializeStage, serializePipeline } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
+
 import { db } from "@/db"
 import { stages, pipelines } from "@/db/schema"
 import { eq, and } from "drizzle-orm"
@@ -131,9 +131,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .where(eq(stages.id, id))
       .returning()
 
-    // Trigger webhook
-    triggerWebhook(ctx.userId, "stage.updated", "stage", updatedStage.id, "updated", serializeStage(updatedStage))
-
     return singleResponse(serializeStage(updatedStage))
   })
 }
@@ -155,9 +152,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     // Hard delete (stages don't have soft delete in the schema)
     await db.delete(stages).where(eq(stages.id, id))
-
-    // Trigger webhook
-    triggerWebhook(ctx.userId, "stage.deleted", "stage", id, "deleted", { id })
 
     return noContentResponse()
   })
