@@ -1,124 +1,116 @@
-# Requirements: Pipelite
+# Requirements: Pipelite v1.2 Workflows
 
-**Defined:** 2026-03-14
-**Core Value:** API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features can be built externally via the API.
+**Defined:** 2026-03-26
+**Core Value:** API-complete CRM core that handles fundamentals well
 
-## v1.1 Requirements
+## v1.2 Requirements
 
-Requirements for Reliability & Operations milestone. Each maps to roadmap phases.
+### Triggers
 
-### TypeScript Hygiene
+- [ ] **TRIG-01**: User can trigger a workflow when a CRM entity is created, updated, or deleted
+- [ ] **TRIG-02**: User can trigger a workflow when a deal changes stage (with old/new stage data)
+- [ ] **TRIG-03**: User can manually run a workflow with test data or a selected record
+- [ ] **TRIG-04**: User can trigger a workflow on a cron/schedule (interval or cron expression)
+- [ ] **TRIG-05**: User can trigger a workflow via an inbound webhook URL (external HTTP call)
+- [ ] **TRIG-06**: User can filter triggers by field change detection ("only run if field X changed")
 
-- [x] **TSFIX-01**: Admin can build the project without suppressed TypeScript errors (`ignoreBuildErrors` removed from `next.config.ts`, `tsc --noEmit` passes clean)
+### Actions
 
-### Webhooks
+- [ ] **ACT-01**: User can make HTTP requests (GET/POST/PUT/PATCH/DELETE) with variable interpolation in URL, headers, and body
+- [ ] **ACT-02**: User can create/update CRM entities (deals, people, orgs, activities) as workflow actions
+- [ ] **ACT-03**: User can send emails with template variables from trigger/node data
+- [ ] **ACT-04**: User can send internal notifications to team members
+- [ ] **ACT-05**: User can write custom JavaScript transforms in a QuickJS sandbox
+- [ ] **ACT-06**: User can configure HTTP retry count (0-3) with backoff per HTTP node
+- [ ] **ACT-07**: User can send a custom HTTP response back to inbound webhook callers
 
-- [x] **WHOOK-01**: Webhook delivery retries survive container restarts (durable DB-backed delivery via `webhook_deliveries` table — replaces in-process `setTimeout` retries)
-- [x] **WHOOK-02**: Admin can view delivery history (success/failure log with HTTP status and timestamp) per webhook endpoint in the admin UI
-- [x] **WHOOK-03**: Admin can see dead-letter entries (exhausted retries) and manually replay a failed delivery from the admin UI
+### Flow Control
 
-### Import State
+- [ ] **FLOW-01**: User can add condition/IF nodes with field comparisons (equals, contains, greater than, is empty, etc.)
+- [ ] **FLOW-02**: User can add delay/wait nodes to pause execution for N minutes/hours/days
 
-- [x] **IMPORT-01**: Pipedrive import progress survives container restarts (DB-backed `import_sessions` table replaces in-memory Map)
-- [x] **IMPORT-02**: User can cancel an in-progress import and have that cancellation persist across restarts
+### Editor
 
-### Formula Reactivity
+- [ ] **EDIT-01**: User can create and edit workflows in a visual linear/branching editor
+- [ ] **EDIT-02**: User can configure each node's settings via a side panel
+- [ ] **EDIT-03**: User can pick variables from trigger data and previous node outputs via autocomplete
+- [ ] **EDIT-04**: User can add/remove/reorder nodes in the flow
 
-- [ ] **FORMULA-01**: Formula field values are recalculated server-side when any entity field is saved (values stored in JSONB; appear in API responses, exports, and webhook payloads)
-- [ ] **FORMULA-02**: Formula recalculation only runs for formulas whose referenced source fields actually changed (dependency-aware, prevents fan-out during bulk saves)
+### Execution
 
-### Bulk Operations
+- [ ] **EXEC-01**: User can enable/disable workflows with an on/off toggle
+- [ ] **EXEC-02**: User can view run history with status (success/failed/running/waiting)
+- [ ] **EXEC-03**: User can view per-node execution details (input/output/error) for each run
+- [ ] **EXEC-04**: User can see clear error messages on failed nodes
 
-- [ ] **BULK-01**: User can select multiple records via checkbox column on Organizations, People, Deals, and Activities list pages (header select-all, individual row checkboxes)
-- [ ] **BULK-02**: User can bulk delete selected records (count-aware confirmation modal; per-record permission check; partial failure surfaced)
-- [ ] **BULK-03**: User can bulk reassign owner for selected records (member picker; partial failure surfaced per record)
-- [ ] **BULK-04**: User can export only the currently selected records to CSV (scoped export, not full table)
+### Templates
 
-### Email & Notifications (Phase 23)
-
-- [x] **EMAIL-01**: When SMTP_HOST is not configured, all email send functions log a warning and return without error (silent fail -- registration and other flows still complete)
-- [x] **EMAIL-02**: All email templates render content in the recipient's profile language (en-US, pt-BR, es-ES) with app default locale as fallback
-- [x] **EMAIL-03**: DB tables exist for notification preferences (per-user toggles) and user invites (token, email, invitedBy, expiresAt)
-- [x] **EMAIL-04**: Admin can invite a user by email; invited user receives email with registration link; invited user who registers via invite link is auto-approved (skips pending_approval)
-- [x] **EMAIL-05**: When a deal is assigned to a new user, that user receives a deal-assigned email (respecting notification preferences)
-- [x] **EMAIL-06**: Activities due within 1 hour receive a single reminder email (cron checks every 5 minutes, reminderSentAt column prevents duplicates)
-- [x] **EMAIL-07**: Monday morning, opted-in users receive a weekly digest email with deals summary (new, stage moves, won, lost) and activities due (overdue + upcoming week)
-- [x] **EMAIL-08**: Users can toggle deal-assigned, activity-reminder, and weekly-digest notifications independently at /settings/notifications
-- [x] **EMAIL-09**: Notification preferences default to all-enabled; users who never visit settings receive all notification types
-- [x] **EMAIL-10**: Email cron processor starts automatically on server boot via instrumentation.ts using setTimeout chaining pattern
+- [ ] **TMPL-01**: User can use built-in HTTP templates for common services (Planka, Apprise, Slack, Discord, Tally, Typeform)
+- [ ] **TMPL-02**: User can create and save custom HTTP templates for reuse
+- [ ] **TMPL-03**: User can start a new workflow from built-in workflow templates (5-10)
+- [ ] **TMPL-04**: User can import/export workflows as JSON
 
 ## v2 Requirements
 
-Deferred to future release. Tracked but not in current roadmap.
+### Advanced Flow Control
 
-### Webhooks
+- **FLOW-03**: User can execute parallel/concurrent branches with merge
+- **FLOW-04**: User can call sub-workflows from within a workflow
 
-- **WHOOK-04**: Admin can configure auto-disable of a webhook endpoint after N consecutive delivery failures
-- **WHOOK-05**: Admin can view webhook delivery analytics (volume, success rate, latency over time)
+### Versioning
 
-### Bulk Operations
-
-- **BULK-05**: User can bulk edit a single field value across selected records (HIGH complexity — requires formula recalculation coordination)
-
-### Import
-
-- **IMPORT-03**: Admin can view import history and audit trail (what was imported, when, by whom)
-
-### Formula
-
-- **FORMULA-03**: Formula fields show live preview while editing a record (client-side QuickJS evaluation remains optional, server-cached value displayed by default)
+- **VER-01**: User can view workflow version history and rollback to a previous version
 
 ## Out of Scope
 
-Explicitly excluded. Documented to prevent scope creep.
-
 | Feature | Reason |
 |---------|--------|
-| Email sync/integration | External tools via API |
-| Workflow automation | External tools via API |
-| Multi-tenancy | Single company per deployment — architectural constraint |
-| Native integrations (Slack, Zapier, etc.) | API allows external integration |
-| Mobile app | Web-first, responsive design sufficient |
-| Redis as hard dependency | Must remain optional — all v1.1 features use PostgreSQL |
-| Webhook retry backed by Redis/BullMQ | pg-boss covers the need without making Redis mandatory |
+| Free-form canvas editor (n8n/Make style) | Massive complexity; linear/branching covers 95% of CRM use cases |
+| AI/LLM agent nodes | Requires LLM API key management, prompt UX, token costs; users can call AI APIs via HTTP node |
+| Native third-party integration nodes | Maintaining 400+ nodes is a project in itself; generic HTTP + templates covers the need |
+| Visual debugging / step-through execution | Complex to build; run history with per-node details is sufficient |
+| Approval/human-in-the-loop nodes | Enterprise feature; delay + manual trigger pattern suffices |
+| Marketplace for community workflows | Operational overhead; import/export JSON is sufficient |
+| Real-time collaborative editing | WebSocket complexity for marginal value; last-save-wins |
+| Rate limiting / quota management | Single-tenant, no billing concerns; log counts for visibility only |
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TSFIX-01 | Phase 17 | Complete |
-| WHOOK-01 | Phase 19 | Complete |
-| WHOOK-02 | Phase 19 | Complete |
-| WHOOK-03 | Phase 19 | Complete |
-| IMPORT-01 | Phase 20 | Complete |
-| IMPORT-02 | Phase 20 | Complete |
-| FORMULA-01 | Phase 21 | Pending |
-| FORMULA-02 | Phase 21 | Pending |
-| BULK-01 | Phase 22 | Pending |
-| BULK-02 | Phase 22 | Pending |
-| BULK-03 | Phase 22 | Pending |
-| BULK-04 | Phase 22 | Pending |
-| EMAIL-01 | Phase 23 | Complete |
-| EMAIL-02 | Phase 23 | Complete |
-| EMAIL-03 | Phase 23 | Complete |
-| EMAIL-04 | Phase 23 | Complete |
-| EMAIL-05 | Phase 23 | Complete |
-| EMAIL-06 | Phase 23 | Complete |
-| EMAIL-07 | Phase 23 | Complete |
-| EMAIL-08 | Phase 23 | Complete |
-| EMAIL-09 | Phase 23 | Complete |
-| EMAIL-10 | Phase 23 | Complete |
+| TRIG-01 | — | Pending |
+| TRIG-02 | — | Pending |
+| TRIG-03 | — | Pending |
+| TRIG-04 | — | Pending |
+| TRIG-05 | — | Pending |
+| TRIG-06 | — | Pending |
+| ACT-01 | — | Pending |
+| ACT-02 | — | Pending |
+| ACT-03 | — | Pending |
+| ACT-04 | — | Pending |
+| ACT-05 | — | Pending |
+| ACT-06 | — | Pending |
+| ACT-07 | — | Pending |
+| FLOW-01 | — | Pending |
+| FLOW-02 | — | Pending |
+| EDIT-01 | — | Pending |
+| EDIT-02 | — | Pending |
+| EDIT-03 | — | Pending |
+| EDIT-04 | — | Pending |
+| EXEC-01 | — | Pending |
+| EXEC-02 | — | Pending |
+| EXEC-03 | — | Pending |
+| EXEC-04 | — | Pending |
+| TMPL-01 | — | Pending |
+| TMPL-02 | — | Pending |
+| TMPL-03 | — | Pending |
+| TMPL-04 | — | Pending |
 
 **Coverage:**
-- v1.1 requirements: 12 total
-- Phase 23 requirements: 10 total
-- Mapped to phases: 22
-- Unmapped: 0
-
-Note: Phase 18 (DB Infrastructure) is a prerequisite phase that contains no requirements of its own. It delivers the `webhook_deliveries` and `import_sessions` tables that WHOOK-01 and IMPORT-01 build upon.
+- v1.2 requirements: 27 total
+- Mapped to phases: 0
+- Unmapped: 27 ⚠️
 
 ---
-*Requirements defined: 2026-03-14*
-*Last updated: 2026-03-23 — added EMAIL-01 through EMAIL-10 for Phase 23*
+*Requirements defined: 2026-03-26*
+*Last updated: 2026-03-26 after initial definition*
