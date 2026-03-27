@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
-current_phase: 24
-current_plan: 2
 status: executing
-last_updated: "2026-03-27"
+last_updated: "2026-03-27T01:26:06.824Z"
+last_activity: 2026-03-27 -- 24-03 complete (workflow CRUD API + mutations + server actions)
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
+  completed_plans: 3
+  percent: 8
 ---
 
 # Session State
@@ -25,23 +25,26 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 24 of 30 (Schema & Event Infrastructure) -- first of 7 phases in v1.2
-Plan: 1 of 4 complete, next: 24-02
+Plan: 3 of 4 complete, next: 24-04
 Status: Executing
-Last activity: 2026-03-27 -- 24-01 complete (workflow schema + event bus)
+Last activity: 2026-03-27 -- 24-03 complete (workflow CRUD API + mutations + server actions)
 
-Progress: [██░░░░░░░░] 4% (1/27 plans)
+Progress: [██░░░░░░░░] 8% (3/27 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 85 (across v1.0 + v1.1)
-- v1.2 plans completed: 1
+- v1.2 plans completed: 3
 
 ## Decisions
 
 - Used globalThis singleton pattern for CrmEventBus (hot-reload safety)
 - Added removeAllListeners to bus for test isolation
 - Split TDD task into two commits (event bus + tests, then schema + migration)
+- Used z.input<> instead of z.infer<> for createWorkflow param type so Zod defaults work transparently
+- Workflows not owner-scoped; all authenticated users can CRUD any workflow
+- Introduced mutation layer pattern (src/lib/mutations/) for reusable DB operations
 
 ### Quick Tasks Completed
 
@@ -75,3 +78,4 @@ None yet.
 - 2026-03-26: Requirements defined (27 v1.2 requirements)
 - 2026-03-26: Roadmap created (7 phases: 24-30)
 - 2026-03-27: 24-01 complete -- workflow schema (4 tables), CRM event bus (13 events), webhook subscriber
+- 2026-03-27: 24-03 complete -- workflow CRUD mutations, REST API (/api/v1/workflows), server actions, serializeWorkflow

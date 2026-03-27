@@ -45,7 +45,7 @@
 
 ### API
 
-- [ ] **API-01**: User can CRUD workflows via REST API (list, get, create, update, delete)
+- [x] **API-01**: User can CRUD workflows via REST API (list, get, create, update, delete)
 - [ ] **API-02**: User can trigger a workflow execution via REST API
 - [ ] **API-03**: User can list workflow runs and view run details (including per-node results) via REST API
 - [ ] **API-04**: User can manage workflow templates via REST API (list, get, create, delete)
@@ -111,7 +111,7 @@
 | TMPL-01 | Phase 30 | Pending |
 | TMPL-02 | Phase 30 | Pending |
 | TMPL-03 | Phase 30 | Pending |
-| API-01 | Phase 24 | Pending |
+| API-01 | Phase 24 | Complete |
 | API-02 | Phase 25 | Pending |
 | API-03 | Phase 29 | Pending |
 | API-04 | Phase 30 | Pending |
