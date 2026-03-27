@@ -2,49 +2,150 @@
 
 ## Milestones
 
-- ✅ **v1.0 MVP** — Phases 1-16 (shipped 2026-03-14)
-- ✅ **v1.1 Reliability & Operations** — Phases 17-20, 23 (shipped 2026-03-26)
+- ✅ **v1.0 MVP** -- Phases 1-16 (shipped 2026-03-14)
+- ✅ **v1.1 Reliability & Operations** -- Phases 17-20, 23 (shipped 2026-03-26)
+- [ ] **v1.2 Workflows** -- Phases 24-30 (in progress)
 
 ## Phases
 
 <details>
-<summary>✅ v1.0 MVP (Phases 1-16) — SHIPPED 2026-03-14</summary>
+<summary>v1.0 MVP (Phases 1-16) -- SHIPPED 2026-03-14</summary>
 
-- [x] Phase 1: Foundation & Authentication (6/6 plans) — completed 2026-02-22
-- [x] Phase 2: Organizations (3/3 plans) — completed 2026-02-22
-- [x] Phase 3: People (3/3 plans) — completed 2026-02-22
-- [x] Phase 4: Pipelines & Stages (4/4 plans) — completed 2026-02-23
-- [x] Phase 5: Deals & Kanban (3/3 plans) — completed 2026-02-24
-- [x] Phase 6: Activities (4/4 plans) — completed 2026-02-25
-- [x] Phase 7: Custom Fields & Formulas (11/11 plans) — completed 2026-02-28
-- [x] Phase 8: Search & Filtering (3/3 plans) — completed 2026-02-28
-- [x] Phase 9: Import/Export (3/3 plans) — completed 2026-02-28
-- [x] Phase 10: REST API (4/4 plans) — completed 2026-03-01
-- [x] Phase 11: Keyboard Control (5/5 plans) — completed 2026-03-02
-- [x] Phase 12: Localization (5/5 plans) — completed 2026-03-05
-- [x] Phase 13: Comprehensive Documentation (4/4 plans) — completed 2026-03-06
-- [x] Phase 14: Dashboard Metrics (3/3 plans) — completed 2026-03-07
-- [x] Phase 15: Multi-user Collaboration (6/6 plans) — completed 2026-03-07
-- [x] Phase 16: Pipedrive API Importer (6/6 plans) — completed 2026-03-08
+- [x] Phase 1: Foundation & Authentication (6/6 plans) -- completed 2026-02-22
+- [x] Phase 2: Organizations (3/3 plans) -- completed 2026-02-22
+- [x] Phase 3: People (3/3 plans) -- completed 2026-02-22
+- [x] Phase 4: Pipelines & Stages (4/4 plans) -- completed 2026-02-23
+- [x] Phase 5: Deals & Kanban (3/3 plans) -- completed 2026-02-24
+- [x] Phase 6: Activities (4/4 plans) -- completed 2026-02-25
+- [x] Phase 7: Custom Fields & Formulas (11/11 plans) -- completed 2026-02-28
+- [x] Phase 8: Search & Filtering (3/3 plans) -- completed 2026-02-28
+- [x] Phase 9: Import/Export (3/3 plans) -- completed 2026-02-28
+- [x] Phase 10: REST API (4/4 plans) -- completed 2026-03-01
+- [x] Phase 11: Keyboard Control (5/5 plans) -- completed 2026-03-02
+- [x] Phase 12: Localization (5/5 plans) -- completed 2026-03-05
+- [x] Phase 13: Comprehensive Documentation (4/4 plans) -- completed 2026-03-06
+- [x] Phase 14: Dashboard Metrics (3/3 plans) -- completed 2026-03-07
+- [x] Phase 15: Multi-user Collaboration (6/6 plans) -- completed 2026-03-07
+- [x] Phase 16: Pipedrive API Importer (6/6 plans) -- completed 2026-03-08
 
 Full archive: `.planning/milestones/v1.0-ROADMAP.md`
 
 </details>
 
 <details>
-<summary>✅ v1.1 Reliability & Operations (Phases 17-20, 23) — SHIPPED 2026-03-26</summary>
+<summary>v1.1 Reliability & Operations (Phases 17-20, 23) -- SHIPPED 2026-03-26</summary>
 
-- [x] Phase 17: TypeScript Cleanup (1/1 plan) — completed 2026-03-14
-- [x] Phase 18: DB Infrastructure (1/1 plan) — completed 2026-03-14
-- [x] Phase 19: Webhook Reliability (3/3 plans) — completed 2026-03-22
-- [x] Phase 20: Import State Reliability (2/2 plans) — completed 2026-03-23
-- [x] Phase 23: Resend Email Integration (5/5 plans) — completed 2026-03-24
+- [x] Phase 17: TypeScript Cleanup (1/1 plan) -- completed 2026-03-14
+- [x] Phase 18: DB Infrastructure (1/1 plan) -- completed 2026-03-14
+- [x] Phase 19: Webhook Reliability (3/3 plans) -- completed 2026-03-22
+- [x] Phase 20: Import State Reliability (2/2 plans) -- completed 2026-03-23
+- [x] Phase 23: Resend Email Integration (5/5 plans) -- completed 2026-03-24
 
 Full archive: `.planning/milestones/v1.1-ROADMAP.md`
 
 </details>
 
+### v1.2 Workflows (In Progress)
+
+**Milestone Goal:** Add a server-side workflow automation engine with a visual linear/branching editor, deeply integrated with CRM events and external services.
+
+- [ ] **Phase 24: Schema & Event Infrastructure** - Database tables, in-process event bus, shared mutation functions, CRM event emission
+- [ ] **Phase 25: Trigger System** - CRM event triggers, cron schedules, manual runs, inbound webhooks, field change filtering
+- [ ] **Phase 26: Execution Engine & Flow Control** - Async graph walker, condition/IF nodes, delay nodes, workflow enable/disable
+- [ ] **Phase 27: Action Nodes** - HTTP requests, CRM mutations, email sending, notifications, JS sandbox, webhook responses
+- [ ] **Phase 28: Visual Editor** - Linear/branching node editor, node configuration panel, variable picker, node management
+- [ ] **Phase 29: Run History & Observability** - Run list with status, per-node execution details, error display
+- [ ] **Phase 30: Templates & Portability** - Built-in HTTP templates, custom templates, workflow starter templates, JSON import/export
+
+## Phase Details
+
+### Phase 24: Schema & Event Infrastructure
+**Goal**: All database tables and event plumbing exist so trigger, engine, and action code can be built on a stable foundation
+**Depends on**: Nothing (first phase of v1.2)
+**Requirements**: API-01
+**Success Criteria** (what must be TRUE):
+  1. Workflow, workflow_run, workflow_run_step, and workflow_template tables exist with correct schema and indexes
+  2. An in-process event bus can emit and receive CRM events (create/update/delete on deals, people, orgs, activities)
+  3. Existing server actions (createDeal, updateDeal, deleteDeal, etc.) emit events through the bus without breaking current behavior
+  4. Shared mutation functions are extracted from server actions so they can be called from both server actions and the workflow engine (without HTTP request context)
+  5. REST API endpoints for workflow CRUD (list, get, create, update, delete) are functional
+**Plans**: TBD
+
+### Phase 25: Trigger System
+**Goal**: Users can define what causes a workflow to run -- CRM events, schedules, manual clicks, or external HTTP calls
+**Depends on**: Phase 24
+**Requirements**: TRIG-01, TRIG-02, TRIG-03, TRIG-04, TRIG-05, TRIG-06, API-02
+**Success Criteria** (what must be TRUE):
+  1. User can configure a workflow to fire when a CRM entity is created, updated, or deleted, and a deal stage change provides both old and new stage data
+  2. User can set a cron expression or interval on a workflow and it fires on schedule via the setTimeout-chaining processor
+  3. User can manually run a workflow with test data or by selecting a specific CRM record
+  4. User can generate a unique inbound webhook URL for a workflow that accepts external HTTP POST requests and triggers a run
+  5. User can add field-change filters to a trigger so the workflow only runs when a specific field actually changed
+  6. User can trigger a workflow execution via REST API
+**Plans**: TBD
+
+### Phase 26: Execution Engine & Flow Control
+**Goal**: The workflow engine can walk a node graph, evaluate conditions, pause for delays, and be toggled on/off by the user
+**Depends on**: Phase 25
+**Requirements**: EXEC-01, FLOW-01, FLOW-02
+**Success Criteria** (what must be TRUE):
+  1. User can toggle a workflow on/off and disabled workflows do not fire even when their trigger conditions are met
+  2. User can add condition/IF nodes that branch execution based on field comparisons (equals, contains, greater than, is empty, etc.)
+  3. User can add delay/wait nodes that pause execution for a configured duration (minutes/hours/days) and resume automatically
+  4. The engine enforces loop prevention (recursion depth limit) and concurrency caps from day one
+**Plans**: TBD
+
+### Phase 27: Action Nodes
+**Goal**: Workflows can perform useful work -- make HTTP calls, mutate CRM data, send emails, notify team members, run custom code, and respond to webhook callers
+**Depends on**: Phase 26
+**Requirements**: ACT-01, ACT-02, ACT-03, ACT-04, ACT-05, ACT-06, ACT-07
+**Success Criteria** (what must be TRUE):
+  1. User can configure an HTTP node to make GET/POST/PUT/PATCH/DELETE requests with variable interpolation in URL, headers, and body, with configurable retry count (0-3) and backoff
+  2. User can add CRM action nodes that create or update deals, people, organizations, and activities using data from previous nodes
+  3. User can add email and notification nodes that send messages with template variables from trigger/node data
+  4. User can add a JavaScript transform node that executes user-provided code in a QuickJS sandbox
+  5. User can configure a webhook response node that sends a custom HTTP response back to the caller of an inbound webhook trigger
+**Plans**: TBD
+
+### Phase 28: Visual Editor
+**Goal**: Users can visually create, edit, and manage workflow node graphs in a linear/branching canvas with full node configuration
+**Depends on**: Phase 24 (needs TypeScript types; can be built in parallel with phases 25-27)
+**Requirements**: EDIT-01, EDIT-02, EDIT-03, EDIT-04
+**Success Criteria** (what must be TRUE):
+  1. User can create a new workflow and see a visual canvas with connected nodes in a linear or branching layout
+  2. User can click a node to open a side panel where they configure that node's settings (trigger type, HTTP URL, condition fields, etc.)
+  3. User can pick variables from trigger data and previous node outputs via an autocomplete dropdown when editing node fields
+  4. User can add new nodes, remove existing nodes, and reorder nodes in the flow via the visual editor
+**Plans**: TBD
+
+### Phase 29: Run History & Observability
+**Goal**: Users can see what happened when workflows ran -- success/failure status, per-node details, and clear error messages
+**Depends on**: Phase 26
+**Requirements**: EXEC-02, EXEC-03, EXEC-04, API-03
+**Success Criteria** (what must be TRUE):
+  1. User can view a list of workflow runs with status indicators (success, failed, running, waiting) and timestamps
+  2. User can drill into a run and see per-node execution details including input data, output data, and duration
+  3. Failed nodes display clear, actionable error messages that help the user diagnose what went wrong
+  4. User can list workflow runs and view run details (including per-node results) via REST API
+**Plans**: TBD
+
+### Phase 30: Templates & Portability
+**Goal**: Users can bootstrap workflows quickly from templates and share them via JSON export/import
+**Depends on**: Phase 28
+**Requirements**: TMPL-01, TMPL-02, TMPL-03, TMPL-04, API-04
+**Success Criteria** (what must be TRUE):
+  1. User can pick from built-in HTTP templates for common services (Planka, Apprise, Slack, Discord, Tally, Typeform) when configuring an HTTP node
+  2. User can save a configured HTTP node as a custom template and reuse it in other workflows
+  3. User can start a new workflow from 5-10 built-in workflow templates covering common CRM automation patterns
+  4. User can export a workflow as JSON and import a workflow from JSON to transfer between instances
+  5. User can manage workflow templates via REST API (list, get, create, delete)
+**Plans**: TBD
+
 ## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 24 -> 25 -> 26 -> 27 -> 28 -> 29 -> 30
+Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in parallel with 25-27 if desired.
 
 | Phase | Milestone | Plans | Status | Completed |
 |-------|-----------|-------|--------|-----------|
@@ -69,6 +170,13 @@ Full archive: `.planning/milestones/v1.1-ROADMAP.md`
 | 19. Webhook Reliability | v1.1 | 3/3 | Complete | 2026-03-22 |
 | 20. Import State Reliability | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 23. Resend Email Integration | v1.1 | 5/5 | Complete | 2026-03-24 |
+| 24. Schema & Event Infrastructure | v1.2 | 0/TBD | Not started | - |
+| 25. Trigger System | v1.2 | 0/TBD | Not started | - |
+| 26. Execution Engine & Flow Control | v1.2 | 0/TBD | Not started | - |
+| 27. Action Nodes | v1.2 | 0/TBD | Not started | - |
+| 28. Visual Editor | v1.2 | 0/TBD | Not started | - |
+| 29. Run History & Observability | v1.2 | 0/TBD | Not started | - |
+| 30. Templates & Portability | v1.2 | 0/TBD | Not started | - |
 
 ---
-*Roadmap updated: 2026-03-26 — v1.1 milestone completed and archived*
+*Roadmap updated: 2026-03-26 -- v1.2 Workflows roadmap created*

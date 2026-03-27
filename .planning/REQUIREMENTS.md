@@ -43,6 +43,13 @@
 - [ ] **EXEC-03**: User can view per-node execution details (input/output/error) for each run
 - [ ] **EXEC-04**: User can see clear error messages on failed nodes
 
+### API
+
+- [ ] **API-01**: User can CRUD workflows via REST API (list, get, create, update, delete)
+- [ ] **API-02**: User can trigger a workflow execution via REST API
+- [ ] **API-03**: User can list workflow runs and view run details (including per-node results) via REST API
+- [ ] **API-04**: User can manage workflow templates via REST API (list, get, create, delete)
+
 ### Templates
 
 - [ ] **TMPL-01**: User can use built-in HTTP templates for common services (Planka, Apprise, Slack, Discord, Tally, Typeform)
@@ -78,39 +85,43 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TRIG-01 | — | Pending |
-| TRIG-02 | — | Pending |
-| TRIG-03 | — | Pending |
-| TRIG-04 | — | Pending |
-| TRIG-05 | — | Pending |
-| TRIG-06 | — | Pending |
-| ACT-01 | — | Pending |
-| ACT-02 | — | Pending |
-| ACT-03 | — | Pending |
-| ACT-04 | — | Pending |
-| ACT-05 | — | Pending |
-| ACT-06 | — | Pending |
-| ACT-07 | — | Pending |
-| FLOW-01 | — | Pending |
-| FLOW-02 | — | Pending |
-| EDIT-01 | — | Pending |
-| EDIT-02 | — | Pending |
-| EDIT-03 | — | Pending |
-| EDIT-04 | — | Pending |
-| EXEC-01 | — | Pending |
-| EXEC-02 | — | Pending |
-| EXEC-03 | — | Pending |
-| EXEC-04 | — | Pending |
-| TMPL-01 | — | Pending |
-| TMPL-02 | — | Pending |
-| TMPL-03 | — | Pending |
-| TMPL-04 | — | Pending |
+| TRIG-01 | Phase 25 | Pending |
+| TRIG-02 | Phase 25 | Pending |
+| TRIG-03 | Phase 25 | Pending |
+| TRIG-04 | Phase 25 | Pending |
+| TRIG-05 | Phase 25 | Pending |
+| TRIG-06 | Phase 25 | Pending |
+| ACT-01 | Phase 27 | Pending |
+| ACT-02 | Phase 27 | Pending |
+| ACT-03 | Phase 27 | Pending |
+| ACT-04 | Phase 27 | Pending |
+| ACT-05 | Phase 27 | Pending |
+| ACT-06 | Phase 27 | Pending |
+| ACT-07 | Phase 27 | Pending |
+| FLOW-01 | Phase 26 | Pending |
+| FLOW-02 | Phase 26 | Pending |
+| EDIT-01 | Phase 28 | Pending |
+| EDIT-02 | Phase 28 | Pending |
+| EDIT-03 | Phase 28 | Pending |
+| EDIT-04 | Phase 28 | Pending |
+| EXEC-01 | Phase 26 | Pending |
+| EXEC-02 | Phase 29 | Pending |
+| EXEC-03 | Phase 29 | Pending |
+| EXEC-04 | Phase 29 | Pending |
+| TMPL-01 | Phase 30 | Pending |
+| TMPL-02 | Phase 30 | Pending |
+| TMPL-03 | Phase 30 | Pending |
+| API-01 | Phase 24 | Pending |
+| API-02 | Phase 25 | Pending |
+| API-03 | Phase 29 | Pending |
+| API-04 | Phase 30 | Pending |
+| TMPL-04 | Phase 30 | Pending |
 
 **Coverage:**
-- v1.2 requirements: 27 total
-- Mapped to phases: 0
-- Unmapped: 27 ⚠️
+- v1.2 requirements: 31 total
+- Mapped to phases: 31
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-26*
-*Last updated: 2026-03-26 after initial definition*
+*Last updated: 2026-03-26 after roadmap creation*
