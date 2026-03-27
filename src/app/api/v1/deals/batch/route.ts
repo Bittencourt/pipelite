@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server"
 import { withApiAuth, ApiAuthContext } from "@/lib/api/auth"
 import { Problems } from "@/lib/api/errors"
 import { serializeDeal } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
 import { db } from "@/db"
 import { deals } from "@/db/schema/deals"
 import { organizations } from "@/db/schema/organizations"
@@ -10,6 +9,7 @@ import { people } from "@/db/schema/people"
 import { stages, pipelines } from "@/db/schema/pipelines"
 import { and, eq, isNull } from "drizzle-orm"
 import { z } from "zod"
+import { crmBus } from "@/lib/events"
 
 const MAX_BATCH_SIZE = 100
 
@@ -173,16 +173,17 @@ export async function POST(request: NextRequest) {
     // Insert all deals
     const inserted = await db.insert(deals).values(insertValues).returning()
 
-    // Trigger webhooks for each created deal
+    // Emit CRM events for each created deal (replaces direct triggerWebhook)
     for (const deal of inserted) {
-      triggerWebhook(
-        context.userId,
-        "deal.created",
-        "deal",
-        deal.id,
-        "created",
-        serializeDeal(deal)
-      )
+      crmBus.emit("deal.created", {
+        entity: "deal",
+        entityId: deal.id,
+        action: "created",
+        data: serializeDeal(deal) as unknown as Record<string, unknown>,
+        changedFields: null,
+        userId: context.userId,
+        timestamp: new Date().toISOString(),
+      })
     }
 
     // Return response with created items and meta

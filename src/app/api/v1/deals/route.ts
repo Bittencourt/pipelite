@@ -5,7 +5,6 @@ import { parseExpand } from "@/lib/api/expand"
 import { paginatedResponse, createdResponse } from "@/lib/api/response"
 import { Problems } from "@/lib/api/errors"
 import { serializeDeal } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
 import { db } from "@/db"
 import { deals } from "@/db/schema/deals"
 import { organizations } from "@/db/schema/organizations"
@@ -13,6 +12,8 @@ import { people } from "@/db/schema/people"
 import { stages, pipelines } from "@/db/schema/pipelines"
 import { and, eq, isNull, count, max, sql } from "drizzle-orm"
 import { z } from "zod"
+import { crmBus } from "@/lib/events"
+import type { CrmEventPayload } from "@/lib/events"
 
 const createDealSchema = z.object({
   title: z.string().min(1, "Title is required").max(200),
@@ -240,15 +241,16 @@ export async function POST(request: NextRequest) {
       })
       .returning()
 
-    // Trigger webhook
-    triggerWebhook(
-      context.userId,
-      "deal.created",
-      "deal",
-      deal.id,
-      "created",
-      serializeDeal(deal)
-    )
+    // Emit CRM event via bus (replaces direct triggerWebhook)
+    crmBus.emit("deal.created", {
+      entity: "deal",
+      entityId: deal.id,
+      action: "created",
+      data: serializeDeal(deal) as unknown as Record<string, unknown>,
+      changedFields: null,
+      userId: context.userId,
+      timestamp: new Date().toISOString(),
+    })
 
     return createdResponse(serializeDeal(deal))
   })
