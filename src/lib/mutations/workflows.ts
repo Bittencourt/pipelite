@@ -39,7 +39,7 @@ type DeleteResult =
 // --- Mutations ---
 
 export async function createWorkflow(
-  input: z.infer<typeof createWorkflowSchema>
+  input: z.input<typeof createWorkflowSchema>
 ): Promise<CreateResult> {
   const parsed = createWorkflowSchema.safeParse(input)
   if (!parsed.success) {

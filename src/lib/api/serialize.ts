@@ -4,6 +4,7 @@ import { deals } from "@/db/schema/deals"
 import { activities } from "@/db/schema/activities"
 import { pipelines, stages } from "@/db/schema/pipelines"
 import { customFieldDefinitions } from "@/db/schema/custom-fields"
+import { workflows } from "@/db/schema/workflows"
 
 type Organization = typeof organizations.$inferSelect
 type Person = typeof people.$inferSelect
@@ -12,6 +13,7 @@ type Activity = typeof activities.$inferSelect
 type Pipeline = typeof pipelines.$inferSelect
 type Stage = typeof stages.$inferSelect
 type CustomFieldDefinition = typeof customFieldDefinitions.$inferSelect
+type Workflow = typeof workflows.$inferSelect
 
 /**
  * Convert Date to ISO string, handling null
@@ -147,5 +149,23 @@ export function serializeCustomFieldDefinition(cfd: CustomFieldDefinition) {
     show_in_list: cfd.showInList,
     created_at: toIsoString(cfd.createdAt),
     updated_at: toIsoString(cfd.updatedAt),
+  }
+}
+
+/**
+ * Serialize workflow to snake_case API format
+ * Includes full trigger and nodes graph
+ */
+export function serializeWorkflow(workflow: Workflow) {
+  return {
+    id: workflow.id,
+    name: workflow.name,
+    description: workflow.description,
+    trigger: workflow.trigger,
+    nodes: workflow.nodes,
+    active: workflow.active,
+    created_by: workflow.createdBy,
+    created_at: toIsoString(workflow.createdAt),
+    updated_at: toIsoString(workflow.updatedAt),
   }
 }
