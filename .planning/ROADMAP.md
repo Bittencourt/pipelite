@@ -69,7 +69,12 @@ Full archive: `.planning/milestones/v1.1-ROADMAP.md`
   3. Existing server actions (createDeal, updateDeal, deleteDeal, etc.) emit events through the bus without breaking current behavior
   4. Shared mutation functions are extracted from server actions so they can be called from both server actions and the workflow engine (without HTTP request context)
   5. REST API endpoints for workflow CRUD (list, get, create, update, delete) are functional
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 24-01-PLAN.md -- Workflow schema, event bus, and webhook subscriber
+- [ ] 24-02-PLAN.md -- Deal and people mutation extraction with event emission
+- [ ] 24-03-PLAN.md -- Workflow CRUD mutations, REST API, and server actions
+- [ ] 24-04-PLAN.md -- Organization and activity mutations, remaining API route refactors
 
 ### Phase 25: Trigger System
 **Goal**: Users can define what causes a workflow to run -- CRM events, schedules, manual clicks, or external HTTP calls
@@ -170,7 +175,7 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 19. Webhook Reliability | v1.1 | 3/3 | Complete | 2026-03-22 |
 | 20. Import State Reliability | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 23. Resend Email Integration | v1.1 | 5/5 | Complete | 2026-03-24 |
-| 24. Schema & Event Infrastructure | v1.2 | 0/TBD | Not started | - |
+| 24. Schema & Event Infrastructure | v1.2 | 0/4 | Not started | - |
 | 25. Trigger System | v1.2 | 0/TBD | Not started | - |
 | 26. Execution Engine & Flow Control | v1.2 | 0/TBD | Not started | - |
 | 27. Action Nodes | v1.2 | 0/TBD | Not started | - |
@@ -179,4 +184,4 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 30. Templates & Portability | v1.2 | 0/TBD | Not started | - |
 
 ---
-*Roadmap updated: 2026-03-26 -- v1.2 Workflows roadmap created*
+*Roadmap updated: 2026-03-26 -- Phase 24 planned (4 plans in 3 waves)*
