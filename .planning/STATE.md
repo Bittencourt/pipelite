@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
 status: executing
-last_updated: "2026-03-27T01:26:06.824Z"
+last_updated: "2026-03-27T01:30:42.306Z"
 last_activity: 2026-03-27 -- 24-03 complete (workflow CRUD API + mutations + server actions)
 progress:
   total_phases: 7
@@ -45,6 +45,9 @@ Progress: [██░░░░░░░░] 8% (3/27 plans)
 - Used z.input<> instead of z.infer<> for createWorkflow param type so Zod defaults work transparently
 - Workflows not owner-scoped; all authenticated users can CRUD any workflow
 - Introduced mutation layer pattern (src/lib/mutations/) for reusable DB operations
+- updateDealMutation returns newAssigneeUserIds/dealTitle for email handling in server action
+- API routes emit CRM events directly via crmBus (different auth patterns than server actions)
+- Ownership checks remain in server actions/API routes; mutations only check entity existence
 
 ### Quick Tasks Completed
 
@@ -78,4 +81,5 @@ None yet.
 - 2026-03-26: Requirements defined (27 v1.2 requirements)
 - 2026-03-26: Roadmap created (7 phases: 24-30)
 - 2026-03-27: 24-01 complete -- workflow schema (4 tables), CRM event bus (13 events), webhook subscriber
+- 2026-03-27: 24-02 complete -- deal & people mutations extracted with CRM event emission
 - 2026-03-27: 24-03 complete -- workflow CRUD mutations, REST API (/api/v1/workflows), server actions, serializeWorkflow
