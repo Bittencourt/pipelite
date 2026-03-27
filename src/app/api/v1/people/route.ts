@@ -5,12 +5,12 @@ import { parseExpand } from "@/lib/api/expand"
 import { paginatedResponse, createdResponse } from "@/lib/api/response"
 import { Problems } from "@/lib/api/errors"
 import { serializePerson } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
 import { db } from "@/db"
 import { people } from "@/db/schema/people"
 import { organizations } from "@/db/schema/organizations"
 import { and, eq, isNull, count } from "drizzle-orm"
 import { z } from "zod"
+import { crmBus } from "@/lib/events"
 
 const createPersonSchema = z.object({
   first_name: z.string().min(1, "First name is required").max(100),
@@ -145,15 +145,16 @@ export async function POST(request: NextRequest) {
       })
       .returning()
 
-    // Trigger webhook
-    triggerWebhook(
-      context.userId,
-      "person.created",
-      "person",
-      person.id,
-      "created",
-      serializePerson(person)
-    )
+    // Emit CRM event via bus (replaces direct triggerWebhook)
+    crmBus.emit("person.created", {
+      entity: "person",
+      entityId: person.id,
+      action: "created",
+      data: serializePerson(person) as unknown as Record<string, unknown>,
+      changedFields: null,
+      userId: context.userId,
+      timestamp: new Date().toISOString(),
+    })
 
     return createdResponse(serializePerson(person))
   })

@@ -4,12 +4,12 @@ import { parseExpand } from "@/lib/api/expand"
 import { singleResponse, noContentResponse } from "@/lib/api/response"
 import { Problems } from "@/lib/api/errors"
 import { serializePerson } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
 import { db } from "@/db"
 import { people } from "@/db/schema/people"
 import { organizations } from "@/db/schema/organizations"
 import { and, eq, isNull } from "drizzle-orm"
 import { z } from "zod"
+import { crmBus } from "@/lib/events"
 
 const updatePersonSchema = z.object({
   first_name: z.string().min(1, "First name is required").max(100).optional(),
@@ -135,23 +135,43 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Build update object
+    // Build update object and track changed fields
     const updates: Record<string, unknown> = {
       updatedAt: new Date(),
     }
+    const changedFields: string[] = []
 
-    if (first_name !== undefined) updates.firstName = first_name
-    if (last_name !== undefined) updates.lastName = last_name
-    if (email !== undefined) updates.email = email
-    if (phone !== undefined) updates.phone = phone
-    if (notes !== undefined) updates.notes = notes
-    if (organization_id !== undefined) updates.organizationId = organization_id
+    if (first_name !== undefined) {
+      updates.firstName = first_name
+      if (first_name !== existing.firstName) changedFields.push("firstName")
+    }
+    if (last_name !== undefined) {
+      updates.lastName = last_name
+      if (last_name !== existing.lastName) changedFields.push("lastName")
+    }
+    if (email !== undefined) {
+      updates.email = email
+      if (email !== existing.email) changedFields.push("email")
+    }
+    if (phone !== undefined) {
+      updates.phone = phone
+      if (phone !== existing.phone) changedFields.push("phone")
+    }
+    if (notes !== undefined) {
+      updates.notes = notes
+      if (notes !== existing.notes) changedFields.push("notes")
+    }
+    if (organization_id !== undefined) {
+      updates.organizationId = organization_id
+      if (organization_id !== existing.organizationId) changedFields.push("organizationId")
+    }
     if (custom_fields !== undefined) {
       // Merge with existing custom fields
       updates.customFields = {
         ...((existing.customFields as Record<string, unknown>) || {}),
         ...custom_fields,
       }
+      changedFields.push("customFields")
     }
 
     // Update person
@@ -161,15 +181,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .where(eq(people.id, id))
       .returning()
 
-    // Trigger webhook
-    triggerWebhook(
-      context.userId,
-      "person.updated",
-      "person",
-      updated.id,
-      "updated",
-      serializePerson(updated)
-    )
+    // Emit CRM event via bus (replaces direct triggerWebhook)
+    crmBus.emit("person.updated", {
+      entity: "person",
+      entityId: updated.id,
+      action: "updated",
+      data: serializePerson(updated) as unknown as Record<string, unknown>,
+      changedFields: changedFields.length > 0 ? changedFields : null,
+      userId: context.userId,
+      timestamp: new Date().toISOString(),
+    })
 
     return singleResponse(serializePerson(updated))
   })
@@ -201,15 +222,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       })
       .where(eq(people.id, id))
 
-    // Trigger webhook
-    triggerWebhook(
-      context.userId,
-      "person.deleted",
-      "person",
-      id,
-      "deleted",
-      { id }
-    )
+    // Emit CRM event via bus (replaces direct triggerWebhook)
+    crmBus.emit("person.deleted", {
+      entity: "person",
+      entityId: id,
+      action: "deleted",
+      data: { id },
+      changedFields: null,
+      userId: context.userId,
+      timestamp: new Date().toISOString(),
+    })
 
     return noContentResponse()
   })

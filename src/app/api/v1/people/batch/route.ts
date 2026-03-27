@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { withApiAuth, ApiAuthContext } from "@/lib/api/auth"
 import { Problems } from "@/lib/api/errors"
 import { serializePerson } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
 import { db } from "@/db"
 import { people } from "@/db/schema/people"
 import { organizations } from "@/db/schema/organizations"
 import { and, eq, isNull } from "drizzle-orm"
 import { z } from "zod"
+import { crmBus } from "@/lib/events"
 
 const MAX_BATCH_SIZE = 100
 
@@ -112,16 +112,17 @@ export async function POST(request: NextRequest) {
     // Insert all people
     const inserted = await db.insert(people).values(insertValues).returning()
 
-    // Trigger webhooks for each created person
+    // Emit CRM events for each created person (replaces direct triggerWebhook)
     for (const person of inserted) {
-      triggerWebhook(
-        context.userId,
-        "person.created",
-        "person",
-        person.id,
-        "created",
-        serializePerson(person)
-      )
+      crmBus.emit("person.created", {
+        entity: "person",
+        entityId: person.id,
+        action: "created",
+        data: serializePerson(person) as unknown as Record<string, unknown>,
+        changedFields: null,
+        userId: context.userId,
+        timestamp: new Date().toISOString(),
+      })
     }
 
     // Return response with created items and meta
