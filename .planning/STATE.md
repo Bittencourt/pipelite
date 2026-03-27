@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
 current_phase: 24
-current_plan: null
-status: ready_to_plan
-last_updated: "2026-03-26"
+current_plan: 2
+status: executing
+last_updated: "2026-03-27"
 progress:
   total_phases: 7
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 4
+  completed_plans: 1
 ---
 
 # Session State
@@ -25,21 +25,23 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 24 of 30 (Schema & Event Infrastructure) -- first of 7 phases in v1.2
-Plan: --
-Status: Ready to plan
-Last activity: 2026-03-26 -- v1.2 Workflows roadmap created
+Plan: 1 of 4 complete, next: 24-02
+Status: Executing
+Last activity: 2026-03-27 -- 24-01 complete (workflow schema + event bus)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 4% (1/27 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 85 (across v1.0 + v1.1)
-- v1.2 plans completed: 0
+- v1.2 plans completed: 1
 
 ## Decisions
 
-(None yet for v1.2)
+- Used globalThis singleton pattern for CrmEventBus (hot-reload safety)
+- Added removeAllListeners to bus for test isolation
+- Split TDD task into two commits (event bus + tests, then schema + migration)
 
 ### Quick Tasks Completed
 
@@ -72,3 +74,4 @@ None yet.
 - 2026-03-26: Research completed (HIGH confidence)
 - 2026-03-26: Requirements defined (27 v1.2 requirements)
 - 2026-03-26: Roadmap created (7 phases: 24-30)
+- 2026-03-27: 24-01 complete -- workflow schema (4 tables), CRM event bus (13 events), webhook subscriber
