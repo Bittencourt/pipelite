@@ -20,9 +20,9 @@
 - [ ] **ACT-02**: User can create/update CRM entities (deals, people, orgs, activities) as workflow actions
 - [ ] **ACT-03**: User can send emails with template variables from trigger/node data
 - [ ] **ACT-04**: User can send internal notifications to team members
-- [ ] **ACT-05**: User can write custom JavaScript transforms in a QuickJS sandbox
+- [x] **ACT-05**: User can write custom JavaScript transforms in a QuickJS sandbox
 - [x] **ACT-06**: User can configure HTTP retry count (0-3) with backoff per HTTP node
-- [ ] **ACT-07**: User can send a custom HTTP response back to inbound webhook callers
+- [x] **ACT-07**: User can send a custom HTTP response back to inbound webhook callers
 
 ### Flow Control
 
@@ -95,9 +95,9 @@
 | ACT-02 | Phase 27 | Pending |
 | ACT-03 | Phase 27 | Pending |
 | ACT-04 | Phase 27 | Pending |
-| ACT-05 | Phase 27 | Pending |
+| ACT-05 | Phase 27 | Complete |
 | ACT-06 | Phase 27 | Complete |
-| ACT-07 | Phase 27 | Pending |
+| ACT-07 | Phase 27 | Complete |
 | FLOW-01 | Phase 26 | Complete |
 | FLOW-02 | Phase 26 | Complete |
 | EDIT-01 | Phase 28 | Pending |

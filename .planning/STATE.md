@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
 status: executing
-last_updated: "2026-03-28T01:58:20.762Z"
-last_activity: 2026-03-28 -- 26-03 complete (toggle workflow, recursion depth guard)
+last_updated: "2026-03-28T03:24:24Z"
+last_activity: 2026-03-28 -- 27-03 complete (JS transform sandbox, webhook response coordination)
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 11
-  completed_plans: 11
-  percent: 37
+  completed_plans: 14
+  percent: 52
 ---
 
 # Session State
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 27 of 30 (Action Nodes)
-Plan: 1 of 2 complete
-Status: In progress
-Last activity: 2026-03-28 -- 27-01 complete (action foundation: interpolation, HTTP handler, SSRF, registry)
+Plan: 3 of 3 complete
+Status: Phase complete
+Last activity: 2026-03-28 -- 27-03 complete (JS transform sandbox, webhook response coordination)
 
-Progress: [████░░░░░░] 44% (12/27 plans)
+Progress: [█████░░░░░] 52% (14/27 plans)
 
 ## Performance Metrics
 
@@ -75,6 +75,11 @@ Progress: [████░░░░░░] 44% (12/27 plans)
 
 - [Phase 27]: Separated registry.ts from index.ts to break circular dependency in action handler registration
 - [Phase 27]: Static side-effect import for handler registration (deterministic loading vs async dynamic import)
+- [Phase 27]: QuickJS runtime per invocation with dispose in finally block for sandbox isolation
+- [Phase 27]: TRANSFORM_HELPERS duplicated from formula-engine (var for QuickJS compat, expanded API)
+- [Phase 27]: In-memory Promise map for webhook response coordination (waitFor/send pattern)
+- [Phase 27]: Synchronous executeRun() for webhook-response workflows; async processor for others
+- [Phase 27]: Direct registry import pattern in action tests to avoid crm.ts DB chain
 - [Phase 27]: SSRF validates resolved IPs via dns.resolve to catch DNS rebinding; falls back to direct IP check
 - [Phase 27]: HTTP response parsed as JSON when content-type includes application/json, otherwise as text
 
@@ -121,3 +126,4 @@ None yet.
 - 2026-03-28: 26-02 complete -- execution engine (graph walking, branching, delay yielding) + processor (atomic claim, serial enforcement, instrumentation bootstrap)
 - 2026-03-28: 26-03 complete -- toggleWorkflow server action, AsyncLocalStorage recursion depth guard (max 5 levels), createWorkflowRun depth enforcement
 - 2026-03-28: 27-01 complete -- variable interpolation engine, SSRF prevention, HTTP handler with retry/backoff, action registry with Zod schemas, engine dispatch integration (29 tests)
+- 2026-03-28: 27-03 complete -- QuickJS sandbox transform (15 tests), webhook response coordination with synchronous execution path (11 tests). Phase 27 COMPLETE.
