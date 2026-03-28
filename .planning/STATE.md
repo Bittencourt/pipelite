@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Reliability & Operations
+milestone: v1.2
+milestone_name: Workflows
 status: verifying
-last_updated: "2026-03-28T17:52:08.595Z"
+last_updated: "2026-03-28T17:56:52.393Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 7
-  completed_phases: 2
-  total_plans: 7
-  completed_plans: 12
+  completed_phases: 6
+  total_plans: 23
+  completed_plans: 23
   percent: 99
 ---
 
@@ -20,12 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 28 - Visual Editor (completing)
+**Current focus:** Phase 29 — run-history-observability
 
 ## Position
 
-Phase: 28 of 30 (Visual Editor)
-Plan: 4 of 4 complete (checkpoint pending)
+Phase: 30 of 30 (templates & portability)
+Plan: Not started
 Status: Checkpoint pending - visual verification
 Last activity: 2026-03-28
 
@@ -102,10 +102,6 @@ Progress: [██████████] 99% (90/91 plans)
 - [Phase 28]: Transform code textarea excluded from variable picker (JS code, not template interpolation)
 - [Phase 28]: Renamed layout.ts to dagre-layout.ts to avoid Next.js route file naming conflict
 - [Phase 28]: Used defaultEdgeOptions on ReactFlow instead of modifying graph-converter edge creation
-- [Phase 29]: RunStatusBadge is a server component (no use client needed) for simple presentation
-- [Phase 29]: Steps ordered by createdAt ascending in run detail endpoint
-- [Phase 29]: Skipped nodes detected by comparing workflow.nodes against executed step records
-- [Phase 29]: JsonViewer uses simple JSON.stringify with pre tag, no external library
 
 ### Quick Tasks Completed
 
@@ -117,8 +113,6 @@ Progress: [██████████] 99% (90/91 plans)
 | Phase 27 P02 | 6min | 2 tasks | 13 files |
 | Phase 28 P02 | 6min | 2 tasks | 16 files |
 | Phase 28 P05 | 3min | 1 tasks | 2 files |
-| Phase 29 P01 | 6min | 2 tasks | 8 files |
-| Phase 29 P03 | 3min | 3 tasks | 4 files |
 
 ## Accumulated Context
 

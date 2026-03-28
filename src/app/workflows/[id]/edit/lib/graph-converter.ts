@@ -94,7 +94,7 @@ export function toReactFlowGraph(
           target: node.trueBranch,
           sourceHandle: "true",
           label: "Yes",
-        })
+            })
       }
       if (node.falseBranch) {
         rfEdges.push({
@@ -103,7 +103,7 @@ export function toReactFlowGraph(
           target: node.falseBranch,
           sourceHandle: "false",
           label: "No",
-        })
+            })
       }
       // nextNodeId on condition is for the "after both branches merge" node
       if (node.nextNodeId) {
@@ -111,7 +111,7 @@ export function toReactFlowGraph(
           id: `${node.id}->${node.nextNodeId}`,
           source: node.id,
           target: node.nextNodeId,
-        })
+            })
       }
     } else {
       // Action/Delay nodes: edge from nextNodeId
@@ -120,7 +120,7 @@ export function toReactFlowGraph(
           id: `${node.id}->${node.nextNodeId}`,
           source: node.id,
           target: node.nextNodeId,
-        })
+            })
       }
     }
   }

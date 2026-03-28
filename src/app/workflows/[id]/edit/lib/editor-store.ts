@@ -34,7 +34,9 @@ export interface EditorState {
   panelOpen: boolean
   panelMode: "type-picker" | "config"
   insertAfterNodeId: string | null
+  insertBranch: "true" | "false" | null
   dirty: boolean
+  _typePickerJustOpened: boolean
 }
 
 export interface EditorActions {
@@ -56,7 +58,7 @@ export interface EditorActions {
   selectNode: (nodeId: string | null) => void
 
   // Side panel
-  openTypePicker: (afterNodeId: string) => void
+  openTypePicker: (afterNodeId: string, branch?: "true" | "false") => void
 
   // Graph mutations (operate on workflowNodes, reconvert to RF)
   addNode: (type: "action" | "condition" | "delay", actionType?: string) => void
@@ -104,7 +106,9 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   panelOpen: false,
   panelMode: "type-picker" as const,
   insertAfterNodeId: null,
+  insertBranch: null,
   dirty: false,
+  _typePickerJustOpened: false,
 
   initFromWorkflow: (workflow) => {
     const { nodes, edges } = reconvert(workflow.nodes, workflow.triggers)
@@ -136,6 +140,8 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   },
 
   selectNode: (nodeId) => {
+    // Guard: don't override type picker if it was just opened
+    if (get()._typePickerJustOpened) return
     set({
       selectedNodeId: nodeId,
       panelOpen: nodeId !== null,
@@ -143,13 +149,17 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
     })
   },
 
-  openTypePicker: (afterNodeId) => {
+  openTypePicker: (afterNodeId, branch) => {
     set({
       insertAfterNodeId: afterNodeId,
+      insertBranch: branch ?? null,
       panelOpen: true,
       panelMode: "type-picker" as const,
       selectedNodeId: null,
+      _typePickerJustOpened: true,
     })
+    // Reset guard after event loop completes
+    setTimeout(() => set({ _typePickerJustOpened: false }), 0)
   },
 
   addNode: (type, actionType) => {
@@ -159,7 +169,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
 
     if (!afterId) return
 
-    const updatedNodes = addNodeAfter(state.workflowNodes, afterId, newNode)
+    const updatedNodes = addNodeAfter(state.workflowNodes, afterId, newNode, state.insertBranch ?? undefined)
     const { nodes, edges } = reconvert(updatedNodes, state.triggers)
 
     set({
@@ -171,6 +181,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
       panelOpen: true,
       panelMode: "config" as const,
       insertAfterNodeId: null,
+      insertBranch: null,
     })
   },
 
