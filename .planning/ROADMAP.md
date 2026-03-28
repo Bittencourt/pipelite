@@ -173,6 +173,16 @@ Plans:
 - [ ] 30-02-PLAN.md -- HTTP template selector, save-as-template, create workflow dialog
 - [x] 30-03-PLAN.md -- Export/import toolbar buttons, workflow templates REST API
 
+### Phase 31: Workflow Wiring Fixes
+**Goal**: Fix webhook URL display and wire toggleWorkflow to editor toolbar for proper run cancellation
+**Depends on**: Phase 25, Phase 26
+**Requirements**: TRIG-05, EXEC-01
+**Gap Closure**: Closes gaps from v1.2 milestone audit
+**Success Criteria** (what must be TRUE):
+  1. Webhook trigger config displays correct URL matching /api/webhooks/in/[workflowId]/[secret] route
+  2. Disabling a workflow from the editor cancels all waiting runs via toggleWorkflow
+**Plans**: 1 plan (2 tasks)
+
 ## Progress
 
 **Execution Order:**
@@ -209,6 +219,7 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 28. Visual Editor | v1.2 | 5/5 | Complete | 2026-03-28 |
 | 29. Run History & Observability | v1.2 | 0/3 | Complete    | 2026-03-28 |
 | 30. Templates & Portability | v1.2 | 2/3 | Complete    | 2026-03-28 |
+| 31. Workflow Wiring Fixes | v1.2 | 0/1 | Planned | - |
 
 ---
-*Roadmap updated: 2026-03-28 -- Phase 30 planned (3 plans in 2 waves)*
+*Roadmap updated: 2026-03-28 -- Phase 31 added for gap closure*
