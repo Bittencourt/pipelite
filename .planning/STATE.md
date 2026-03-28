@@ -24,18 +24,18 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 ## Position
 
-Phase: 26 of 30 (Execution Engine)
-Plan: 2 of 3 complete
+Phase: 27 of 30 (Action Nodes)
+Plan: 1 of 2 complete
 Status: In progress
-Last activity: 2026-03-28 -- 26-03 complete (toggle workflow, recursion depth guard)
+Last activity: 2026-03-28 -- 27-01 complete (action foundation: interpolation, HTTP handler, SSRF, registry)
 
-Progress: [███░░░░░░░] 37% (10/27 plans)
+Progress: [████░░░░░░] 44% (12/27 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 85 (across v1.0 + v1.1)
-- v1.2 plans completed: 6
+- v1.2 plans completed: 7
 
 ## Decisions
 
@@ -72,6 +72,11 @@ Progress: [███░░░░░░░] 37% (10/27 plans)
 - [Phase 26]: 5s poll interval for execution processor (faster than 30s schedule processor for responsiveness)
 - [Phase 26]: Drain loop claims all available pending runs per tick, not just one
 - [Phase 26]: executeBranch walks linearly -- no nested conditions in v1
+
+- [Phase 27]: Separated registry.ts from index.ts to break circular dependency in action handler registration
+- [Phase 27]: Static side-effect import for handler registration (deterministic loading vs async dynamic import)
+- [Phase 27]: SSRF validates resolved IPs via dns.resolve to catch DNS rebinding; falls back to direct IP check
+- [Phase 27]: HTTP response parsed as JSON when content-type includes application/json, otherwise as text
 
 ### Quick Tasks Completed
 
@@ -115,3 +120,4 @@ None yet.
 - 2026-03-28: 26-01 complete -- execution types, condition evaluator (14 operators, AND/OR groups), delay resolver (3 modes, 30-day cap), schema migration
 - 2026-03-28: 26-02 complete -- execution engine (graph walking, branching, delay yielding) + processor (atomic claim, serial enforcement, instrumentation bootstrap)
 - 2026-03-28: 26-03 complete -- toggleWorkflow server action, AsyncLocalStorage recursion depth guard (max 5 levels), createWorkflowRun depth enforcement
+- 2026-03-28: 27-01 complete -- variable interpolation engine, SSRF prevention, HTTP handler with retry/backoff, action registry with Zod schemas, engine dispatch integration (29 tests)

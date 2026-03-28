@@ -16,12 +16,12 @@
 
 ### Actions
 
-- [ ] **ACT-01**: User can make HTTP requests (GET/POST/PUT/PATCH/DELETE) with variable interpolation in URL, headers, and body
+- [x] **ACT-01**: User can make HTTP requests (GET/POST/PUT/PATCH/DELETE) with variable interpolation in URL, headers, and body
 - [ ] **ACT-02**: User can create/update CRM entities (deals, people, orgs, activities) as workflow actions
 - [ ] **ACT-03**: User can send emails with template variables from trigger/node data
 - [ ] **ACT-04**: User can send internal notifications to team members
 - [ ] **ACT-05**: User can write custom JavaScript transforms in a QuickJS sandbox
-- [ ] **ACT-06**: User can configure HTTP retry count (0-3) with backoff per HTTP node
+- [x] **ACT-06**: User can configure HTTP retry count (0-3) with backoff per HTTP node
 - [ ] **ACT-07**: User can send a custom HTTP response back to inbound webhook callers
 
 ### Flow Control
@@ -91,12 +91,12 @@
 | TRIG-04 | Phase 25 | Complete |
 | TRIG-05 | Phase 25 | Complete |
 | TRIG-06 | Phase 25 | Complete |
-| ACT-01 | Phase 27 | Pending |
+| ACT-01 | Phase 27 | Complete |
 | ACT-02 | Phase 27 | Pending |
 | ACT-03 | Phase 27 | Pending |
 | ACT-04 | Phase 27 | Pending |
 | ACT-05 | Phase 27 | Pending |
-| ACT-06 | Phase 27 | Pending |
+| ACT-06 | Phase 27 | Complete |
 | ACT-07 | Phase 27 | Pending |
 | FLOW-01 | Phase 26 | Complete |
 | FLOW-02 | Phase 26 | Complete |
