@@ -6,6 +6,50 @@ vi.mock("node:dns/promises", () => ({
   resolve: vi.fn().mockResolvedValue(["93.184.216.34"]),
 }))
 
+// Mock dependencies required by crm/email/notification side-effect imports
+vi.mock("@/db", () => ({
+  db: {
+    select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([]) })) })) })),
+  },
+}))
+vi.mock("@/db/schema", () => ({
+  users: { id: "users.id", email: "users.email" },
+  deals: { id: "deals.id", title: "deals.title" },
+  people: { id: "people.id", email: "people.email", firstName: "people.firstName" },
+  organizations: { id: "organizations.id", name: "organizations.name" },
+  activities: { id: "activities.id", title: "activities.title" },
+}))
+vi.mock("drizzle-orm", () => ({
+  eq: vi.fn(),
+  ilike: vi.fn(),
+  inArray: vi.fn(),
+}))
+vi.mock("@/lib/mutations", () => ({
+  createDealMutation: vi.fn(),
+  updateDealMutation: vi.fn(),
+  deleteDealMutation: vi.fn(),
+  createPersonMutation: vi.fn(),
+  updatePersonMutation: vi.fn(),
+  deletePersonMutation: vi.fn(),
+  createOrganizationMutation: vi.fn(),
+  updateOrganizationMutation: vi.fn(),
+  deleteOrganizationMutation: vi.fn(),
+  createActivityMutation: vi.fn(),
+  updateActivityMutation: vi.fn(),
+  deleteActivityMutation: vi.fn(),
+}))
+vi.mock("../../recursion", () => ({
+  getCurrentExecutionDepth: vi.fn(() => 0),
+  runWithExecutionDepth: vi.fn((_depth: number, fn: () => unknown) => fn()),
+}))
+vi.mock("@/lib/email/send", () => ({
+  safeSend: vi.fn(),
+}))
+vi.mock("@/lib/email/templates", () => ({
+  getWorkflowEmailTemplate: vi.fn(),
+  getWorkflowNotificationTemplate: vi.fn(),
+}))
+
 function makeContext(overrides?: Partial<ExecutionContext>): ExecutionContext {
   return {
     trigger: {

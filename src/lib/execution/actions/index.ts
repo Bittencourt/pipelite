@@ -9,6 +9,8 @@ import "./http"
 import "./transform"
 import "./webhook-response"
 import "./crm"
+import "./email"
+import "./notification"
 
 // Import getHandler after side-effect imports to ensure handlers are registered
 import { getHandler } from "./registry"
