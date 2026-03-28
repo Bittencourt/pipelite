@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, jsonb, index } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, boolean, jsonb, index, integer } from "drizzle-orm/pg-core"
 import { users } from "./users"
 
 export const workflows = pgTable(
@@ -40,6 +40,9 @@ export const workflowRuns = pgTable(
     status: text("status").notNull().$type<WorkflowStatus>().default("pending"),
     triggerData: jsonb("trigger_data").$type<Record<string, unknown>>(),
     error: text("error"),
+    depth: integer("depth").notNull().default(0),
+    context: jsonb("context").$type<Record<string, unknown>>().default({}),
+    currentNodeId: text("current_node_id"),
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -50,7 +53,7 @@ export const workflowRuns = pgTable(
   })
 )
 
-export type WorkflowRunStepStatus = "pending" | "running" | "completed" | "failed" | "skipped"
+export type WorkflowRunStepStatus = "pending" | "running" | "completed" | "failed" | "skipped" | "waiting"
 
 export const workflowRunSteps = pgTable(
   "workflow_run_steps",
@@ -66,6 +69,7 @@ export const workflowRunSteps = pgTable(
     input: jsonb("input").$type<Record<string, unknown>>(),
     output: jsonb("output").$type<Record<string, unknown>>(),
     error: text("error"),
+    resumeAt: timestamp("resume_at"),
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
