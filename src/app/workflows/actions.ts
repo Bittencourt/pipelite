@@ -41,7 +41,7 @@ export async function updateWorkflow(
   data: {
     name?: string
     description?: string | null
-    trigger?: Record<string, unknown>
+    triggers?: Record<string, unknown>[]
     nodes?: Record<string, unknown>[]
     active?: boolean
   }

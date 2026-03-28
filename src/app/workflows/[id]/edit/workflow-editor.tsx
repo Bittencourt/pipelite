@@ -1,11 +1,13 @@
 "use client"
 
-import { useEffect, useCallback } from "react"
+import { useEffect } from "react"
 import { ReactFlowProvider } from "@xyflow/react"
+import { Canvas } from "./components/canvas"
+import { Toolbar } from "./components/toolbar"
+import { SidePanel } from "./components/side-panel"
+import { useEditorStore } from "./lib/editor-store"
 import type { WorkflowNode } from "@/lib/execution/types"
 import type { TriggerConfig } from "@/lib/triggers/types"
-import { useEditorStore } from "./lib/editor-store"
-import { SidePanel } from "./components/side-panel"
 
 interface WorkflowEditorProps {
   workflow: {
@@ -19,31 +21,23 @@ interface WorkflowEditorProps {
 }
 
 export function WorkflowEditor({ workflow }: WorkflowEditorProps) {
-  const initFromWorkflow = useEditorStore((s) => s.initFromWorkflow)
   const panelOpen = useEditorStore((s) => s.panelOpen)
-  const selectNode = useEditorStore((s) => s.selectNode)
 
   useEffect(() => {
-    initFromWorkflow(workflow)
-  }, [workflow, initFromWorkflow])
-
-  const onCanvasClick = useCallback(() => {
-    selectNode(null)
-  }, [selectNode])
+    useEditorStore.getState().initFromWorkflow(workflow)
+  }, [workflow])
 
   return (
-    <ReactFlowProvider>
-      <div className="flex h-full">
-        {/* Canvas area -- Plan 02 will add Canvas + Toolbar here */}
-        <div className="flex-1" onClick={onCanvasClick}>
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            Canvas placeholder (Plan 02)
+    <div className="flex h-full flex-col">
+      <Toolbar />
+      <div className="flex flex-1 overflow-hidden">
+        <ReactFlowProvider>
+          <div className={panelOpen ? "flex-1" : "w-full"}>
+            <Canvas />
           </div>
-        </div>
-
-        {/* Side Panel */}
+        </ReactFlowProvider>
         {panelOpen && <SidePanel />}
       </div>
-    </ReactFlowProvider>
+    </div>
   )
 }
