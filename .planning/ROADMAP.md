@@ -55,7 +55,7 @@ Full archive: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 27: Action Nodes** - HTTP requests, CRM mutations, email sending, notifications, JS sandbox, webhook responses (completed 2026-03-28)
 - [x] **Phase 28: Visual Editor** - Linear/branching node editor, node configuration panel, variable picker, node management (completed 2026-03-28)
 - [x] **Phase 29: Run History & Observability** - Run list with status, per-node execution details, error display (completed 2026-03-28)
-- [ ] **Phase 30: Templates & Portability** - Built-in HTTP templates, custom templates, workflow starter templates, JSON import/export
+- [x] **Phase 30: Templates & Portability** - Built-in HTTP templates, custom templates, workflow starter templates, JSON import/export (completed 2026-03-28)
 
 ## Phase Details
 
@@ -208,7 +208,7 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 27. Action Nodes | 3/3 | Complete    | 2026-03-28 | - |
 | 28. Visual Editor | v1.2 | 5/5 | Complete | 2026-03-28 |
 | 29. Run History & Observability | v1.2 | 0/3 | Complete    | 2026-03-28 |
-| 30. Templates & Portability | v1.2 | 2/3 | In Progress|  |
+| 30. Templates & Portability | v1.2 | 2/3 | Complete    | 2026-03-28 |
 
 ---
 *Roadmap updated: 2026-03-28 -- Phase 30 planned (3 plans in 2 waves)*
