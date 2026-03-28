@@ -134,7 +134,12 @@ Plans:
   2. User can click a node to open a side panel where they configure that node's settings (trigger type, HTTP URL, condition fields, etc.)
   3. User can pick variables from trigger data and previous node outputs via an autocomplete dropdown when editing node fields
   4. User can add new nodes, remove existing nodes, and reorder nodes in the flow via the visual editor
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 28-01-PLAN.md -- Core lib layer: graph converter, layout engine, editor store, graph mutations, variable schema (TDD)
+- [ ] 28-02-PLAN.md -- Canvas with custom nodes, add-button edges, toolbar, editor page, workflow list
+- [ ] 28-03-PLAN.md -- Side panel with type picker and all node configuration forms
+- [ ] 28-04-PLAN.md -- Variable picker autocomplete and integration into config forms
 
 ### Phase 29: Run History & Observability
 **Goal**: Users can see what happened when workflows ran -- success/failure status, per-node details, and clear error messages
@@ -192,9 +197,9 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 25. Trigger System | v1.2 | 4/4 | Complete | 2026-03-28 |
 | 26. Execution Engine & Flow Control | v1.2 | 3/3 | Complete | 2026-03-28 |
 | 27. Action Nodes | 3/3 | Complete    | 2026-03-28 | - |
-| 28. Visual Editor | v1.2 | 0/TBD | Not started | - |
+| 28. Visual Editor | v1.2 | 0/4 | Not started | - |
 | 29. Run History & Observability | v1.2 | 0/TBD | Not started | - |
 | 30. Templates & Portability | v1.2 | 0/TBD | Not started | - |
 
 ---
-*Roadmap updated: 2026-03-28 -- Phase 27 planned (3 plans in 2 waves)*
+*Roadmap updated: 2026-03-28 -- Phase 28 planned (4 plans in 3 waves)*
