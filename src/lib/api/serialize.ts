@@ -161,7 +161,7 @@ export function serializeWorkflow(workflow: Workflow) {
     id: workflow.id,
     name: workflow.name,
     description: workflow.description,
-    trigger: workflow.trigger,
+    triggers: workflow.triggers,
     nodes: workflow.nodes,
     active: workflow.active,
     created_by: workflow.createdBy,

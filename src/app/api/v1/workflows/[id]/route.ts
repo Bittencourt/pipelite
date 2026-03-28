@@ -9,7 +9,7 @@ import { z } from "zod"
 const updateWorkflowApiSchema = z.object({
   name: z.string().min(1, "Name is required").max(200).optional(),
   description: z.string().max(2000).nullable().optional(),
-  trigger: z.record(z.string(), z.unknown()).optional(),
+  triggers: z.array(z.record(z.string(), z.unknown())).optional(),
   nodes: z.array(z.record(z.string(), z.unknown())).optional(),
   active: z.boolean().optional(),
 })

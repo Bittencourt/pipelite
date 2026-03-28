@@ -10,7 +10,7 @@ import { z } from "zod"
 const createWorkflowApiSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   description: z.string().max(2000).optional().nullable(),
-  trigger: z.record(z.string(), z.unknown()).optional().default({}),
+  triggers: z.array(z.record(z.string(), z.unknown())).optional().default([]),
   nodes: z.array(z.record(z.string(), z.unknown())).optional().default([]),
 })
 
@@ -47,12 +47,12 @@ export async function POST(request: NextRequest) {
       return Problems.validation(errors)
     }
 
-    const { name, description, trigger, nodes } = parseResult.data
+    const { name, description, triggers, nodes } = parseResult.data
 
     const result = await createWorkflow({
       name,
       description: description ?? undefined,
-      trigger,
+      triggers,
       nodes,
       createdBy: context.userId,
     })

@@ -9,7 +9,7 @@ import type { Workflow } from "@/db/schema/workflows"
 export const createWorkflowSchema = z.object({
   name: z.string().min(1, "Name is required").max(200, "Name must be 200 characters or less"),
   description: z.string().max(2000).optional().nullable(),
-  trigger: z.record(z.string(), z.unknown()).default({}),
+  triggers: z.array(z.record(z.string(), z.unknown())).default([]),
   nodes: z.array(z.record(z.string(), z.unknown())).default([]),
   createdBy: z.string().min(1, "Created by is required"),
 })
@@ -17,7 +17,7 @@ export const createWorkflowSchema = z.object({
 export const updateWorkflowSchema = z.object({
   name: z.string().min(1, "Name is required").max(200, "Name must be 200 characters or less").optional(),
   description: z.string().max(2000).nullable().optional(),
-  trigger: z.record(z.string(), z.unknown()).optional(),
+  triggers: z.array(z.record(z.string(), z.unknown())).optional(),
   nodes: z.array(z.record(z.string(), z.unknown())).optional(),
   active: z.boolean().optional(),
 })
@@ -46,14 +46,14 @@ export async function createWorkflow(
     return { success: false, error: parsed.error.issues[0]?.message || "Invalid input" }
   }
 
-  const { name, description, trigger, nodes, createdBy } = parsed.data
+  const { name, description, triggers, nodes, createdBy } = parsed.data
 
   const [workflow] = await db
     .insert(workflows)
     .values({
       name,
       description: description ?? null,
-      trigger,
+      triggers,
       nodes,
       active: false,
       createdBy,
@@ -87,7 +87,7 @@ export async function updateWorkflow(
   const data = parsed.data
   if (data.name !== undefined) updates.name = data.name
   if (data.description !== undefined) updates.description = data.description
-  if (data.trigger !== undefined) updates.trigger = data.trigger
+  if (data.triggers !== undefined) updates.triggers = data.triggers
   if (data.nodes !== undefined) updates.nodes = data.nodes
   if (data.active !== undefined) updates.active = data.active
 

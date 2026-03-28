@@ -9,9 +9,11 @@ export const workflows = pgTable(
       .$defaultFn(() => crypto.randomUUID()),
     name: text("name").notNull(),
     description: text("description"),
-    trigger: jsonb("trigger").$type<Record<string, unknown>>().notNull(),
+    triggers: jsonb("triggers").$type<Record<string, unknown>[]>().notNull().default([]),
     nodes: jsonb("nodes").$type<Record<string, unknown>[]>().notNull().default([]),
     active: boolean("active").notNull().default(false),
+    nextRunAt: timestamp("next_run_at"),
+    webhookSecret: text("webhook_secret"),
     createdBy: text("created_by")
       .notNull()
       .references(() => users.id),

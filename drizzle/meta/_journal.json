@@ -64,6 +64,13 @@
       "when": 1774574184636,
       "tag": "0008_cuddly_sprite",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1774658164000,
+      "tag": "0009_trigger_array_migration",
+      "breakpoints": true
     }
   ]
 }
