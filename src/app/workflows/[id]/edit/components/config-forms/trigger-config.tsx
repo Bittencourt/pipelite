@@ -199,7 +199,7 @@ function WebhookForm({
 }) {
   const workflowId = useEditorStore((s) => s.workflowId)
   const webhookUrl = workflowId
-    ? `${typeof window !== "undefined" ? window.location.origin : ""}/api/v1/webhooks/${trigger.secret}`
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}/api/webhooks/in/${workflowId}/${trigger.secret}`
     : "Save workflow first"
 
   return (

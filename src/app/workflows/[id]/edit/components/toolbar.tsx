@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Save, Download, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { useEditorStore } from "../lib/editor-store"
-import { updateWorkflow, importWorkflow } from "@/app/workflows/actions"
+import { updateWorkflow, importWorkflow, toggleWorkflow } from "@/app/workflows/actions"
 import { serializeWorkflowForExport, validateWorkflowImport, slugify } from "@/lib/workflows/export-import"
 
 export function Toolbar() {
@@ -107,6 +107,13 @@ export function Toolbar() {
         nodes: data.nodes as unknown as Record<string, unknown>[],
       })
       if (result.success) {
+        // When disabling, cancel waiting runs via toggleWorkflow
+        if (!data.active) {
+          const toggleResult = await toggleWorkflow(workflowId, false)
+          if (toggleResult.success && toggleResult.cancelledRuns > 0) {
+            toast.info(`${toggleResult.cancelledRuns} waiting run(s) cancelled`)
+          }
+        }
         useEditorStore.setState({ dirty: false })
         toast.success("Workflow saved")
       } else {
