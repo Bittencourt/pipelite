@@ -167,7 +167,11 @@ Plans:
   3. User can start a new workflow from 5-10 built-in workflow templates covering common CRM automation patterns
   4. User can export a workflow as JSON and import a workflow from JSON to transfer between instances
   5. User can manage workflow templates via REST API (list, get, create, delete)
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 30-01-PLAN.md -- Static template data, DB schema, export/import library, mutations
+- [ ] 30-02-PLAN.md -- HTTP template selector, save-as-template, create workflow dialog
+- [ ] 30-03-PLAN.md -- Export/import toolbar buttons, workflow templates REST API
 
 ## Progress
 
@@ -204,7 +208,7 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 27. Action Nodes | 3/3 | Complete    | 2026-03-28 | - |
 | 28. Visual Editor | v1.2 | 5/5 | Complete | 2026-03-28 |
 | 29. Run History & Observability | v1.2 | 0/3 | Complete    | 2026-03-28 |
-| 30. Templates & Portability | v1.2 | 0/TBD | Not started | - |
+| 30. Templates & Portability | v1.2 | 0/3 | Planning | - |
 
 ---
-*Roadmap updated: 2026-03-28 -- Phase 29 planned (3 plans in 2 waves)*
+*Roadmap updated: 2026-03-28 -- Phase 30 planned (3 plans in 2 waves)*
