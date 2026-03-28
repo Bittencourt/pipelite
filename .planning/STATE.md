@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
-status: in_progress
-last_updated: "2026-03-28T04:14:32Z"
-last_activity: 2026-03-28 -- 28-01 complete (editor data layer)
+status: executing
+last_updated: "2026-03-28T04:24:31.141Z"
+last_activity: 2026-03-28 -- 28-02 complete (visual canvas, editor pages, workflow list)
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 15
-  completed_plans: 15
-  percent: 56
+  total_plans: 18
+  completed_plans: 16
+  percent: 98
 ---
 
 # Session State
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 28 of 30 (Visual Editor)
-Plan: 1 of 4 complete
+Plan: 2 of 4 complete
 Status: In progress
-Last activity: 2026-03-28 -- 28-01 complete (editor data layer: graph converter, layout, mutations, variable schema, store)
+Last activity: 2026-03-28 -- 28-02 complete (visual canvas, editor pages, workflow list)
 
-Progress: [██████░░░░] 56% (15/27 plans)
+Progress: [██████████] 98% (89/91 plans)
 
 ## Performance Metrics
 
@@ -91,6 +91,8 @@ Progress: [██████░░░░] 56% (15/27 plans)
 - [Phase 28]: Static ACTION_OUTPUT_SCHEMAS map for variable autocomplete (not runtime introspection)
 - [Phase 28]: Virtual trigger node (id="trigger") stores TriggerConfig[] in data, excluded from DB conversion
 - [Phase 28]: Condition node nextNodeId for post-merge continuation; trueBranch/falseBranch for branch edges
+- [Phase 28]: Fixed updateWorkflow action to use triggers (plural) matching mutation schema
+- [Phase 28]: ReorderControls disable logic: up disabled when predecessor is trigger/condition, down disabled when next is null/condition
 
 ### Quick Tasks Completed
 
@@ -100,6 +102,7 @@ Progress: [██████░░░░] 56% (15/27 plans)
 | Phase 25 P02 | 2min | 2 tasks | 4 files |
 | Phase 25 P04 | 2min | 2 tasks | 6 files |
 | Phase 27 P02 | 6min | 2 tasks | 13 files |
+| Phase 28 P02 | 6min | 2 tasks | 16 files |
 
 ## Accumulated Context
 
