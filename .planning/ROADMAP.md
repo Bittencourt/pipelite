@@ -87,7 +87,12 @@ Plans:
   4. User can generate a unique inbound webhook URL for a workflow that accepts external HTTP POST requests and triggers a run
   5. User can add field-change filters to a trigger so the workflow only runs when a specific field actually changed
   6. User can trigger a workflow execution via REST API
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 25-01-PLAN.md -- Schema migration (trigger->triggers array), trigger types/Zod schemas, createWorkflowRun utility
+- [ ] 25-02-PLAN.md -- CRM event trigger subscriber and matcher (entity CRUD, stage change, field-change filters)
+- [ ] 25-03-PLAN.md -- Schedule processor with cron-parser, atomic DB claims, overlap prevention
+- [ ] 25-04-PLAN.md -- Inbound webhook endpoint, manual trigger, REST API trigger endpoint
 
 ### Phase 26: Execution Engine & Flow Control
 **Goal**: The workflow engine can walk a node graph, evaluate conditions, pause for delays, and be toggled on/off by the user
@@ -175,8 +180,8 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 19. Webhook Reliability | v1.1 | 3/3 | Complete | 2026-03-22 |
 | 20. Import State Reliability | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 23. Resend Email Integration | v1.1 | 5/5 | Complete | 2026-03-24 |
-| 24. Schema & Event Infrastructure | 4/4 | Complete   | 2026-03-27 | - |
-| 25. Trigger System | v1.2 | 0/TBD | Not started | - |
+| 24. Schema & Event Infrastructure | v1.2 | 4/4 | Complete | 2026-03-27 |
+| 25. Trigger System | v1.2 | 0/4 | Not started | - |
 | 26. Execution Engine & Flow Control | v1.2 | 0/TBD | Not started | - |
 | 27. Action Nodes | v1.2 | 0/TBD | Not started | - |
 | 28. Visual Editor | v1.2 | 0/TBD | Not started | - |
@@ -184,4 +189,4 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 30. Templates & Portability | v1.2 | 0/TBD | Not started | - |
 
 ---
-*Roadmap updated: 2026-03-26 -- Phase 24 planned (4 plans in 3 waves)*
+*Roadmap updated: 2026-03-27 -- Phase 25 planned (4 plans in 2 waves)*
