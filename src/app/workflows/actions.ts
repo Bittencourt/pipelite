@@ -13,12 +13,14 @@ import {
 import {
   createHttpTemplate,
   deleteHttpTemplate,
+  listHttpTemplates,
 } from "@/lib/mutations/http-templates"
+import type { HttpTemplateRecord } from "@/db/schema/http-templates"
 
 export async function createWorkflow(data: {
   name: string
   description?: string | null
-  trigger?: Record<string, unknown>
+  triggers?: Record<string, unknown>[]
   nodes?: Record<string, unknown>[]
 }): Promise<{ success: true; id: string } | { success: false; error: string }> {
   const session = await auth()
@@ -28,7 +30,10 @@ export async function createWorkflow(data: {
   }
 
   const result = await createWorkflowMutation({
-    ...data,
+    name: data.name,
+    description: data.description ?? null,
+    triggers: data.triggers ?? [],
+    nodes: data.nodes ?? [],
     createdBy: session.user.id,
   })
 
@@ -217,4 +222,10 @@ export async function removeHttpTemplate(
 
   revalidatePath("/workflows")
   return { success: true }
+}
+
+export async function getHttpTemplates(): Promise<HttpTemplateRecord[]> {
+  const session = await auth()
+  if (!session?.user?.id) return []
+  return listHttpTemplates()
 }
