@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
 status: executing
-last_updated: "2026-03-28T00:47:11.492Z"
+last_updated: "2026-03-28T00:51:19.472Z"
 last_activity: 2026-03-28 -- 25-03 complete (schedule processor with atomic claim, cron/interval utils)
 progress:
   total_phases: 7

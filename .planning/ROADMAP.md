@@ -103,7 +103,11 @@ Plans:
   2. User can add condition/IF nodes that branch execution based on field comparisons (equals, contains, greater than, is empty, etc.)
   3. User can add delay/wait nodes that pause execution for a configured duration (minutes/hours/days) and resume automatically
   4. The engine enforces loop prevention (recursion depth limit) and concurrency caps from day one
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 26-01-PLAN.md -- Execution types, schema migration, condition evaluator, delay resolver (TDD)
+- [ ] 26-02-PLAN.md -- Execution engine core and processor with instrumentation bootstrap
+- [ ] 26-03-PLAN.md -- Workflow toggle action and recursion depth tracking
 
 ### Phase 27: Action Nodes
 **Goal**: Workflows can perform useful work -- make HTTP calls, mutate CRM data, send emails, notify team members, run custom code, and respond to webhook callers
@@ -181,12 +185,12 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 20. Import State Reliability | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 23. Resend Email Integration | v1.1 | 5/5 | Complete | 2026-03-24 |
 | 24. Schema & Event Infrastructure | v1.2 | 4/4 | Complete | 2026-03-27 |
-| 25. Trigger System | 4/4 | Complete   | 2026-03-28 | - |
-| 26. Execution Engine & Flow Control | v1.2 | 0/TBD | Not started | - |
+| 25. Trigger System | v1.2 | 4/4 | Complete | 2026-03-28 |
+| 26. Execution Engine & Flow Control | v1.2 | 0/3 | Not started | - |
 | 27. Action Nodes | v1.2 | 0/TBD | Not started | - |
 | 28. Visual Editor | v1.2 | 0/TBD | Not started | - |
 | 29. Run History & Observability | v1.2 | 0/TBD | Not started | - |
 | 30. Templates & Portability | v1.2 | 0/TBD | Not started | - |
 
 ---
-*Roadmap updated: 2026-03-27 -- Phase 25 planned (4 plans in 2 waves)*
+*Roadmap updated: 2026-03-28 -- Phase 26 planned (3 plans in 2 waves)*
