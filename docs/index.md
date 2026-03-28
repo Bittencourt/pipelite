@@ -10,6 +10,7 @@ Welcome to the Pipelite documentation. Pipelite is an API-complete CRM that hand
 | Create my first deal | [Create Your First Deal](./user/tutorials/create-first-deal.md) |
 | Manage activities | [Manage Activities](./user/tutorials/manage-activities.md) |
 | Use custom fields | [Using Custom Fields](./user/tutorials/use-custom-fields.md) |
+| Automate with workflows | [Workflows Reference](./user/reference/workflows.md) |
 | Explore the API | [API Documentation](./api/index.md) |
 | Deploy Pipelite | [Admin Documentation](./admin/index.md) |
 | Contribute code | [Developer Documentation](./development/index.md) |
@@ -35,6 +36,7 @@ Documentation for end users of Pipelite CRM.
   - [Pipelines & Kanban](./user/reference/pipelines-kanban.md)
   - [Custom Fields](./user/reference/custom-fields.md)
   - [Search & Filtering](./user/reference/search-filtering.md)
+  - [Workflows](./user/reference/workflows.md)
   - [Keyboard Shortcuts](./user/reference/keyboard-shortcuts.md)
   - [Localization](./user/reference/localization.md)
 
@@ -101,4 +103,4 @@ This documentation follows the [Diátaxis framework](https://diataxis.fr/), orga
 
 ---
 
-*Last updated: 2026-03-04*
+*Last updated: 2026-03-28*

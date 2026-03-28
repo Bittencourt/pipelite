@@ -441,6 +441,138 @@ try {
 }
 ```
 
+## Workflows
+
+### List Workflows
+
+```javascript
+/**
+ * List all workflows
+ */
+async function listWorkflows(client, offset = 0, limit = 50) {
+  return client.get('/workflows', { offset, limit });
+}
+
+// Usage
+const { data: workflows, meta } = await listWorkflows(client);
+console.log(`Found ${meta.total} workflows`);
+workflows.forEach(wf => {
+  console.log(`- ${wf.name} (${wf.active ? 'active' : 'inactive'})`);
+});
+```
+
+### Create Workflow
+
+```javascript
+/**
+ * Create a workflow with CRM event trigger and HTTP action
+ */
+async function createWorkflow(client, workflowData) {
+  return client.post('/workflows', workflowData);
+}
+
+// Usage: Create a workflow that posts to Slack when a deal is won
+const workflow = await createWorkflow(client, {
+  name: 'Slack Notification on Deal Won',
+  triggers: [
+    {
+      type: 'crm_event',
+      entity: 'deal',
+      action: 'stage_changed',
+      fieldFilters: []
+    }
+  ],
+  nodes: [
+    {
+      id: 'check_stage',
+      type: 'condition',
+      label: 'Is Won Stage?',
+      config: {
+        groups: [{
+          operator: 'and',
+          conditions: [{
+            fieldPath: 'trigger.data.new_stage_id',
+            operator: 'equals',
+            value: 'your_won_stage_id'
+          }]
+        }],
+        logicOperator: 'and'
+      },
+      nextNodeId: null,
+      trueBranch: 'notify_slack',
+      falseBranch: null
+    },
+    {
+      id: 'notify_slack',
+      type: 'action',
+      label: 'Post to Slack',
+      config: {
+        actionType: 'http',
+        method: 'POST',
+        url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: 'Deal won: {{trigger.data.entity.title}} - ${{trigger.data.entity.value}}'
+        })
+      },
+      nextNodeId: null
+    }
+  ]
+});
+
+console.log('Created workflow:', workflow.data.id);
+```
+
+### Update Workflow
+
+```javascript
+/**
+ * Enable/disable a workflow
+ */
+async function toggleWorkflow(client, workflowId, active) {
+  return client.patch(`/workflows/${workflowId}`, { active });
+}
+
+// Usage
+await toggleWorkflow(client, 'wf_abc123', false);
+console.log('Workflow disabled');
+```
+
+### Trigger Workflow Run
+
+```javascript
+/**
+ * Manually trigger a workflow execution
+ */
+async function triggerWorkflow(client, workflowId, context = {}) {
+  return client.post(`/workflows/${workflowId}/run`, context);
+}
+
+// Usage: Trigger with a specific deal
+const run = await triggerWorkflow(client, 'wf_abc123', {
+  entityType: 'deal',
+  entityId: 'deal_def456'
+});
+
+console.log('Run started:', run.data.run_id);
+```
+
+### Delete Workflow
+
+```javascript
+/**
+ * Delete a workflow
+ */
+async function deleteWorkflow(client, workflowId) {
+  await client.delete(`/workflows/${workflowId}`);
+  return true;
+}
+
+// Usage
+await deleteWorkflow(client, 'wf_abc123');
+console.log('Workflow deleted');
+```
+
 ## Webhooks
 
 ### Webhook Handler (Express.js)

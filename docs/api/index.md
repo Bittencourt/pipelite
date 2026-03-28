@@ -76,6 +76,7 @@ For the complete, authoritative API reference, see the **[OpenAPI Specification]
 | **Stages** | `/stages` | Manage pipeline stages |
 | **Custom Fields** | `/custom-fields` | Manage custom field definitions |
 | **Webhooks** | `/webhooks` | Manage webhook subscriptions |
+| **Workflows** | `/workflows` | Manage workflow automations |
 
 ### Common Operations
 

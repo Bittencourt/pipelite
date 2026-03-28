@@ -320,6 +320,88 @@ curl -X DELETE \
   $API_BASE/webhooks/wh_abc123
 ```
 
+## Workflows
+
+### List Workflows
+
+```bash
+# List all workflows
+curl -s -H "Authorization: Bearer $PIPELITE_API_KEY" \
+  $API_BASE/workflows | jq '.'
+```
+
+### Create Workflow
+
+```bash
+# Create a workflow triggered by deal creation
+curl -X POST \
+  -H "Authorization: Bearer $PIPELITE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Notify on New Deal",
+    "triggers": [
+      {
+        "type": "crm_event",
+        "entity": "deal",
+        "action": "created",
+        "fieldFilters": []
+      }
+    ],
+    "nodes": [
+      {
+        "id": "node1",
+        "type": "action",
+        "label": "Send Notification",
+        "config": {
+          "actionType": "notification",
+          "title": "New Deal Created",
+          "message": "{{trigger.data.entity.title}}"
+        },
+        "nextNodeId": null
+      }
+    ]
+  }' \
+  $API_BASE/workflows | jq '.'
+```
+
+### Update Workflow
+
+```bash
+# Enable a workflow and update its name
+curl -X PUT \
+  -H "Authorization: Bearer $PIPELITE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Notify Team on New Deal",
+    "active": true
+  }' \
+  $API_BASE/workflows/wf_abc123 | jq '.'
+```
+
+### Trigger Workflow Run
+
+```bash
+# Manually trigger a workflow
+curl -X POST \
+  -H "Authorization: Bearer $PIPELITE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entityType": "deal",
+    "entityId": "deal_def456",
+    "data": { "source": "manual_test" }
+  }' \
+  $API_BASE/workflows/wf_abc123/run | jq '.'
+```
+
+### Delete Workflow
+
+```bash
+# Delete a workflow
+curl -X DELETE \
+  -H "Authorization: Bearer $PIPELITE_API_KEY" \
+  $API_BASE/workflows/wf_abc123
+```
+
 ## Pagination
 
 ### Iterate Through All Pages

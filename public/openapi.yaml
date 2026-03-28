@@ -830,6 +830,180 @@ components:
           type: string
           format: date-time
 
+    # Workflow Schemas
+    Workflow:
+      type: object
+      required: [id, name, active, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          description: Unique workflow identifier
+        name:
+          type: string
+          description: Workflow name
+        description:
+          type: string
+          nullable: true
+          description: Optional description
+        triggers:
+          type: array
+          items:
+            $ref: '#/components/schemas/TriggerConfig'
+          description: Array of trigger configurations
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowNode'
+          description: Array of workflow nodes forming the execution graph
+        active:
+          type: boolean
+          description: Whether the workflow is enabled
+        created_by:
+          type: string
+          description: ID of the user who created the workflow
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WorkflowCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Workflow name
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+        triggers:
+          type: array
+          items:
+            $ref: '#/components/schemas/TriggerConfig'
+          default: []
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowNode'
+          default: []
+
+    WorkflowUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+        triggers:
+          type: array
+          items:
+            $ref: '#/components/schemas/TriggerConfig'
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowNode'
+        active:
+          type: boolean
+
+    TriggerConfig:
+      type: object
+      required: [type]
+      description: Trigger configuration (discriminated by type)
+      properties:
+        type:
+          type: string
+          enum: [crm_event, schedule, webhook, manual]
+          description: Trigger type
+        entity:
+          type: string
+          enum: [deal, person, organization, activity]
+          description: CRM entity type (crm_event triggers)
+        action:
+          type: string
+          enum: [created, updated, deleted, stage_changed]
+          description: CRM action (crm_event triggers)
+        fieldFilters:
+          type: array
+          items:
+            type: string
+          description: Field names to filter on (crm_event triggers)
+        mode:
+          type: string
+          enum: [interval, cron]
+          description: Schedule mode (schedule triggers)
+        intervalMinutes:
+          type: integer
+          minimum: 1
+          description: Interval in minutes (schedule triggers)
+        cronExpression:
+          type: string
+          description: Cron expression (schedule triggers)
+
+    WorkflowNode:
+      type: object
+      required: [id, type, label, config]
+      description: A node in the workflow execution graph
+      properties:
+        id:
+          type: string
+          description: Unique node identifier
+        type:
+          type: string
+          enum: [action, condition, delay]
+          description: Node type
+        label:
+          type: string
+          description: Display label
+        config:
+          type: object
+          description: Node-specific configuration
+        nextNodeId:
+          type: string
+          nullable: true
+          description: ID of the next node in the chain
+        trueBranch:
+          type: string
+          nullable: true
+          description: ID of the true-branch node (condition nodes only)
+        falseBranch:
+          type: string
+          nullable: true
+          description: ID of the false-branch node (condition nodes only)
+
+    WorkflowRunTrigger:
+      type: object
+      properties:
+        entityType:
+          type: string
+          description: Optional CRM entity type for the run
+        entityId:
+          type: string
+          description: Optional CRM entity ID for the run
+        data:
+          type: object
+          description: Optional custom data for the run
+
+    WorkflowRunResponse:
+      type: object
+      required: [run_id, status]
+      properties:
+        run_id:
+          type: string
+          description: ID of the created workflow run
+        status:
+          type: string
+          enum: [pending]
+          description: Initial run status
+
   responses:
     Unauthorized:
       description: Authentication required
@@ -2058,3 +2232,162 @@ paths:
       responses:
         '204':
           description: Webhook deleted
+
+  # ─── Workflows ───
+
+  /workflows:
+    get:
+      summary: List workflows
+      operationId: listWorkflows
+      tags: [Workflows]
+      parameters:
+        - $ref: '#/components/schemas/PaginationParams/properties/offset'
+        - $ref: '#/components/schemas/PaginationParams/properties/limit'
+      responses:
+        '200':
+          description: Paginated list of workflows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Workflow'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create workflow
+      operationId: createWorkflow
+      tags: [Workflows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowCreate'
+      responses:
+        '201':
+          description: Workflow created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Workflow'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /workflows/{id}:
+    get:
+      summary: Get workflow
+      operationId: getWorkflow
+      tags: [Workflows]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Workflow details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Workflow'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update workflow
+      operationId: updateWorkflow
+      tags: [Workflows]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowUpdate'
+      responses:
+        '200':
+          description: Workflow updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Workflow'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      summary: Delete workflow
+      operationId: deleteWorkflow
+      tags: [Workflows]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Workflow deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workflows/{id}/run:
+    post:
+      summary: Trigger workflow run
+      operationId: triggerWorkflowRun
+      tags: [Workflows]
+      description: Manually trigger a workflow execution. Optionally pass entity context or custom data.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowRunTrigger'
+      responses:
+        '201':
+          description: Workflow run created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WorkflowRunResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
