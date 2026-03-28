@@ -32,7 +32,7 @@
 ### Editor
 
 - [x] **EDIT-01**: User can create and edit workflows in a visual linear/branching editor
-- [ ] **EDIT-02**: User can configure each node's settings via a side panel
+- [x] **EDIT-02**: User can configure each node's settings via a side panel
 - [x] **EDIT-03**: User can pick variables from trigger data and previous node outputs via autocomplete
 - [x] **EDIT-04**: User can add/remove/reorder nodes in the flow
 
@@ -101,7 +101,7 @@
 | FLOW-01 | Phase 26 | Complete |
 | FLOW-02 | Phase 26 | Complete |
 | EDIT-01 | Phase 28 | Complete |
-| EDIT-02 | Phase 28 | Pending |
+| EDIT-02 | Phase 28 | Complete |
 | EDIT-03 | Phase 28 | Complete |
 | EDIT-04 | Phase 28 | Complete |
 | EXEC-01 | Phase 26 | Complete |

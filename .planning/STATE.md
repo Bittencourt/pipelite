@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 28 of 30 (Visual Editor)
-Plan: 2 of 4 complete
+Plan: 3 of 4 complete
 Status: In progress
-Last activity: 2026-03-28 -- 28-02 complete (visual canvas, editor pages, workflow list)
+Last activity: 2026-03-28 -- 28-03 complete (side panel, type picker, 9 config forms)
 
 Progress: [██████████] 98% (89/91 plans)
 
@@ -93,6 +93,9 @@ Progress: [██████████] 98% (89/91 plans)
 - [Phase 28]: Condition node nextNodeId for post-merge continuation; trueBranch/falseBranch for branch edges
 - [Phase 28]: Fixed updateWorkflow action to use triggers (plural) matching mutation schema
 - [Phase 28]: ReorderControls disable logic: up disabled when predecessor is trigger/condition, down disabled when next is null/condition
+- [Phase 28]: Config forms shared pattern: {nodeId, config} props, onChange calls store.updateNodeConfig for immediate auto-save
+- [Phase 28]: Trigger config manages triggers array via setTriggers separately from node config
+- [Phase 28]: ConfigRouter in side-panel routes by nodeType then actionType for clean form selection
 
 ### Quick Tasks Completed
 
@@ -141,3 +144,4 @@ None yet.
 - 2026-03-28: 27-01 complete -- variable interpolation engine, SSRF prevention, HTTP handler with retry/backoff, action registry with Zod schemas, engine dispatch integration (29 tests)
 - 2026-03-28: 27-03 complete -- QuickJS sandbox transform (15 tests), webhook response coordination with synchronous execution path (11 tests). Phase 27 COMPLETE.
 - 2026-03-28: 28-01 complete -- editor data layer: graph converter (lossless round-trip), dagre layout, zustand store, graph mutations, variable schema (25 tests)
+- 2026-03-28: 28-03 complete -- side panel with type picker, reorder controls, 9 config forms (trigger, HTTP, CRM, condition, email, notification, delay, transform, webhook-response)
