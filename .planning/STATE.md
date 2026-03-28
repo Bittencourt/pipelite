@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
 status: verifying
-last_updated: "2026-03-28T20:41:07.108Z"
+last_updated: "2026-03-28T22:05:26.581Z"
 last_activity: 2026-03-28
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 7
   total_plans: 26
   completed_plans: 26
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 ## Position
 
-Phase: 30 of 30 (templates & portability)
+Phase: 31 of 30 (templates & portability)
 Plan: Not started
 Status: Checkpoint pending - visual verification
 Last activity: 2026-03-28

@@ -219,7 +219,7 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 28. Visual Editor | v1.2 | 5/5 | Complete | 2026-03-28 |
 | 29. Run History & Observability | v1.2 | 0/3 | Complete    | 2026-03-28 |
 | 30. Templates & Portability | v1.2 | 2/3 | Complete    | 2026-03-28 |
-| 31. Workflow Wiring Fixes | v1.2 | 0/1 | Planned | - |
+| 31. Workflow Wiring Fixes | v1.2 | 0/1 | Complete    | 2026-03-28 |
 
 ---
 *Roadmap updated: 2026-03-28 -- Phase 31 added for gap closure*
