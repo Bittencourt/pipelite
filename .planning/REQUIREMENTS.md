@@ -41,13 +41,13 @@
 - [x] **EXEC-01**: User can enable/disable workflows with an on/off toggle
 - [ ] **EXEC-02**: User can view run history with status (success/failed/running/waiting)
 - [ ] **EXEC-03**: User can view per-node execution details (input/output/error) for each run
-- [ ] **EXEC-04**: User can see clear error messages on failed nodes
+- [x] **EXEC-04**: User can see clear error messages on failed nodes
 
 ### API
 
 - [x] **API-01**: User can CRUD workflows via REST API (list, get, create, update, delete)
 - [x] **API-02**: User can trigger a workflow execution via REST API
-- [ ] **API-03**: User can list workflow runs and view run details (including per-node results) via REST API
+- [x] **API-03**: User can list workflow runs and view run details (including per-node results) via REST API
 - [ ] **API-04**: User can manage workflow templates via REST API (list, get, create, delete)
 
 ### Templates
@@ -107,13 +107,13 @@
 | EXEC-01 | Phase 26 | Complete |
 | EXEC-02 | Phase 29 | Pending |
 | EXEC-03 | Phase 29 | Pending |
-| EXEC-04 | Phase 29 | Pending |
+| EXEC-04 | Phase 29 | Complete |
 | TMPL-01 | Phase 30 | Pending |
 | TMPL-02 | Phase 30 | Pending |
 | TMPL-03 | Phase 30 | Pending |
 | API-01 | Phase 24 | Complete |
 | API-02 | Phase 25 | Complete |
-| API-03 | Phase 29 | Pending |
+| API-03 | Phase 29 | Complete |
 | API-04 | Phase 30 | Pending |
 | TMPL-04 | Phase 30 | Pending |
 

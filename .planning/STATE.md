@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
 status: verifying
-last_updated: "2026-03-28T16:08:21.062Z"
+last_updated: "2026-03-28T17:44:39.067Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 7
-  completed_phases: 5
-  total_plans: 19
-  completed_plans: 19
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 18
   percent: 99
 ---
 
@@ -102,6 +102,8 @@ Progress: [██████████] 99% (90/91 plans)
 - [Phase 28]: Transform code textarea excluded from variable picker (JS code, not template interpolation)
 - [Phase 28]: Renamed layout.ts to dagre-layout.ts to avoid Next.js route file naming conflict
 - [Phase 28]: Used defaultEdgeOptions on ReactFlow instead of modifying graph-converter edge creation
+- [Phase 29]: RunStatusBadge is a server component (no use client needed) for simple presentation
+- [Phase 29]: Steps ordered by createdAt ascending in run detail endpoint
 
 ### Quick Tasks Completed
 
@@ -113,6 +115,7 @@ Progress: [██████████] 99% (90/91 plans)
 | Phase 27 P02 | 6min | 2 tasks | 13 files |
 | Phase 28 P02 | 6min | 2 tasks | 16 files |
 | Phase 28 P05 | 3min | 1 tasks | 2 files |
+| Phase 29 P01 | 6min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
