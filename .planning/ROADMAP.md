@@ -2,173 +2,204 @@
 
 ## Milestones
 
-- ✅ **v1.0 MVP** -- Phases 1-16 (shipped 2026-03-14)
-- ✅ **v1.1 Reliability & Operations** -- Phases 17-20, 23 (shipped 2026-03-26)
-- [ ] **v1.2 Workflows** -- Phases 24-30 (in progress)
+- ✅ **v1.0 MVP** — Phases 1-16 (shipped 2026-03-14)
+- 🚧 **v1.1 Reliability & Operations** — Phases 17-22 (in progress)
 
 ## Phases
 
 <details>
-<summary>v1.0 MVP (Phases 1-16) -- SHIPPED 2026-03-14</summary>
+<summary>✅ v1.0 MVP (Phases 1-16) — SHIPPED 2026-03-14</summary>
 
-- [x] Phase 1: Foundation & Authentication (6/6 plans) -- completed 2026-02-22
-- [x] Phase 2: Organizations (3/3 plans) -- completed 2026-02-22
-- [x] Phase 3: People (3/3 plans) -- completed 2026-02-22
-- [x] Phase 4: Pipelines & Stages (4/4 plans) -- completed 2026-02-23
-- [x] Phase 5: Deals & Kanban (3/3 plans) -- completed 2026-02-24
-- [x] Phase 6: Activities (4/4 plans) -- completed 2026-02-25
-- [x] Phase 7: Custom Fields & Formulas (11/11 plans) -- completed 2026-02-28
-- [x] Phase 8: Search & Filtering (3/3 plans) -- completed 2026-02-28
-- [x] Phase 9: Import/Export (3/3 plans) -- completed 2026-02-28
-- [x] Phase 10: REST API (4/4 plans) -- completed 2026-03-01
-- [x] Phase 11: Keyboard Control (5/5 plans) -- completed 2026-03-02
-- [x] Phase 12: Localization (5/5 plans) -- completed 2026-03-05
-- [x] Phase 13: Comprehensive Documentation (4/4 plans) -- completed 2026-03-06
-- [x] Phase 14: Dashboard Metrics (3/3 plans) -- completed 2026-03-07
-- [x] Phase 15: Multi-user Collaboration (6/6 plans) -- completed 2026-03-07
-- [x] Phase 16: Pipedrive API Importer (6/6 plans) -- completed 2026-03-08
+- [x] Phase 1: Foundation & Authentication (6/6 plans) — completed 2026-02-22
+- [x] Phase 2: Organizations (3/3 plans) — completed 2026-02-22
+- [x] Phase 3: People (3/3 plans) — completed 2026-02-22
+- [x] Phase 4: Pipelines & Stages (4/4 plans) — completed 2026-02-23
+- [x] Phase 5: Deals & Kanban (3/3 plans) — completed 2026-02-24
+- [x] Phase 6: Activities (4/4 plans) — completed 2026-02-25
+- [x] Phase 7: Custom Fields & Formulas (11/11 plans) — completed 2026-02-28
+- [x] Phase 8: Search & Filtering (3/3 plans) — completed 2026-02-28
+- [x] Phase 9: Import/Export (3/3 plans) — completed 2026-02-28
+- [x] Phase 10: REST API (4/4 plans) — completed 2026-03-01
+- [x] Phase 11: Keyboard Control (5/5 plans) — completed 2026-03-02
+- [x] Phase 12: Localization (5/5 plans) — completed 2026-03-05
+- [x] Phase 13: Comprehensive Documentation (4/4 plans) — completed 2026-03-06
+- [x] Phase 14: Dashboard Metrics (3/3 plans) — completed 2026-03-07
+- [x] Phase 15: Multi-user Collaboration (6/6 plans) — completed 2026-03-07
+- [x] Phase 16: Pipedrive API Importer (6/6 plans) — completed 2026-03-08
 
 Full archive: `.planning/milestones/v1.0-ROADMAP.md`
 
 </details>
 
-<details>
-<summary>v1.1 Reliability & Operations (Phases 17-20, 23) -- SHIPPED 2026-03-26</summary>
+### 🚧 v1.1 Reliability & Operations (In Progress)
 
-- [x] Phase 17: TypeScript Cleanup (1/1 plan) -- completed 2026-03-14
-- [x] Phase 18: DB Infrastructure (1/1 plan) -- completed 2026-03-14
-- [x] Phase 19: Webhook Reliability (3/3 plans) -- completed 2026-03-22
-- [x] Phase 20: Import State Reliability (2/2 plans) -- completed 2026-03-23
-- [x] Phase 23: Resend Email Integration (5/5 plans) -- completed 2026-03-24
+**Milestone Goal:** Resolve accumulated tech debt and bring operational reliability to webhooks, import state, and formula recalculation. Add bulk operations for efficient record management.
 
-Full archive: `.planning/milestones/v1.1-ROADMAP.md`
+- [x] **Phase 17: TypeScript Cleanup** — Remove `ignoreBuildErrors`, verify clean `tsc --noEmit` (completed 2026-03-14)
+- [ ] **Phase 18: DB Infrastructure** — Migrate `webhook_deliveries` and `import_sessions` tables
+- [x] **Phase 19: Webhook Reliability** — Durable delivery, delivery history UI, DLQ with manual replay (completed 2026-03-22)
+- [x] **Phase 20: Import State Reliability** — DB-backed import sessions, cancellation persists across restarts (completed 2026-03-23)
+- [ ] **Phase 21: Formula Reactivity** — Server-side recalculation on save, dependency-aware fan-out control
+- [ ] **Phase 22: Bulk Operations** — Checkbox selection, bulk delete, bulk assign owner, bulk CSV export
 
-</details>
+---
 
-### v1.2 Workflows (In Progress)
+### Phase 17: TypeScript Cleanup
 
-**Milestone Goal:** Add a server-side workflow automation engine with a visual linear/branching editor, deeply integrated with CRM events and external services.
+**Goal:** The build is honest — no suppressed errors, `tsc --noEmit` exits clean before any v1.1 code is written.
 
-- [x] **Phase 24: Schema & Event Infrastructure** - Database tables, in-process event bus, shared mutation functions, CRM event emission (completed 2026-03-27)
-- [x] **Phase 25: Trigger System** - CRM event triggers, cron schedules, manual runs, inbound webhooks, field change filtering (completed 2026-03-28)
-- [x] **Phase 26: Execution Engine & Flow Control** - Async graph walker, condition/IF nodes, delay nodes, workflow enable/disable (completed 2026-03-28)
-- [x] **Phase 27: Action Nodes** - HTTP requests, CRM mutations, email sending, notifications, JS sandbox, webhook responses (completed 2026-03-28)
-- [x] **Phase 28: Visual Editor** - Linear/branching node editor, node configuration panel, variable picker, node management (completed 2026-03-28)
-- [ ] **Phase 29: Run History & Observability** - Run list with status, per-node execution details, error display
-- [ ] **Phase 30: Templates & Portability** - Built-in HTTP templates, custom templates, workflow starter templates, JSON import/export
+**Depends on:** Nothing (first phase, must run before all others)
 
-## Phase Details
+**Requirements:** TSFIX-01
 
-### Phase 24: Schema & Event Infrastructure
-**Goal**: All database tables and event plumbing exist so trigger, engine, and action code can be built on a stable foundation
-**Depends on**: Nothing (first phase of v1.2)
-**Requirements**: API-01
-**Success Criteria** (what must be TRUE):
-  1. Workflow, workflow_run, workflow_run_step, and workflow_template tables exist with correct schema and indexes
-  2. An in-process event bus can emit and receive CRM events (create/update/delete on deals, people, orgs, activities)
-  3. Existing server actions (createDeal, updateDeal, deleteDeal, etc.) emit events through the bus without breaking current behavior
-  4. Shared mutation functions are extracted from server actions so they can be called from both server actions and the workflow engine (without HTTP request context)
-  5. REST API endpoints for workflow CRUD (list, get, create, update, delete) are functional
-**Plans**: 4 plans
+**Success Criteria** (what must be TRUE when this phase completes):
+1. `next.config.ts` no longer contains `ignoreBuildErrors: true`
+2. Running `npx tsc --noEmit` in the project root exits with code 0 and zero diagnostic output
+3. The Docker build succeeds (`next build`) without any TypeScript error suppression in effect
+
+**Plans:** 1 plan
+
 Plans:
-- [ ] 24-01-PLAN.md -- Workflow schema, event bus, and webhook subscriber
-- [ ] 24-02-PLAN.md -- Deal and people mutation extraction with event emission
-- [ ] 24-03-PLAN.md -- Workflow CRUD mutations, REST API, and server actions
-- [ ] 24-04-PLAN.md -- Organization and activity mutations, remaining API route refactors
+- [ ] 17-01-PLAN.md — Remove `ignoreBuildErrors` from `next.config.ts`, verify `tsc --noEmit` and Docker build pass clean
 
-### Phase 25: Trigger System
-**Goal**: Users can define what causes a workflow to run -- CRM events, schedules, manual clicks, or external HTTP calls
-**Depends on**: Phase 24
-**Requirements**: TRIG-01, TRIG-02, TRIG-03, TRIG-04, TRIG-05, TRIG-06, API-02
-**Success Criteria** (what must be TRUE):
-  1. User can configure a workflow to fire when a CRM entity is created, updated, or deleted, and a deal stage change provides both old and new stage data
-  2. User can set a cron expression or interval on a workflow and it fires on schedule via the setTimeout-chaining processor
-  3. User can manually run a workflow with test data or by selecting a specific CRM record
-  4. User can generate a unique inbound webhook URL for a workflow that accepts external HTTP POST requests and triggers a run
-  5. User can add field-change filters to a trigger so the workflow only runs when a specific field actually changed
-  6. User can trigger a workflow execution via REST API
-**Plans**: 4 plans
+---
+
+### Phase 18: DB Infrastructure
+
+**Goal:** The database has the two new tables (`webhook_deliveries`, `import_sessions`) that Phases 19 and 20 depend on, with correct indexes and Drizzle schema exports in place.
+
+**Depends on:** Phase 17
+
+**Requirements:** None directly (infrastructure for WHOOK-01, IMPORT-01)
+
+**Success Criteria** (what must be TRUE when this phase completes):
+1. `webhook_deliveries` table exists in the running database with columns for status, payload, HTTP response, retry count, and `next_attempt_at`; composite index on `(status, next_attempt_at)` present
+2. `import_sessions` table exists with JSONB progress column, status, and cancellation flag
+3. Drizzle schema files export both tables via `src/db/schema/index.ts` and the app starts without migration errors
+
+**Plans:** 1 plan
+
 Plans:
-- [ ] 25-01-PLAN.md -- Schema migration (trigger->triggers array), trigger types/Zod schemas, createWorkflowRun utility
-- [ ] 25-02-PLAN.md -- CRM event trigger subscriber and matcher (entity CRUD, stage change, field-change filters)
-- [ ] 25-03-PLAN.md -- Schedule processor with cron-parser, atomic DB claims, overlap prevention
-- [ ] 25-04-PLAN.md -- Inbound webhook endpoint, manual trigger, REST API trigger endpoint
+- [ ] 18-01-PLAN.md — Create `webhook-deliveries.ts` and `import-sessions.ts` schema files, export from barrel, apply migration via Docker restart
 
-### Phase 26: Execution Engine & Flow Control
-**Goal**: The workflow engine can walk a node graph, evaluate conditions, pause for delays, and be toggled on/off by the user
-**Depends on**: Phase 25
-**Requirements**: EXEC-01, FLOW-01, FLOW-02
-**Success Criteria** (what must be TRUE):
-  1. User can toggle a workflow on/off and disabled workflows do not fire even when their trigger conditions are met
-  2. User can add condition/IF nodes that branch execution based on field comparisons (equals, contains, greater than, is empty, etc.)
-  3. User can add delay/wait nodes that pause execution for a configured duration (minutes/hours/days) and resume automatically
-  4. The engine enforces loop prevention (recursion depth limit) and concurrency caps from day one
-**Plans**: 3 plans
+---
+
+### Phase 19: Webhook Reliability
+
+**Goal:** Webhook delivery survives container restarts, admins can see every delivery outcome, and failed deliveries can be replayed without developer intervention.
+
+**Depends on:** Phase 18 (`webhook_deliveries` table)
+
+**Requirements:** WHOOK-01, WHOOK-02, WHOOK-03
+
+**Success Criteria** (what must be TRUE when this phase completes):
+1. Restarting the Docker container while a webhook retry is pending does not lose the delivery — the retry fires after restart because delivery state is in the database, not memory
+2. Admin navigates to a webhook endpoint in the admin UI and sees a delivery log: each row shows timestamp, HTTP status, attempt number, and success/failure
+3. Admin can see dead-letter entries (deliveries that exhausted all retries) as a distinct DLQ section and click "Replay" on any entry to re-queue it for immediate delivery
+4. A 4xx response from the subscriber endpoint does not trigger retries (only 5xx and network errors do), visible from the delivery log status
+
+**Plans:** 3/3 plans complete
+
 Plans:
-- [ ] 26-01-PLAN.md -- Execution types, schema migration, condition evaluator, delay resolver (TDD)
-- [ ] 26-02-PLAN.md -- Execution engine core and processor with instrumentation bootstrap
-- [ ] 26-03-PLAN.md -- Workflow toggle action and recursion depth tracking
+- [x] 19-01-PLAN.md — Rewrite deliver.ts to INSERT into webhook_deliveries; create cron processor and self-scheduling startup hook
+- [x] 19-02-PLAN.md — Admin webhook list page with CRUD (create, edit, delete) and sidebar navigation
+- [x] 19-03-PLAN.md — Webhook detail page with delivery history log, DLQ tab, and manual replay
 
-### Phase 27: Action Nodes
-**Goal**: Workflows can perform useful work -- make HTTP calls, mutate CRM data, send emails, notify team members, run custom code, and respond to webhook callers
-**Depends on**: Phase 26
-**Requirements**: ACT-01, ACT-02, ACT-03, ACT-04, ACT-05, ACT-06, ACT-07
-**Success Criteria** (what must be TRUE):
-  1. User can configure an HTTP node to make GET/POST/PUT/PATCH/DELETE requests with variable interpolation in URL, headers, and body, with configurable retry count (0-3) and backoff
-  2. User can add CRM action nodes that create or update deals, people, organizations, and activities using data from previous nodes
-  3. User can add email and notification nodes that send messages with template variables from trigger/node data
-  4. User can add a JavaScript transform node that executes user-provided code in a QuickJS sandbox
-  5. User can configure a webhook response node that sends a custom HTTP response back to the caller of an inbound webhook trigger
-**Plans**: 3 plans
+---
+
+### Phase 20: Import State Reliability
+
+**Goal:** Pipedrive import progress is stored in the database — progress survives a container restart, and a cancellation issued before a restart takes effect when the container comes back up.
+
+**Depends on:** Phase 18 (`import_sessions` table)
+
+**Requirements:** IMPORT-01, IMPORT-02
+
+**Success Criteria** (what must be TRUE when this phase completes):
+1. Starting a Pipedrive import, restarting the Docker container mid-import, then polling the progress endpoint returns the last-known progress percentage (not a blank/error state)
+2. Clicking "Cancel import" and then restarting the container results in the import not resuming — cancellation is durable
+3. On app startup, any `import_sessions` rows still in `running` status are automatically transitioned to `error` (stale session cleanup), preventing phantom "in progress" indicators after a crash
+
+**Plans:** 2/2 plans complete
+
 Plans:
-- [ ] 27-01-PLAN.md -- Interpolation engine, action registry, config schemas, SSRF prevention, HTTP handler
-- [ ] 27-02-PLAN.md -- CRM action, email, and notification handlers
-- [ ] 27-03-PLAN.md -- JavaScript transform sandbox and webhook response coordination
+- [ ] 20-01-PLAN.md — Schema migration for userId column, rewrite pipedrive-import-state.ts to DB-backed Drizzle queries, startup cleanup module, instrumentation.ts hook
+- [ ] 20-02-PLAN.md — Wire DB-backed state into import actions (await all calls, pass userId), interrupted state UI with i18n
 
-### Phase 28: Visual Editor
-**Goal**: Users can visually create, edit, and manage workflow node graphs in a linear/branching canvas with full node configuration
-**Depends on**: Phase 24 (needs TypeScript types; can be built in parallel with phases 25-27)
-**Requirements**: EDIT-01, EDIT-02, EDIT-03, EDIT-04
-**Success Criteria** (what must be TRUE):
-  1. User can create a new workflow and see a visual canvas with connected nodes in a linear or branching layout
-  2. User can click a node to open a side panel where they configure that node's settings (trigger type, HTTP URL, condition fields, etc.)
-  3. User can pick variables from trigger data and previous node outputs via an autocomplete dropdown when editing node fields
-  4. User can add new nodes, remove existing nodes, and reorder nodes in the flow via the visual editor
-**Plans**: 4 plans
+---
+
+### Phase 21: Formula Reactivity
+
+**Goal:** Formula field values are computed server-side every time an entity is saved and stored in the JSONB blob — API responses, webhook payloads, and CSV exports all reflect current formula values without requiring a page load.
+
+**Depends on:** Phase 17 (clean TypeScript build baseline)
+
+**Requirements:** FORMULA-01, FORMULA-02
+
+**Success Criteria** (what must be TRUE when this phase completes):
+1. Editing a field that a formula depends on and then fetching the entity via the REST API returns the updated formula value in the same response — no extra page reload or manual recalculation needed
+2. A webhook payload for a deal.updated event includes the current computed formula values in the `customFields` object
+3. Exporting selected records to CSV includes formula field columns with current server-computed values (not blank or stale)
+4. Changing one field triggers recalculation only for formulas that reference that field — updating an unrelated field does not recalculate unaffected formulas (verifiable via server logs)
+
+**Plans:** TBD
+
 Plans:
-- [x] 28-01-PLAN.md -- Core lib layer: graph converter, layout engine, editor store, graph mutations, variable schema (TDD)
-- [x] 28-02-PLAN.md -- Canvas with custom nodes, add-button edges, toolbar, editor page, workflow list
-- [x] 28-03-PLAN.md -- Side panel with type picker and all node configuration forms
-- [x] 28-04-PLAN.md -- Variable picker autocomplete and integration into config forms
+- [ ] 21-01: Add server-side formula evaluation step to `saveFieldValues` in `src/lib/custom-fields.ts`; implement dependency extraction to filter which formulas recalculate; store results in JSONB
 
-### Phase 29: Run History & Observability
-**Goal**: Users can see what happened when workflows ran -- success/failure status, per-node details, and clear error messages
-**Depends on**: Phase 26
-**Requirements**: EXEC-02, EXEC-03, EXEC-04, API-03
-**Success Criteria** (what must be TRUE):
-  1. User can view a list of workflow runs with status indicators (success, failed, running, waiting) and timestamps
-  2. User can drill into a run and see per-node execution details including input data, output data, and duration
-  3. Failed nodes display clear, actionable error messages that help the user diagnose what went wrong
-  4. User can list workflow runs and view run details (including per-node results) via REST API
-**Plans**: TBD
+---
 
-### Phase 30: Templates & Portability
-**Goal**: Users can bootstrap workflows quickly from templates and share them via JSON export/import
-**Depends on**: Phase 28
-**Requirements**: TMPL-01, TMPL-02, TMPL-03, TMPL-04, API-04
-**Success Criteria** (what must be TRUE):
-  1. User can pick from built-in HTTP templates for common services (Planka, Apprise, Slack, Discord, Tally, Typeform) when configuring an HTTP node
-  2. User can save a configured HTTP node as a custom template and reuse it in other workflows
-  3. User can start a new workflow from 5-10 built-in workflow templates covering common CRM automation patterns
-  4. User can export a workflow as JSON and import a workflow from JSON to transfer between instances
-  5. User can manage workflow templates via REST API (list, get, create, delete)
-**Plans**: TBD
+### Phase 22: Bulk Operations
+
+**Goal:** Users can select multiple records across all entity list pages and act on them together — delete, reassign, or export — without touching each record individually.
+
+**Depends on:** Phase 19 (durable webhook queue in place before bulk mutations create webhook events), Phase 21 (formula recalc path in place before bulk edits touch formula dependencies)
+
+**Requirements:** BULK-01, BULK-02, BULK-03, BULK-04
+
+**Success Criteria** (what must be TRUE when this phase completes):
+1. On Organizations, People, Deals, and Activities list pages, a checkbox column is visible; clicking the header checkbox selects all visible records; pressing Escape clears the selection
+2. With records selected, clicking "Delete" shows a confirmation modal that states the exact count (e.g., "Delete 12 organizations?"); confirming deletes only the records the current user owns, and any per-record failures are surfaced individually (not silently skipped)
+3. With records selected, clicking "Assign owner" opens a member picker; selecting a member reassigns all selected records and reports "X of Y updated" if any fail
+4. With records selected, clicking "Export CSV" downloads a CSV containing only the selected records — not the full table
+
+**Plans:** TBD
+
+Plans:
+- [ ] 22-01: Activate TanStack Table `enableRowSelection` on all four entity list tables; build shared `BulkActionBar` component that appears when selection is non-empty
+- [ ] 22-02: Add `deleteMany` server actions per entity with per-record ownership check and partial-failure result shape; wire to count-confirmation modal
+- [ ] 22-03: Add `assignMany` server actions per entity; build member picker in bulk bar; add scoped CSV export action for selected record IDs
+
+---
+
+### Phase 23: Resend Email Integration for Production
+
+**Goal:** Email delivery is production-ready with Resend SMTP, all templates support i18n, 4 new transactional email types are wired (invite user, deal assigned, activity reminder, weekly digest), and users can manage notification preferences.
+
+**Depends on:** None (standalone feature phase, uses existing email infrastructure)
+
+**Requirements:** EMAIL-01, EMAIL-02, EMAIL-03, EMAIL-04, EMAIL-05, EMAIL-06, EMAIL-07, EMAIL-08, EMAIL-09, EMAIL-10
+
+**Success Criteria** (what must be TRUE when this phase completes):
+1. When SMTP_HOST is not configured, all email functions log a warning and return without error -- registration and other flows still complete
+2. All email templates (existing and new) render content in the recipient's locale (en-US, pt-BR, es-ES)
+3. Admin can invite a user by email; invited user who registers via the invite link is auto-approved
+4. Assigning a deal to a new user triggers a deal-assigned email notification (respecting preferences)
+5. Activities due within 1 hour receive a single reminder email; no duplicates on subsequent cron ticks
+6. Monday morning, opted-in users receive a weekly digest with deals summary and activity counts
+7. Users can toggle deal-assigned, activity-reminder, and weekly-digest notifications at /settings/notifications
+
+**Plans:** 5/5 plans complete
+
+Plans:
+- [ ] 23-01-PLAN.md — DB schemas (notification preferences, user invites, reminder column) + safe send wrapper + i18n email infrastructure + i18n existing templates
+- [ ] 23-02-PLAN.md — 4 new email templates with i18n + send functions
+- [ ] 23-03-PLAN.md — Invite user flow + notification preferences settings page
+- [ ] 23-04-PLAN.md — Deal-assigned trigger + email cron processor (activity reminders + weekly digest)
+
+---
 
 ## Progress
-
-**Execution Order:**
-Phases execute in numeric order: 24 -> 25 -> 26 -> 27 -> 28 -> 29 -> 30
-Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in parallel with 25-27 if desired.
 
 | Phase | Milestone | Plans | Status | Completed |
 |-------|-----------|-------|--------|-----------|
@@ -189,17 +220,13 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 15. Multi-user Collaboration | v1.0 | 6/6 | Complete | 2026-03-07 |
 | 16. Pipedrive API Importer | v1.0 | 6/6 | Complete | 2026-03-08 |
 | 17. TypeScript Cleanup | v1.1 | 1/1 | Complete | 2026-03-14 |
-| 18. DB Infrastructure | v1.1 | 1/1 | Complete | 2026-03-14 |
-| 19. Webhook Reliability | v1.1 | 3/3 | Complete | 2026-03-22 |
-| 20. Import State Reliability | v1.1 | 2/2 | Complete | 2026-03-23 |
-| 23. Resend Email Integration | v1.1 | 5/5 | Complete | 2026-03-24 |
-| 24. Schema & Event Infrastructure | v1.2 | 4/4 | Complete | 2026-03-27 |
-| 25. Trigger System | v1.2 | 4/4 | Complete | 2026-03-28 |
-| 26. Execution Engine & Flow Control | v1.2 | 3/3 | Complete | 2026-03-28 |
-| 27. Action Nodes | 3/3 | Complete    | 2026-03-28 | - |
-| 28. Visual Editor | 3/4 | 5/5 | Complete   | 2026-03-28 |
-| 29. Run History & Observability | v1.2 | 0/TBD | Not started | - |
-| 30. Templates & Portability | v1.2 | 0/TBD | Not started | - |
+| 18. DB Infrastructure | v1.1 | 1 plan | Not started | - |
+| 19. Webhook Reliability | v1.1 | Complete    | 2026-03-22 | 2026-03-22 |
+| 20. Import State Reliability | 2/2 | Complete    | 2026-03-23 | - |
+| 21. Formula Reactivity | v1.1 | 0/TBD | Not started | - |
+| 22. Bulk Operations | v1.1 | 0/TBD | Not started | - |
+| 23. Resend Email Integration | 5/5 | Complete    | 2026-03-24 | - |
+| 29. Run History & Observability | v1.2 | 1/4 | In progress | - |
 
 ---
-*Roadmap updated: 2026-03-28 -- Phase 28 planned (4 plans in 3 waves)*
+*Roadmap updated: 2026-03-23 — Phase 23 plans created (4 plans, 3 waves)*
