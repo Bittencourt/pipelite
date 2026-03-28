@@ -3,6 +3,7 @@ import { workflows } from "@/db/schema/workflows"
 import { eq, desc, count } from "drizzle-orm"
 import { z } from "zod"
 import type { Workflow } from "@/db/schema/workflows"
+import { generateWebhookSecret } from "@/lib/triggers/webhook-secret"
 
 // --- Schemas ---
 
@@ -120,6 +121,52 @@ export async function getWorkflow(id: string): Promise<Workflow | null> {
   })
 
   return workflow ?? null
+}
+
+// --- Webhook Secret Regeneration ---
+
+type RegenerateSecretResult =
+  | { success: true; secret: string }
+  | { success: false; error: string }
+
+export async function regenerateWebhookSecret(
+  workflowId: string,
+  userId: string
+): Promise<RegenerateSecretResult> {
+  const existing = await db.query.workflows.findFirst({
+    where: eq(workflows.id, workflowId),
+  })
+
+  if (!existing) {
+    return { success: false, error: "Workflow not found" }
+  }
+
+  // Authorization: only the creator can regenerate the secret
+  if (existing.createdBy !== userId) {
+    return { success: false, error: "Not authorized" }
+  }
+
+  const newSecret = generateWebhookSecret()
+
+  // Update the webhook trigger config in the triggers JSONB array
+  const triggers = (existing.triggers ?? []) as Array<Record<string, unknown>>
+  const updatedTriggers = triggers.map((t) => {
+    if (t.type === "webhook") {
+      return { ...t, secret: newSecret }
+    }
+    return t
+  })
+
+  await db
+    .update(workflows)
+    .set({
+      webhookSecret: newSecret,
+      triggers: updatedTriggers,
+      updatedAt: new Date(),
+    })
+    .where(eq(workflows.id, workflowId))
+
+  return { success: true, secret: newSecret }
 }
 
 export async function listWorkflows(
