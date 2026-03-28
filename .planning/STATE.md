@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Reliability & Operations
 status: verifying
-last_updated: "2026-03-28T17:51:13.597Z"
+last_updated: "2026-03-28T17:52:08.595Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 7
@@ -104,8 +104,8 @@ Progress: [██████████] 99% (90/91 plans)
 - [Phase 28]: Used defaultEdgeOptions on ReactFlow instead of modifying graph-converter edge creation
 - [Phase 29]: RunStatusBadge is a server component (no use client needed) for simple presentation
 - [Phase 29]: Steps ordered by createdAt ascending in run detail endpoint
-- [Phase 29]: Relative time formatting inline helper rather than external library
-- [Phase 29]: SQL FILTER clause for aggregate success rate in single query
+- [Phase 29]: Skipped nodes detected by comparing workflow.nodes against executed step records
+- [Phase 29]: JsonViewer uses simple JSON.stringify with pre tag, no external library
 
 ### Quick Tasks Completed
 
@@ -118,7 +118,7 @@ Progress: [██████████] 99% (90/91 plans)
 | Phase 28 P02 | 6min | 2 tasks | 16 files |
 | Phase 28 P05 | 3min | 1 tasks | 2 files |
 | Phase 29 P01 | 6min | 2 tasks | 8 files |
-| Phase 29 P02 | 183 | 2 tasks | 7 files |
+| Phase 29 P03 | 3min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
