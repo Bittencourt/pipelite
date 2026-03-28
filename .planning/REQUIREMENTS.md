@@ -9,7 +9,7 @@
 
 - [ ] **TRIG-01**: User can trigger a workflow when a CRM entity is created, updated, or deleted
 - [ ] **TRIG-02**: User can trigger a workflow when a deal changes stage (with old/new stage data)
-- [ ] **TRIG-03**: User can manually run a workflow with test data or a selected record
+- [x] **TRIG-03**: User can manually run a workflow with test data or a selected record
 - [ ] **TRIG-04**: User can trigger a workflow on a cron/schedule (interval or cron expression)
 - [ ] **TRIG-05**: User can trigger a workflow via an inbound webhook URL (external HTTP call)
 - [ ] **TRIG-06**: User can filter triggers by field change detection ("only run if field X changed")
@@ -87,7 +87,7 @@
 |-------------|-------|--------|
 | TRIG-01 | Phase 25 | Pending |
 | TRIG-02 | Phase 25 | Pending |
-| TRIG-03 | Phase 25 | Pending |
+| TRIG-03 | Phase 25 | Complete |
 | TRIG-04 | Phase 25 | Pending |
 | TRIG-05 | Phase 25 | Pending |
 | TRIG-06 | Phase 25 | Pending |

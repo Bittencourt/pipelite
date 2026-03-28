@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
-status: completed
-last_updated: "2026-03-27T01:44:32.665Z"
-last_activity: 2026-03-27 -- 24-04 complete (org/activity mutations, zero triggerWebhook)
+status: in-progress
+last_updated: "2026-03-28T00:43:00.000Z"
+last_activity: 2026-03-28 -- 25-01 complete (trigger types, schema migration, createWorkflowRun)
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 4
-  completed_plans: 4
-  percent: 15
+  completed_plans: 5
+  percent: 19
 ---
 
 # Session State
@@ -24,18 +24,18 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 ## Position
 
-Phase: 24 of 30 (Schema & Event Infrastructure) -- COMPLETE
-Plan: 4 of 4 complete
-Status: Phase 24 complete, ready for Phase 25
-Last activity: 2026-03-27 -- 24-04 complete (org/activity mutations, zero triggerWebhook)
+Phase: 25 of 30 (Trigger System)
+Plan: 1 of 4 complete
+Status: In progress
+Last activity: 2026-03-28 -- 25-01 complete (trigger types, schema migration, createWorkflowRun)
 
-Progress: [██░░░░░░░░] 15% (4/27 plans)
+Progress: [██░░░░░░░░] 19% (5/27 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 85 (across v1.0 + v1.1)
-- v1.2 plans completed: 4
+- v1.2 plans completed: 5
 
 ## Decisions
 
@@ -51,6 +51,9 @@ Progress: [██░░░░░░░░] 15% (4/27 plans)
 - Activity API route PUT emits events directly via crmBus (different field mapping than mutations)
 - Pipeline/stage/custom-field-def triggerWebhook calls removed (config entities, not CRM data)
 - Org batch route uses individual mutation calls for per-entity event emission
+- Manual migration SQL for trigger->triggers array to safely wrap existing data
+- Partial index on next_run_at WHERE active=true for schedule polling efficiency
+- workflowTemplates keeps singular trigger column (separate concern)
 
 ### Quick Tasks Completed
 
@@ -87,3 +90,4 @@ None yet.
 - 2026-03-27: 24-02 complete -- deal & people mutations extracted with CRM event emission
 - 2026-03-27: 24-03 complete -- workflow CRUD mutations, REST API (/api/v1/workflows), server actions, serializeWorkflow
 - 2026-03-27: 24-04 complete -- org/activity mutations extracted, all triggerWebhook eliminated. Phase 24 COMPLETE.
+- 2026-03-28: 25-01 complete -- trigger types (4 Zod schemas), schema migration (trigger->triggers array), createWorkflowRun utility, cron-parser installed
