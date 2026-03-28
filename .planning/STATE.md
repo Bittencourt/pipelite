@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
 status: executing
-last_updated: "2026-03-28T01:54:33.369Z"
+last_updated: "2026-03-28T01:58:20.762Z"
 last_activity: 2026-03-28 -- 26-03 complete (toggle workflow, recursion depth guard)
 progress:
   total_phases: 7

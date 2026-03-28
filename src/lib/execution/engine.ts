@@ -5,8 +5,7 @@ import { evaluateCondition } from "./condition-evaluator"
 import { resolveDelay } from "./delay-resolver"
 import type {
   WorkflowNode,
-  ConditionNode,
-  DelayNode,
+  ActionNode,
   ExecutionContext,
 } from "./types"
 
@@ -104,8 +103,7 @@ export async function executeRun(runId: string): Promise<void> {
         }
 
         case "condition": {
-          const condNode = node as ConditionNode
-          const matched = evaluateCondition(condNode.config, context)
+          const matched = evaluateCondition(node.config, context)
           const branchOutput = { matched, branch: matched ? "true" : "false" }
           context.nodes[node.id] = { output: branchOutput, status: "completed" }
 
@@ -113,7 +111,7 @@ export async function executeRun(runId: string): Promise<void> {
           await persistContext(runId, context)
 
           // Execute the matching branch
-          const branchStartId = matched ? condNode.trueBranch : condNode.falseBranch
+          const branchStartId = matched ? node.trueBranch : node.falseBranch
           const delayHit = await executeBranch(branchStartId, nodeMap, context, runId)
           if (delayHit) {
             // A delay was hit inside the branch -- run is now waiting
@@ -121,13 +119,12 @@ export async function executeRun(runId: string): Promise<void> {
           }
 
           // Continue from merge point
-          nextNodeId = condNode.nextNodeId
+          nextNodeId = node.nextNodeId
           break
         }
 
         case "delay": {
-          const delayNode = node as DelayNode
-          const resumeAt = resolveDelay(delayNode.config, context)
+          const resumeAt = resolveDelay(node.config, context)
 
           if (resumeAt === null) {
             // Past time -- skip the delay
@@ -165,7 +162,8 @@ export async function executeRun(runId: string): Promise<void> {
         }
 
         default: {
-          await failRun(runId, `Unknown node type '${(node as WorkflowNode).type}' at node '${node.id}'`)
+          const _exhaustive: never = node
+          await failRun(runId, `Unknown node type at node '${(_exhaustive as ActionNode).id}'`)
           return
         }
       }
@@ -221,8 +219,7 @@ async function executeBranch(
       .returning()
 
     if (node.type === "delay") {
-      const delayNode = node as DelayNode
-      const resumeAt = resolveDelay(delayNode.config, context)
+      const resumeAt = resolveDelay(node.config, context)
 
       if (resumeAt === null) {
         const output = { delayed: false, skipped: true }
@@ -251,8 +248,9 @@ async function executeBranch(
       }
     } else {
       // Action node (no nested conditions in v1)
+      const actionConfig = node.config as Record<string, unknown>
       const output = {
-        type: (node.config.actionType as string) ?? "unknown",
+        type: (actionConfig.actionType as string) ?? "unknown",
         status: "stub",
       }
       context.nodes[node.id] = { output, status: "completed" }

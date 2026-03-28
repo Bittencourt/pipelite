@@ -36,28 +36,36 @@ export interface DelayConfig {
   fieldPath?: string
 }
 
-export interface WorkflowNode {
+export interface ActionNode {
   id: string
-  type: "condition" | "delay" | "action"
+  type: "action"
   label: string
   config: Record<string, unknown>
   nextNodeId: string | null
 }
 
-export interface ConditionNode extends WorkflowNode {
+export interface ConditionNode {
+  id: string
   type: "condition"
+  label: string
   config: {
     groups: ConditionGroup[]
     logicOperator: "and" | "or"
   }
+  nextNodeId: string | null
   trueBranch: string | null
   falseBranch: string | null
 }
 
-export interface DelayNode extends WorkflowNode {
+export interface DelayNode {
+  id: string
   type: "delay"
+  label: string
   config: DelayConfig
+  nextNodeId: string | null
 }
+
+export type WorkflowNode = ActionNode | ConditionNode | DelayNode
 
 export interface ExecutionContext {
   trigger: {
