@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Reliability & Operations
-current_phase: 23-resend-email-integration-for-production
-current_plan: 23-04 (done)
-status: completed
-last_updated: "2026-03-24T01:35:57.815Z"
+current_phase: 29-run-history-observability
+current_plan: 29-00 (done)
+status: in-progress
+last_updated: "2026-03-28T17:39:06Z"
 progress:
   total_phases: 7
   completed_phases: 5
@@ -22,9 +22,9 @@ See: .planning/PROJECT.md
 ## Position
 
 **Milestone:** v1.1 Reliability & Operations
-**Current phase:** 23-resend-email-integration-for-production
-**Current plan:** 23-04 (done)
-**Status:** Milestone complete
+**Current phase:** 29-run-history-observability
+**Current plan:** 29-00 (done)
+**Status:** In progress
 
 ## Decisions
 
@@ -83,3 +83,4 @@ See: .planning/PROJECT.md
 - 2026-03-24: Completed 23-02 (4 email templates + send functions with i18n in 3 locales)
 - 2026-03-24: Completed 23-03 (invite user flow + notification preferences settings page)
 - 2026-03-24: Completed 23-04 (email triggers + cron processor for reminders and weekly digest)
+- 2026-03-28: Completed 29-00 (15 RED test stubs for run history serialization, formatting, and API routes)

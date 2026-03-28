@@ -226,6 +226,7 @@ Plans:
 | 21. Formula Reactivity | v1.1 | 0/TBD | Not started | - |
 | 22. Bulk Operations | v1.1 | 0/TBD | Not started | - |
 | 23. Resend Email Integration | 5/5 | Complete    | 2026-03-24 | - |
+| 29. Run History & Observability | v1.2 | 1/4 | In progress | - |
 
 ---
 *Roadmap updated: 2026-03-23 — Phase 23 plans created (4 plans, 3 waves)*
