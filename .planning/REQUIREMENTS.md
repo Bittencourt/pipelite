@@ -48,14 +48,14 @@
 - [x] **API-01**: User can CRUD workflows via REST API (list, get, create, update, delete)
 - [x] **API-02**: User can trigger a workflow execution via REST API
 - [x] **API-03**: User can list workflow runs and view run details (including per-node results) via REST API
-- [ ] **API-04**: User can manage workflow templates via REST API (list, get, create, delete)
+- [x] **API-04**: User can manage workflow templates via REST API (list, get, create, delete)
 
 ### Templates
 
-- [x] **TMPL-01**: User can use built-in HTTP templates for common services (Planka, Apprise, Slack, Discord, Tally, Typeform)
-- [x] **TMPL-02**: User can create and save custom HTTP templates for reuse
-- [x] **TMPL-03**: User can start a new workflow from built-in workflow templates (5-10)
-- [ ] **TMPL-04**: User can import/export workflows as JSON
+- [ ] **TMPL-01**: User can use built-in HTTP templates for common services (Planka, Apprise, Slack, Discord, Tally, Typeform)
+- [ ] **TMPL-02**: User can create and save custom HTTP templates for reuse
+- [ ] **TMPL-03**: User can start a new workflow from built-in workflow templates (5-10)
+- [x] **TMPL-04**: User can import/export workflows as JSON
 
 ## v2 Requirements
 
@@ -108,14 +108,14 @@
 | EXEC-02 | Phase 29 | Pending |
 | EXEC-03 | Phase 29 | Complete |
 | EXEC-04 | Phase 29 | Complete |
-| TMPL-01 | Phase 30 | Complete |
-| TMPL-02 | Phase 30 | Complete |
-| TMPL-03 | Phase 30 | Complete |
+| TMPL-01 | Phase 30 | Pending |
+| TMPL-02 | Phase 30 | Pending |
+| TMPL-03 | Phase 30 | Pending |
 | API-01 | Phase 24 | Complete |
 | API-02 | Phase 25 | Complete |
 | API-03 | Phase 29 | Complete |
-| API-04 | Phase 30 | Pending |
-| TMPL-04 | Phase 30 | Pending |
+| API-04 | Phase 30 | Complete |
+| TMPL-04 | Phase 30 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 31 total
