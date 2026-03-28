@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
-status: completed
-last_updated: "2026-03-28T03:30:14.715Z"
-last_activity: 2026-03-28 -- 27-03 complete (JS transform sandbox, webhook response coordination)
+status: in_progress
+last_updated: "2026-03-28T04:14:32Z"
+last_activity: 2026-03-28 -- 28-01 complete (editor data layer)
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
-  percent: 52
+  total_plans: 15
+  completed_plans: 15
+  percent: 56
 ---
 
 # Session State
@@ -24,18 +24,18 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 ## Position
 
-Phase: 27 of 30 (Action Nodes)
-Plan: 3 of 3 complete
-Status: Phase complete
-Last activity: 2026-03-28 -- 27-03 complete (JS transform sandbox, webhook response coordination)
+Phase: 28 of 30 (Visual Editor)
+Plan: 1 of 4 complete
+Status: In progress
+Last activity: 2026-03-28 -- 28-01 complete (editor data layer: graph converter, layout, mutations, variable schema, store)
 
-Progress: [█████░░░░░] 52% (14/27 plans)
+Progress: [██████░░░░] 56% (15/27 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 85 (across v1.0 + v1.1)
-- v1.2 plans completed: 7
+- v1.2 plans completed: 8
 
 ## Decisions
 
@@ -87,6 +87,11 @@ Progress: [█████░░░░░] 52% (14/27 plans)
 - [Phase 27]: Email handler resolves user recipients via batch DB query with inArray
 - [Phase 27]: Workflow email templates are simple (no i18n) since subject/body are user-authored
 
+- [Phase 28]: workflowNodes as DB source of truth; RF nodes derived via reconversion on every mutation
+- [Phase 28]: Static ACTION_OUTPUT_SCHEMAS map for variable autocomplete (not runtime introspection)
+- [Phase 28]: Virtual trigger node (id="trigger") stores TriggerConfig[] in data, excluded from DB conversion
+- [Phase 28]: Condition node nextNodeId for post-merge continuation; trueBranch/falseBranch for branch edges
+
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Directory |
@@ -132,3 +137,4 @@ None yet.
 - 2026-03-28: 26-03 complete -- toggleWorkflow server action, AsyncLocalStorage recursion depth guard (max 5 levels), createWorkflowRun depth enforcement
 - 2026-03-28: 27-01 complete -- variable interpolation engine, SSRF prevention, HTTP handler with retry/backoff, action registry with Zod schemas, engine dispatch integration (29 tests)
 - 2026-03-28: 27-03 complete -- QuickJS sandbox transform (15 tests), webhook response coordination with synchronous execution path (11 tests). Phase 27 COMPLETE.
+- 2026-03-28: 28-01 complete -- editor data layer: graph converter (lossless round-trip), dagre layout, zustand store, graph mutations, variable schema (25 tests)
