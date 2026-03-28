@@ -4,7 +4,7 @@ import { deals } from "@/db/schema/deals"
 import { activities } from "@/db/schema/activities"
 import { pipelines, stages } from "@/db/schema/pipelines"
 import { customFieldDefinitions } from "@/db/schema/custom-fields"
-import { workflows } from "@/db/schema/workflows"
+import { workflows, workflowRuns, workflowRunSteps } from "@/db/schema/workflows"
 
 type Organization = typeof organizations.$inferSelect
 type Person = typeof people.$inferSelect
@@ -14,6 +14,8 @@ type Pipeline = typeof pipelines.$inferSelect
 type Stage = typeof stages.$inferSelect
 type CustomFieldDefinition = typeof customFieldDefinitions.$inferSelect
 type Workflow = typeof workflows.$inferSelect
+type WorkflowRun = typeof workflowRuns.$inferSelect
+type WorkflowRunStep = typeof workflowRunSteps.$inferSelect
 
 /**
  * Convert Date to ISO string, handling null
@@ -167,5 +169,42 @@ export function serializeWorkflow(workflow: Workflow) {
     created_by: workflow.createdBy,
     created_at: toIsoString(workflow.createdAt),
     updated_at: toIsoString(workflow.updatedAt),
+  }
+}
+
+/**
+ * Serialize workflow run to snake_case API format
+ */
+export function serializeRun(run: WorkflowRun) {
+  return {
+    id: run.id,
+    workflow_id: run.workflowId,
+    status: run.status,
+    trigger_data: run.triggerData,
+    error: run.error,
+    depth: run.depth,
+    current_node_id: run.currentNodeId,
+    started_at: toIsoString(run.startedAt),
+    completed_at: toIsoString(run.completedAt),
+    created_at: toIsoString(run.createdAt),
+  }
+}
+
+/**
+ * Serialize workflow run step to snake_case API format
+ */
+export function serializeRunStep(step: WorkflowRunStep) {
+  return {
+    id: step.id,
+    run_id: step.runId,
+    node_id: step.nodeId,
+    status: step.status,
+    input: step.input,
+    output: step.output,
+    error: step.error,
+    resume_at: toIsoString(step.resumeAt),
+    started_at: toIsoString(step.startedAt),
+    completed_at: toIsoString(step.completedAt),
+    created_at: toIsoString(step.createdAt),
   }
 }
