@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { computeLayout } from "./layout"
+import { computeLayout } from "./dagre-layout"
 import type { Edge } from "@xyflow/react"
 
 function makeNode(id: string) {

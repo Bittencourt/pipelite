@@ -4,7 +4,7 @@ import type { Edge } from "@xyflow/react"
 import type { WorkflowNode, ConditionNode } from "@/lib/execution/types"
 import type { TriggerConfig } from "@/lib/triggers/types"
 import type { EditorNode, EditorNodeData } from "./types"
-import { computeLayout } from "./layout"
+import { computeLayout } from "./dagre-layout"
 
 /**
  * Convert DB workflow nodes + trigger config into React Flow nodes and edges.
