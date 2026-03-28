@@ -10,6 +10,7 @@ import { toReactFlowGraph, toWorkflowNodes, toTriggerConfig } from "./graph-conv
 import {
   addNodeAfter,
   removeNode as removeNodeMutation,
+  reorderNode as reorderNodeMutation,
   createNewNode,
 } from "./graph-mutations"
 
@@ -62,6 +63,9 @@ export interface EditorActions {
   removeNode: (nodeId: string) => void
   updateNodeConfig: (nodeId: string, config: Record<string, unknown>) => void
   updateNodeLabel: (nodeId: string, label: string) => void
+
+  // Reorder
+  reorderNode: (nodeId: string, direction: "up" | "down") => void
 
   // Metadata
   setWorkflowName: (name: string) => void
@@ -188,7 +192,9 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   updateNodeConfig: (nodeId, config) => {
     const state = get()
     const updatedNodes = state.workflowNodes.map((n) =>
-      n.id === nodeId ? { ...n, config: { ...n.config, ...config } } : n,
+      n.id === nodeId
+        ? ({ ...n, config: { ...n.config, ...config } } as WorkflowNode)
+        : n,
     )
     const { nodes, edges } = reconvert(updatedNodes, state.triggers)
 
@@ -213,6 +219,13 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
       edges,
       dirty: true,
     })
+  },
+
+  reorderNode: (nodeId, direction) => {
+    const state = get()
+    const updatedNodes = reorderNodeMutation(state.workflowNodes, nodeId, direction)
+    const { nodes, edges } = reconvert(updatedNodes, state.triggers)
+    set({ workflowNodes: updatedNodes, nodes, edges, dirty: true })
   },
 
   setWorkflowName: (name) => set({ workflowName: name, dirty: true }),
