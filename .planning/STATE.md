@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
 status: executing
-last_updated: "2026-03-28T04:24:31.141Z"
-last_activity: 2026-03-28 -- 28-02 complete (visual canvas, editor pages, workflow list)
+last_updated: "2026-03-28T15:37:16Z"
+last_activity: 2026-03-28 -- 28-04 complete (variable picker, config form integration)
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 18
-  completed_plans: 16
-  percent: 98
+  completed_plans: 17
+  percent: 99
 ---
 
 # Session State
@@ -20,22 +20,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 25 - Workflow Trigger Engine (next phase)
+**Current focus:** Phase 28 - Visual Editor (completing)
 
 ## Position
 
 Phase: 28 of 30 (Visual Editor)
-Plan: 3 of 4 complete
-Status: In progress
-Last activity: 2026-03-28 -- 28-03 complete (side panel, type picker, 9 config forms)
+Plan: 4 of 4 complete (checkpoint pending)
+Status: Checkpoint pending - visual verification
+Last activity: 2026-03-28 -- 28-04 complete (variable picker autocomplete, config form integration)
 
-Progress: [██████████] 98% (89/91 plans)
+Progress: [██████████] 99% (90/91 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 85 (across v1.0 + v1.1)
-- v1.2 plans completed: 8
+- v1.2 plans completed: 9
 
 ## Decisions
 
@@ -96,6 +96,10 @@ Progress: [██████████] 98% (89/91 plans)
 - [Phase 28]: Config forms shared pattern: {nodeId, config} props, onChange calls store.updateNodeConfig for immediate auto-save
 - [Phase 28]: Trigger config manages triggers array via setTriggers separately from node config
 - [Phase 28]: ConfigRouter in side-panel routes by nodeType then actionType for clean form selection
+- [Phase 28]: forwardRef + useImperativeHandle for keyboard event forwarding from VariableField to VariablePicker
+- [Phase 28]: onMouseDown (not onClick) on picker options prevents blur-before-click issue
+- [Phase 28]: Transform code textarea excluded from variable picker (JS code, not template interpolation)
+- [Phase 28]: Renamed layout.ts to dagre-layout.ts to avoid Next.js route file naming conflict
 
 ### Quick Tasks Completed
 
@@ -145,3 +149,4 @@ None yet.
 - 2026-03-28: 27-03 complete -- QuickJS sandbox transform (15 tests), webhook response coordination with synchronous execution path (11 tests). Phase 27 COMPLETE.
 - 2026-03-28: 28-01 complete -- editor data layer: graph converter (lossless round-trip), dagre layout, zustand store, graph mutations, variable schema (25 tests)
 - 2026-03-28: 28-03 complete -- side panel with type picker, reorder controls, 9 config forms (trigger, HTTP, CRM, condition, email, notification, delay, transform, webhook-response)
+- 2026-03-28: 28-04 complete -- variable picker autocomplete with {{ detection, keyboard navigation, all config forms integrated with VariableInput/VariableTextarea

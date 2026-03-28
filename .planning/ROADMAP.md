@@ -53,7 +53,7 @@ Full archive: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 25: Trigger System** - CRM event triggers, cron schedules, manual runs, inbound webhooks, field change filtering (completed 2026-03-28)
 - [x] **Phase 26: Execution Engine & Flow Control** - Async graph walker, condition/IF nodes, delay nodes, workflow enable/disable (completed 2026-03-28)
 - [x] **Phase 27: Action Nodes** - HTTP requests, CRM mutations, email sending, notifications, JS sandbox, webhook responses (completed 2026-03-28)
-- [ ] **Phase 28: Visual Editor** - Linear/branching node editor, node configuration panel, variable picker, node management
+- [x] **Phase 28: Visual Editor** - Linear/branching node editor, node configuration panel, variable picker, node management (completed 2026-03-28)
 - [ ] **Phase 29: Run History & Observability** - Run list with status, per-node execution details, error display
 - [ ] **Phase 30: Templates & Portability** - Built-in HTTP templates, custom templates, workflow starter templates, JSON import/export
 
@@ -136,10 +136,10 @@ Plans:
   4. User can add new nodes, remove existing nodes, and reorder nodes in the flow via the visual editor
 **Plans**: 4 plans
 Plans:
-- [ ] 28-01-PLAN.md -- Core lib layer: graph converter, layout engine, editor store, graph mutations, variable schema (TDD)
-- [ ] 28-02-PLAN.md -- Canvas with custom nodes, add-button edges, toolbar, editor page, workflow list
-- [ ] 28-03-PLAN.md -- Side panel with type picker and all node configuration forms
-- [ ] 28-04-PLAN.md -- Variable picker autocomplete and integration into config forms
+- [x] 28-01-PLAN.md -- Core lib layer: graph converter, layout engine, editor store, graph mutations, variable schema (TDD)
+- [x] 28-02-PLAN.md -- Canvas with custom nodes, add-button edges, toolbar, editor page, workflow list
+- [x] 28-03-PLAN.md -- Side panel with type picker and all node configuration forms
+- [x] 28-04-PLAN.md -- Variable picker autocomplete and integration into config forms
 
 ### Phase 29: Run History & Observability
 **Goal**: Users can see what happened when workflows ran -- success/failure status, per-node details, and clear error messages

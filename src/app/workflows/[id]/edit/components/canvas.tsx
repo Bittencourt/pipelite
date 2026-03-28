@@ -25,13 +25,13 @@ export function Canvas() {
       onEdgesChange={(changes: EdgeChange[]) => onEdgesChange(changes)}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
+      defaultEdgeOptions={{ type: "addButton" }}
       onNodeClick={(_, node) => selectNode(node.id)}
       onPaneClick={() => selectNode(null)}
       fitView
-      nodesDraggable={false}
+      nodesDraggable
       nodesConnectable={false}
       deleteKeyCode={null}
-      defaultEdgeOptions={{ type: "addButton", animated: false }}
     >
       <Background />
     </ReactFlow>
