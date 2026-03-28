@@ -10,6 +10,10 @@ import {
   updateWorkflow as updateWorkflowMutation,
   deleteWorkflow as deleteWorkflowMutation,
 } from "@/lib/mutations/workflows"
+import {
+  createHttpTemplate,
+  deleteHttpTemplate,
+} from "@/lib/mutations/http-templates"
 
 export async function createWorkflow(data: {
   name: string
@@ -127,4 +131,90 @@ export async function toggleWorkflow(
 
   revalidatePath("/workflows")
   return { success: true, cancelledRuns }
+}
+
+export async function importWorkflow(data: {
+  name: string
+  description?: string | null
+  triggers: Record<string, unknown>[]
+  nodes: Record<string, unknown>[]
+}): Promise<{ success: true; id: string } | { success: false; error: string }> {
+  const session = await auth()
+
+  if (!session?.user?.id) {
+    return { success: false, error: "Not authenticated" }
+  }
+
+  // Check for name conflict
+  let finalName = data.name
+  const existing = await db
+    .select()
+    .from(workflows)
+    .where(eq(workflows.name, data.name))
+
+  if (existing.length > 0) {
+    finalName = `${data.name} (Imported)`
+  }
+
+  const result = await createWorkflowMutation({
+    name: finalName,
+    description: data.description ?? null,
+    triggers: data.triggers,
+    nodes: data.nodes,
+    createdBy: session.user.id,
+  })
+
+  if (!result.success) {
+    return { success: false, error: result.error }
+  }
+
+  revalidatePath("/workflows")
+  return { success: true, id: result.id }
+}
+
+export async function saveHttpTemplate(data: {
+  name: string
+  description?: string
+  config: Record<string, unknown>
+}): Promise<{ success: true; id: string } | { success: false; error: string }> {
+  const session = await auth()
+
+  if (!session?.user?.id) {
+    return { success: false, error: "Not authenticated" }
+  }
+
+  const result = await createHttpTemplate({
+    name: data.name,
+    description: data.description ?? null,
+    config: data.config,
+    createdBy: session.user.id,
+  })
+
+  if (!result.success) {
+    return { success: false, error: result.error }
+  }
+
+  revalidatePath("/workflows")
+  return { success: true, id: result.id }
+}
+
+export async function removeHttpTemplate(
+  id: string
+): Promise<{ success: true } | { success: false; error: string }> {
+  const session = await auth()
+
+  if (!session?.user?.id) {
+    return { success: false, error: "Not authenticated" }
+  }
+
+  const isAdmin = (session.user as { role?: string }).role === "admin"
+
+  const result = await deleteHttpTemplate(id, session.user.id, isAdmin)
+
+  if (!result.success) {
+    return { success: false, error: result.error }
+  }
+
+  revalidatePath("/workflows")
+  return { success: true }
 }
