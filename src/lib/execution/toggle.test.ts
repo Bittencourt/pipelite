@@ -40,15 +40,15 @@ vi.mock("@/auth", () => ({ auth: mockAuth }))
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }))
 vi.mock("@/db", () => ({
   db: {
-    update: (...args: unknown[]) => mockUpdate(...args),
-    select: (...args: unknown[]) => mockSelect(...args),
-    insert: (...args: unknown[]) => mockInsert(...args),
+    update: (table: unknown) => (mockUpdate as any)(table),
+    select: () => (mockSelect as any)(),
+    insert: (table: unknown) => (mockInsert as any)(table),
   },
 }))
 // Mock drizzle-orm operators as passthrough
 vi.mock("drizzle-orm", () => ({
   eq: (a: unknown, b: unknown) => ({ op: "eq", a, b }),
-  and: (...args: unknown[]) => ({ op: "and", args }),
+  and: (a: unknown, b: unknown) => ({ op: "and", args: [a, b] }),
 }))
 
 // We need to use dynamic import since toggleWorkflow is a server action
@@ -60,23 +60,6 @@ let toggleWorkflow: (id: string, active: boolean) => Promise<
 describe("toggleWorkflow", () => {
   beforeEach(async () => {
     vi.clearAllMocks()
-    // Reset module cache to get fresh imports with mocks
-    vi.resetModules()
-
-    // Re-apply mocks after reset
-    vi.doMock("@/auth", () => ({ auth: mockAuth }))
-    vi.doMock("next/cache", () => ({ revalidatePath: mockRevalidatePath }))
-    vi.doMock("@/db", () => ({
-      db: {
-        update: (...args: unknown[]) => mockUpdate(...args),
-        select: (...args: unknown[]) => mockSelect(...args),
-        insert: (...args: unknown[]) => mockInsert(...args),
-      },
-    }))
-    vi.doMock("drizzle-orm", () => ({
-      eq: (a: unknown, b: unknown) => ({ op: "eq", a, b }),
-      and: (...args: unknown[]) => ({ op: "and", args }),
-    }))
 
     const mod = await import("@/app/workflows/actions")
     toggleWorkflow = mod.toggleWorkflow

@@ -60,7 +60,7 @@ export function CreateWorkflowDialog({ children }: Props) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => { if (!creatingId) setOpen(v) }}>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>

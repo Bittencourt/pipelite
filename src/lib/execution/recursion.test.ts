@@ -70,7 +70,7 @@ describe("createWorkflowRun with depth enforcement", () => {
 
   vi.mock("@/db", () => ({
     db: {
-      insert: (...args: unknown[]) => mockInsert(...args),
+      insert: (table: unknown) => (mockInsert as any)(table),
     },
   }))
 
@@ -83,7 +83,7 @@ describe("createWorkflowRun with depth enforcement", () => {
     createWorkflowRun = mod.createWorkflowRun
   })
 
-  const triggerEnvelope = { type: "crm_event" as const, data: { event: "deal.created" } }
+  const triggerEnvelope = { trigger_type: "crm_event" as const, trigger_id: "test-trigger", timestamp: new Date().toISOString(), data: { event: "deal.created" } }
 
   it("creates a run with depth < 5 successfully", async () => {
     const fakeRun = {

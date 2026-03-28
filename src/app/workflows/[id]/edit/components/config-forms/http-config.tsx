@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Plus, Trash2, Bookmark, Trash2 as Trash2Icon } from "lucide-react"
+import { Plus, Trash2, Bookmark } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -207,13 +207,14 @@ export function HttpConfig({ nodeId, config }: Props) {
       {/* Manage custom templates */}
       {customTemplates.length > 0 && (
         <div>
-          <button
-            type="button"
-            className="text-xs text-muted-foreground underline hover:text-foreground"
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0 text-xs text-muted-foreground"
             onClick={() => setShowManage(!showManage)}
           >
             {showManage ? "Hide custom templates" : "Manage custom templates"}
-          </button>
+          </Button>
           {showManage && (
             <div className="mt-2 space-y-1">
               {customTemplates.map((t) => (
@@ -230,7 +231,7 @@ export function HttpConfig({ nodeId, config }: Props) {
                         className="h-6 w-6"
                         aria-label={`Delete template ${t.name}`}
                       >
-                        <Trash2Icon className="h-3.5 w-3.5 text-destructive" />
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
