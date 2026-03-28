@@ -119,7 +119,11 @@ Plans:
   3. User can add email and notification nodes that send messages with template variables from trigger/node data
   4. User can add a JavaScript transform node that executes user-provided code in a QuickJS sandbox
   5. User can configure a webhook response node that sends a custom HTTP response back to the caller of an inbound webhook trigger
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 27-01-PLAN.md -- Interpolation engine, action registry, config schemas, SSRF prevention, HTTP handler
+- [ ] 27-02-PLAN.md -- CRM action, email, and notification handlers
+- [ ] 27-03-PLAN.md -- JavaScript transform sandbox and webhook response coordination
 
 ### Phase 28: Visual Editor
 **Goal**: Users can visually create, edit, and manage workflow node graphs in a linear/branching canvas with full node configuration
@@ -186,11 +190,11 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 23. Resend Email Integration | v1.1 | 5/5 | Complete | 2026-03-24 |
 | 24. Schema & Event Infrastructure | v1.2 | 4/4 | Complete | 2026-03-27 |
 | 25. Trigger System | v1.2 | 4/4 | Complete | 2026-03-28 |
-| 26. Execution Engine & Flow Control | 3/3 | Complete    | 2026-03-28 | - |
-| 27. Action Nodes | v1.2 | 0/TBD | Not started | - |
+| 26. Execution Engine & Flow Control | v1.2 | 3/3 | Complete | 2026-03-28 |
+| 27. Action Nodes | v1.2 | 0/3 | Not started | - |
 | 28. Visual Editor | v1.2 | 0/TBD | Not started | - |
 | 29. Run History & Observability | v1.2 | 0/TBD | Not started | - |
 | 30. Templates & Portability | v1.2 | 0/TBD | Not started | - |
 
 ---
-*Roadmap updated: 2026-03-28 -- Phase 26 planned (3 plans in 2 waves)*
+*Roadmap updated: 2026-03-28 -- Phase 27 planned (3 plans in 2 waves)*
