@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
-status: in-progress
-last_updated: "2026-03-28T00:43:00.000Z"
-last_activity: 2026-03-28 -- 25-01 complete (trigger types, schema migration, createWorkflowRun)
+status: executing
+last_updated: "2026-03-28T00:46:29.830Z"
+last_activity: 2026-03-28 -- 25-04 complete (webhook receiver, API trigger, manual trigger, secret regeneration)
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 5
-  percent: 19
+  total_plans: 8
+  completed_plans: 8
+  percent: 30
 ---
 
 # Session State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 25 of 30 (Trigger System)
-Plan: 1 of 4 complete
+Plan: 2 of 4 complete
 Status: In progress
-Last activity: 2026-03-28 -- 25-01 complete (trigger types, schema migration, createWorkflowRun)
+Last activity: 2026-03-28 -- 25-02 complete (CRM event trigger matcher, subscriber registration)
 
 Progress: [██░░░░░░░░] 19% (5/27 plans)
 
@@ -54,12 +54,19 @@ Progress: [██░░░░░░░░] 19% (5/27 plans)
 - Manual migration SQL for trigger->triggers array to safely wrap existing data
 - Partial index on next_run_at WHERE active=true for schedule polling efficiency
 - workflowTemplates keeps singular trigger column (separate concern)
+- [Phase 25]: matchesTrigger is a pure function for testability; DB access only in matchAndFireTriggers
+- [Phase 25]: Each createWorkflowRun wrapped in try-catch so one failure doesn't block other matches
+- [Phase 25]: Secret in URL path as sole auth for inbound webhooks (no header auth required from callers)
+- [Phase 25]: All webhook error states return 404 for zero information leakage
+- [Phase 25]: Only workflow creator can regenerate webhook secret (authorization check)
 
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 5 | Admin user management complete CRUD | 2026-03-23 | 42c8764 | [5-admin-user-management-complete-crud](./quick/5-admin-user-management-complete-crud/) |
+| Phase 25 P02 | 2min | 2 tasks | 4 files |
+| Phase 25 P04 | 2min | 2 tasks | 6 files |
 
 ## Accumulated Context
 

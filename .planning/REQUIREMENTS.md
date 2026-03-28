@@ -7,12 +7,12 @@
 
 ### Triggers
 
-- [ ] **TRIG-01**: User can trigger a workflow when a CRM entity is created, updated, or deleted
-- [ ] **TRIG-02**: User can trigger a workflow when a deal changes stage (with old/new stage data)
+- [x] **TRIG-01**: User can trigger a workflow when a CRM entity is created, updated, or deleted
+- [x] **TRIG-02**: User can trigger a workflow when a deal changes stage (with old/new stage data)
 - [x] **TRIG-03**: User can manually run a workflow with test data or a selected record
 - [ ] **TRIG-04**: User can trigger a workflow on a cron/schedule (interval or cron expression)
-- [ ] **TRIG-05**: User can trigger a workflow via an inbound webhook URL (external HTTP call)
-- [ ] **TRIG-06**: User can filter triggers by field change detection ("only run if field X changed")
+- [x] **TRIG-05**: User can trigger a workflow via an inbound webhook URL (external HTTP call)
+- [x] **TRIG-06**: User can filter triggers by field change detection ("only run if field X changed")
 
 ### Actions
 
@@ -46,7 +46,7 @@
 ### API
 
 - [x] **API-01**: User can CRUD workflows via REST API (list, get, create, update, delete)
-- [ ] **API-02**: User can trigger a workflow execution via REST API
+- [x] **API-02**: User can trigger a workflow execution via REST API
 - [ ] **API-03**: User can list workflow runs and view run details (including per-node results) via REST API
 - [ ] **API-04**: User can manage workflow templates via REST API (list, get, create, delete)
 
@@ -85,12 +85,12 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TRIG-01 | Phase 25 | Pending |
-| TRIG-02 | Phase 25 | Pending |
+| TRIG-01 | Phase 25 | Complete |
+| TRIG-02 | Phase 25 | Complete |
 | TRIG-03 | Phase 25 | Complete |
 | TRIG-04 | Phase 25 | Pending |
-| TRIG-05 | Phase 25 | Pending |
-| TRIG-06 | Phase 25 | Pending |
+| TRIG-05 | Phase 25 | Complete |
+| TRIG-06 | Phase 25 | Complete |
 | ACT-01 | Phase 27 | Pending |
 | ACT-02 | Phase 27 | Pending |
 | ACT-03 | Phase 27 | Pending |
@@ -112,7 +112,7 @@
 | TMPL-02 | Phase 30 | Pending |
 | TMPL-03 | Phase 30 | Pending |
 | API-01 | Phase 24 | Complete |
-| API-02 | Phase 25 | Pending |
+| API-02 | Phase 25 | Complete |
 | API-03 | Phase 29 | Pending |
 | API-04 | Phase 30 | Pending |
 | TMPL-04 | Phase 30 | Pending |
