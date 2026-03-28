@@ -8,7 +8,7 @@ export interface EditorNodeData {
   workflowNode: WorkflowNode | null // null for trigger node
   triggerConfig: TriggerConfig[] | null // only set on trigger node
   label: string
-  nodeType: "trigger" | "action" | "condition" | "delay"
+  nodeType: "trigger" | "action" | "condition" | "delay" | "split"
   actionType?: string
   [key: string]: unknown // Required by React Flow's Record<string, unknown> constraint
 }

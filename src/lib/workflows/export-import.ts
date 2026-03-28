@@ -62,7 +62,7 @@ export function serializeWorkflowForExport(workflow: {
   }
 }
 
-const KNOWN_NODE_TYPES = new Set(["action", "condition", "delay"])
+const KNOWN_NODE_TYPES = new Set(["action", "condition", "delay", "split"])
 const KNOWN_ACTION_TYPES = new Set([
   "http",
   "crm",

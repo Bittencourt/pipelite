@@ -65,7 +65,17 @@ export interface DelayNode {
   nextNodeId: string | null
 }
 
-export type WorkflowNode = ActionNode | ConditionNode | DelayNode
+export interface SplitNode {
+  id: string
+  type: "split"
+  label: string
+  config: Record<string, unknown>
+  nextNodeId: string | null
+  branchA: string | null
+  branchB: string | null
+}
+
+export type WorkflowNode = ActionNode | ConditionNode | DelayNode | SplitNode
 
 export interface ExecutionContext {
   trigger: {

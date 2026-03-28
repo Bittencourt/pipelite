@@ -125,6 +125,22 @@ export async function executeRun(runId: string): Promise<void> {
           break
         }
 
+        case "split": {
+          const output = { split: true }
+          context.nodes[node.id] = { output, status: "completed" }
+          await completeStep(step.id, output)
+          await persistContext(runId, context)
+
+          // Execute both branches sequentially (true parallelism is out of scope)
+          const delayA = await executeBranch(node.branchA, nodeMap, context, runId)
+          if (delayA) return
+          const delayB = await executeBranch(node.branchB, nodeMap, context, runId)
+          if (delayB) return
+
+          nextNodeId = node.nextNodeId // merge point
+          break
+        }
+
         case "delay": {
           const resumeAt = resolveDelay(node.config, context)
 
