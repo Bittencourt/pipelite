@@ -7,6 +7,7 @@ export type { ActionHandler } from "./registry"
 // Side-effect imports to register all handlers
 import "./http"
 import "./transform"
+import "./crm"
 
 // Import getHandler after side-effect imports to ensure handlers are registered
 import { getHandler } from "./registry"

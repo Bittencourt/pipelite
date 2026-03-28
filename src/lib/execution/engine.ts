@@ -63,6 +63,9 @@ export async function executeRun(runId: string): Promise<void> {
         nodes: {},
       }
 
+  // Set workflow creator userId for CRM action mutations
+  context._workflowUserId = workflow.createdBy
+
   // Determine start node: resume from currentNodeId or start from first node
   let currentNodeId: string | null = run.currentNodeId ?? nodeList[0].id
 

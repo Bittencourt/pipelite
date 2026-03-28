@@ -79,6 +79,8 @@ export interface ExecutionContext {
       status: "completed" | "failed" | "skipped"
     }
   >
+  /** User ID of the workflow creator, used by CRM actions for mutation calls */
+  _workflowUserId?: string
 }
 
 export interface NodeExecutionResult {
