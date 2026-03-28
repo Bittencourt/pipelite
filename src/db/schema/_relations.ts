@@ -21,6 +21,7 @@ import { userInvites } from "./user-invites"
 import { workflows } from "./workflows"
 import { workflowRuns } from "./workflows"
 import { workflowRunSteps } from "./workflows"
+import { httpTemplates } from "./http-templates"
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   notificationPreferences: one(notificationPreferences, {
@@ -219,5 +220,12 @@ export const workflowRunStepsRelations = relations(workflowRunSteps, ({ one }) =
   run: one(workflowRuns, {
     fields: [workflowRunSteps.runId],
     references: [workflowRuns.id],
+  }),
+}))
+
+export const httpTemplatesRelations = relations(httpTemplates, ({ one }) => ({
+  createdByUser: one(users, {
+    fields: [httpTemplates.createdBy],
+    references: [users.id],
   }),
 }))
