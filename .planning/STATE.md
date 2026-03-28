@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
 status: executing
-last_updated: "2026-03-28T00:46:29.830Z"
-last_activity: 2026-03-28 -- 25-04 complete (webhook receiver, API trigger, manual trigger, secret regeneration)
+last_updated: "2026-03-28T00:47:11.492Z"
+last_activity: 2026-03-28 -- 25-03 complete (schedule processor with atomic claim, cron/interval utils)
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 8
   completed_plans: 8
   percent: 30
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 Phase: 25 of 30 (Trigger System)
 Plan: 3 of 4 complete
 Status: In progress
-Last activity: 2026-03-28 -- 25-04 complete (webhook receiver, API trigger, manual trigger, secret regeneration)
+Last activity: 2026-03-28 -- 25-03 complete (schedule processor with atomic claim, cron/interval utils)
 
 Progress: [███░░░░░░░] 30% (8/27 plans)
 
@@ -59,6 +59,9 @@ Progress: [███░░░░░░░] 30% (8/27 plans)
 - [Phase 25]: Secret in URL path as sole auth for inbound webhooks (no header auth required from callers)
 - [Phase 25]: All webhook error states return 404 for zero information leakage
 - [Phase 25]: Only workflow creator can regenerate webhook secret (authorization check)
+- [Phase 25]: Overlap queuing: always create pending runs even if previous run is active (no skip, no parallel)
+- [Phase 25]: Atomic claim via UPDATE...RETURNING sets nextRunAt to null to prevent duplicate processing
+- [Phase 25]: cron-parser v5 API: CronExpressionParser.parse() with .next().toDate()
 
 ### Quick Tasks Completed
 
@@ -98,3 +101,4 @@ None yet.
 - 2026-03-27: 24-03 complete -- workflow CRUD mutations, REST API (/api/v1/workflows), server actions, serializeWorkflow
 - 2026-03-27: 24-04 complete -- org/activity mutations extracted, all triggerWebhook eliminated. Phase 24 COMPLETE.
 - 2026-03-28: 25-01 complete -- trigger types (4 Zod schemas), schema migration (trigger->triggers array), createWorkflowRun utility, cron-parser installed
+- 2026-03-28: 25-03 complete -- schedule processor (atomic claim, cron/interval utils, overlap queuing, instrumentation.ts)

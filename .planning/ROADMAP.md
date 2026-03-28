@@ -50,7 +50,7 @@ Full archive: `.planning/milestones/v1.1-ROADMAP.md`
 **Milestone Goal:** Add a server-side workflow automation engine with a visual linear/branching editor, deeply integrated with CRM events and external services.
 
 - [x] **Phase 24: Schema & Event Infrastructure** - Database tables, in-process event bus, shared mutation functions, CRM event emission (completed 2026-03-27)
-- [ ] **Phase 25: Trigger System** - CRM event triggers, cron schedules, manual runs, inbound webhooks, field change filtering
+- [x] **Phase 25: Trigger System** - CRM event triggers, cron schedules, manual runs, inbound webhooks, field change filtering (completed 2026-03-28)
 - [ ] **Phase 26: Execution Engine & Flow Control** - Async graph walker, condition/IF nodes, delay nodes, workflow enable/disable
 - [ ] **Phase 27: Action Nodes** - HTTP requests, CRM mutations, email sending, notifications, JS sandbox, webhook responses
 - [ ] **Phase 28: Visual Editor** - Linear/branching node editor, node configuration panel, variable picker, node management
@@ -181,7 +181,7 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 20. Import State Reliability | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 23. Resend Email Integration | v1.1 | 5/5 | Complete | 2026-03-24 |
 | 24. Schema & Event Infrastructure | v1.2 | 4/4 | Complete | 2026-03-27 |
-| 25. Trigger System | 3/4 | In Progress|  | - |
+| 25. Trigger System | 4/4 | Complete   | 2026-03-28 | - |
 | 26. Execution Engine & Flow Control | v1.2 | 0/TBD | Not started | - |
 | 27. Action Nodes | v1.2 | 0/TBD | Not started | - |
 | 28. Visual Editor | v1.2 | 0/TBD | Not started | - |
