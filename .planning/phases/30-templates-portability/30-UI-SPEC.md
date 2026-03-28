@@ -48,11 +48,11 @@ Exceptions: none
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
 | Body | 14px | 400 (regular) | 1.5 |
-| Label | 12px | 500 (medium) | 1.4 |
+| Label | 12px | 400 (regular) | 1.4 |
 | Heading | 20px | 600 (semibold) | 1.2 |
 | Display | 28px | 600 (semibold) | 1.2 |
 
-Note: Matches existing project conventions. Label at 12px aligns with `text-xs` used throughout config forms.
+Note: 2 weights only (400 regular, 600 semibold). Label at 12px uses size alone for hierarchy against 14px body — aligns with `text-xs` used throughout config forms.
 
 ---
 
@@ -134,7 +134,7 @@ Accent reserved for: "Use Template" CTA, "Create Workflow" from template, "Expor
 - Title: "Save as HTTP Template"
 - Name field: `Input`, required, placeholder "e.g. Slack Webhook"
 - Description field: `Textarea`, optional, placeholder "What this template does", max 2 rows
-- Footer: "Cancel" (variant="ghost") + "Save Template" (variant="default")
+- Footer: "Discard" (variant="ghost") + "Save Template" (variant="default")
 - On success: toast "Template saved", dialog closes, template selector refreshes
 - On error: toast with error message, dialog stays open
 
