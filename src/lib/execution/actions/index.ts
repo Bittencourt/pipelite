@@ -1,24 +1,14 @@
 import type { ExecutionContext } from "../types"
 
-/**
- * Action handler signature.
- * Receives validated config, execution context, and run ID.
- * Returns output record to store in execution context.
- */
-export type ActionHandler = (
-  config: Record<string, unknown>,
-  context: ExecutionContext,
-  runId: string
-) => Promise<{ output: Record<string, unknown> }>
+// Re-export registry functions for external use
+export { registerAction } from "./registry"
+export type { ActionHandler } from "./registry"
 
-const handlers = new Map<string, ActionHandler>()
+// Side-effect imports to register all handlers
+import "./http"
 
-/**
- * Register an action handler for a given action type.
- */
-export function registerAction(type: string, handler: ActionHandler): void {
-  handlers.set(type, handler)
-}
+// Import getHandler after side-effect imports to ensure handlers are registered
+import { getHandler } from "./registry"
 
 /**
  * Execute an action by looking up its registered handler.
@@ -30,12 +20,9 @@ export async function executeAction(
   context: ExecutionContext,
   runId: string
 ): Promise<{ output: Record<string, unknown> }> {
-  const handler = handlers.get(actionType)
+  const handler = getHandler(actionType)
   if (!handler) {
     throw new Error(`No handler registered for action type: ${actionType}`)
   }
   return handler(config, context, runId)
 }
-
-// Side-effect imports to register all handlers
-import("./http")

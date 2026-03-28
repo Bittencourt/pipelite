@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm"
 import { workflows, workflowRuns, workflowRunSteps } from "@/db/schema/workflows"
 import { evaluateCondition } from "./condition-evaluator"
 import { resolveDelay } from "./delay-resolver"
+import { executeAction } from "./actions"
 import type {
   WorkflowNode,
   ActionNode,
@@ -90,13 +91,11 @@ export async function executeRun(runId: string): Promise<void> {
 
       switch (node.type) {
         case "action": {
-          const output = {
-            type: (node.config.actionType as string) ?? "unknown",
-            status: "stub",
-          }
-          context.nodes[node.id] = { output, status: "completed" }
+          const actionType = node.config.actionType as string
+          const result = await executeAction(actionType, node.config, context, runId)
+          context.nodes[node.id] = { output: result.output, status: "completed" }
 
-          await completeStep(step.id, output)
+          await completeStep(step.id, result.output)
           await persistContext(runId, context)
           nextNodeId = node.nextNodeId
           break
@@ -248,13 +247,10 @@ async function executeBranch(
       }
     } else {
       // Action node (no nested conditions in v1)
-      const actionConfig = node.config as Record<string, unknown>
-      const output = {
-        type: (actionConfig.actionType as string) ?? "unknown",
-        status: "stub",
-      }
-      context.nodes[node.id] = { output, status: "completed" }
-      await completeStep(step.id, output)
+      const actionType = (node.config as Record<string, unknown>).actionType as string
+      const result = await executeAction(actionType, node.config as Record<string, unknown>, context, runId)
+      context.nodes[node.id] = { output: result.output, status: "completed" }
+      await completeStep(step.id, result.output)
       await persistContext(runId, context)
     }
 

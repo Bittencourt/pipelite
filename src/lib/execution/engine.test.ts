@@ -52,6 +52,16 @@ vi.mock("./delay-resolver", () => ({
   resolveDelay: (...args: unknown[]) => mockResolveDelay(...args),
 }))
 
+// Mock action dispatch -- returns stub output matching the old behavior
+vi.mock("./actions", () => ({
+  executeAction: vi.fn().mockImplementation(
+    (actionType: string) =>
+      Promise.resolve({
+        output: { type: actionType ?? "unknown", status: "executed" },
+      })
+  ),
+}))
+
 // Mock schema tables
 vi.mock("@/db/schema/workflows", () => ({
   workflows: { id: "workflows.id" },
