@@ -4,7 +4,7 @@ import { deals } from "@/db/schema/deals"
 import { activities } from "@/db/schema/activities"
 import { pipelines, stages } from "@/db/schema/pipelines"
 import { customFieldDefinitions } from "@/db/schema/custom-fields"
-import { workflows, workflowRuns, workflowRunSteps } from "@/db/schema/workflows"
+import { workflows, workflowRuns, workflowRunSteps, workflowTemplates } from "@/db/schema/workflows"
 
 type Organization = typeof organizations.$inferSelect
 type Person = typeof people.$inferSelect
@@ -16,6 +16,7 @@ type CustomFieldDefinition = typeof customFieldDefinitions.$inferSelect
 type Workflow = typeof workflows.$inferSelect
 type WorkflowRun = typeof workflowRuns.$inferSelect
 type WorkflowRunStep = typeof workflowRunSteps.$inferSelect
+type WorkflowTemplate = typeof workflowTemplates.$inferSelect
 
 /**
  * Convert Date to ISO string, handling null
@@ -206,5 +207,20 @@ export function serializeRunStep(step: WorkflowRunStep) {
     started_at: toIsoString(step.startedAt),
     completed_at: toIsoString(step.completedAt),
     created_at: toIsoString(step.createdAt),
+  }
+}
+
+/**
+ * Serialize workflow template to snake_case API format
+ */
+export function serializeWorkflowTemplate(template: WorkflowTemplate) {
+  return {
+    id: template.id,
+    name: template.name,
+    description: template.description,
+    category: template.category,
+    trigger: template.trigger,
+    nodes: template.nodes,
+    created_at: toIsoString(template.createdAt),
   }
 }
