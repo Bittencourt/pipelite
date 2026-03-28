@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
 status: executing
-last_updated: "2026-03-28T00:51:19.472Z"
-last_activity: 2026-03-28 -- 25-03 complete (schedule processor with atomic claim, cron/interval utils)
+last_updated: "2026-03-28T01:48:28Z"
+last_activity: 2026-03-28 -- 26-01 complete (execution types, condition evaluator, delay resolver)
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 8
-  completed_plans: 8
-  percent: 30
+  completed_plans: 9
+  percent: 33
 ---
 
 # Session State
@@ -24,18 +24,18 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 ## Position
 
-Phase: 25 of 30 (Trigger System)
-Plan: 3 of 4 complete
+Phase: 26 of 30 (Execution Engine)
+Plan: 1 of 3 complete
 Status: In progress
-Last activity: 2026-03-28 -- 25-03 complete (schedule processor with atomic claim, cron/interval utils)
+Last activity: 2026-03-28 -- 26-01 complete (execution types, condition evaluator, delay resolver)
 
-Progress: [███░░░░░░░] 30% (8/27 plans)
+Progress: [███░░░░░░░] 33% (9/27 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 85 (across v1.0 + v1.1)
-- v1.2 plans completed: 5
+- v1.2 plans completed: 6
 
 ## Decisions
 
@@ -62,6 +62,9 @@ Progress: [███░░░░░░░] 30% (8/27 plans)
 - [Phase 25]: Overlap queuing: always create pending runs even if previous run is active (no skip, no parallel)
 - [Phase 25]: Atomic claim via UPDATE...RETURNING sets nextRunAt to null to prevent duplicate processing
 - [Phase 25]: cron-parser v5 API: CronExpressionParser.parse() with .next().toDate()
+- [Phase 26]: String coercion for equals/contains operators enables flexible trigger data comparison
+- [Phase 26]: Invalid regex patterns return false (graceful degradation for user-provided patterns)
+- [Phase 26]: resolveFieldPath dot-notation walker reused across condition evaluator and delay resolver
 
 ### Quick Tasks Completed
 
@@ -102,3 +105,4 @@ None yet.
 - 2026-03-27: 24-04 complete -- org/activity mutations extracted, all triggerWebhook eliminated. Phase 24 COMPLETE.
 - 2026-03-28: 25-01 complete -- trigger types (4 Zod schemas), schema migration (trigger->triggers array), createWorkflowRun utility, cron-parser installed
 - 2026-03-28: 25-03 complete -- schedule processor (atomic claim, cron/interval utils, overlap queuing, instrumentation.ts)
+- 2026-03-28: 26-01 complete -- execution types, condition evaluator (14 operators, AND/OR groups), delay resolver (3 modes, 30-day cap), schema migration

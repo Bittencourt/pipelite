@@ -26,8 +26,8 @@
 
 ### Flow Control
 
-- [ ] **FLOW-01**: User can add condition/IF nodes with field comparisons (equals, contains, greater than, is empty, etc.)
-- [ ] **FLOW-02**: User can add delay/wait nodes to pause execution for N minutes/hours/days
+- [x] **FLOW-01**: User can add condition/IF nodes with field comparisons (equals, contains, greater than, is empty, etc.)
+- [x] **FLOW-02**: User can add delay/wait nodes to pause execution for N minutes/hours/days
 
 ### Editor
 
@@ -98,8 +98,8 @@
 | ACT-05 | Phase 27 | Pending |
 | ACT-06 | Phase 27 | Pending |
 | ACT-07 | Phase 27 | Pending |
-| FLOW-01 | Phase 26 | Pending |
-| FLOW-02 | Phase 26 | Pending |
+| FLOW-01 | Phase 26 | Complete |
+| FLOW-02 | Phase 26 | Complete |
 | EDIT-01 | Phase 28 | Pending |
 | EDIT-02 | Phase 28 | Pending |
 | EDIT-03 | Phase 28 | Pending |
