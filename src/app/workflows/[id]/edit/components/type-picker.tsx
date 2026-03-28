@@ -6,6 +6,7 @@ import {
   Mail,
   Bell,
   GitBranch,
+  GitFork,
   Clock,
   Code,
   Webhook,
@@ -16,7 +17,7 @@ interface NodeOption {
   label: string
   icon: React.ComponentType<{ className?: string }>
   colorClass: string
-  type: "action" | "condition" | "delay"
+  type: "action" | "condition" | "delay" | "split"
   actionType?: string
 }
 
@@ -60,6 +61,12 @@ const NODE_OPTIONS: NodeOption[] = [
     icon: Clock,
     colorClass: "text-purple-600 bg-purple-50",
     type: "delay",
+  },
+  {
+    label: "Split",
+    icon: GitFork,
+    colorClass: "text-cyan-600 bg-cyan-50",
+    type: "split",
   },
   {
     label: "JS Transform",

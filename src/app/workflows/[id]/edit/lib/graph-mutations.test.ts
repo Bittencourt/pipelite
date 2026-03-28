@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { addNodeAfter, removeNode, reorderNode } from "./graph-mutations"
-import type { WorkflowNode, ActionNode, ConditionNode } from "@/lib/execution/types"
+import { addNodeAfter, removeNode, reorderNode, createNewNode } from "./graph-mutations"
+import type { WorkflowNode, ActionNode, ConditionNode, SplitNode } from "@/lib/execution/types"
 
 function makeAction(id: string, nextNodeId: string | null): ActionNode {
   return {
@@ -71,6 +71,53 @@ describe("graph-mutations", () => {
       expect(c1.trueBranch).toBe("a3")
       expect(a3.nextNodeId).toBe("a1")
     })
+
+    it("inserts into split branchA when branch='true'", () => {
+      const splitNode: SplitNode = {
+        id: "s1",
+        type: "split",
+        label: "Split",
+        config: {},
+        nextNodeId: null,
+        branchA: "a1",
+        branchB: "a2",
+      }
+      const nodes: WorkflowNode[] = [
+        splitNode,
+        makeAction("a1", null),
+        makeAction("a2", null),
+      ]
+      const newNode = makeAction("a3", null)
+      const result = addNodeAfter(nodes, "s1", newNode, "true")
+
+      const s1 = result.find((n) => n.id === "s1") as SplitNode
+      const a3 = result.find((n) => n.id === "a3")!
+      expect(s1.branchA).toBe("a3")
+      expect(a3.nextNodeId).toBe("a1")
+    })
+
+    it("inserts into split branchB when branch='false'", () => {
+      const splitNode: SplitNode = {
+        id: "s1",
+        type: "split",
+        label: "Split",
+        config: {},
+        nextNodeId: null,
+        branchA: "a1",
+        branchB: null,
+      }
+      const nodes: WorkflowNode[] = [
+        splitNode,
+        makeAction("a1", null),
+      ]
+      const newNode = makeAction("a2", null)
+      const result = addNodeAfter(nodes, "s1", newNode, "false")
+
+      const s1 = result.find((n) => n.id === "s1") as SplitNode
+      const a2 = result.find((n) => n.id === "a2")!
+      expect(s1.branchB).toBe("a2")
+      expect(a2.nextNodeId).toBeNull()
+    })
   })
 
   describe("removeNode", () => {
@@ -104,6 +151,30 @@ describe("graph-mutations", () => {
       const result = removeNode(nodes, "a1")
       expect(result).toHaveLength(0)
     })
+
+    it("removes node referenced by split branchA and updates pointer", () => {
+      const splitNode: SplitNode = {
+        id: "s1",
+        type: "split",
+        label: "Split",
+        config: {},
+        nextNodeId: null,
+        branchA: "a1",
+        branchB: "a2",
+      }
+      const nodes: WorkflowNode[] = [
+        splitNode,
+        makeAction("a1", "a3"),
+        makeAction("a2", null),
+        makeAction("a3", null),
+      ]
+      const result = removeNode(nodes, "a1")
+
+      expect(result).toHaveLength(3)
+      const s1 = result.find((n) => n.id === "s1") as SplitNode
+      expect(s1.branchA).toBe("a3")
+      expect(s1.branchB).toBe("a2")
+    })
   })
 
   describe("reorderNode", () => {
@@ -135,6 +206,19 @@ describe("graph-mutations", () => {
       const a1 = result.find((n) => n.id === "a1")!
       expect(a2.nextNodeId).toBe("a1")
       expect(a1.nextNodeId).toBe("a3")
+    })
+  })
+
+  describe("createNewNode", () => {
+    it("creates a valid SplitNode with branchA/branchB set to null", () => {
+      const node = createNewNode("split")
+      expect(node.type).toBe("split")
+      expect(node.label).toBe("Split")
+      expect(node.nextNodeId).toBeNull()
+      const split = node as SplitNode
+      expect(split.branchA).toBeNull()
+      expect(split.branchB).toBeNull()
+      expect(split.id).toBeTruthy()
     })
   })
 })

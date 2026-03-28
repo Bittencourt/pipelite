@@ -1,7 +1,7 @@
 // DB <-> React Flow format conversion for the visual workflow editor
 
 import type { Edge } from "@xyflow/react"
-import type { WorkflowNode, ConditionNode } from "@/lib/execution/types"
+import type { WorkflowNode, ConditionNode, SplitNode } from "@/lib/execution/types"
 import type { TriggerConfig } from "@/lib/triggers/types"
 import type { EditorNode, EditorNodeData } from "./types"
 import { computeLayout } from "./dagre-layout"
@@ -44,6 +44,10 @@ export function toReactFlowGraph(
     if (node.type === "condition") {
       if (node.trueBranch) referencedIds.add(node.trueBranch)
       if (node.falseBranch) referencedIds.add(node.falseBranch)
+    }
+    if (node.type === "split") {
+      if (node.branchA) referencedIds.add(node.branchA)
+      if (node.branchB) referencedIds.add(node.branchB)
     }
   }
 
@@ -113,6 +117,34 @@ export function toReactFlowGraph(
           target: node.nextNodeId,
             })
       }
+    } else if (node.type === "split") {
+      // Split nodes: edges for branchA/branchB
+      if (node.branchA) {
+        rfEdges.push({
+          id: `${node.id}->branch-a->${node.branchA}`,
+          source: node.id,
+          target: node.branchA,
+          sourceHandle: "branch-a",
+          label: "A",
+        })
+      }
+      if (node.branchB) {
+        rfEdges.push({
+          id: `${node.id}->branch-b->${node.branchB}`,
+          source: node.id,
+          target: node.branchB,
+          sourceHandle: "branch-b",
+          label: "B",
+        })
+      }
+      // nextNodeId on split is for the merge point
+      if (node.nextNodeId) {
+        rfEdges.push({
+          id: `${node.id}->${node.nextNodeId}`,
+          source: node.id,
+          target: node.nextNodeId,
+        })
+      }
     } else {
       // Action/Delay nodes: edge from nextNodeId
       if (node.nextNodeId) {
@@ -178,6 +210,22 @@ export function toWorkflowNodes(
         trueBranch: trueEdge?.target ?? null,
         falseBranch: falseEdge?.target ?? null,
       } as ConditionNode)
+    } else if (workflowNode.type === "split") {
+      const branchAEdge = outEdges.find((e) => e.sourceHandle === "branch-a")
+      const branchBEdge = outEdges.find((e) => e.sourceHandle === "branch-b")
+      const nextEdge = outEdges.find(
+        (e) => !e.sourceHandle || (e.sourceHandle !== "branch-a" && e.sourceHandle !== "branch-b"),
+      )
+
+      result.push({
+        id: workflowNode.id,
+        type: "split",
+        label: workflowNode.label,
+        config: { ...workflowNode.config },
+        nextNodeId: nextEdge?.target ?? null,
+        branchA: branchAEdge?.target ?? null,
+        branchB: branchBEdge?.target ?? null,
+      } as SplitNode)
     } else {
       // Action or Delay: nextNodeId from edge without sourceHandle
       const nextEdge = outEdges.find((e) => !e.sourceHandle)

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { toReactFlowGraph, toWorkflowNodes } from "./graph-converter"
-import type { WorkflowNode, ActionNode, ConditionNode } from "@/lib/execution/types"
+import type { WorkflowNode, ActionNode, ConditionNode, SplitNode } from "@/lib/execution/types"
 import type { TriggerConfig } from "@/lib/triggers/types"
 
 const defaultTrigger: TriggerConfig[] = [
@@ -110,6 +110,36 @@ describe("graph-converter", () => {
       expect(triggerNode).toBeDefined()
       expect(triggerNode!.data.nodeType).toBe("trigger")
     })
+
+    it("split node creates edges with sourceHandle branch-a/branch-b", () => {
+      const nodes: WorkflowNode[] = [
+        {
+          id: "s1",
+          type: "split",
+          label: "Split",
+          config: {},
+          nextNodeId: null,
+          branchA: "a1",
+          branchB: "a2",
+        } as SplitNode,
+        makeAction("a1", null),
+        makeAction("a2", null),
+      ]
+      const result = toReactFlowGraph(nodes, defaultTrigger)
+
+      const branchAEdge = result.edges.find(
+        (e) => e.source === "s1" && e.sourceHandle === "branch-a",
+      )
+      const branchBEdge = result.edges.find(
+        (e) => e.source === "s1" && e.sourceHandle === "branch-b",
+      )
+      expect(branchAEdge).toBeDefined()
+      expect(branchAEdge!.target).toBe("a1")
+      expect(branchAEdge!.label).toBe("A")
+      expect(branchBEdge).toBeDefined()
+      expect(branchBEdge!.target).toBe("a2")
+      expect(branchBEdge!.label).toBe("B")
+    })
   })
 
   describe("round-trip conversion", () => {
@@ -140,6 +170,34 @@ describe("graph-converter", () => {
           expect(rtCond.falseBranch).toBe(origNode.falseBranch)
         }
       }
+    })
+
+    it("round-trip preserves split node branchA/branchB", () => {
+      const original: WorkflowNode[] = [
+        makeAction("a1", "s1"),
+        {
+          id: "s1",
+          type: "split",
+          label: "Split",
+          config: {},
+          nextNodeId: null,
+          branchA: "a2",
+          branchB: "a3",
+        } as SplitNode,
+        makeAction("a2", null),
+        makeAction("a3", null),
+      ]
+      const rfGraph = toReactFlowGraph(original, defaultTrigger)
+      const roundTripped = toWorkflowNodes(rfGraph.nodes, rfGraph.edges)
+
+      expect(roundTripped).toHaveLength(original.length)
+
+      const rtSplit = roundTripped.find((n) => n.id === "s1") as SplitNode
+      expect(rtSplit).toBeDefined()
+      expect(rtSplit.type).toBe("split")
+      expect(rtSplit.branchA).toBe("a2")
+      expect(rtSplit.branchB).toBe("a3")
+      expect(rtSplit.nextNodeId).toBeNull()
     })
   })
 })

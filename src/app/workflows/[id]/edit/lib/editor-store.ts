@@ -61,7 +61,7 @@ export interface EditorActions {
   openTypePicker: (afterNodeId: string, branch?: "true" | "false") => void
 
   // Graph mutations (operate on workflowNodes, reconvert to RF)
-  addNode: (type: "action" | "condition" | "delay", actionType?: string) => void
+  addNode: (type: "action" | "condition" | "delay" | "split", actionType?: string) => void
   removeNode: (nodeId: string) => void
   updateNodeConfig: (nodeId: string, config: Record<string, unknown>) => void
   updateNodeLabel: (nodeId: string, label: string) => void

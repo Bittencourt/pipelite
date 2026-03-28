@@ -38,6 +38,17 @@ function ConfigRouter({
     return <DelayConfig nodeId={nodeId} config={config} />
   }
 
+  if (nodeType === "split") {
+    return (
+      <div className="space-y-3 p-4">
+        <p className="text-sm text-muted-foreground">
+          Split node fans out execution to two parallel branches. Both branches
+          always execute. No configuration needed.
+        </p>
+      </div>
+    )
+  }
+
   // action node -- route by actionType
   switch (actionType) {
     case "http_request":

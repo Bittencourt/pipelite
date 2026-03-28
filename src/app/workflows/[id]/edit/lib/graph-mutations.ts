@@ -5,6 +5,7 @@ import type {
   ActionNode,
   ConditionNode,
   DelayNode,
+  SplitNode,
 } from "@/lib/execution/types"
 
 /**
@@ -26,6 +27,15 @@ export function addNodeAfter(
     const branchKey = branch === "true" ? "trueBranch" : "falseBranch"
     const oldTarget = condNode[branchKey]
     condNode[branchKey] = newNode.id
+    const inserted = { ...newNode, nextNodeId: oldTarget } as WorkflowNode
+    return [...result, inserted]
+  }
+
+  if (afterNode.type === "split" && branch) {
+    const splitNode = afterNode as SplitNode
+    const branchKey = branch === "true" ? "branchA" : "branchB"
+    const oldTarget = splitNode[branchKey]
+    splitNode[branchKey] = newNode.id
     const inserted = { ...newNode, nextNodeId: oldTarget } as WorkflowNode
     return [...result, inserted]
   }
@@ -66,6 +76,15 @@ export function removeNode(
           cond.falseBranch = targetNext
         }
       }
+      if (clone.type === "split") {
+        const split = clone as SplitNode
+        if (split.branchA === nodeId) {
+          split.branchA = targetNext
+        }
+        if (split.branchB === nodeId) {
+          split.branchB = targetNext
+        }
+      }
       return clone
     })
 
@@ -92,6 +111,10 @@ export function reorderNode(
     if (n.type === "condition") {
       if (n.trueBranch) pointed.add(n.trueBranch)
       if (n.falseBranch) pointed.add(n.falseBranch)
+    }
+    if (n.type === "split") {
+      if (n.branchA) pointed.add(n.branchA)
+      if (n.branchB) pointed.add(n.branchB)
     }
   }
 
@@ -134,6 +157,11 @@ export function reorderNode(
         if (cond.trueBranch === oldRoot) cond.trueBranch = newRoot
         if (cond.falseBranch === oldRoot) cond.falseBranch = newRoot
       }
+      if (n.type === "split") {
+        const split = n as SplitNode
+        if (split.branchA === oldRoot) split.branchA = newRoot
+        if (split.branchB === oldRoot) split.branchB = newRoot
+      }
     }
   }
 
@@ -144,7 +172,7 @@ export function reorderNode(
  * Factory function to create a new workflow node with default config.
  */
 export function createNewNode(
-  type: "action" | "condition" | "delay",
+  type: "action" | "condition" | "delay" | "split",
   actionType?: string,
 ): WorkflowNode {
   const id = crypto.randomUUID()
@@ -178,5 +206,16 @@ export function createNewNode(
         config: { mode: "fixed", duration: 1, unit: "hours" },
         nextNodeId: null,
       } as DelayNode
+
+    case "split":
+      return {
+        id,
+        type: "split",
+        label: "Split",
+        config: {},
+        nextNodeId: null,
+        branchA: null,
+        branchB: null,
+      } as SplitNode
   }
 }
