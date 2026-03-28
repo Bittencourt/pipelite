@@ -17,5 +17,8 @@ export async function register() {
 
     const { startScheduleProcessor } = await import("@/lib/triggers/schedule-processor")
     startScheduleProcessor()
+
+    const { startExecutionProcessor } = await import("@/lib/execution/execution-processor")
+    startExecutionProcessor()
   }
 }
