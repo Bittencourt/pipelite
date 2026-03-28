@@ -20,23 +20,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 29 — run-history-observability
+**Current focus:** Phase 30 — templates & portability
 
 ## Position
 
 Phase: 30 of 30 (templates & portability)
-Plan: Not started
-Status: Checkpoint pending - visual verification
+Plan: 30-01 (done)
+Status: In progress
 Last activity: 2026-03-28
 
-Progress: [██████████] 99% (90/91 plans)
+Progress: [██████████] 99% (91/91 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 
 - Total plans completed: 85 (across v1.0 + v1.1)
-- v1.2 plans completed: 9
+- v1.2 plans completed: 10
 
 ## Decisions
 
@@ -153,3 +153,4 @@ None yet.
 - 2026-03-28: 28-01 complete -- editor data layer: graph converter (lossless round-trip), dagre layout, zustand store, graph mutations, variable schema (25 tests)
 - 2026-03-28: 28-03 complete -- side panel with type picker, reorder controls, 9 config forms (trigger, HTTP, CRM, condition, email, notification, delay, transform, webhook-response)
 - 2026-03-28: 28-04 complete -- variable picker autocomplete with {{ detection, keyboard navigation, all config forms integrated with VariableInput/VariableTextarea
+- 2026-03-28: 30-01 complete -- 6 HTTP templates, 4 workflow starters, export/import with secret stripping, http_templates table + CRUD mutations
