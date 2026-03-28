@@ -40,7 +40,7 @@
 
 - [x] **EXEC-01**: User can enable/disable workflows with an on/off toggle
 - [ ] **EXEC-02**: User can view run history with status (success/failed/running/waiting)
-- [ ] **EXEC-03**: User can view per-node execution details (input/output/error) for each run
+- [x] **EXEC-03**: User can view per-node execution details (input/output/error) for each run
 - [x] **EXEC-04**: User can see clear error messages on failed nodes
 
 ### API
@@ -106,7 +106,7 @@
 | EDIT-04 | Phase 28 | Complete |
 | EXEC-01 | Phase 26 | Complete |
 | EXEC-02 | Phase 29 | Pending |
-| EXEC-03 | Phase 29 | Pending |
+| EXEC-03 | Phase 29 | Complete |
 | EXEC-04 | Phase 29 | Complete |
 | TMPL-01 | Phase 30 | Pending |
 | TMPL-02 | Phase 30 | Pending |
