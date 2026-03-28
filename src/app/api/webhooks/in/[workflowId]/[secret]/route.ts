@@ -4,6 +4,11 @@ import { workflows } from "@/db/schema/workflows"
 import { eq } from "drizzle-orm"
 import { verifyWebhookSecret } from "@/lib/triggers/webhook-secret"
 import { createWorkflowRun } from "@/lib/triggers/create-run"
+import {
+  waitForWebhookResponse,
+  hasWebhookResponseNode,
+} from "@/lib/execution/actions/webhook-response"
+import { executeRun } from "@/lib/execution/engine"
 import type { TriggerEnvelope } from "@/lib/triggers/types"
 
 interface RouteParams {
@@ -15,6 +20,10 @@ interface RouteParams {
  * No auth middleware -- the secret in the URL IS the authentication.
  *
  * POST /api/webhooks/in/{workflowId}/{secret}
+ *
+ * If the workflow contains a webhook_response action node, the handler
+ * executes the run synchronously and waits up to 30s for a custom response.
+ * Otherwise, the run is created for async processing by the execution processor.
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const { workflowId, secret } = await params
@@ -72,6 +81,44 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   // Create workflow run
   const run = await createWorkflowRun(workflowId, envelope)
 
+  // Check if workflow has a webhook_response node for synchronous execution
+  const workflowNodes = (workflow.nodes ?? []) as unknown[]
+  if (hasWebhookResponseNode(workflowNodes)) {
+    // Register pending response BEFORE executing so the handler can resolve it
+    const responsePromise = waitForWebhookResponse(run.id, 30_000)
+
+    // Execute run synchronously (not via processor queue)
+    // executeRun is fire-and-forget here; we wait on the response promise
+    const executePromise = executeRun(run.id)
+
+    try {
+      // Wait for either the webhook response or the execution to complete
+      const response = await Promise.race([
+        responsePromise,
+        executePromise.then(() => null),
+      ])
+
+      if (response) {
+        return NextResponse.json(response.body as Record<string, unknown>, {
+          status: response.statusCode,
+        })
+      }
+
+      // Execution completed but no webhook_response node fired (edge case)
+      return NextResponse.json(
+        { ok: true, run_id: run.id },
+        { status: 200 }
+      )
+    } catch {
+      // Timeout or execution error: fall back to default response
+      return NextResponse.json(
+        { ok: true, run_id: run.id },
+        { status: 200 }
+      )
+    }
+  }
+
+  // No webhook_response node: return immediately, run executes via processor
   return NextResponse.json(
     { ok: true, run_id: run.id },
     { status: 200 }

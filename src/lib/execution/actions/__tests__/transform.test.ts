@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest"
+import { describe, it, expect } from "vitest"
 import type { ExecutionContext } from "../../types"
 
 function makeContext(overrides?: Partial<ExecutionContext>): ExecutionContext {
@@ -20,12 +20,22 @@ function makeContext(overrides?: Partial<ExecutionContext>): ExecutionContext {
   }
 }
 
-let executeAction: typeof import("../index").executeAction
+// Import registry directly to avoid pulling in crm.ts -> db dependency chain
+import { getHandler } from "../registry"
 
-beforeAll(async () => {
-  const mod = await import("../index")
-  executeAction = mod.executeAction
-})
+// Trigger registration of transform handler
+import "../transform"
+
+const executeAction = async (
+  type: string,
+  config: Record<string, unknown>,
+  context: ExecutionContext,
+  runId: string
+) => {
+  const handler = getHandler(type)
+  if (!handler) throw new Error(`No handler registered for action type: ${type}`)
+  return handler(config, context, runId)
+}
 
 describe("javascript_transform action", () => {
   it("executes basic transform with trigger data", async () => {
