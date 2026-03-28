@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
-status: executing
-last_updated: "2026-03-28T03:24:24Z"
+status: completed
+last_updated: "2026-03-28T03:26:18.827Z"
 last_activity: 2026-03-28 -- 27-03 complete (JS transform sandbox, webhook response coordination)
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 11
+  total_plans: 14
   completed_plans: 14
   percent: 52
 ---
@@ -82,6 +82,10 @@ Progress: [█████░░░░░] 52% (14/27 plans)
 - [Phase 27]: Direct registry import pattern in action tests to avoid crm.ts DB chain
 - [Phase 27]: SSRF validates resolved IPs via dns.resolve to catch DNS rebinding; falls back to direct IP check
 - [Phase 27]: HTTP response parsed as JSON when content-type includes application/json, otherwise as text
+- [Phase 27]: Mutation dispatch map uses type-cast wrappers to normalize varying mutation signatures
+- [Phase 27]: Field lookup uses ilike for case-insensitive matching on text fields
+- [Phase 27]: Email handler resolves user recipients via batch DB query with inArray
+- [Phase 27]: Workflow email templates are simple (no i18n) since subject/body are user-authored
 
 ### Quick Tasks Completed
 
@@ -90,6 +94,7 @@ Progress: [█████░░░░░] 52% (14/27 plans)
 | 5 | Admin user management complete CRUD | 2026-03-23 | 42c8764 | [5-admin-user-management-complete-crud](./quick/5-admin-user-management-complete-crud/) |
 | Phase 25 P02 | 2min | 2 tasks | 4 files |
 | Phase 25 P04 | 2min | 2 tasks | 6 files |
+| Phase 27 P02 | 6min | 2 tasks | 13 files |
 
 ## Accumulated Context
 

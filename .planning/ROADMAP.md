@@ -52,7 +52,7 @@ Full archive: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 24: Schema & Event Infrastructure** - Database tables, in-process event bus, shared mutation functions, CRM event emission (completed 2026-03-27)
 - [x] **Phase 25: Trigger System** - CRM event triggers, cron schedules, manual runs, inbound webhooks, field change filtering (completed 2026-03-28)
 - [x] **Phase 26: Execution Engine & Flow Control** - Async graph walker, condition/IF nodes, delay nodes, workflow enable/disable (completed 2026-03-28)
-- [ ] **Phase 27: Action Nodes** - HTTP requests, CRM mutations, email sending, notifications, JS sandbox, webhook responses
+- [x] **Phase 27: Action Nodes** - HTTP requests, CRM mutations, email sending, notifications, JS sandbox, webhook responses (completed 2026-03-28)
 - [ ] **Phase 28: Visual Editor** - Linear/branching node editor, node configuration panel, variable picker, node management
 - [ ] **Phase 29: Run History & Observability** - Run list with status, per-node execution details, error display
 - [ ] **Phase 30: Templates & Portability** - Built-in HTTP templates, custom templates, workflow starter templates, JSON import/export
@@ -191,7 +191,7 @@ Note: Phase 28 (Visual Editor) depends only on Phase 24 and can be built in para
 | 24. Schema & Event Infrastructure | v1.2 | 4/4 | Complete | 2026-03-27 |
 | 25. Trigger System | v1.2 | 4/4 | Complete | 2026-03-28 |
 | 26. Execution Engine & Flow Control | v1.2 | 3/3 | Complete | 2026-03-28 |
-| 27. Action Nodes | 2/3 | In Progress|  | - |
+| 27. Action Nodes | 3/3 | Complete   | 2026-03-28 | - |
 | 28. Visual Editor | v1.2 | 0/TBD | Not started | - |
 | 29. Run History & Observability | v1.2 | 0/TBD | Not started | - |
 | 30. Templates & Portability | v1.2 | 0/TBD | Not started | - |
