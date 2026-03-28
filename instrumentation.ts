@@ -11,5 +11,8 @@ export async function register() {
 
     const { registerWebhookSubscriber } = await import("@/lib/events/subscribers/webhook")
     registerWebhookSubscriber()
+
+    const { registerWorkflowTriggerSubscriber } = await import("@/lib/events/subscribers/workflow-trigger")
+    registerWorkflowTriggerSubscriber()
   }
 }
