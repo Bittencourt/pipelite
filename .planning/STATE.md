@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
 status: executing
-last_updated: "2026-03-28T01:48:28Z"
-last_activity: 2026-03-28 -- 26-01 complete (execution types, condition evaluator, delay resolver)
+last_updated: "2026-03-28T01:54:33.369Z"
+last_activity: 2026-03-28 -- 26-03 complete (toggle workflow, recursion depth guard)
 progress:
   total_phases: 7
-  completed_phases: 2
-  total_plans: 8
-  completed_plans: 9
-  percent: 33
+  completed_phases: 3
+  total_plans: 11
+  completed_plans: 11
+  percent: 37
 ---
 
 # Session State
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 26 of 30 (Execution Engine)
-Plan: 1 of 3 complete
+Plan: 2 of 3 complete
 Status: In progress
-Last activity: 2026-03-28 -- 26-01 complete (execution types, condition evaluator, delay resolver)
+Last activity: 2026-03-28 -- 26-03 complete (toggle workflow, recursion depth guard)
 
-Progress: [███░░░░░░░] 33% (9/27 plans)
+Progress: [███░░░░░░░] 37% (10/27 plans)
 
 ## Performance Metrics
 
@@ -65,6 +65,13 @@ Progress: [███░░░░░░░] 33% (9/27 plans)
 - [Phase 26]: String coercion for equals/contains operators enables flexible trigger data comparison
 - [Phase 26]: Invalid regex patterns return false (graceful degradation for user-provided patterns)
 - [Phase 26]: resolveFieldPath dot-notation walker reused across condition evaluator and delay resolver
+- [Phase 26]: AsyncLocalStorage for recursion depth tracking -- propagates across async boundaries without parameter threading
+- [Phase 26]: Recursion limit of 5 levels with immediate failed-status creation prevents runaway chains
+- [Phase 26]: toggleWorkflow uses bulk UPDATE...RETURNING for atomic waiting-run cancellation with count
+- [Phase 26]: Action nodes are stubs returning { type, status: "stub" } -- Phase 27 implements real actions
+- [Phase 26]: 5s poll interval for execution processor (faster than 30s schedule processor for responsiveness)
+- [Phase 26]: Drain loop claims all available pending runs per tick, not just one
+- [Phase 26]: executeBranch walks linearly -- no nested conditions in v1
 
 ### Quick Tasks Completed
 
@@ -106,3 +113,4 @@ None yet.
 - 2026-03-28: 25-01 complete -- trigger types (4 Zod schemas), schema migration (trigger->triggers array), createWorkflowRun utility, cron-parser installed
 - 2026-03-28: 25-03 complete -- schedule processor (atomic claim, cron/interval utils, overlap queuing, instrumentation.ts)
 - 2026-03-28: 26-01 complete -- execution types, condition evaluator (14 operators, AND/OR groups), delay resolver (3 modes, 30-day cap), schema migration
+- 2026-03-28: 26-03 complete -- toggleWorkflow server action, AsyncLocalStorage recursion depth guard (max 5 levels), createWorkflowRun depth enforcement
