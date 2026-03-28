@@ -72,7 +72,7 @@ export default async function WorkflowsPage() {
                   <TableRow key={wf.id}>
                     <TableCell>
                       <Link
-                        href={`/workflows/${wf.id}/edit`}
+                        href={`/workflows/${wf.id}`}
                         className="font-medium hover:underline"
                       >
                         {wf.name}
