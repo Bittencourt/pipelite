@@ -4,7 +4,7 @@ milestone: v1.2
 milestone_name: Workflows
 status: verifying
 last_updated: "2026-03-28T22:09:12.341Z"
-last_activity: 2026-03-28
+last_activity: 2026-03-28 - Completed quick task 260328-rza: Add split node type
 progress:
   total_phases: 8
   completed_phases: 7
@@ -110,6 +110,7 @@ Progress: [██████████] 99% (90/91 plans)
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 5 | Admin user management complete CRUD | 2026-03-23 | 42c8764 | [5-admin-user-management-complete-crud](./quick/5-admin-user-management-complete-crud/) |
+| 260328-rza | Add split node type for workflow parallel branching | 2026-03-28 | df34561 | [260328-rza-add-split-node-type-for-workflow-paralle](./quick/260328-rza-add-split-node-type-for-workflow-paralle/) |
 | Phase 25 P02 | 2min | 2 tasks | 4 files |
 | Phase 25 P04 | 2min | 2 tasks | 6 files |
 | Phase 27 P02 | 6min | 2 tasks | 13 files |
