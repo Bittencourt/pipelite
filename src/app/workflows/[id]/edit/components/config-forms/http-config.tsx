@@ -3,7 +3,6 @@
 import { Plus, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -13,6 +12,7 @@ import {
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { useEditorStore } from "../../lib/editor-store"
+import { VariableInput, VariableTextarea } from "../variable-picker/variable-field"
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const
 
@@ -77,9 +77,10 @@ export function HttpConfig({ nodeId, config }: Props) {
       {/* URL */}
       <div>
         <Label className="text-xs">URL</Label>
-        <Input
+        <VariableInput
           value={url}
-          onChange={(e) => update({ url: e.target.value })}
+          onChange={(v) => update({ url: v })}
+          nodeId={nodeId}
           placeholder="https://api.example.com/endpoint"
         />
       </div>
@@ -106,10 +107,11 @@ export function HttpConfig({ nodeId, config }: Props) {
               onChange={(e) => updateHeader(key, e.target.value, value)}
               placeholder="Key"
             />
-            <Input
+            <VariableInput
               className="flex-1 text-xs"
               value={value}
-              onChange={(e) => updateHeader(key, key, e.target.value)}
+              onChange={(v) => updateHeader(key, key, v)}
+              nodeId={nodeId}
               placeholder="Value"
             />
             <Button
@@ -128,9 +130,10 @@ export function HttpConfig({ nodeId, config }: Props) {
       {showBody && (
         <div>
           <Label className="text-xs">Body</Label>
-          <Textarea
+          <VariableTextarea
             value={body}
-            onChange={(e) => update({ body: e.target.value })}
+            onChange={(v) => update({ body: v })}
+            nodeId={nodeId}
             placeholder='{"key": "value"}'
             className="min-h-[100px] font-mono text-xs"
           />

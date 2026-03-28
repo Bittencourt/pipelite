@@ -3,7 +3,6 @@
 import { Plus, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -13,6 +12,7 @@ import {
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { useEditorStore } from "../../lib/editor-store"
+import { VariableInput, VariableTextarea } from "../variable-picker/variable-field"
 
 interface Recipient {
   type: "user" | "dynamic"
@@ -81,10 +81,11 @@ export function EmailConfig({ nodeId, config }: Props) {
                 <SelectItem value="dynamic">Dynamic</SelectItem>
               </SelectContent>
             </Select>
-            <Input
+            <VariableInput
               className="flex-1 text-xs"
               value={r.value}
-              onChange={(e) => updateRecipient(i, { value: e.target.value })}
+              onChange={(v) => updateRecipient(i, { value: v })}
+              nodeId={nodeId}
               placeholder={r.type === "user" ? "User ID" : "{{variable}}"}
             />
             <Button
@@ -102,9 +103,10 @@ export function EmailConfig({ nodeId, config }: Props) {
       {/* Subject */}
       <div>
         <Label className="text-xs">Subject</Label>
-        <Input
+        <VariableInput
           value={subject}
-          onChange={(e) => update({ subject: e.target.value })}
+          onChange={(v) => update({ subject: v })}
+          nodeId={nodeId}
           placeholder="Email subject line"
         />
       </div>
@@ -112,9 +114,10 @@ export function EmailConfig({ nodeId, config }: Props) {
       {/* Body */}
       <div>
         <Label className="text-xs">Body</Label>
-        <Textarea
+        <VariableTextarea
           value={body}
-          onChange={(e) => update({ body: e.target.value })}
+          onChange={(v) => update({ body: v })}
+          nodeId={nodeId}
           placeholder="Email body content"
           className="min-h-[120px]"
         />

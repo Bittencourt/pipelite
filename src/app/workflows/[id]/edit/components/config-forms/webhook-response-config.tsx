@@ -2,8 +2,8 @@
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { useEditorStore } from "../../lib/editor-store"
+import { VariableTextarea } from "../variable-picker/variable-field"
 
 interface Props {
   nodeId: string
@@ -42,9 +42,10 @@ export function WebhookResponseConfig({ nodeId, config }: Props) {
       {/* Response Body */}
       <div>
         <Label className="text-xs">Response Body (JSON)</Label>
-        <Textarea
+        <VariableTextarea
           value={typeof body === "string" ? body : JSON.stringify(body, null, 2)}
-          onChange={(e) => update({ body: e.target.value })}
+          onChange={(v) => update({ body: v })}
+          nodeId={nodeId}
           placeholder='{"success": true, "message": "Processed"}'
           className="min-h-[120px] font-mono text-xs"
         />

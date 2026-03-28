@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { useEditorStore } from "../../lib/editor-store"
+import { VariableInput } from "../variable-picker/variable-field"
 
 const CRM_ENTITIES = ["deal", "person", "organization", "activity"] as const
 const CRM_OPERATIONS = ["create", "update", "delete"] as const
@@ -100,10 +101,11 @@ export function CrmConfig({ nodeId, config }: Props) {
           <Label className="text-xs font-semibold">Target Record</Label>
           <div>
             <Label className="text-xs">Target ID (direct)</Label>
-            <Input
+            <VariableInput
               value={targetId}
-              onChange={(e) => update({ targetId: e.target.value })}
-              placeholder="Record ID or variable"
+              onChange={(v) => update({ targetId: v })}
+              nodeId={nodeId}
+              placeholder="Record ID or {{variable}}"
             />
           </div>
           <p className="text-center text-xs text-muted-foreground">-- or --</p>
@@ -117,9 +119,10 @@ export function CrmConfig({ nodeId, config }: Props) {
           </div>
           <div>
             <Label className="text-xs">Lookup Value</Label>
-            <Input
+            <VariableInput
               value={lookupValue}
-              onChange={(e) => update({ lookupValue: e.target.value })}
+              onChange={(v) => update({ lookupValue: v })}
+              nodeId={nodeId}
               placeholder="e.g. {{trigger.data.email}}"
             />
           </div>
@@ -149,10 +152,11 @@ export function CrmConfig({ nodeId, config }: Props) {
                 onChange={(e) => updateMapping(key, e.target.value, value)}
                 placeholder="Field name"
               />
-              <Input
+              <VariableInput
                 className="flex-1 text-xs"
                 value={value}
-                onChange={(e) => updateMapping(key, key, e.target.value)}
+                onChange={(v) => updateMapping(key, key, v)}
+                nodeId={nodeId}
                 placeholder="Value"
               />
               <Button

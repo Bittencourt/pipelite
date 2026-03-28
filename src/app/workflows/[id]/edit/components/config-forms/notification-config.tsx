@@ -2,8 +2,8 @@
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { useEditorStore } from "../../lib/editor-store"
+import { VariableTextarea } from "../variable-picker/variable-field"
 
 interface Props {
   nodeId: string
@@ -45,9 +45,10 @@ export function NotificationConfig({ nodeId, config }: Props) {
       {/* Message */}
       <div>
         <Label className="text-xs">Message</Label>
-        <Textarea
+        <VariableTextarea
           value={message}
-          onChange={(e) => update({ message: e.target.value })}
+          onChange={(v) => update({ message: v })}
+          nodeId={nodeId}
           placeholder="Notification message content"
           className="min-h-[100px]"
         />

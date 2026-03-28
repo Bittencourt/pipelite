@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { useEditorStore } from "../../lib/editor-store"
+import { VariableInput } from "../variable-picker/variable-field"
 import type { ConditionOperator, Condition, ConditionGroup } from "@/lib/execution/types"
 
 const OPERATORS: { value: ConditionOperator; label: string }[] = [
@@ -157,12 +158,13 @@ export function ConditionConfig({ nodeId, config }: Props) {
           {group.conditions.map((cond, ci) => (
             <div key={ci} className="space-y-1 rounded border p-2">
               <div className="flex items-center gap-1">
-                <Input
+                <VariableInput
                   className="flex-1 text-xs"
                   value={cond.fieldPath}
-                  onChange={(e) =>
-                    updateCondition(gi, ci, { fieldPath: e.target.value })
+                  onChange={(v) =>
+                    updateCondition(gi, ci, { fieldPath: v })
                   }
+                  nodeId={nodeId}
                   placeholder="Field path"
                 />
                 <Button
@@ -194,12 +196,13 @@ export function ConditionConfig({ nodeId, config }: Props) {
                 </SelectContent>
               </Select>
               {!["is_empty", "is_not_empty"].includes(cond.operator) && (
-                <Input
+                <VariableInput
                   className="text-xs"
                   value={String(cond.value ?? "")}
-                  onChange={(e) =>
-                    updateCondition(gi, ci, { value: e.target.value })
+                  onChange={(v) =>
+                    updateCondition(gi, ci, { value: v })
                   }
+                  nodeId={nodeId}
                   placeholder="Value"
                 />
               )}
