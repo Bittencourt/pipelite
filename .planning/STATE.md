@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
 status: verifying
-last_updated: "2026-03-28T22:05:26.581Z"
+last_updated: "2026-03-28T22:09:12.341Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 8

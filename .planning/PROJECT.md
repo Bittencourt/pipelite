@@ -2,19 +2,7 @@
 
 ## What This Is
 
-A lightweight, self-hostable CRM inspired by Pipedrive. Built for mid-size companies (~50 users, thousands of deals) who want core CRM functionality without vendor lock-in. Container-deployable with a modern TypeScript stack. Ships with pipelines, organizations, people, deals (kanban), activities (calendar), custom fields with formulas, full REST API, keyboard navigation, localization, dashboard metrics, multi-user collaboration, Pipedrive API importer, durable webhook delivery, DB-backed import state, and production email notifications with user invites.
-
-## Current Milestone: v1.2 Workflows
-
-**Goal:** Add a server-side workflow automation engine with a visual linear/branching editor, deeply integrated with CRM events and external services.
-
-**Target features:**
-- Visual workflow editor (linear/branching node layout)
-- Trigger nodes: CRM events, cron schedules, manual click, inbound webhooks
-- Action nodes: generic HTTP with template library (user-extensible), CRM mutations
-- Flow control nodes: conditions, splits, transforms, generic functions
-- Server-side execution engine with run history and logging
-- Built-in templates for common integrations (Planka, Apprise, Tally, Typeform, etc.)
+A lightweight, self-hostable CRM inspired by Pipedrive with a built-in workflow automation engine. Built for mid-size companies (~50 users, thousands of deals) who want core CRM functionality and automation without vendor lock-in. Container-deployable with a modern TypeScript stack. Ships with pipelines, organizations, people, deals (kanban), activities (calendar), custom fields with formulas, full REST API, keyboard navigation, localization, dashboard metrics, multi-user collaboration, Pipedrive API importer, durable webhook delivery, production email, and a visual workflow editor with triggers, conditions, delays, HTTP/CRM/email/notification actions, templates, and JSON import/export.
 
 ## Core Value
 
@@ -37,38 +25,42 @@ API-complete CRM core that handles fundamentals well — pipelines, orgs, people
 - ✓ Webhook delivery reliability — durable DB-backed retries, delivery history UI, DLQ with replay — v1.1
 - ✓ Import state robustness — DB-backed import sessions, survives restarts, cancellation persists — v1.1
 - ✓ Production email — Resend SMTP, i18n templates, user invites, deal assignment, activity reminders, weekly digest — v1.1
+- ✓ Visual workflow editor with linear/branching node layout — v1.2
+- ✓ Trigger system: CRM events, cron schedules, manual, inbound webhooks — v1.2
+- ✓ Action system: HTTP (with templates), CRM mutations, email, notifications, JS transforms, webhook response — v1.2
+- ✓ Flow control: conditions with AND/OR groups, delays (fixed/until/field) — v1.2
+- ✓ Execution engine with run history, per-node details, error display — v1.2
+- ✓ HTTP template library (6 built-in + custom save/delete) and 4 workflow starter templates — v1.2
+- ✓ Workflow JSON export/import with secret stripping and pipelite/v1 schema versioning — v1.2
+- ✓ Workflow templates REST API (CRUD) — v1.2
 
 ### Active
 
-- [ ] Workflow editor UI with linear/branching node layout
-- [ ] Trigger system: CRM events, cron, manual, inbound webhooks
-- [ ] Action system: generic HTTP node, CRM mutation nodes
-- [ ] Flow control: conditions, splits, transforms, functions
-- [ ] Execution engine with run history and logging
-- [ ] HTTP template library (built-in + user-defined)
+(None — planning next milestone)
 
 ### Out of Scope
 
-- Email sync/integration — external tools via API
-- Workflow automation — external tools via API
+- Free-form canvas editor (n8n/Make style) — linear/branching covers 95% of CRM use cases
+- AI/LLM agent nodes — users can call AI APIs via HTTP node
+- Native third-party integration nodes — generic HTTP + templates covers the need
 - Multi-tenancy — single company per deployment
-- Native integrations (Slack, Zapier, etc.) — API allows external integration
 - Mobile app — web-first, responsive design sufficient
-- Formula reactivity (server-side recalc on save) — deferred from v1.1, revisit when needed
-- Bulk operations (select, delete, reassign, export) — deferred from v1.1, revisit when needed
+- Formula reactivity (server-side recalc on save) — deferred, revisit when needed
+- Bulk operations (select, delete, reassign, export) — deferred, revisit when needed
 
 ## Context
 
-**Shipped v1.1 on 2026-03-26.** 32 days total from project start to reliability milestone.
+**Shipped v1.2 on 2026-03-28.** 34 days total from project start (v1.0 → v1.1 → v1.2).
 
-- ~39,520 lines TypeScript/TSX across ~500 files
-- Tech stack: Next.js 16, PostgreSQL + Drizzle ORM, Auth.js, shadcn/ui, react-hotkeys-hook, next-intl, QuickJS (formula sandbox), @dnd-kit, Resend/Nodemailer (email)
+- ~45,000+ lines TypeScript/TSX across ~550+ files
+- Tech stack: Next.js 16, PostgreSQL + Drizzle ORM, Auth.js, shadcn/ui, react-hotkeys-hook, next-intl, QuickJS (formula sandbox + JS transforms), @dnd-kit, @xyflow/react (workflow editor), Resend/Nodemailer (email), cron-parser
 - Docker-deployable: single `docker compose up` starts the full stack
-- 85 plans executed across 21 phases (2 milestones)
+- 111 plans executed across 29 phases (3 milestones)
 
-Known issues / tech debt after v1.1:
+Known issues / tech debt after v1.2:
 - Formula fields don't recalculate on dependent field change (calculated once on page load)
-- Phase 9, plan 3 (JSON import + Pipedrive CSV compatibility mode) was deferred — CSV/JSON export and Pipedrive API import shipped instead
+- AddButtonEdge component registered but visual "+" between nodes not yet styled/positioned
+- `isBlank` formula function test failing (pre-existing)
 
 ## Constraints
 
@@ -95,6 +87,11 @@ Known issues / tech debt after v1.1:
 | setTimeout chaining for cron processors | Prevents overlap, no external scheduler needed | ✓ Good — simple, reliable for single-instance |
 | safeSend wrapper for all emails | Graceful degradation when SMTP not configured | ✓ Good — no crashes in dev/test without mail server |
 | fire-and-forget import (server action) | Unblocks progress polling | ✓ Good — resolved import-stuck bug cleanly |
+| Linear/branching editor (not free-form canvas) | Covers 95% of CRM automation patterns with simpler UX | ✓ Good — dagre auto-layout, node config panel |
+| CRM event bus for trigger matching | Decouples trigger system from mutation code | ✓ Good — clean separation, 13 event types |
+| QuickJS for JS transform nodes | Reuses formula sandbox, secure execution | ✓ Good — no eval, no security issues |
+| Typed static template arrays (not DB-stored built-ins) | Simpler deployment, no seed migration needed | ✓ Good — 6 HTTP + 4 workflow templates ship with code |
+| pipelite/v1 schema versioning for exports | Forward compatibility for workflow JSON format | ✓ Good — validation rejects unknown versions |
 
 ---
-*Last updated: 2026-03-26 after v1.2 milestone start*
+*Last updated: 2026-03-28 after v1.2 milestone completion*
