@@ -1,6 +1,6 @@
 import { db } from "@/db"
-import { workflows } from "@/db/schema/workflows"
-import { eq, desc, count } from "drizzle-orm"
+import { workflows, workflowRuns, workflowRunSteps } from "@/db/schema/workflows"
+import { eq, desc, count, inArray } from "drizzle-orm"
 import { z } from "zod"
 import type { Workflow } from "@/db/schema/workflows"
 import { generateWebhookSecret } from "@/lib/triggers/webhook-secret"
@@ -108,6 +108,18 @@ export async function deleteWorkflow(id: string): Promise<DeleteResult> {
 
   if (!existing) {
     return { success: false, error: "Workflow not found" }
+  }
+
+  // Cascade delete: steps -> runs -> workflow
+  const runs = await db
+    .select({ id: workflowRuns.id })
+    .from(workflowRuns)
+    .where(eq(workflowRuns.workflowId, id))
+
+  if (runs.length > 0) {
+    const runIds = runs.map((r) => r.id)
+    await db.delete(workflowRunSteps).where(inArray(workflowRunSteps.runId, runIds))
+    await db.delete(workflowRuns).where(eq(workflowRuns.workflowId, id))
   }
 
   await db.delete(workflows).where(eq(workflows.id, id))

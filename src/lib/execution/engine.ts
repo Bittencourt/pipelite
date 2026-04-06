@@ -53,8 +53,9 @@ export async function executeRun(runId: string): Promise<void> {
   }
 
   // Initialize or restore execution context
-  let context: ExecutionContext = run.context
-    ? (run.context as unknown as ExecutionContext)
+  const savedContext = run.context as unknown as ExecutionContext | null
+  let context: ExecutionContext = savedContext?.trigger && savedContext?.nodes
+    ? savedContext
     : {
         trigger: {
           type: (run.triggerData as Record<string, unknown>)?.trigger_type as string ?? "unknown",
@@ -77,9 +78,10 @@ export async function executeRun(runId: string): Promise<void> {
       return
     }
 
+    let step: { id: string } | undefined
     try {
       // Create step record
-      const [step] = await db
+      ;[step] = await db
         .insert(workflowRunSteps)
         .values({
           runId,
@@ -189,6 +191,18 @@ export async function executeRun(runId: string): Promise<void> {
       currentNodeId = nextNodeId
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      // Capture structured output from HTTP errors (statusCode, headers, body)
+      const errorOutput = (error as Error & { output?: Record<string, unknown> }).output
+      if (step) {
+        await db
+          .update(workflowRunSteps)
+          .set({
+            status: "failed",
+            output: errorOutput ?? ({ error: message } as Record<string, unknown>),
+            completedAt: new Date(),
+          })
+          .where(eq(workflowRunSteps.id, step.id))
+      }
       await failRun(runId, `Node '${node.id}' (${node.label}) failed: ${message}`)
       return
     }

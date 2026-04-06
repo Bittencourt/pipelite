@@ -21,7 +21,7 @@ class CrmEventBus {
   }
 }
 
-// Singleton - survives hot reload in development
+// Singleton - must survive across module boundaries in all environments
 const globalForBus = globalThis as typeof globalThis & { crmBus?: CrmEventBus }
 export const crmBus = globalForBus.crmBus ?? new CrmEventBus()
-if (process.env.NODE_ENV !== "production") globalForBus.crmBus = crmBus
+globalForBus.crmBus = crmBus

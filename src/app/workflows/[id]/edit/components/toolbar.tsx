@@ -6,10 +6,11 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import { Save, Download, Upload } from "lucide-react"
+import { Save, Download, Upload, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { useEditorStore } from "../lib/editor-store"
-import { updateWorkflow, importWorkflow, toggleWorkflow } from "@/app/workflows/actions"
+import { updateWorkflow, importWorkflow, toggleWorkflow, deleteWorkflow } from "@/app/workflows/actions"
+import { DeleteWorkflowDialog } from "@/app/workflows/delete-workflow-dialog"
 import { serializeWorkflowForExport, validateWorkflowImport, slugify } from "@/lib/workflows/export-import"
 
 export function Toolbar() {
@@ -26,6 +27,8 @@ export function Toolbar() {
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   function handleExport() {
     setExporting(true)
@@ -126,6 +129,24 @@ export function Toolbar() {
     }
   }
 
+  async function handleDelete() {
+    if (!workflowId) return
+    setDeleting(true)
+    try {
+      const result = await deleteWorkflow(workflowId)
+      if (result.success) {
+        toast.success("Workflow deleted")
+        router.push("/workflows")
+      } else {
+        toast.error(result.error)
+      }
+    } catch {
+      toast.error("Failed to delete workflow")
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="flex items-center gap-4 border-b px-4 py-2">
       <Input
@@ -187,7 +208,25 @@ export function Toolbar() {
           <Save className="mr-1 h-4 w-4" />
           {saving ? "Saving..." : "Save"}
         </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+          onClick={() => setDeleteOpen(true)}
+          aria-label="Delete workflow"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
       </div>
+
+      <DeleteWorkflowDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        workflowName={workflowName}
+        onConfirm={handleDelete}
+        isLoading={deleting}
+      />
     </div>
   )
 }

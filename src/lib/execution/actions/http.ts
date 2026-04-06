@@ -73,9 +73,10 @@ async function httpHandler(
     } else {
       const interpolated = interpolateDeep(rawBody, context)
       body = JSON.stringify(interpolated)
-      if (!headers["content-type"] && !headers["Content-Type"]) {
-        headers["content-type"] = "application/json"
-      }
+    }
+    // Auto-add Content-Type if body is present and no Content-Type set
+    if (body && !headers["content-type"] && !headers["Content-Type"]) {
+      headers["content-type"] = "application/json"
     }
   }
 
@@ -91,20 +92,7 @@ async function httpHandler(
     try {
       const response = await fetchWithTimeout(url, { method, headers, body }, timeout)
 
-      if (!response.ok) {
-        const responseText = await response.text()
-        if (attempt < retryCount) {
-          lastError = new Error(
-            `HTTP ${response.status}: ${responseText.slice(0, 200)}`
-          )
-          continue
-        }
-        throw new Error(
-          `HTTP ${response.status}: ${responseText.slice(0, 200)}`
-        )
-      }
-
-      // Parse response
+      // Parse response (both success and error)
       const responseHeaders = headersToRecord(response.headers)
       const contentType = responseHeaders["content-type"] ?? ""
       let responseBody: unknown
@@ -113,6 +101,26 @@ async function httpHandler(
         responseBody = await response.json()
       } else {
         responseBody = await response.text()
+      }
+
+      if (!response.ok) {
+        const bodyPreview = typeof responseBody === "string"
+          ? responseBody.slice(0, 200)
+          : JSON.stringify(responseBody).slice(0, 200)
+        if (attempt < retryCount) {
+          lastError = new Error(
+            `HTTP ${response.status}: ${bodyPreview}`
+          )
+          continue
+        }
+        // Return structured output even on failure so run detail shows full response
+        const error = new Error(`HTTP ${response.status}: ${bodyPreview}`)
+        ;(error as Error & { output: Record<string, unknown> }).output = {
+          statusCode: response.status,
+          headers: responseHeaders,
+          body: responseBody,
+        }
+        throw error
       }
 
       return {

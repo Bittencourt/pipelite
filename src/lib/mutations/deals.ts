@@ -512,7 +512,32 @@ export async function reorderDealsMutation(
       .set({ stageId: targetStageId, position: newPosition, updatedAt: new Date() })
       .where(eq(deals.id, dealId))
 
-    // No event emission for position-only reorder
+    // Emit CRM events when stage actually changed (not position-only reorder)
+    if (deal.stageId !== targetStageId) {
+      const updatedData = { ...deal, stageId: targetStageId, position: newPosition } as unknown as Record<string, unknown>
+
+      crmBus.emit("deal.updated", buildEventPayload(
+        dealId,
+        "updated",
+        updatedData,
+        userId,
+        ["stageId"],
+      ))
+
+      const stagePayload: DealStageChangedPayload = {
+        ...buildEventPayload(
+          dealId,
+          "updated",
+          updatedData,
+          userId,
+          ["stageId"],
+        ),
+        entity: "deal",
+        oldStageId: deal.stageId,
+        newStageId: targetStageId,
+      }
+      crmBus.emit("deal.stage_changed", stagePayload)
+    }
 
     return { success: true }
   } catch (error) {

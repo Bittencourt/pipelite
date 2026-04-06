@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { NewWorkflowButton } from "./new-workflow-button"
+import { WorkflowRowActions } from "./workflow-row-actions"
 
 export default async function WorkflowsPage() {
   const session = await auth()
@@ -57,6 +58,7 @@ export default async function WorkflowsPage() {
                 <TableHead>Triggers</TableHead>
                 <TableHead>Nodes</TableHead>
                 <TableHead>Updated</TableHead>
+                <TableHead className="w-[50px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -87,6 +89,12 @@ export default async function WorkflowsPage() {
                     <TableCell>{nodeCount}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {wf.updatedAt.toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <WorkflowRowActions
+                        workflowId={wf.id}
+                        workflowName={wf.name}
+                      />
                     </TableCell>
                   </TableRow>
                 )

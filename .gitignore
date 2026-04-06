@@ -42,3 +42,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .planning
+# CocoIndex Code (ccc)
+/.cocoindex_code/
+# Playwright MCP logs/screenshots
+.playwright-mcp/
