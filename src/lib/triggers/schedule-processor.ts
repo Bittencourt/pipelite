@@ -46,6 +46,21 @@ function scheduleTick(delay: number): void {
  * The execution engine (Phase 26) picks up pending runs in order.
  */
 export async function processScheduledWorkflows(): Promise<number> {
+  const now = new Date()
+
+  // Capture scheduled times BEFORE the claim nulls them. UPDATE...RETURNING
+  // yields post-update rows, so nextRunAt would already be null there and the
+  // envelope's scheduledAt would silently fall back to claim time.
+  const due = await db
+    .select({ id: workflows.id, nextRunAt: workflows.nextRunAt })
+    .from(workflows)
+    .where(and(eq(workflows.active, true), lte(workflows.nextRunAt, now)))
+
+  const scheduledAtById = new Map<string, Date>()
+  for (const row of due) {
+    if (row.nextRunAt) scheduledAtById.set(row.id, row.nextRunAt)
+  }
+
   // Atomic claim: set nextRunAt to null for all due workflows, returning claimed rows
   const claimed = await db
     .update(workflows)
@@ -53,7 +68,7 @@ export async function processScheduledWorkflows(): Promise<number> {
     .where(
       and(
         eq(workflows.active, true),
-        lte(workflows.nextRunAt, new Date())
+        lte(workflows.nextRunAt, now)
       )
     )
     .returning()
@@ -61,25 +76,58 @@ export async function processScheduledWorkflows(): Promise<number> {
   for (const workflow of claimed) {
     const triggers = (workflow.triggers ?? []) as TriggerConfig[]
     const schedule = getScheduleTrigger(triggers)
+    const scheduledAt = scheduledAtById.get(workflow.id) ?? now
 
-    // Create a pending run unconditionally (queuing, never skipping)
-    await createWorkflowRun(workflow.id, {
-      trigger_type: "schedule",
-      trigger_id: schedule ? String(schedule.index) : "0",
-      timestamp: new Date().toISOString(),
-      data: {
-        scheduledAt: workflow.nextRunAt?.toISOString() ?? new Date().toISOString(),
-      },
-    })
+    // Create a pending run unconditionally (queuing, never skipping).
+    // Each workflow is isolated: one failure must never abort the rest of the
+    // batch or leave this workflow's nextRunAt null (silently dead).
+    let runCreated = false
+    try {
+      await createWorkflowRun(workflow.id, {
+        trigger_type: "schedule",
+        trigger_id: schedule ? String(schedule.index) : "0",
+        timestamp: new Date().toISOString(),
+        data: {
+          scheduledAt: scheduledAt.toISOString(),
+        },
+      })
+      runCreated = true
+    } catch (error) {
+      console.error(
+        `[schedule-processor] Failed to create run for workflow ${workflow.id}:`,
+        error
+      )
+    }
 
-    // Compute and store next run time
+    // Compute and store next run time -- always, even when run creation failed
     if (schedule) {
-      const nextRunAt = computeNextRun(schedule.trigger)
-      if (nextRunAt) {
-        await db
-          .update(workflows)
-          .set({ nextRunAt })
-          .where(eq(workflows.id, workflow.id))
+      try {
+        let nextRunAt: Date | null
+        if (runCreated) {
+          // Anchor the next occurrence to the scheduled time (not processing
+          // time) so interval schedules don't drift forward each fire.
+          nextRunAt = computeNextRun(schedule.trigger, scheduledAt)
+          if (nextRunAt && nextRunAt.getTime() <= Date.now()) {
+            // More than one period behind (e.g. downtime): re-anchor from now
+            // to avoid an immediate catch-up burst.
+            nextRunAt = computeNextRun(schedule.trigger)
+          }
+        } else {
+          // Run creation failed: restore the original scheduled time so the
+          // claim retries on the next poll cycle instead of dying.
+          nextRunAt = scheduledAt
+        }
+        if (nextRunAt) {
+          await db
+            .update(workflows)
+            .set({ nextRunAt })
+            .where(eq(workflows.id, workflow.id))
+        }
+      } catch (error) {
+        console.error(
+          `[schedule-processor] Failed to update nextRunAt for workflow ${workflow.id}:`,
+          error
+        )
       }
     }
   }

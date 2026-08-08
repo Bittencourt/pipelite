@@ -157,6 +157,23 @@ describe("matchesTrigger", () => {
     expect(matchesTrigger(trigger, "deal.stage_changed", payload)).toBe(true)
   })
 
+  it("ignores residual stage filters when action is not stage_changed", () => {
+    // A leftover fromStageId/toStageId on an "updated" trigger must not
+    // silently prevent it from ever matching.
+    const trigger: CrmEventTriggerConfig = {
+      ...baseTrigger,
+      action: "updated",
+      fromStageId: "stage-a",
+      toStageId: "stage-b",
+    }
+    const payload: CrmEventPayload = {
+      ...basePayload,
+      action: "updated",
+      changedFields: ["title"],
+    }
+    expect(matchesTrigger(trigger, "deal.updated", payload)).toBe(true)
+  })
+
   it("with both fromStageId and toStageId requires both to match", () => {
     const trigger: CrmEventTriggerConfig = {
       ...baseTrigger,
@@ -281,6 +298,78 @@ describe("matchAndFireTriggers", () => {
     expect(mockCreateWorkflowRun).toHaveBeenCalledTimes(2)
     expect(mockCreateWorkflowRun).toHaveBeenCalledWith("wf-a", expect.any(Object))
     expect(mockCreateWorkflowRun).toHaveBeenCalledWith("wf-b", expect.any(Object))
+  })
+
+  it("includes stage-change metadata (oldStageId, newStageId, changedFields, userId) in the envelope", async () => {
+    mockWorkflowQuery([
+      {
+        id: "wf-stage",
+        active: true,
+        triggers: [
+          {
+            type: "crm_event",
+            entity: "deal",
+            action: "stage_changed",
+            fieldFilters: [],
+          },
+        ],
+      },
+    ])
+
+    const stagePayload: DealStageChangedPayload = {
+      entity: "deal",
+      entityId: "deal-1",
+      action: "updated",
+      data: { title: "Test Deal", stageId: "stage-b" },
+      changedFields: ["stageId"],
+      userId: "user-1",
+      timestamp: "2026-03-28T00:00:00Z",
+      oldStageId: "stage-a",
+      newStageId: "stage-b",
+    }
+
+    await matchAndFireTriggers("deal.stage_changed", stagePayload)
+
+    expect(mockCreateWorkflowRun).toHaveBeenCalledWith(
+      "wf-stage",
+      expect.objectContaining({
+        data: expect.objectContaining({
+          title: "Test Deal",
+          entityId: "deal-1",
+          oldStageId: "stage-a",
+          newStageId: "stage-b",
+          changedFields: ["stageId"],
+          userId: "user-1",
+        }),
+      })
+    )
+  })
+
+  it("does not let record fields clobber envelope metadata", async () => {
+    mockWorkflowQuery([
+      {
+        id: "wf-1",
+        active: true,
+        triggers: [{ type: "crm_event", entity: "deal", action: "created", fieldFilters: [] }],
+      },
+    ])
+
+    await matchAndFireTriggers("deal.created", {
+      ...eventPayload,
+      data: { title: "Evil", entityId: "spoofed", action: "deleted" },
+    })
+
+    expect(mockCreateWorkflowRun).toHaveBeenCalledWith(
+      "wf-1",
+      expect.objectContaining({
+        data: expect.objectContaining({
+          entityId: "deal-1",
+          action: "created",
+          entity: "deal",
+          title: "Evil",
+        }),
+      })
+    )
   })
 
   it("does not throw when createWorkflowRun fails for one workflow", async () => {
