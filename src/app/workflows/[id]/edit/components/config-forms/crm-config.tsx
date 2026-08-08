@@ -17,6 +17,15 @@ import { VariableInput } from "../variable-picker/variable-field"
 const CRM_ENTITIES = ["deal", "person", "organization", "activity"] as const
 const CRM_OPERATIONS = ["create", "update", "delete"] as const
 
+// Mirrors the lookup whitelist in src/lib/execution/actions/crm.ts
+// (lookupDefs) — the handler is the source of truth.
+const CRM_LOOKUP_FIELDS: Record<string, string[]> = {
+  deal: ["title"],
+  person: ["email", "firstName"],
+  organization: ["name"],
+  activity: ["title"],
+}
+
 interface Props {
   nodeId: string
   config: Record<string, unknown>
@@ -34,6 +43,7 @@ export function CrmConfig({ nodeId, config }: Props) {
 
   const mappingEntries = Object.entries(fieldMapping)
   const needsTarget = operation === "update" || operation === "delete"
+  const lookupFieldOptions = CRM_LOOKUP_FIELDS[entity] ?? []
 
   const update = (patch: Record<string, unknown>) => {
     updateNodeConfig(nodeId, patch)
@@ -61,7 +71,20 @@ export function CrmConfig({ nodeId, config }: Props) {
       {/* Entity */}
       <div>
         <Label className="text-xs">Entity</Label>
-        <Select value={entity} onValueChange={(v) => update({ entity: v })}>
+        <Select
+          value={entity}
+          onValueChange={(v) => {
+            const patch: Record<string, unknown> = { entity: v }
+            // Clear lookupField if it is not supported by the new entity
+            if (
+              lookupField &&
+              !(CRM_LOOKUP_FIELDS[v] ?? []).includes(lookupField)
+            ) {
+              patch.lookupField = ""
+            }
+            update(patch)
+          }}
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
@@ -111,11 +134,21 @@ export function CrmConfig({ nodeId, config }: Props) {
           <p className="text-center text-xs text-muted-foreground">-- or --</p>
           <div>
             <Label className="text-xs">Lookup Field</Label>
-            <Input
-              value={lookupField}
-              onChange={(e) => update({ lookupField: e.target.value })}
-              placeholder="e.g. email"
-            />
+            <Select
+              value={lookupField || undefined}
+              onValueChange={(v) => update({ lookupField: v })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select field..." />
+              </SelectTrigger>
+              <SelectContent>
+                {lookupFieldOptions.map((f) => (
+                  <SelectItem key={f} value={f}>
+                    {f}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label className="text-xs">Lookup Value</Label>

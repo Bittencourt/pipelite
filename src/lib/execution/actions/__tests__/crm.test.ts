@@ -220,10 +220,185 @@ describe("CRM action handler", () => {
     expect(mockCreateActivity).toHaveBeenCalledWith({
       title: "Follow up on New Deal",
       typeId: "type-1",
-      dueDate: "2026-04-01",
+      // dueDate is coerced from string to Date (activitySchema expects z.date())
+      dueDate: new Date("2026-04-01"),
       userId: "user-abc",
     })
     expect(result.output).toMatchObject({ success: true, id: "act-new" })
+  })
+
+  describe("fieldMapping type coercion", () => {
+    it("coerces numeric string to number for deal value on create", async () => {
+      mockCreateDeal.mockResolvedValue({ success: true, id: "d1", deal: {} })
+
+      await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "deal",
+          operation: "create",
+          fieldMapping: {
+            title: "Big Deal",
+            stageId: "stage-1",
+            value: "9999",
+          },
+        },
+        makeContext(),
+        "run-1"
+      )
+
+      expect(mockCreateDeal).toHaveBeenCalledWith({
+        title: "Big Deal",
+        stageId: "stage-1",
+        value: 9999,
+        userId: "user-abc",
+      })
+    })
+
+    it("coerces numeric string to number for deal value on update", async () => {
+      mockUpdateDeal.mockResolvedValue({ success: true })
+
+      await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "deal",
+          operation: "update",
+          fieldMapping: { value: "9999" },
+          targetId: "deal-1",
+        },
+        makeContext(),
+        "run-1"
+      )
+
+      expect(mockUpdateDeal).toHaveBeenCalledWith(
+        "deal-1",
+        { value: 9999 },
+        "user-abc"
+      )
+    })
+
+    it("coerces interpolated numeric value", async () => {
+      mockUpdateDeal.mockResolvedValue({ success: true })
+
+      await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "deal",
+          operation: "update",
+          fieldMapping: { value: "{{trigger.data.amount}}" },
+          targetId: "deal-1",
+        },
+        makeContext({
+          trigger: { type: "deal.created", data: { amount: 1234.5 } },
+        }),
+        "run-1"
+      )
+
+      expect(mockUpdateDeal).toHaveBeenCalledWith(
+        "deal-1",
+        { value: 1234.5 },
+        "user-abc"
+      )
+    })
+
+    it("coerces date string to Date for deal expectedCloseDate", async () => {
+      mockUpdateDeal.mockResolvedValue({ success: true })
+
+      await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "deal",
+          operation: "update",
+          fieldMapping: { expectedCloseDate: "2026-09-01" },
+          targetId: "deal-1",
+        },
+        makeContext(),
+        "run-1"
+      )
+
+      expect(mockUpdateDeal).toHaveBeenCalledWith(
+        "deal-1",
+        { expectedCloseDate: new Date("2026-09-01") },
+        "user-abc"
+      )
+    })
+
+    it("does not coerce string fields (title stays string)", async () => {
+      mockUpdateDeal.mockResolvedValue({ success: true })
+
+      await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "deal",
+          operation: "update",
+          fieldMapping: { title: "9999" },
+          targetId: "deal-1",
+        },
+        makeContext(),
+        "run-1"
+      )
+
+      expect(mockUpdateDeal).toHaveBeenCalledWith(
+        "deal-1",
+        { title: "9999" },
+        "user-abc"
+      )
+    })
+
+    it("omits empty-string values for typed fields", async () => {
+      mockUpdateDeal.mockResolvedValue({ success: true })
+
+      await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "deal",
+          operation: "update",
+          fieldMapping: { value: "", title: "Kept" },
+          targetId: "deal-1",
+        },
+        makeContext(),
+        "run-1"
+      )
+
+      expect(mockUpdateDeal).toHaveBeenCalledWith(
+        "deal-1",
+        { title: "Kept" },
+        "user-abc"
+      )
+    })
+
+    it("leaves non-numeric strings unchanged so validation reports them", async () => {
+      mockUpdateDeal.mockResolvedValue({
+        success: false,
+        error: "Invalid input",
+      })
+
+      await expect(
+        executeAction(
+          "crm_action",
+          {
+            actionType: "crm_action",
+            entity: "deal",
+            operation: "update",
+            fieldMapping: { value: "not-a-number" },
+            targetId: "deal-1",
+          },
+          makeContext(),
+          "run-1"
+        )
+      ).rejects.toThrow("Invalid input")
+
+      expect(mockUpdateDeal).toHaveBeenCalledWith(
+        "deal-1",
+        { value: "not-a-number" },
+        "user-abc"
+      )
+    })
   })
 
   it("throws on mutation failure", async () => {
