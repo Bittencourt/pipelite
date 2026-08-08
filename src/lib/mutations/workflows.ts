@@ -4,6 +4,8 @@ import { eq, desc, count, inArray } from "drizzle-orm"
 import { z } from "zod"
 import type { Workflow } from "@/db/schema/workflows"
 import { generateWebhookSecret } from "@/lib/triggers/webhook-secret"
+import { computeNextRun, getScheduleTrigger } from "@/lib/triggers/schedule-utils"
+import type { TriggerConfig } from "@/lib/triggers/types"
 
 // --- Schemas ---
 
@@ -91,6 +93,17 @@ export async function updateWorkflow(
   if (data.triggers !== undefined) updates.triggers = data.triggers
   if (data.nodes !== undefined) updates.nodes = data.nodes
   if (data.active !== undefined) updates.active = data.active
+
+  // The schedule processor only claims workflows with nextRunAt <= now, and
+  // nothing else seeds that column — (re)compute it whenever triggers or
+  // active state change, so schedule triggers actually fire.
+  if (data.triggers !== undefined || data.active !== undefined) {
+    const effectiveTriggers = (data.triggers ?? existing.triggers ?? []) as TriggerConfig[]
+    const effectiveActive = data.active ?? existing.active
+    const schedule = getScheduleTrigger(effectiveTriggers)
+    updates.nextRunAt =
+      effectiveActive && schedule ? computeNextRun(schedule.trigger) : null
+  }
 
   const [workflow] = await db
     .update(workflows)

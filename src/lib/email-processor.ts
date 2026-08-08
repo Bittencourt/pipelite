@@ -18,7 +18,9 @@ export function startEmailProcessor(): void {
 function scheduleTick(delay: number): void {
   setTimeout(async () => {
     try {
-      const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000"
+      // Self-call: this route lives in the same server process, so localhost
+      // is always correct — NEXTAUTH_URL may point at a public domain.
+      const baseUrl = `http://localhost:${process.env.PORT ?? 3000}`
       const response = await fetch(`${baseUrl}/api/internal/email/process`, {
         method: "POST",
         headers: {

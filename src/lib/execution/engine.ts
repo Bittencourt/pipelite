@@ -4,6 +4,7 @@ import { workflows, workflowRuns, workflowRunSteps } from "@/db/schema/workflows
 import { evaluateCondition } from "./condition-evaluator"
 import { resolveDelay } from "./delay-resolver"
 import { executeAction } from "./actions"
+import { runWithExecutionDepth } from "./recursion"
 import type {
   WorkflowNode,
   ActionNode,
@@ -37,6 +38,19 @@ export async function executeRun(runId: string): Promise<void> {
 
   const { workflow_runs: run, workflows: workflow } = result[0]
 
+  // Execute the whole graph inside the run's stored recursion depth, so CRM
+  // actions that fire other workflows create runs at depth + 1 instead of
+  // restarting at 0 (which would defeat MAX_RECURSION_DEPTH).
+  return runWithExecutionDepth(run.depth ?? 0, () =>
+    executeRunGraph(runId, run, workflow)
+  ) as Promise<void>
+}
+
+async function executeRunGraph(
+  runId: string,
+  run: typeof workflowRuns.$inferSelect,
+  workflow: typeof workflows.$inferSelect
+): Promise<void> {
   // Build node map from workflow nodes JSONB
   const nodeList = (workflow.nodes ?? []) as unknown as WorkflowNode[]
   const nodeMap = new Map<string, WorkflowNode>()
@@ -74,7 +88,7 @@ export async function executeRun(runId: string): Promise<void> {
   while (currentNodeId) {
     const node = nodeMap.get(currentNodeId)
     if (!node) {
-      await failRun(runId, `Node '${currentNodeId}' not found in workflow graph`)
+      await failRun(runId, `Node '${currentNodeId}' not found in workflow graph`, currentNodeId)
       return
     }
 
@@ -183,7 +197,7 @@ export async function executeRun(runId: string): Promise<void> {
 
         default: {
           const _exhaustive: never = node
-          await failRun(runId, `Unknown node type at node '${(_exhaustive as ActionNode).id}'`)
+          await failRun(runId, `Unknown node type at node '${(_exhaustive as ActionNode).id}'`, (_exhaustive as ActionNode).id)
           return
         }
       }
@@ -203,7 +217,7 @@ export async function executeRun(runId: string): Promise<void> {
           })
           .where(eq(workflowRunSteps.id, step.id))
       }
-      await failRun(runId, `Node '${node.id}' (${node.label}) failed: ${message}`)
+      await failRun(runId, `Node '${node.id}' (${node.label}) failed: ${message}`, node.id)
       return
     }
   }
@@ -311,10 +325,15 @@ async function persistContext(runId: string, context: ExecutionContext): Promise
     .where(eq(workflowRuns.id, runId))
 }
 
-async function failRun(runId: string, error: string): Promise<void> {
+async function failRun(
+  runId: string,
+  error: string,
+  failedNodeId?: string
+): Promise<void> {
   console.error(`[execution-engine] Run ${runId} failed: ${error}`)
-  await db
-    .update(workflowRuns)
-    .set({ status: "failed", error })
-    .where(eq(workflowRuns.id, runId))
+  // Persist the failing node so the run-detail "Failed at: <node>" banner can
+  // resolve it to a human-readable label.
+  const updates: Record<string, unknown> = { status: "failed", error }
+  if (failedNodeId) updates.currentNodeId = failedNodeId
+  await db.update(workflowRuns).set(updates).where(eq(workflowRuns.id, runId))
 }

@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/db"
 import { eq, and } from "drizzle-orm"
 import { workflows, workflowRuns } from "@/db/schema/workflows"
+import { computeNextRun, getScheduleTrigger } from "@/lib/triggers/schedule-utils"
+import type { TriggerConfig } from "@/lib/triggers/types"
 import {
   createWorkflow as createWorkflowMutation,
   updateWorkflow as updateWorkflowMutation,
@@ -106,10 +108,18 @@ export async function toggleWorkflow(
     return { success: false, error: "Workflow not found" }
   }
 
-  // Update active flag
+  // Update active flag; seed nextRunAt so schedule triggers fire (the
+  // schedule processor only claims rows with a non-null nextRunAt <= now)
+  const schedule = getScheduleTrigger(
+    (existing[0].triggers ?? []) as TriggerConfig[]
+  )
   await db
     .update(workflows)
-    .set({ active, updatedAt: new Date() })
+    .set({
+      active,
+      updatedAt: new Date(),
+      nextRunAt: active && schedule ? computeNextRun(schedule.trigger) : null,
+    })
     .where(eq(workflows.id, id))
 
   let cancelledRuns = 0

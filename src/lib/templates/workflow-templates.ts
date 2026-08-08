@@ -6,22 +6,27 @@ export interface WorkflowStarterTemplate {
   nodes: Record<string, unknown>[]
 }
 
+// Node `actionType` lives INSIDE `config` with the canonical registry names
+// (http_request, crm_action, javascript_transform, email, notification) — this
+// is what both the execution engine (node.config.actionType) and the visual
+// editor's graph-converter read. Config field names match the Zod schemas in
+// src/lib/execution/actions/types.ts.
 export const workflowStarterTemplates: WorkflowStarterTemplate[] = [
   {
     id: "scheduled-api-sync",
     name: "Scheduled API Sync",
     description: "Fetch data from an API on a schedule and update CRM records",
-    triggers: [{ type: "schedule", interval: "daily" }],
+    triggers: [{ type: "schedule", mode: "interval", intervalMinutes: 1440 }],
     nodes: [
       {
         id: "n1",
         type: "action",
-        actionType: "http",
+        label: "Fetch from API",
         config: {
+          actionType: "http_request",
           method: "GET",
           url: "https://api.example.com/data",
           headers: { "Content-Type": "application/json" },
-          body: "",
           timeout: 30,
           retryCount: 1,
         },
@@ -30,11 +35,12 @@ export const workflowStarterTemplates: WorkflowStarterTemplate[] = [
       {
         id: "n2",
         type: "action",
-        actionType: "crm",
+        label: "Create Deal",
         config: {
+          actionType: "crm_action",
           entity: "deal",
-          action: "create",
-          fields: {},
+          operation: "create",
+          fieldMapping: {},
         },
         nextNodeId: null,
       },
@@ -49,11 +55,11 @@ export const workflowStarterTemplates: WorkflowStarterTemplate[] = [
       {
         id: "n1",
         type: "action",
-        actionType: "notification",
+        label: "Notify Team",
         config: {
-          recipientUserIds: [],
-          title: "Webhook received",
-          message: "New webhook data: {{trigger.body}}",
+          actionType: "notification",
+          userIds: [],
+          message: "New webhook data: {{trigger.data}}",
         },
         nextNodeId: null,
       },
@@ -68,20 +74,22 @@ export const workflowStarterTemplates: WorkflowStarterTemplate[] = [
       {
         id: "n1",
         type: "action",
-        actionType: "transform",
+        label: "Transform Payload",
         config: {
-          code: "return { name: input.trigger.body.name }",
+          actionType: "javascript_transform",
+          code: "return { name: input.trigger?.data?.name ?? 'Unnamed' }",
         },
         nextNodeId: "n2",
       },
       {
         id: "n2",
         type: "action",
-        actionType: "crm",
+        label: "Create Organization",
         config: {
+          actionType: "crm_action",
           entity: "organization",
-          action: "create",
-          fields: { name: "{{nodes.n1.name}}" },
+          operation: "create",
+          fieldMapping: { name: "{{nodes.n1.output.name}}" },
         },
         nextNodeId: null,
       },
@@ -91,14 +99,15 @@ export const workflowStarterTemplates: WorkflowStarterTemplate[] = [
     id: "email-digest",
     name: "Email Digest",
     description: "Send a periodic email summary of recent CRM activity",
-    triggers: [{ type: "schedule", cron: "0 9 * * 1" }],
+    triggers: [{ type: "schedule", mode: "cron", cronExpression: "0 9 * * 1" }],
     nodes: [
       {
         id: "n1",
         type: "action",
-        actionType: "email",
+        label: "Send Digest Email",
         config: {
-          to: [],
+          actionType: "email",
+          recipients: [],
           subject: "Weekly CRM Digest",
           body: "Here is your weekly CRM activity summary.",
         },
