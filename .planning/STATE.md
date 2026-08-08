@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
-status: verifying
-last_updated: "2026-03-28T22:09:12.341Z"
-last_activity: 2026-03-28 - Completed quick task 260328-rza: Add split node type
+status: "Milestone v1.2 shipped — PR #7"
+last_updated: "2026-08-08T19:51:58.744Z"
+last_activity: 2026-08-08
 progress:
   total_phases: 8
   completed_phases: 7
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 Phase: 31 of 30 (templates & portability)
 Plan: Not started
-Status: Checkpoint pending - visual verification
-Last activity: 2026-03-28
+Status: Milestone v1.2 shipped — PR #7
+Last activity: 2026-08-08
 
 Progress: [██████████] 99% (90/91 plans)
 
