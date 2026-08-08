@@ -25,6 +25,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return Problems.notFound("Workflow")
     }
 
+    // Inactive workflows cannot be run via the REST trigger, consistent with
+    // every other trigger path (webhook, schedule, CRM events).
+    if (!workflow.active) {
+      return Problems.conflict(
+        "Workflow is not active. Activate the workflow before triggering a run."
+      )
+    }
+
     // Parse optional body for trigger data
     let body: Record<string, unknown> = {}
     try {
@@ -48,6 +56,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     })
 
     if (!result.success) {
+      // Covers the race where the workflow was deactivated between the check
+      // above and the trigger call.
+      if (result.code === "workflow_inactive") {
+        return Problems.conflict(
+          "Workflow is not active. Activate the workflow before triggering a run."
+        )
+      }
       return Problems.notFound("Workflow")
     }
 
