@@ -4,7 +4,8 @@ import { Problems } from "@/lib/api/errors"
 import { parseExpand } from "@/lib/api/expand"
 import { singleResponse, noContentResponse } from "@/lib/api/response"
 import { serializeActivity, serializeDeal, serializeOrganization, serializePerson } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
+import { crmBus } from "@/lib/events"
+import type { CrmEventPayload } from "@/lib/events"
 import { db } from "@/db"
 import { activities } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
@@ -23,6 +24,24 @@ const updateActivitySchema = z.object({
 
 interface RouteParams {
   params: Promise<{ id: string }>
+}
+
+function buildActivityEventPayload(
+  entityId: string,
+  action: "created" | "updated" | "deleted",
+  data: Record<string, unknown>,
+  userId: string,
+  changedFields: string[] | null = null
+): CrmEventPayload {
+  return {
+    entity: "activity",
+    entityId,
+    action,
+    data,
+    changedFields,
+    userId,
+    timestamp: new Date().toISOString(),
+  }
 }
 
 // GET /api/v1/activities/:id - Get a single activity
@@ -59,7 +78,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const serialized: Record<string, unknown> = serializeActivity(activity)
-    
+
     if (expand.has("type") && activity.type) {
       serialized.type = {
         id: activity.type.id,
@@ -68,7 +87,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         color: activity.type.color,
       }
     }
-    
+
     if (expand.has("deal") && activity.deal) {
       serialized.deal = {
         ...serializeDeal(activity.deal as Parameters<typeof serializeDeal>[0]),
@@ -76,7 +95,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         ...(activity.deal.person && { person: serializePerson(activity.deal.person as Parameters<typeof serializePerson>[0]) }),
       }
     }
-    
+
     if (expand.has("owner") && activity.owner) {
       serialized.owner = {
         id: activity.owner.id,
@@ -124,27 +143,45 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const updates = parsed.data
     const now = new Date()
 
-    // Build update object
+    // Build update object and track changed fields
     const updateData: Record<string, unknown> = {
       updatedAt: now,
     }
+    const changedFields: string[] = []
 
-    if (updates.title !== undefined) updateData.title = updates.title
-    if (updates.type_id !== undefined) updateData.typeId = updates.type_id
-    if (updates.deal_id !== undefined) updateData.dealId = updates.deal_id
-    if (updates.owner_id !== undefined) updateData.ownerId = updates.owner_id
-    if (updates.due_at !== undefined) updateData.dueDate = updates.due_at ? new Date(updates.due_at) : null
-    if (updates.notes !== undefined) updateData.notes = updates.notes
-    
-    // Handle completed_at specially for webhook event
-    const wasCompleted = existingActivity.completedAt !== null
-    const willBeCompleted = updates.completed_at !== undefined && updates.completed_at !== null
-    const completingActivity = !wasCompleted && willBeCompleted
-    
+    if (updates.title !== undefined) {
+      updateData.title = updates.title
+      if (updates.title !== existingActivity.title) changedFields.push("title")
+    }
+    if (updates.type_id !== undefined) {
+      updateData.typeId = updates.type_id
+      if (updates.type_id !== existingActivity.typeId) changedFields.push("typeId")
+    }
+    if (updates.deal_id !== undefined) {
+      updateData.dealId = updates.deal_id
+      if ((updates.deal_id || null) !== existingActivity.dealId) changedFields.push("dealId")
+    }
+    if (updates.owner_id !== undefined) {
+      updateData.ownerId = updates.owner_id
+      if (updates.owner_id !== existingActivity.ownerId) changedFields.push("ownerId")
+    }
+    if (updates.due_at !== undefined) {
+      updateData.dueDate = updates.due_at ? new Date(updates.due_at) : null
+      changedFields.push("dueDate")
+    }
+    if (updates.notes !== undefined) {
+      updateData.notes = updates.notes
+      if ((updates.notes || null) !== existingActivity.notes) changedFields.push("notes")
+    }
+
+    // Handle completed_at
     if (updates.completed_at !== undefined) {
       updateData.completedAt = updates.completed_at ? new Date(updates.completed_at) : null
+      const wasCompleted = existingActivity.completedAt !== null
+      const willBeCompleted = updates.completed_at !== null
+      if (wasCompleted !== willBeCompleted) changedFields.push("completed")
     }
-    
+
     // Handle custom_fields with merge
     if (updates.custom_fields !== undefined) {
       updateData.customFields = {
@@ -158,12 +195,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .where(eq(activities.id, id))
       .returning()
 
-    // Trigger appropriate webhook
-    if (completingActivity) {
-      triggerWebhook(ctx.userId, "activity.completed", "activity", updatedActivity.id, "updated", serializeActivity(updatedActivity))
-    } else {
-      triggerWebhook(ctx.userId, "activity.updated", "activity", updatedActivity.id, "updated", serializeActivity(updatedActivity))
-    }
+    // Emit CRM event via bus
+    crmBus.emit("activity.updated", buildActivityEventPayload(
+      id,
+      "updated",
+      updatedActivity as unknown as Record<string, unknown>,
+      ctx.userId,
+      changedFields.length > 0 ? changedFields : null,
+    ))
 
     return singleResponse(serializeActivity(updatedActivity))
   })
@@ -188,8 +227,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       .set({ deletedAt: new Date() })
       .where(eq(activities.id, id))
 
-    // Trigger webhook
-    triggerWebhook(ctx.userId, "activity.deleted", "activity", id, "deleted", { id })
+    // Emit CRM event via bus
+    crmBus.emit("activity.deleted", buildActivityEventPayload(
+      id,
+      "deleted",
+      { id },
+      ctx.userId,
+    ))
 
     return noContentResponse()
   })

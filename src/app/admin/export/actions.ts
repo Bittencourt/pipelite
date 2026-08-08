@@ -13,7 +13,7 @@ export async function getExportData(
     return { success: false, error: "Not authenticated" }
   }
 
-  if (session.user.role !== "admin") {
+  if ((session.user as { role?: string }).role !== "admin") {
     return { success: false, error: "Not authorized" }
   }
 

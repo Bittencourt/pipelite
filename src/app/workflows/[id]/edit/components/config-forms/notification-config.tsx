@@ -1,0 +1,58 @@
+"use client"
+
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { useEditorStore } from "../../lib/editor-store"
+import { VariableTextarea } from "../variable-picker/variable-field"
+
+interface Props {
+  nodeId: string
+  config: Record<string, unknown>
+}
+
+export function NotificationConfig({ nodeId, config }: Props) {
+  const updateNodeConfig = useEditorStore((s) => s.updateNodeConfig)
+
+  const userIds = (config.userIds as string[]) ?? []
+  const message = (config.message as string) ?? ""
+
+  const update = (patch: Record<string, unknown>) => {
+    updateNodeConfig(nodeId, patch)
+  }
+
+  return (
+    <div className="space-y-4 p-4">
+      {/* User IDs */}
+      <div>
+        <Label className="text-xs">User IDs (comma-separated)</Label>
+        <Input
+          value={userIds.join(", ")}
+          onChange={(e) =>
+            update({
+              userIds: e.target.value
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          }
+          placeholder="user-id-1, user-id-2"
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          Enter user IDs separated by commas
+        </p>
+      </div>
+
+      {/* Message */}
+      <div>
+        <Label className="text-xs">Message</Label>
+        <VariableTextarea
+          value={message}
+          onChange={(v) => update({ message: v })}
+          nodeId={nodeId}
+          placeholder="Notification message content"
+          className="min-h-[100px]"
+        />
+      </div>
+    </div>
+  )
+}

@@ -4,6 +4,7 @@ import { deals } from "@/db/schema/deals"
 import { activities } from "@/db/schema/activities"
 import { pipelines, stages } from "@/db/schema/pipelines"
 import { customFieldDefinitions } from "@/db/schema/custom-fields"
+import { workflows, workflowRuns, workflowRunSteps, workflowTemplates } from "@/db/schema/workflows"
 
 type Organization = typeof organizations.$inferSelect
 type Person = typeof people.$inferSelect
@@ -12,6 +13,10 @@ type Activity = typeof activities.$inferSelect
 type Pipeline = typeof pipelines.$inferSelect
 type Stage = typeof stages.$inferSelect
 type CustomFieldDefinition = typeof customFieldDefinitions.$inferSelect
+type Workflow = typeof workflows.$inferSelect
+type WorkflowRun = typeof workflowRuns.$inferSelect
+type WorkflowRunStep = typeof workflowRunSteps.$inferSelect
+type WorkflowTemplate = typeof workflowTemplates.$inferSelect
 
 /**
  * Convert Date to ISO string, handling null
@@ -147,5 +152,75 @@ export function serializeCustomFieldDefinition(cfd: CustomFieldDefinition) {
     show_in_list: cfd.showInList,
     created_at: toIsoString(cfd.createdAt),
     updated_at: toIsoString(cfd.updatedAt),
+  }
+}
+
+/**
+ * Serialize workflow to snake_case API format
+ * Includes full trigger and nodes graph
+ */
+export function serializeWorkflow(workflow: Workflow) {
+  return {
+    id: workflow.id,
+    name: workflow.name,
+    description: workflow.description,
+    triggers: workflow.triggers,
+    nodes: workflow.nodes,
+    active: workflow.active,
+    created_by: workflow.createdBy,
+    created_at: toIsoString(workflow.createdAt),
+    updated_at: toIsoString(workflow.updatedAt),
+  }
+}
+
+/**
+ * Serialize workflow run to snake_case API format
+ */
+export function serializeRun(run: WorkflowRun) {
+  return {
+    id: run.id,
+    workflow_id: run.workflowId,
+    status: run.status,
+    trigger_data: run.triggerData,
+    error: run.error,
+    depth: run.depth,
+    current_node_id: run.currentNodeId,
+    started_at: toIsoString(run.startedAt),
+    completed_at: toIsoString(run.completedAt),
+    created_at: toIsoString(run.createdAt),
+  }
+}
+
+/**
+ * Serialize workflow run step to snake_case API format
+ */
+export function serializeRunStep(step: WorkflowRunStep) {
+  return {
+    id: step.id,
+    run_id: step.runId,
+    node_id: step.nodeId,
+    status: step.status,
+    input: step.input,
+    output: step.output,
+    error: step.error,
+    resume_at: toIsoString(step.resumeAt),
+    started_at: toIsoString(step.startedAt),
+    completed_at: toIsoString(step.completedAt),
+    created_at: toIsoString(step.createdAt),
+  }
+}
+
+/**
+ * Serialize workflow template to snake_case API format
+ */
+export function serializeWorkflowTemplate(template: WorkflowTemplate) {
+  return {
+    id: template.id,
+    name: template.name,
+    description: template.description,
+    category: template.category,
+    trigger: template.trigger,
+    nodes: template.nodes,
+    created_at: toIsoString(template.createdAt),
   }
 }

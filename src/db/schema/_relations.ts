@@ -18,6 +18,10 @@ import { webhookDeliveries } from "./webhook-deliveries"
 import { importSessions } from "./import-sessions"
 import { notificationPreferences } from "./notification-preferences"
 import { userInvites } from "./user-invites"
+import { workflows } from "./workflows"
+import { workflowRuns } from "./workflows"
+import { workflowRunSteps } from "./workflows"
+import { httpTemplates } from "./http-templates"
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   notificationPreferences: one(notificationPreferences, {
@@ -36,6 +40,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   dealAssignments: many(dealAssignees),
   assignedActivities: many(activities, { relationName: 'assignedActivities' }),
   importSessions: many(importSessions),
+  workflows: many(workflows),
 }))
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -191,6 +196,36 @@ export const notificationPreferencesRelations = relations(notificationPreference
 export const userInvitesRelations = relations(userInvites, ({ one }) => ({
   inviter: one(users, {
     fields: [userInvites.invitedBy],
+    references: [users.id],
+  }),
+}))
+
+export const workflowsRelations = relations(workflows, ({ one, many }) => ({
+  createdByUser: one(users, {
+    fields: [workflows.createdBy],
+    references: [users.id],
+  }),
+  runs: many(workflowRuns),
+}))
+
+export const workflowRunsRelations = relations(workflowRuns, ({ one, many }) => ({
+  workflow: one(workflows, {
+    fields: [workflowRuns.workflowId],
+    references: [workflows.id],
+  }),
+  steps: many(workflowRunSteps),
+}))
+
+export const workflowRunStepsRelations = relations(workflowRunSteps, ({ one }) => ({
+  run: one(workflowRuns, {
+    fields: [workflowRunSteps.runId],
+    references: [workflowRuns.id],
+  }),
+}))
+
+export const httpTemplatesRelations = relations(httpTemplates, ({ one }) => ({
+  createdByUser: one(users, {
+    fields: [httpTemplates.createdBy],
     references: [users.id],
   }),
 }))

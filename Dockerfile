@@ -19,6 +19,27 @@ ENV DATABASE_URL="postgresql://dummy@localhost/dummy"
 
 RUN npm run build
 
+# Copy instrumentation files into standalone output
+# (Next.js standalone tracing omits instrumentation.js and its chunks)
+RUN cp .next/server/instrumentation.js .next/standalone/.next/server/instrumentation.js 2>/dev/null || true && \
+    cp .next/server/instrumentation.js.map .next/standalone/.next/server/instrumentation.js.map 2>/dev/null || true && \
+    if [ -f .next/server/instrumentation.js.nft.json ]; then \
+      node -e " \
+        const nft = require('./.next/server/instrumentation.js.nft.json'); \
+        const fs = require('fs'); \
+        const path = require('path'); \
+        for (const f of nft.files || []) { \
+          const src = path.join('.next/server', f); \
+          const dst = path.join('.next/standalone/.next/server', f); \
+          if (fs.existsSync(src) && !fs.existsSync(dst)) { \
+            fs.mkdirSync(path.dirname(dst), { recursive: true }); \
+            fs.copyFileSync(src, dst); \
+            console.log('Copied instrumentation dep:', f); \
+          } \
+        } \
+      "; \
+    fi
+
 # Stage 3: Runner
 FROM node:20-alpine AS runner
 WORKDIR /app

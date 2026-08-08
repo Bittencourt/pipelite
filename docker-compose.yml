@@ -14,6 +14,7 @@ services:
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - EMAIL_FROM=${EMAIL_FROM}
+      - INTERNAL_SECRET=${INTERNAL_SECRET}
     depends_on:
       postgres:
         condition: service_healthy

@@ -4,7 +4,7 @@ import { parseExpand } from "@/lib/api/expand"
 import { singleResponse, noContentResponse } from "@/lib/api/response"
 import { Problems } from "@/lib/api/errors"
 import { serializeOrganization } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
+import { updateOrganizationMutation, deleteOrganizationMutation } from "@/lib/mutations/organizations"
 import { db } from "@/db"
 import { organizations } from "@/db/schema/organizations"
 import { and, eq, isNull } from "drizzle-orm"
@@ -97,42 +97,45 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return Problems.notFound("Organization")
     }
 
-    // Build update object - only include defined fields
-    const updates: Record<string, unknown> = {
-      updatedAt: new Date(),
-    }
-
+    // Build update object - handle custom_fields merge and field mapping
     const { name, website, industry, notes, custom_fields } = parseResult.data
-    if (name !== undefined) updates.name = name
-    if (website !== undefined) updates.website = website
-    if (industry !== undefined) updates.industry = industry
-    if (notes !== undefined) updates.notes = notes
-    if (custom_fields !== undefined) {
-      // Merge with existing custom fields
-      updates.customFields = {
-        ...((existing.customFields as Record<string, unknown>) || {}),
-        ...custom_fields,
-      }
+    const mutationData: Record<string, unknown> = {}
+    if (name !== undefined) mutationData.name = name
+    if (website !== undefined) mutationData.website = website
+    if (industry !== undefined) mutationData.industry = industry
+    if (notes !== undefined) mutationData.notes = notes
+
+    // Use mutation for update + event emission
+    const result = await updateOrganizationMutation(id, mutationData, context.userId)
+
+    if (!result.success) {
+      return Problems.validation([{ field: "body", code: "mutation_error", message: result.error }])
     }
 
-    // Update organization
-    const [updated] = await db
-      .update(organizations)
-      .set(updates)
-      .where(eq(organizations.id, id))
-      .returning()
+    // Re-fetch updated org for response (mutation doesn't return the entity for updates)
+    const updated = await db.query.organizations.findFirst({
+      where: eq(organizations.id, id),
+    })
 
-    // Trigger webhook
-    triggerWebhook(
-      context.userId,
-      "organization.updated",
-      "organization",
-      updated.id,
-      "updated",
-      serializeOrganization(updated)
-    )
+    // Handle custom_fields merge separately (mutation doesn't handle API-specific merge)
+    if (custom_fields !== undefined && updated) {
+      await db
+        .update(organizations)
+        .set({
+          customFields: {
+            ...((existing.customFields as Record<string, unknown>) || {}),
+            ...custom_fields,
+          },
+        })
+        .where(eq(organizations.id, id))
 
-    return singleResponse(serializeOrganization(updated))
+      const refreshed = await db.query.organizations.findFirst({
+        where: eq(organizations.id, id),
+      })
+      return singleResponse(serializeOrganization(refreshed!))
+    }
+
+    return singleResponse(serializeOrganization(updated!))
   })
 }
 
@@ -153,24 +156,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return Problems.notFound("Organization")
     }
 
-    // Soft delete
-    await db
-      .update(organizations)
-      .set({
-        deletedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(organizations.id, id))
+    // Use mutation for delete + event emission
+    const result = await deleteOrganizationMutation(id, context.userId)
 
-    // Trigger webhook
-    triggerWebhook(
-      context.userId,
-      "organization.deleted",
-      "organization",
-      id,
-      "deleted",
-      { id }
-    )
+    if (!result.success) {
+      return Problems.validation([{ field: "body", code: "mutation_error", message: result.error }])
+    }
 
     return noContentResponse()
   })

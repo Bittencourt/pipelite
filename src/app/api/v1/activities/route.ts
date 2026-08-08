@@ -5,7 +5,7 @@ import { parsePagination } from "@/lib/api/pagination"
 import { parseExpand } from "@/lib/api/expand"
 import { paginatedResponse, createdResponse } from "@/lib/api/response"
 import { serializeActivity, serializeDeal, serializePerson, serializeOrganization } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
+import { createActivityMutation } from "@/lib/mutations/activities"
 import { db } from "@/db"
 import { activities, deals, activityTypes, users } from "@/db/schema"
 import { eq, and, isNull, desc, asc, sql } from "drizzle-orm"
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 
     // Build where conditions
     const conditions = [isNull(activities.deletedAt)]
-    
+
     if (typeId) {
       conditions.push(eq(activities.typeId, typeId))
     }
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
     // Serialize with expand
     const data = activityList.map(activity => {
       const serialized: Record<string, unknown> = serializeActivity(activity)
-      
+
       if (expand.has("type") && activity.type) {
         serialized.type = {
           id: activity.type.id,
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
           color: activity.type.color,
         }
       }
-      
+
       if (expand.has("deal") && activity.deal) {
         serialized.deal = {
           ...serializeDeal(activity.deal as Parameters<typeof serializeDeal>[0]),
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
           ...(activity.deal.person && { person: serializePerson(activity.deal.person as Parameters<typeof serializePerson>[0]) }),
         }
       }
-      
+
       if (expand.has("owner") && activity.owner) {
         serialized.owner = {
           id: activity.owner.id,
@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
           email: activity.owner.email,
         }
       }
-      
+
       return serialized
     })
 
@@ -138,27 +138,6 @@ export async function POST(request: NextRequest) {
 
     const { title, type_id, deal_id, owner_id, due_at, notes, custom_fields } = parsed.data
 
-    // Verify type exists
-    const activityType = await db.query.activityTypes.findFirst({
-      where: eq(activityTypes.id, type_id),
-    })
-    if (!activityType) {
-      return Problems.validation([{ field: "type_id", code: "not_found", message: "Activity type not found" }])
-    }
-
-    // If deal_id provided, verify deal exists
-    if (deal_id) {
-      const deal = await db.query.deals.findFirst({
-        where: and(eq(deals.id, deal_id), isNull(deals.deletedAt)),
-      })
-      if (!deal) {
-        return Problems.validation([{ field: "deal_id", code: "not_found", message: "Deal not found" }])
-      }
-    }
-
-    // Determine owner - use provided owner_id or authenticated user
-    const activityOwnerId = owner_id || ctx.userId
-
     // If owner_id provided, verify owner exists
     if (owner_id) {
       const owner = await db.query.users.findFirst({
@@ -169,22 +148,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Determine owner - use provided owner_id or authenticated user
+    const activityOwnerId = owner_id || ctx.userId
+
+    // Use mutation (handles insert + validation + event emission)
     const now = new Date()
-    const [activity] = await db.insert(activities).values({
+    const result = await createActivityMutation({
       title,
       typeId: type_id,
-      dealId: deal_id || null,
-      ownerId: activityOwnerId,
+      dealId: deal_id,
+      assigneeId: null,
       dueDate: due_at ? new Date(due_at) : now,
-      notes: notes || null,
-      customFields: custom_fields || {},
-      createdAt: now,
-      updatedAt: now,
-    }).returning()
+      notes,
+      customFields: custom_fields,
+      userId: activityOwnerId,
+    })
 
-    // Trigger webhook
-    triggerWebhook(ctx.userId, "activity.created", "activity", activity.id, "created", serializeActivity(activity))
+    if (!result.success) {
+      return Problems.validation([{ field: "body", code: "mutation_error", message: result.error }])
+    }
 
-    return createdResponse(serializeActivity(activity))
+    return createdResponse(serializeActivity(result.activity))
   })
 }

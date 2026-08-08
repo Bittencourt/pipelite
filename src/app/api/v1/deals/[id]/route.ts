@@ -4,7 +4,6 @@ import { parseExpand } from "@/lib/api/expand"
 import { singleResponse, noContentResponse } from "@/lib/api/response"
 import { Problems } from "@/lib/api/errors"
 import { serializeDeal } from "@/lib/api/serialize"
-import { triggerWebhook } from "@/lib/api/webhooks/deliver"
 import { db } from "@/db"
 import { deals } from "@/db/schema/deals"
 import { organizations } from "@/db/schema/organizations"
@@ -12,6 +11,8 @@ import { people } from "@/db/schema/people"
 import { stages, pipelines } from "@/db/schema/pipelines"
 import { and, eq, isNull } from "drizzle-orm"
 import { z } from "zod"
+import { crmBus } from "@/lib/events"
+import type { DealStageChangedPayload } from "@/lib/events"
 
 const updateDealSchema = z.object({
   title: z.string().min(1, "Title is required").max(200).optional(),
@@ -201,26 +202,47 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Build update object
+    // Build update object and track changed fields
     const updates: Record<string, unknown> = {
       updatedAt: new Date(),
     }
+    const changedFields: string[] = []
 
-    if (title !== undefined) updates.title = title
-    if (value !== undefined) updates.value = value !== null ? String(value) : null
-    if (stage_id !== undefined) updates.stageId = stage_id
-    if (organization_id !== undefined) updates.organizationId = organization_id
-    if (person_id !== undefined) updates.personId = person_id
+    if (title !== undefined) {
+      updates.title = title
+      if (title !== existing.title) changedFields.push("title")
+    }
+    if (value !== undefined) {
+      updates.value = value !== null ? String(value) : null
+      if (String(value) !== existing.value) changedFields.push("value")
+    }
+    if (stage_id !== undefined) {
+      updates.stageId = stage_id
+      if (stage_id !== existing.stageId) changedFields.push("stageId")
+    }
+    if (organization_id !== undefined) {
+      updates.organizationId = organization_id
+      if (organization_id !== existing.organizationId) changedFields.push("organizationId")
+    }
+    if (person_id !== undefined) {
+      updates.personId = person_id
+      if (person_id !== existing.personId) changedFields.push("personId")
+    }
     if (expected_close_date !== undefined) {
       updates.expectedCloseDate = expected_close_date ? new Date(expected_close_date) : null
+      changedFields.push("expectedCloseDate")
     }
-    if (notes !== undefined) updates.notes = notes
+    if (notes !== undefined) {
+      updates.notes = notes
+      if (notes !== existing.notes) changedFields.push("notes")
+    }
     if (custom_fields !== undefined) {
       // Merge with existing custom fields
       updates.customFields = {
         ...((existing.customFields as Record<string, unknown>) || {}),
         ...custom_fields,
       }
+      changedFields.push("customFields")
     }
 
     // Update deal
@@ -230,33 +252,36 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .where(eq(deals.id, id))
       .returning()
 
-    // Trigger stage_changed webhook if stage changed
+    const serializedDeal = serializeDeal(updated)
+
+    // Emit stage_changed event if stage changed
     if (stage_id !== undefined && stage_id !== oldStageId) {
-      triggerWebhook(
-        context.userId,
-        "deal.stage_changed",
-        "deal",
-        updated.id,
-        "updated",
-        {
-          deal: serializeDeal(updated),
-          old_stage_id: oldStageId,
-          new_stage_id: stage_id,
-        }
-      )
+      const stageChangedPayload: DealStageChangedPayload = {
+        entity: "deal",
+        entityId: updated.id,
+        action: "updated",
+        data: serializedDeal as unknown as Record<string, unknown>,
+        changedFields,
+        userId: context.userId,
+        timestamp: new Date().toISOString(),
+        oldStageId,
+        newStageId: stage_id,
+      }
+      crmBus.emit("deal.stage_changed", stageChangedPayload)
     }
 
-    // Trigger general update webhook
-    triggerWebhook(
-      context.userId,
-      "deal.updated",
-      "deal",
-      updated.id,
-      "updated",
-      serializeDeal(updated)
-    )
+    // Emit general update event
+    crmBus.emit("deal.updated", {
+      entity: "deal",
+      entityId: updated.id,
+      action: "updated",
+      data: serializedDeal as unknown as Record<string, unknown>,
+      changedFields: changedFields.length > 0 ? changedFields : null,
+      userId: context.userId,
+      timestamp: new Date().toISOString(),
+    })
 
-    return singleResponse(serializeDeal(updated))
+    return singleResponse(serializedDeal)
   })
 }
 
@@ -286,15 +311,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       })
       .where(eq(deals.id, id))
 
-    // Trigger webhook
-    triggerWebhook(
-      context.userId,
-      "deal.deleted",
-      "deal",
-      id,
-      "deleted",
-      { id }
-    )
+    // Emit CRM event via bus
+    crmBus.emit("deal.deleted", {
+      entity: "deal",
+      entityId: id,
+      action: "deleted",
+      data: { id },
+      changedFields: null,
+      userId: context.userId,
+      timestamp: new Date().toISOString(),
+    })
 
     return noContentResponse()
   })
