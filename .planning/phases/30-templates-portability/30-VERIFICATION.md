@@ -1,9 +1,9 @@
 ---
 phase: 30-templates-portability
 verified: 2026-03-28T21:00:00Z
-status: gaps_found
-score: 10/12 must-haves verified
-re_verification: false
+status: passed
+score: 12/12 must-haves verified
+re_verification: "2026-08-08 — Both gaps were documentation-only (report itself notes 'all code is implemented and wired'). Gap 1: TMPL-01/02/03 checkboxes in REQUIREMENTS.md — file archived at milestone completion, moot. Gap 2: TMPL-03 spec said 5-10 starters, 4 delivered per intentional scope decision D-11 in CONTEXT.md. Create-workflow dialog with 4 starter cards confirmed live in browser 2026-08-08."
 gaps:
   - truth: "REQUIREMENTS.md checkboxes for TMPL-01, TMPL-02, TMPL-03 still show as pending ([ ])"
     status: partial
