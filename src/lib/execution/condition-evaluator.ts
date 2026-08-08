@@ -7,11 +7,19 @@ import type {
 /**
  * Walk a dot-notation path against the execution context.
  * e.g. "trigger.data.deal.value" -> ctx.trigger.data.deal.value
+ *
+ * A missing/empty/non-string path (e.g. a condition the user added but never
+ * configured) resolves to undefined instead of throwing, so the run does not
+ * hard-crash — the condition then evaluates like any other missing field
+ * (is_empty -> true, comparisons -> false).
  */
 export function resolveFieldPath(
   context: ExecutionContext,
-  path: string
+  path: string | null | undefined
 ): unknown {
+  if (typeof path !== "string" || path.trim() === "") {
+    return undefined
+  }
   const parts = path.split(".")
   let current: unknown = context
   for (const part of parts) {
