@@ -49,11 +49,28 @@ type ResumableContext = ExecutionContext & { _resume?: ResumeState }
  */
 const MAX_STEPS_PER_RUN = 1000
 
-const CYCLE_ERROR = `Run exceeded the maximum of ${MAX_STEPS_PER_RUN} steps; the workflow graph likely contains a cycle`
+/**
+ * Wall-clock cap per engine invocation. The step cap alone bounds a cyclic
+ * graph, but with slow per-step DB work 1000 steps can still stall the inline
+ * processor for many minutes. This deadline fails a runaway run within ~1
+ * minute regardless of per-step cost. A legitimate acyclic workflow traverses
+ * far fewer nodes than this in far less time; delays re-enter with a fresh
+ * clock, so long waits don't count against it.
+ */
+const MAX_RUN_MS = 60_000
 
-/** Mutable step counter shared between the main loop and branch walks. */
+const CYCLE_ERROR = `Run exceeded the maximum of ${MAX_STEPS_PER_RUN} steps; the workflow graph likely contains a cycle`
+const TIMEOUT_ERROR = `Run exceeded the ${MAX_RUN_MS / 1000}s execution budget; the workflow graph likely contains a cycle`
+
+/** Mutable step counter + deadline shared between the main loop and branch walks. */
 interface StepGuard {
   steps: number
+  deadline: number
+}
+
+/** True once this invocation has run past its wall-clock budget. */
+function overBudget(guard: StepGuard): boolean {
+  return Date.now() > guard.deadline
 }
 
 type BranchOutcome = "ok" | "waiting" | "failed"
@@ -134,7 +151,7 @@ async function executeRunGraph(
   const resume = context._resume
   delete context._resume
 
-  const guard: StepGuard = { steps: 0 }
+  const guard: StepGuard = { steps: 0, deadline: Date.now() + MAX_RUN_MS }
 
   // Determine start position.
   let currentNodeId: string | null
@@ -189,6 +206,10 @@ async function executeRunGraph(
 
     if (++guard.steps > MAX_STEPS_PER_RUN) {
       await failRun(runId, CYCLE_ERROR, currentNodeId)
+      return
+    }
+    if (overBudget(guard)) {
+      await failRun(runId, TIMEOUT_ERROR, currentNodeId)
       return
     }
 
@@ -397,6 +418,10 @@ async function executeBranch(
 
     if (++guard.steps > MAX_STEPS_PER_RUN) {
       await failRun(runId, CYCLE_ERROR, currentNodeId)
+      return "failed"
+    }
+    if (overBudget(guard)) {
+      await failRun(runId, TIMEOUT_ERROR, currentNodeId)
       return "failed"
     }
 
