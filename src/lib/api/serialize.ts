@@ -156,15 +156,34 @@ export function serializeCustomFieldDefinition(cfd: CustomFieldDefinition) {
 }
 
 /**
+ * Strip webhook secrets from trigger configs before returning them via the API.
+ * The inbound webhook URL secret is a credential — exposing it lets any valid
+ * API key enumerate every workflow's inbound webhook secret. Clients that need
+ * a new secret should use the secret regeneration endpoint.
+ */
+function redactTriggerSecrets(
+  triggers: Record<string, unknown>[] | null | undefined
+): Record<string, unknown>[] {
+  if (!Array.isArray(triggers)) return []
+  return triggers.map((trigger) => {
+    if (trigger && trigger.type === "webhook" && "secret" in trigger) {
+      const { secret: _secret, ...rest } = trigger
+      return rest
+    }
+    return trigger
+  })
+}
+
+/**
  * Serialize workflow to snake_case API format
- * Includes full trigger and nodes graph
+ * Includes full trigger and nodes graph (webhook secrets redacted)
  */
 export function serializeWorkflow(workflow: Workflow) {
   return {
     id: workflow.id,
     name: workflow.name,
     description: workflow.description,
-    triggers: workflow.triggers,
+    triggers: redactTriggerSecrets(workflow.triggers),
     nodes: workflow.nodes,
     active: workflow.active,
     created_by: workflow.createdBy,
