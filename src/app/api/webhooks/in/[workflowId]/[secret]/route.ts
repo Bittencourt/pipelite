@@ -3,7 +3,7 @@ import { db } from "@/db"
 import { workflows } from "@/db/schema/workflows"
 import { eq } from "drizzle-orm"
 import { verifyWebhookSecret } from "@/lib/triggers/webhook-secret"
-import { createWorkflowRun } from "@/lib/triggers/create-run"
+import { createWorkflowRun, claimWorkflowRun } from "@/lib/triggers/create-run"
 import {
   waitForWebhookResponse,
   hasWebhookResponseNode,
@@ -38,18 +38,29 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
 
-  // Find webhook trigger in triggers array
+  // Match the provided secret against ANY webhook trigger in the array.
+  // A workflow can have multiple webhook triggers, each with its own secret;
+  // every candidate is checked with a timing-safe comparison. We deliberately
+  // do not break out of the loop early so the amount of comparison work does
+  // not depend on which trigger (if any) matched.
   const triggers = (workflow.triggers ?? []) as Array<Record<string, unknown>>
-  const webhookTriggerIndex = triggers.findIndex((t) => t.type === "webhook")
-  const webhookTrigger = webhookTriggerIndex >= 0 ? triggers[webhookTriggerIndex] : null
+  let matchedTriggerIndex = -1
+  for (let i = 0; i < triggers.length; i++) {
+    const trigger = triggers[i]
+    if (trigger.type !== "webhook") continue
 
-  if (!webhookTrigger) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+    const storedSecret = trigger.secret as string | undefined
+    if (
+      storedSecret &&
+      verifyWebhookSecret(secret, storedSecret) &&
+      matchedTriggerIndex === -1
+    ) {
+      matchedTriggerIndex = i
+    }
   }
 
-  // Verify secret with timing-safe comparison
-  const storedSecret = webhookTrigger.secret as string
-  if (!storedSecret || !verifyWebhookSecret(secret, storedSecret)) {
+  // No webhook trigger or no matching secret: 404 (no information leakage)
+  if (matchedTriggerIndex === -1) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
 
@@ -67,7 +78,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   // Build trigger envelope
   const envelope: TriggerEnvelope = {
     trigger_type: "webhook",
-    trigger_id: String(webhookTriggerIndex),
+    trigger_id: String(matchedTriggerIndex),
     timestamp: new Date().toISOString(),
     data: {
       body,
@@ -84,6 +95,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   // Check if workflow has a webhook_response node for synchronous execution
   const workflowNodes = (workflow.nodes ?? []) as unknown[]
   if (hasWebhookResponseNode(workflowNodes)) {
+    // Atomically claim the run (pending -> running) BEFORE executing it here.
+    // The execution processor polls every few seconds and claims any pending
+    // run with the same status flip; without this claim both sides could
+    // execute the run, duplicating steps and CRM/HTTP side effects.
+    const claimed = await claimWorkflowRun(run.id)
+    if (!claimed) {
+      // Not claimable: either the processor already grabbed it (it will
+      // execute the run) or the run was created in a non-pending state
+      // (e.g. failed by the recursion guard). Do not execute it here.
+      return NextResponse.json(
+        { ok: true, run_id: run.id },
+        { status: 200 }
+      )
+    }
+
     // Register pending response BEFORE executing so the handler can resolve it
     const responsePromise = waitForWebhookResponse(run.id, 30_000)
 

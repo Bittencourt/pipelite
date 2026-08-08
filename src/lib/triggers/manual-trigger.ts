@@ -14,11 +14,13 @@ interface TriggerManualRunParams {
 
 type TriggerManualRunResult =
   | { success: true; runId: string }
-  | { success: false; error: string }
+  | { success: false; error: string; code?: "workflow_inactive" }
 
 /**
  * Trigger a manual workflow run.
  * Creates a workflow run with trigger_type "manual" and optional entity data.
+ * Inactive workflows are rejected, matching every other trigger path
+ * (webhook 404s inactive, schedule and CRM matcher only consider active).
  */
 export async function triggerManualRun(
   params: TriggerManualRunParams
@@ -31,6 +33,14 @@ export async function triggerManualRun(
 
   if (!workflow) {
     return { success: false, error: "Workflow not found" }
+  }
+
+  if (!workflow.active) {
+    return {
+      success: false,
+      error: "Workflow is not active",
+      code: "workflow_inactive",
+    }
   }
 
   const envelope: TriggerEnvelope = {
