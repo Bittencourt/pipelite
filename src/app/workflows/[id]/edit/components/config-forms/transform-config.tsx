@@ -32,18 +32,41 @@ export function TransformConfig({ nodeId, config }: Props) {
         <p className="mb-2 text-xs font-semibold">Available Globals</p>
         <ul className="space-y-1 text-xs text-muted-foreground">
           <li>
-            <code className="font-mono text-foreground">input</code> -- Data
-            from the previous node
+            <code className="font-mono text-foreground">input</code> --{" "}
+            <code className="font-mono">{"{ trigger, nodes }"}</code>. Trigger
+            data is at{" "}
+            <code className="font-mono">input.trigger.data</code>; outputs of
+            earlier nodes are at{" "}
+            <code className="font-mono">
+              input.nodes.&lt;nodeId&gt;.output
+            </code>
           </li>
           <li>
-            <code className="font-mono text-foreground">output</code> --
-            Accumulated outputs from all prior nodes
+            <code className="font-mono text-foreground">console.log(...)</code>{" "}
+            -- Logged messages are captured and returned with the node output
           </li>
           <li>
-            <code className="font-mono text-foreground">helpers</code> --
-            Utility functions (pick, omit, get, set, capitalize, etc.)
+            <code className="font-mono text-foreground">MATH</code> -- abs,
+            ceil, floor, round, max, min, sqrt, pow, log, log10, exp
+          </li>
+          <li>
+            <code className="font-mono text-foreground">TEXT</code> -- upper,
+            lower, trim, length, len, substring, replace, contains, startsWith,
+            endsWith, split, join, left, right, concat
+          </li>
+          <li>
+            <code className="font-mono text-foreground">DATE</code> -- today,
+            now, addDays, addMonths, diffDays, format, parseDate, year, month,
+            day, days
+          </li>
+          <li>
+            <code className="font-mono text-foreground">LOGIC</code> -- if,
+            and, or, not, isBlank, isNumber
           </li>
         </ul>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Your code must <code className="font-mono">return</code> an object.
+        </p>
       </div>
     </div>
   )
