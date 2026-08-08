@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import type { ExecutionContext, WorkflowNode, ConditionNode, DelayNode } from "./types"
+import type { ExecutionContext, WorkflowNode, ConditionNode, DelayNode, SplitNode } from "./types"
 
 // Mock the DB module
 const mockDb = {
@@ -87,6 +87,23 @@ function makeConditionNode(
     config: { groups: [], logicOperator: "and" as const },
     trueBranch,
     falseBranch,
+    nextNodeId,
+  }
+}
+
+function makeSplitNode(
+  id: string,
+  branchA: string | null,
+  branchB: string | null,
+  nextNodeId: string | null
+): SplitNode {
+  return {
+    id,
+    type: "split",
+    label: `Split ${id}`,
+    config: {},
+    branchA,
+    branchB,
     nextNodeId,
   }
 }
@@ -417,5 +434,289 @@ describe("executeRun", () => {
     // Run should be completed
     const completionUpdate = updatedRuns.find(u => u.status === "completed")
     expect(completionUpdate).toBeDefined()
+  })
+
+  it("completes on resume when delay is the LAST node (no restart loop)", async () => {
+    const futureDate = new Date(Date.now() + 60 * 60 * 1000)
+    const nodes: WorkflowNode[] = [
+      makeActionNode("n1", "delay-1"),
+      makeDelayNode("delay-1", null), // delay is the terminal node
+    ]
+    const workflow = { id: "wf-8", nodes }
+    const run = {
+      id: "run-8",
+      workflowId: "wf-8",
+      status: "running",
+      context: null as ExecutionContext | null,
+      currentNodeId: null as string | null,
+      triggerData: { trigger_type: "manual", data: {} },
+    }
+
+    setupDbMocks(workflow, run)
+    mockResolveDelay.mockReturnValue(futureDate)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-8")
+
+    const waitingUpdate = updatedRuns.find(u => u.status === "waiting")
+    expect(waitingUpdate).toBeDefined()
+    // Resume frame persisted inside context even though nextNodeId is null
+    const persistedContext = waitingUpdate!.context as ExecutionContext
+
+    // --- Resume: simulate the processor re-invoking the run ---
+    setupDbMocks(workflow, {
+      ...run,
+      context: persistedContext,
+      currentNodeId: (waitingUpdate!.currentNodeId as string | null) ?? null,
+    })
+
+    await executeRun("run-8")
+
+    // Nothing should be re-executed (old bug: fell back to node 0 and
+    // re-ran the whole workflow, then re-waited, forever)
+    expect(insertedSteps).toHaveLength(0)
+    const completionUpdate = updatedRuns.find(u => u.status === "completed")
+    expect(completionUpdate).toBeDefined()
+  })
+
+  it("resumes a delay inside a condition branch, finishes the branch, then runs the merge node", async () => {
+    const futureDate = new Date(Date.now() + 60 * 60 * 1000)
+    const nodes: WorkflowNode[] = [
+      makeConditionNode("cond-1", "b1", null, "merge-1"),
+      makeActionNode("b1", "d1"),
+      makeDelayNode("d1", "b2"),
+      makeActionNode("b2", null),
+      makeActionNode("merge-1", null),
+    ]
+    const workflow = { id: "wf-9", nodes }
+    const run = {
+      id: "run-9",
+      workflowId: "wf-9",
+      status: "running",
+      context: null as ExecutionContext | null,
+      currentNodeId: null as string | null,
+      triggerData: { trigger_type: "manual", data: {} },
+    }
+
+    setupDbMocks(workflow, run)
+    mockEvaluateCondition.mockReturnValue(true)
+    mockResolveDelay.mockReturnValue(futureDate)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-9")
+
+    // First pass: cond-1, b1, then delay yields
+    expect(insertedSteps.map(s => s.nodeId)).toEqual(["cond-1", "b1", "d1"])
+    const waitingUpdate = updatedRuns.find(u => u.status === "waiting")
+    expect(waitingUpdate).toBeDefined()
+    const persistedContext = waitingUpdate!.context as ExecutionContext
+
+    // --- Resume ---
+    setupDbMocks(workflow, {
+      ...run,
+      context: persistedContext,
+      currentNodeId: (waitingUpdate!.currentNodeId as string | null) ?? null,
+    })
+
+    await executeRun("run-9")
+
+    // Old bug: only b2 ran, run was completed WITHOUT the merge node
+    expect(insertedSteps.map(s => s.nodeId)).toEqual(["b2", "merge-1"])
+    expect(updatedRuns.find(u => u.status === "completed")).toBeDefined()
+  })
+
+  it("resumes a delay in split branch A, then still runs branch B and the merge node", async () => {
+    const futureDate = new Date(Date.now() + 60 * 60 * 1000)
+    const nodes: WorkflowNode[] = [
+      makeSplitNode("split-1", "a1", "b1", "merge-1"),
+      makeDelayNode("a1", null), // delay is all of branch A
+      makeActionNode("b1", null),
+      makeActionNode("merge-1", null),
+    ]
+    const workflow = { id: "wf-10", nodes }
+    const run = {
+      id: "run-10",
+      workflowId: "wf-10",
+      status: "running",
+      context: null as ExecutionContext | null,
+      currentNodeId: null as string | null,
+      triggerData: { trigger_type: "manual", data: {} },
+    }
+
+    setupDbMocks(workflow, run)
+    mockResolveDelay.mockReturnValue(futureDate)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-10")
+
+    expect(insertedSteps.map(s => s.nodeId)).toEqual(["split-1", "a1"])
+    const waitingUpdate = updatedRuns.find(u => u.status === "waiting")
+    expect(waitingUpdate).toBeDefined()
+    const persistedContext = waitingUpdate!.context as ExecutionContext
+
+    // --- Resume ---
+    setupDbMocks(workflow, {
+      ...run,
+      context: persistedContext,
+      currentNodeId: (waitingUpdate!.currentNodeId as string | null) ?? null,
+    })
+
+    await executeRun("run-10")
+
+    // Old bug: engine returned after branch A's delay and branch B never ran
+    expect(insertedSteps.map(s => s.nodeId)).toEqual(["b1", "merge-1"])
+    expect(updatedRuns.find(u => u.status === "completed")).toBeDefined()
+  })
+
+  it("runs a shared merge node exactly once when a condition branch points at it", async () => {
+    const nodes: WorkflowNode[] = [
+      makeConditionNode("cond-1", "t1", null, "merge-1"),
+      makeActionNode("t1", "merge-1"), // branch tail points at the merge node
+      makeActionNode("merge-1", null),
+    ]
+    const workflow = { id: "wf-11", nodes }
+    const run = {
+      id: "run-11",
+      workflowId: "wf-11",
+      status: "running",
+      context: null as ExecutionContext | null,
+      currentNodeId: null as string | null,
+      triggerData: { trigger_type: "manual", data: {} },
+    }
+
+    setupDbMocks(workflow, run)
+    mockEvaluateCondition.mockReturnValue(true)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-11")
+
+    const stepNodeIds = insertedSteps.map(s => s.nodeId)
+    expect(stepNodeIds).toEqual(["cond-1", "t1", "merge-1"])
+    // Old bug: branch walked the merge chain AND the main loop ran it again
+    expect(stepNodeIds.filter(id => id === "merge-1")).toHaveLength(1)
+    expect(updatedRuns.find(u => u.status === "completed")).toBeDefined()
+  })
+
+  it("runs a shared merge node exactly once when both split branches point at it", async () => {
+    const nodes: WorkflowNode[] = [
+      makeSplitNode("split-1", "a1", "b1", "merge-1"),
+      makeActionNode("a1", "merge-1"),
+      makeActionNode("b1", "merge-1"),
+      makeActionNode("merge-1", null),
+    ]
+    const workflow = { id: "wf-12", nodes }
+    const run = {
+      id: "run-12",
+      workflowId: "wf-12",
+      status: "running",
+      context: null as ExecutionContext | null,
+      currentNodeId: null as string | null,
+      triggerData: { trigger_type: "manual", data: {} },
+    }
+
+    setupDbMocks(workflow, run)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-12")
+
+    const stepNodeIds = insertedSteps.map(s => s.nodeId)
+    expect(stepNodeIds).toEqual(["split-1", "a1", "b1", "merge-1"])
+    expect(stepNodeIds.filter(id => id === "merge-1")).toHaveLength(1)
+    expect(updatedRuns.find(u => u.status === "completed")).toBeDefined()
+  })
+
+  it("detects a cycle and fails the run cleanly instead of looping forever", async () => {
+    const nodes: WorkflowNode[] = [
+      makeActionNode("n1", "n2"),
+      makeActionNode("n2", "n1"), // backward edge -> infinite loop
+    ]
+    const workflow = { id: "wf-13", nodes }
+    const run = {
+      id: "run-13",
+      workflowId: "wf-13",
+      status: "running",
+      context: null as ExecutionContext | null,
+      currentNodeId: null as string | null,
+      triggerData: { trigger_type: "manual", data: {} },
+    }
+
+    setupDbMocks(workflow, run)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-13")
+
+    const failUpdate = updatedRuns.find(u => u.status === "failed")
+    expect(failUpdate).toBeDefined()
+    expect(failUpdate!.error).toMatch(/cycle/i)
+    // Step insertion is bounded by the cap
+    expect(insertedSteps.length).toBeLessThanOrEqual(1000)
+    expect(updatedRuns.find(u => u.status === "completed")).toBeUndefined()
+  })
+
+  it("fails the run with the BRANCH node's id when a node inside a branch throws", async () => {
+    const nodes: WorkflowNode[] = [
+      makeConditionNode("cond-1", "bad-1", null, "merge-1"),
+      makeActionNode("bad-1", null),
+      makeActionNode("merge-1", null),
+    ]
+    const workflow = { id: "wf-14", nodes }
+    const run = {
+      id: "run-14",
+      workflowId: "wf-14",
+      status: "running",
+      context: null as ExecutionContext | null,
+      currentNodeId: null as string | null,
+      triggerData: { trigger_type: "manual", data: {} },
+    }
+
+    setupDbMocks(workflow, run)
+    mockEvaluateCondition.mockReturnValue(true)
+
+    const { executeAction } = await import("./actions")
+    vi.mocked(executeAction).mockRejectedValueOnce(new Error("SMTP exploded"))
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-14")
+
+    const failUpdate = updatedRuns.find(u => u.status === "failed")
+    expect(failUpdate).toBeDefined()
+    // Old bug: the error was attributed to cond-1 (whose completed step got
+    // re-marked failed) instead of the actual failing branch node
+    expect(failUpdate!.error).toContain("bad-1")
+    expect(failUpdate!.error).toContain("SMTP exploded")
+    expect(failUpdate!.currentNodeId).toBe("bad-1")
+    // The merge node must not run after a branch failure
+    expect(insertedSteps.map(s => s.nodeId)).not.toContain("merge-1")
+  })
+
+  it("fails with a clear error for a nested condition inside a branch (v1 limitation)", async () => {
+    const nodes: WorkflowNode[] = [
+      makeConditionNode("cond-1", "nested-1", null, "merge-1"),
+      makeConditionNode("nested-1", "t1", null, null),
+      makeActionNode("t1", null),
+      makeActionNode("merge-1", null),
+    ]
+    const workflow = { id: "wf-15", nodes }
+    const run = {
+      id: "run-15",
+      workflowId: "wf-15",
+      status: "running",
+      context: null as ExecutionContext | null,
+      currentNodeId: null as string | null,
+      triggerData: { trigger_type: "manual", data: {} },
+    }
+
+    setupDbMocks(workflow, run)
+    mockEvaluateCondition.mockReturnValue(true)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-15")
+
+    const failUpdate = updatedRuns.find(u => u.status === "failed")
+    expect(failUpdate).toBeDefined()
+    // Old bug: read config.actionType off the condition node and failed with
+    // a misleading "No handler registered" error
+    expect(failUpdate!.error).toContain("Nested condition nodes inside a condition/split branch are not supported")
+    expect(failUpdate!.currentNodeId).toBe("nested-1")
   })
 })
