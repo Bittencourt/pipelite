@@ -5,64 +5,79 @@ import { paginatedResponse, createdResponse } from "@/lib/api/response"
 import { Problems } from "@/lib/api/errors"
 import { serializeWorkflow } from "@/lib/api/serialize"
 import { createWorkflow, listWorkflows } from "@/lib/mutations/workflows"
+import { triggersArraySchema } from "@/lib/triggers/types"
 import { z } from "zod"
 
 const createWorkflowApiSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   description: z.string().max(2000).optional().nullable(),
-  triggers: z.array(z.record(z.string(), z.unknown())).optional().default([]),
+  triggers: triggersArraySchema.optional().default([]),
   nodes: z.array(z.record(z.string(), z.unknown())).optional().default([]),
 })
 
 export async function GET(request: NextRequest) {
   return withApiAuth(request, async (req: NextRequest, context: ApiAuthContext) => {
-    const { offset, limit } = parsePagination(req)
+    try {
+      const { offset, limit } = parsePagination(req)
 
-    const result = await listWorkflows({ offset, limit })
+      // TODO(scoping): listWorkflows (src/lib/mutations/workflows.ts) does not
+      // filter by owner, so any valid API key sees every workflow. Ownership
+      // scoping must be added at the mutation level (it also affects the UI
+      // list); filtering here after the fact would break pagination totals.
+      const result = await listWorkflows({ offset, limit })
 
-    const data = result.workflows.map(serializeWorkflow)
+      const data = result.workflows.map(serializeWorkflow)
 
-    return paginatedResponse(data, result.total, offset, limit)
+      return paginatedResponse(data, result.total, offset, limit)
+    } catch (error) {
+      console.error("GET /api/v1/workflows failed:", error)
+      return Problems.internalError()
+    }
   })
 }
 
 export async function POST(request: NextRequest) {
   return withApiAuth(request, async (req: NextRequest, context: ApiAuthContext) => {
-    let body
     try {
-      body = await req.json()
-    } catch {
-      return Problems.validation([
-        { field: "body", code: "invalid_json", message: "Invalid JSON body" },
-      ])
+      let body
+      try {
+        body = await req.json()
+      } catch {
+        return Problems.validation([
+          { field: "body", code: "invalid_json", message: "Invalid JSON body" },
+        ])
+      }
+
+      const parseResult = createWorkflowApiSchema.safeParse(body)
+      if (!parseResult.success) {
+        const errors = parseResult.error.issues.map((issue) => ({
+          field: issue.path.join(".") || "body",
+          code: issue.code,
+          message: issue.message,
+        }))
+        return Problems.validation(errors)
+      }
+
+      const { name, description, triggers, nodes } = parseResult.data
+
+      const result = await createWorkflow({
+        name,
+        description: description ?? undefined,
+        triggers,
+        nodes,
+        createdBy: context.userId,
+      })
+
+      if (!result.success) {
+        return Problems.validation([
+          { field: "body", code: "mutation_error", message: result.error },
+        ])
+      }
+
+      return createdResponse(serializeWorkflow(result.workflow))
+    } catch (error) {
+      console.error("POST /api/v1/workflows failed:", error)
+      return Problems.internalError()
     }
-
-    const parseResult = createWorkflowApiSchema.safeParse(body)
-    if (!parseResult.success) {
-      const errors = parseResult.error.issues.map((issue) => ({
-        field: issue.path.join(".") || "body",
-        code: issue.code,
-        message: issue.message,
-      }))
-      return Problems.validation(errors)
-    }
-
-    const { name, description, triggers, nodes } = parseResult.data
-
-    const result = await createWorkflow({
-      name,
-      description: description ?? undefined,
-      triggers,
-      nodes,
-      createdBy: context.userId,
-    })
-
-    if (!result.success) {
-      return Problems.validation([
-        { field: "body", code: "mutation_error", message: result.error },
-      ])
-    }
-
-    return createdResponse(serializeWorkflow(result.workflow))
   })
 }
