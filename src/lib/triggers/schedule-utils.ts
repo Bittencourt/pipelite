@@ -5,7 +5,11 @@ import type { ScheduleTriggerConfig, TriggerConfig } from "./types"
  * Compute the next run time for a schedule trigger.
  *
  * - mode "interval": adds intervalMinutes to fromDate (defaults to now)
- * - mode "cron": parses cronExpression and returns next occurrence after fromDate
+ * - mode "cron": parses cronExpression and returns next occurrence after fromDate.
+ *   Cron expressions are evaluated in the trigger's optional `timezone` (an IANA
+ *   string, e.g. "America/Sao_Paulo", read defensively from the config); when
+ *   absent or invalid the timezone defaults to UTC explicitly, so behavior no
+ *   longer depends on the server/container timezone.
  *
  * Returns null if configuration is invalid or incomplete.
  */
@@ -21,15 +25,34 @@ export function computeNextRun(
   }
 
   if (config.mode === "cron") {
-    if (!config.cronExpression) return null
-    try {
-      const expr = CronExpressionParser.parse(config.cronExpression, {
-        currentDate: base,
-      })
-      return expr.next().toDate()
-    } catch {
-      return null
+    const cronExpression = config.cronExpression
+    if (!cronExpression) return null
+
+    // The shared schema doesn't declare `timezone` yet; read it defensively.
+    const rawTimezone = (config as Record<string, unknown>).timezone
+    const timezone =
+      typeof rawTimezone === "string" && rawTimezone.length > 0
+        ? rawTimezone
+        : "UTC"
+
+    const parseInTimezone = (tz: string): Date | null => {
+      try {
+        const expr = CronExpressionParser.parse(cronExpression, {
+          currentDate: base,
+          tz,
+        })
+        const next = expr.next().toDate()
+        return Number.isNaN(next.getTime()) ? null : next
+      } catch {
+        return null
+      }
     }
+
+    // Invalid timezone strings fall back to UTC rather than killing the
+    // schedule (a null here would leave nextRunAt unset forever).
+    const next = parseInTimezone(timezone)
+    if (next) return next
+    return timezone !== "UTC" ? parseInTimezone("UTC") : null
   }
 
   return null
