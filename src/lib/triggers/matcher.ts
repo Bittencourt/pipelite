@@ -32,15 +32,19 @@ export function matchesTrigger(
     if (!hasOverlap) return false
   }
 
-  // Stage filter checks (deal.stage_changed)
-  if (trigger.fromStageId) {
-    const stagePayload = payload as DealStageChangedPayload
-    if (stagePayload.oldStageId !== trigger.fromStageId) return false
-  }
+  // Stage filter checks apply only to stage_changed triggers. A residual
+  // from/to stage filter left on e.g. an "updated" trigger must not silently
+  // prevent it from ever matching.
+  if (trigger.action === "stage_changed") {
+    if (trigger.fromStageId) {
+      const stagePayload = payload as DealStageChangedPayload
+      if (stagePayload.oldStageId !== trigger.fromStageId) return false
+    }
 
-  if (trigger.toStageId) {
-    const stagePayload = payload as DealStageChangedPayload
-    if (stagePayload.newStageId !== trigger.toStageId) return false
+    if (trigger.toStageId) {
+      const stagePayload = payload as DealStageChangedPayload
+      if (stagePayload.newStageId !== trigger.toStageId) return false
+    }
   }
 
   return true
@@ -70,15 +74,29 @@ export async function matchAndFireTriggers(
 
       if (!matchesTrigger(trigger, eventName, payload)) continue
 
+      // Entity record fields are spread first; event metadata is written
+      // after the spread so it can never be clobbered by record fields.
+      // Stage-change metadata (oldStageId/newStageId) lives at the top level
+      // of the payload, not in payload.data, so it must be copied explicitly
+      // for stage_changed workflows to reference from/to stages.
+      const stagePayload = payload as Partial<DealStageChangedPayload>
       const envelope: TriggerEnvelope = {
         trigger_type: "crm_event",
         trigger_id: `${eventName}-${Date.now()}`,
         timestamp: payload.timestamp,
         data: {
+          ...payload.data,
           entity: payload.entity,
           entityId: payload.entityId,
           action: payload.action,
-          ...payload.data,
+          changedFields: payload.changedFields,
+          userId: payload.userId,
+          ...(stagePayload.oldStageId !== undefined
+            ? { oldStageId: stagePayload.oldStageId }
+            : {}),
+          ...(stagePayload.newStageId !== undefined
+            ? { newStageId: stagePayload.newStageId }
+            : {}),
         },
       }
 

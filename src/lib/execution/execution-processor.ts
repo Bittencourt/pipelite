@@ -8,6 +8,16 @@ const INITIAL_DELAY = 5_000 // 5 seconds - let server finish booting
 const POLL_INTERVAL = 5_000 // 5 seconds - execution should be responsive
 
 /**
+ * Execution lease: a run claimed as 'running' executes inline within a single
+ * processor tick, so any run still 'running' after this long belongs to a
+ * process that crashed or restarted mid-run. 5 minutes is generous headroom
+ * over the longest legitimate run (actions are HTTP calls / DB writes that
+ * complete in seconds) while still unblocking a stuck workflow queue quickly.
+ * Keep in sync with the INTERVAL literal in reclaimStaleRuns.
+ */
+const STALE_RUN_TIMEOUT_MINUTES = 5
+
+/**
  * Self-scheduling execution processor loop.
  *
  * Polls DB for pending workflow runs, claims them atomically with serial
@@ -25,6 +35,10 @@ export function startExecutionProcessor(): void {
 function scheduleTick(delay: number): void {
   setTimeout(async () => {
     try {
+      // Reclaim runs stranded in 'running' (e.g. after a server restart)
+      // BEFORE claiming: serial enforcement skips any workflow that still has
+      // a 'running' run, so a stranded run would block its workflow forever.
+      await reclaimStaleRuns()
       const pendingCount = await processPendingRuns()
       const waitingCount = await processWaitingRuns()
       if (pendingCount > 0 || waitingCount > 0) {
@@ -39,6 +53,52 @@ function scheduleTick(delay: number): void {
     // Always schedule the next tick
     scheduleTick(POLL_INTERVAL)
   }, delay)
+}
+
+/**
+ * Reclaim runs stuck in 'running' longer than the execution lease
+ * (STALE_RUN_TIMEOUT_MINUTES, measured against started_at).
+ *
+ * A process crash/restart mid-run leaves the run 'running' forever; serial
+ * enforcement (NOT EXISTS status IN ('running','waiting')) then blocks every
+ * future pending run of that workflow. We mark such runs FAILED rather than
+ * re-queueing them: their side effects (emails, HTTP calls, CRM writes) may
+ * already have fired and we cannot know where execution stopped, so a re-run
+ * would duplicate them. Orphaned 'running' steps are failed as well so the
+ * run detail UI doesn't show a step spinning forever.
+ */
+export async function reclaimStaleRuns(): Promise<number> {
+  // Fail orphaned in-flight steps of stale runs first (while the parent runs
+  // are still identifiable by status = 'running').
+  await db.execute(sql`
+    UPDATE workflow_run_steps
+    SET status = 'failed',
+        completed_at = NOW(),
+        output = '{"error": "Abandoned: parent run reclaimed after exceeding its execution lease"}'::jsonb
+    WHERE status = 'running'
+      AND run_id IN (
+        SELECT id FROM workflow_runs
+        WHERE status = 'running'
+          AND started_at < NOW() - make_interval(mins => ${STALE_RUN_TIMEOUT_MINUTES})
+      )
+  `)
+
+  const staleError = `Run was stuck in running state past the ${STALE_RUN_TIMEOUT_MINUTES}-minute execution lease (server likely restarted mid-run); reclaimed to unblock the workflow queue`
+  const reclaimed = await db.execute(sql`
+    UPDATE workflow_runs
+    SET status = 'failed',
+        error = ${staleError},
+        completed_at = NOW()
+    WHERE status = 'running'
+      AND started_at < NOW() - make_interval(mins => ${STALE_RUN_TIMEOUT_MINUTES})
+    RETURNING id
+  `)
+
+  const count = (reclaimed as unknown as unknown[])?.length ?? 0
+  if (count > 0) {
+    console.log(`[execution-processor] Reclaimed ${count} stale running run(s)`)
+  }
+  return count
 }
 
 /**
@@ -124,10 +184,13 @@ export async function processWaitingRuns(): Promise<number> {
       .set({ status: "completed" as const, completedAt: new Date() })
       .where(eq(workflowRunSteps.id, stepId))
 
-    // Transition run back to running
+    // Transition run back to running. Reset started_at: it still holds the
+    // original claim time (pre-delay, possibly hours ago), and the stale-run
+    // reclaim measures the execution lease against started_at -- without the
+    // reset a legitimately resumed run would be reclaimed immediately.
     await db
       .update(workflowRuns)
-      .set({ status: "running" as const })
+      .set({ status: "running" as const, startedAt: new Date() })
       .where(eq(workflowRuns.id, runId))
 
     try {

@@ -27,6 +27,18 @@ describe("resolveFieldPath", () => {
     expect(resolveFieldPath(ctx, "trigger.data.nonexistent.field")).toBeUndefined()
   })
 
+  it("returns undefined for undefined/null/empty/non-string path without throwing", () => {
+    const ctx = makeCtx({ deal: { value: 5000 } })
+    expect(() => resolveFieldPath(ctx, undefined)).not.toThrow()
+    expect(resolveFieldPath(ctx, undefined)).toBeUndefined()
+    expect(resolveFieldPath(ctx, null)).toBeUndefined()
+    expect(resolveFieldPath(ctx, "")).toBeUndefined()
+    expect(resolveFieldPath(ctx, "   ")).toBeUndefined()
+    expect(
+      resolveFieldPath(ctx, 42 as unknown as string)
+    ).toBeUndefined()
+  })
+
   it("resolves node output paths", () => {
     const ctx: ExecutionContext = {
       trigger: { type: "manual", data: {} },
@@ -228,6 +240,39 @@ describe("evaluateCondition", () => {
     // First group fails (500 not > 10000 AND stage != won), second passes (priority=high)
     // Top-level OR => true
     expect(evaluateCondition({ groups, logicOperator: "or" }, ctx)).toBe(true)
+  })
+
+  it("unconfigured condition (missing fieldPath) does not throw and evaluates sanely", () => {
+    const ctx = makeCtx({ deal: { value: 5000 } })
+    const groups: ConditionGroup[] = [
+      {
+        operator: "and",
+        conditions: [
+          {
+            fieldPath: undefined as unknown as string,
+            operator: "equals",
+            value: "won",
+          },
+        ],
+      },
+    ]
+    expect(() =>
+      evaluateCondition({ groups, logicOperator: "and" }, ctx)
+    ).not.toThrow()
+    expect(evaluateCondition({ groups, logicOperator: "and" }, ctx)).toBe(
+      false
+    )
+  })
+
+  it("unconfigured condition with is_empty evaluates to true", () => {
+    const ctx = makeCtx()
+    const groups: ConditionGroup[] = [
+      {
+        operator: "and",
+        conditions: [{ fieldPath: "", operator: "is_empty", value: null }],
+      },
+    ]
+    expect(evaluateCondition({ groups, logicOperator: "and" }, ctx)).toBe(true)
   })
 
   it("all groups fail with top-level OR returns false", () => {

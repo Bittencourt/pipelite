@@ -124,5 +124,65 @@ describe("execution-processor", () => {
       expect(count).toBe(0)
       expect(mockExecuteRun).not.toHaveBeenCalled()
     })
+
+    it("resets started_at when resuming so the run is not instantly reclaimed as stale", async () => {
+      const pastDate = new Date(Date.now() - 60000)
+      mockDb.execute.mockResolvedValueOnce([
+        { id: "step-1", run_id: "run-1", resume_at: pastDate },
+      ])
+
+      const setCalls: Record<string, unknown>[] = []
+      const updateChain = {
+        set: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
+          setCalls.push(vals)
+          return updateChain
+        }),
+        where: vi.fn().mockResolvedValue(undefined),
+      }
+      mockDb.update.mockReturnValue(updateChain)
+
+      const { processWaitingRuns } = await import("./execution-processor")
+      await processWaitingRuns()
+
+      // The run's transition back to 'running' must refresh the lease:
+      // started_at still holds the pre-delay claim time, and the stale-run
+      // reclaim would otherwise fail the run the moment it resumes.
+      const runUpdate = setCalls.find(v => v.status === "running")
+      expect(runUpdate).toBeDefined()
+      expect(runUpdate!.startedAt).toBeInstanceOf(Date)
+    })
+  })
+
+  describe("reclaimStaleRuns", () => {
+    it("reclaims runs stuck in 'running' past the lease and fails them", async () => {
+      mockDb.execute
+        .mockResolvedValueOnce([]) // orphaned step cleanup
+        .mockResolvedValueOnce([{ id: "run-stale" }]) // reclaimed runs
+
+      const { reclaimStaleRuns } = await import("./execution-processor")
+      const count = await reclaimStaleRuns()
+
+      expect(count).toBe(1)
+      expect(mockDb.execute).toHaveBeenCalledTimes(2)
+
+      // The reclaim statement must fail (not re-run) stale 'running' runs so
+      // side effects are not duplicated, and must gate on started_at age.
+      const reclaimSql = (mockDb.execute.mock.calls[1][0] as { strings: TemplateStringsArray }).strings.join("?")
+      expect(reclaimSql).toContain("SET status = 'failed'")
+      expect(reclaimSql).toContain("status = 'running'")
+      expect(reclaimSql).toContain("started_at < NOW()")
+    })
+
+    it("returns 0 and touches nothing when no runs exceeded the lease", async () => {
+      mockDb.execute
+        .mockResolvedValueOnce([]) // orphaned step cleanup
+        .mockResolvedValueOnce([]) // no stale runs
+
+      const { reclaimStaleRuns } = await import("./execution-processor")
+      const count = await reclaimStaleRuns()
+
+      expect(count).toBe(0)
+      expect(mockExecuteRun).not.toHaveBeenCalled()
+    })
   })
 })

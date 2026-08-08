@@ -79,13 +79,37 @@ export function hasWebhookResponseNode(nodes: unknown[]): boolean {
  * Sends a custom HTTP response back to the inbound webhook caller
  * via the in-memory Promise coordination mechanism.
  */
+/**
+ * Normalize the configured body into a plain object.
+ * The editor stores the body as a parsed JSON object, but older saved
+ * workflows may contain a raw JSON string — parse it defensively so
+ * interpolateDeep never iterates a string's characters.
+ */
+function normalizeBody(body: unknown): Record<string, unknown> {
+  if (typeof body === "string") {
+    try {
+      const parsed: unknown = JSON.parse(body)
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>
+      }
+    } catch {
+      // Unparseable string: fall back to empty body
+    }
+    return {}
+  }
+  if (body !== null && typeof body === "object" && !Array.isArray(body)) {
+    return body as Record<string, unknown>
+  }
+  return {}
+}
+
 async function webhookResponseHandler(
   config: Record<string, unknown>,
   context: ExecutionContext,
   runId: string
 ): Promise<{ output: Record<string, unknown> }> {
   const statusCode = (config.statusCode as number) ?? 200
-  const rawBody = (config.body as Record<string, unknown>) ?? {}
+  const rawBody = normalizeBody(config.body)
 
   // Interpolate template variables in the body
   const interpolatedBody = interpolateDeep(rawBody, context)

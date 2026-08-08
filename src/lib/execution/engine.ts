@@ -12,13 +12,77 @@ import type {
 } from "./types"
 
 /**
+ * Resume frame persisted inside the run's context JSON when a delay yields.
+ *
+ * Control flow has stack-like state (in-progress condition/split branch,
+ * pending split branch B, merge point) that the run's single `currentNodeId`
+ * column cannot represent. Without this frame:
+ * - a delay as the LAST node persisted currentNodeId = null and the resume
+ *   fell back to node 0, re-executing the whole workflow forever;
+ * - a delay inside a branch lost the merge point (run "completed" without
+ *   ever running the merge chain);
+ * - a delay in split branch A lost pending branch B entirely.
+ *
+ * On resume the engine reads this frame (and removes it from the context) to
+ * rebuild the exact walk position. Nesting is bounded because nested
+ * condition/split nodes inside a branch are rejected (v1 limitation), so a
+ * single frame is sufficient -- no full stack needed.
+ */
+interface ResumeState {
+  /** Node to resume at. Null means the current segment is already finished. */
+  nodeId: string | null
+  /** True when nodeId lives inside a condition/split branch (walked by executeBranch). */
+  inBranch?: boolean
+  /** Split branch B start node still pending (delay was hit inside branch A). */
+  pendingBranch?: string | null
+  /** Main-loop merge node to continue at once all branch segments finish. */
+  mergeNodeId?: string | null
+}
+
+type ResumableContext = ExecutionContext & { _resume?: ResumeState }
+
+/**
+ * Hard cap on steps executed per engine invocation. A backward nextNodeId
+ * would otherwise loop forever, inserting a step row per iteration and --
+ * because the processor awaits executeRun inline -- freezing ALL workflow
+ * processing server-wide. When exceeded the run is failed cleanly.
+ */
+const MAX_STEPS_PER_RUN = 1000
+
+/**
+ * Wall-clock cap per engine invocation. The step cap alone bounds a cyclic
+ * graph, but with slow per-step DB work 1000 steps can still stall the inline
+ * processor for many minutes. This deadline fails a runaway run within ~1
+ * minute regardless of per-step cost. A legitimate acyclic workflow traverses
+ * far fewer nodes than this in far less time; delays re-enter with a fresh
+ * clock, so long waits don't count against it.
+ */
+const MAX_RUN_MS = 60_000
+
+const CYCLE_ERROR = `Run exceeded the maximum of ${MAX_STEPS_PER_RUN} steps; the workflow graph likely contains a cycle`
+const TIMEOUT_ERROR = `Run exceeded the ${MAX_RUN_MS / 1000}s execution budget; the workflow graph likely contains a cycle`
+
+/** Mutable step counter + deadline shared between the main loop and branch walks. */
+interface StepGuard {
+  steps: number
+  deadline: number
+}
+
+/** True once this invocation has run past its wall-clock budget. */
+function overBudget(guard: StepGuard): boolean {
+  return Date.now() > guard.deadline
+}
+
+type BranchOutcome = "ok" | "waiting" | "failed"
+
+/**
  * Execute a workflow run by walking its node graph.
  *
  * Loads the run and its workflow from DB, builds a node map, then walks
- * nodes sequentially. Handles action (stub), condition (branch), and delay
- * (yield to DB) node types.
+ * nodes sequentially. Handles action, condition (branch), split (two
+ * branches), and delay (yield to DB) node types.
  *
- * On delay: persists context and resume point, sets run to "waiting", returns.
+ * On delay: persists context + resume frame, sets run to "waiting", returns.
  * On error: fails the step and run with a descriptive message.
  * On completion: sets run to "completed".
  */
@@ -67,8 +131,8 @@ async function executeRunGraph(
   }
 
   // Initialize or restore execution context
-  const savedContext = run.context as unknown as ExecutionContext | null
-  let context: ExecutionContext = savedContext?.trigger && savedContext?.nodes
+  const savedContext = run.context as unknown as ResumableContext | null
+  const context: ResumableContext = savedContext?.trigger && savedContext?.nodes
     ? savedContext
     : {
         trigger: {
@@ -81,14 +145,71 @@ async function executeRunGraph(
   // Set workflow creator userId for CRM action mutations
   context._workflowUserId = workflow.createdBy
 
-  // Determine start node: resume from currentNodeId or start from first node
-  let currentNodeId: string | null = run.currentNodeId ?? nodeList[0].id
+  // Pull the resume frame (if any) out of the context. Only the delay yield
+  // paths write it back; every other persist stores the context without it,
+  // so a completed/failed run never carries a stale frame.
+  const resume = context._resume
+  delete context._resume
+
+  const guard: StepGuard = { steps: 0, deadline: Date.now() + MAX_RUN_MS }
+
+  // Determine start position.
+  let currentNodeId: string | null
+
+  if (resume) {
+    if (resume.inBranch) {
+      // Delay was hit inside a condition/split branch. Finish the branch
+      // segment first, then any pending split branch, then fall through to
+      // the merge node in the main loop.
+      const mergeNodeId = resume.mergeNodeId ?? null
+      const segment = await executeBranch(
+        resume.nodeId,
+        nodeMap,
+        context,
+        runId,
+        { pendingBranch: resume.pendingBranch ?? null, mergeNodeId },
+        guard
+      )
+      if (segment !== "ok") return
+
+      if (resume.pendingBranch) {
+        const pending = await executeBranch(
+          resume.pendingBranch,
+          nodeMap,
+          context,
+          runId,
+          { pendingBranch: null, mergeNodeId },
+          guard
+        )
+        if (pending !== "ok") return
+      }
+
+      currentNodeId = mergeNodeId
+    } else {
+      // Top-level delay. nodeId may legitimately be null (delay was the last
+      // node) -- the main loop is skipped and the run completes below instead
+      // of falling back to node 0 and re-executing the whole workflow.
+      currentNodeId = resume.nodeId
+    }
+  } else {
+    // Fresh run (or legacy waiting run persisted before resume frames existed).
+    currentNodeId = run.currentNodeId ?? nodeList[0].id
+  }
 
   // Walk the node graph
   while (currentNodeId) {
     const node = nodeMap.get(currentNodeId)
     if (!node) {
       await failRun(runId, `Node '${currentNodeId}' not found in workflow graph`, currentNodeId)
+      return
+    }
+
+    if (++guard.steps > MAX_STEPS_PER_RUN) {
+      await failRun(runId, CYCLE_ERROR, currentNodeId)
+      return
+    }
+    if (overBudget(guard)) {
+      await failRun(runId, TIMEOUT_ERROR, currentNodeId)
       return
     }
 
@@ -128,13 +249,21 @@ async function executeRunGraph(
           await completeStep(step.id, branchOutput)
           await persistContext(runId, context)
 
-          // Execute the matching branch
+          // Execute the matching branch. The branch stops at the merge node
+          // (node.nextNodeId), which the main loop runs exactly once below.
           const branchStartId = matched ? node.trueBranch : node.falseBranch
-          const delayHit = await executeBranch(branchStartId, nodeMap, context, runId)
-          if (delayHit) {
-            // A delay was hit inside the branch -- run is now waiting
-            return
-          }
+          const outcome = await executeBranch(
+            branchStartId,
+            nodeMap,
+            context,
+            runId,
+            { pendingBranch: null, mergeNodeId: node.nextNodeId },
+            guard
+          )
+          // "waiting": run yielded on a delay. "failed": the branch already
+          // failed its own step + the run -- do NOT fall into the catch below,
+          // which would corrupt this condition's already-completed step.
+          if (outcome !== "ok") return
 
           // Continue from merge point
           nextNodeId = node.nextNodeId
@@ -147,11 +276,28 @@ async function executeRunGraph(
           await completeStep(step.id, output)
           await persistContext(runId, context)
 
-          // Execute both branches sequentially (true parallelism is out of scope)
-          const delayA = await executeBranch(node.branchA, nodeMap, context, runId)
-          if (delayA) return
-          const delayB = await executeBranch(node.branchB, nodeMap, context, runId)
-          if (delayB) return
+          // Execute both branches sequentially (true parallelism is out of
+          // scope). While branch A runs, branch B is carried as the pending
+          // branch so a delay inside A can persist it in the resume frame.
+          const outcomeA = await executeBranch(
+            node.branchA,
+            nodeMap,
+            context,
+            runId,
+            { pendingBranch: node.branchB, mergeNodeId: node.nextNodeId },
+            guard
+          )
+          if (outcomeA !== "ok") return
+
+          const outcomeB = await executeBranch(
+            node.branchB,
+            nodeMap,
+            context,
+            runId,
+            { pendingBranch: null, mergeNodeId: node.nextNodeId },
+            guard
+          )
+          if (outcomeB !== "ok") return
 
           nextNodeId = node.nextNodeId // merge point
           break
@@ -181,6 +327,10 @@ async function executeRunGraph(
               })
               .where(eq(workflowRunSteps.id, step.id))
 
+            // Persist the resume frame. nodeId may be null when the delay is
+            // the last node -- on resume the run then completes instead of
+            // restarting from node 0.
+            context._resume = { nodeId: node.nextNodeId }
             await db
               .update(workflowRuns)
               .set({
@@ -235,76 +385,131 @@ async function executeRunGraph(
 }
 
 /**
- * Execute a branch (true or false path from a condition node).
- * Walks nodes linearly until nextNodeId is null.
- * Returns true if a delay was hit (run is now waiting).
+ * Execute a branch (a condition's true/false path or a split's branch A/B).
+ * Walks nodes linearly until nextNodeId is null or the merge node is reached.
+ *
+ * The merge node (continuation.mergeNodeId, i.e. the parent node's nextNodeId)
+ * belongs to the MAIN loop: stopping there prevents a shared merge chain from
+ * executing once per branch plus once in the main loop.
+ *
+ * Errors are handled per-node HERE (not in the main loop's catch): the failing
+ * branch node's own step is marked failed and failRun records that node's id.
+ * Bubbling instead would re-mark the parent condition/split step -- already
+ * completed -- as failed and attribute the failure to the wrong node.
+ *
+ * Returns "ok" when the branch finished, "waiting" when a delay yielded
+ * (resume frame persisted), "failed" when a node failed (run already failed).
  */
 async function executeBranch(
   startNodeId: string | null,
   nodeMap: Map<string, WorkflowNode>,
-  context: ExecutionContext,
-  runId: string
-): Promise<boolean> {
-  if (!startNodeId) return false
+  context: ResumableContext,
+  runId: string,
+  continuation: { pendingBranch: string | null; mergeNodeId: string | null },
+  guard: StepGuard
+): Promise<BranchOutcome> {
+  if (!startNodeId) return "ok"
 
   let currentNodeId: string | null = startNodeId
 
-  while (currentNodeId) {
+  while (currentNodeId && currentNodeId !== continuation.mergeNodeId) {
     const node = nodeMap.get(currentNodeId)
     if (!node) break
 
-    const [step] = await db
-      .insert(workflowRunSteps)
-      .values({
-        runId,
-        nodeId: node.id,
-        status: "running",
-        input: { context: context } as Record<string, unknown>,
-        startedAt: new Date(),
-      })
-      .returning()
+    if (++guard.steps > MAX_STEPS_PER_RUN) {
+      await failRun(runId, CYCLE_ERROR, currentNodeId)
+      return "failed"
+    }
+    if (overBudget(guard)) {
+      await failRun(runId, TIMEOUT_ERROR, currentNodeId)
+      return "failed"
+    }
 
-    if (node.type === "delay") {
-      const resumeAt = resolveDelay(node.config, context)
+    let step: { id: string } | undefined
+    try {
+      ;[step] = await db
+        .insert(workflowRunSteps)
+        .values({
+          runId,
+          nodeId: node.id,
+          status: "running",
+          input: { context: context } as Record<string, unknown>,
+          startedAt: new Date(),
+        })
+        .returning()
 
-      if (resumeAt === null) {
-        const output = { delayed: false, skipped: true }
-        context.nodes[node.id] = { output, status: "completed" }
-        await completeStep(step.id, output)
-        await persistContext(runId, context)
+      if (node.type === "delay") {
+        const resumeAt = resolveDelay(node.config, context)
+
+        if (resumeAt === null) {
+          const output = { delayed: false, skipped: true }
+          context.nodes[node.id] = { output, status: "completed" }
+          await completeStep(step.id, output)
+          await persistContext(runId, context)
+        } else {
+          const output = { delayed: true, resumeAt: resumeAt.toISOString() }
+          context.nodes[node.id] = { output, status: "completed" }
+
+          await db
+            .update(workflowRunSteps)
+            .set({ status: "waiting", resumeAt, output: output as Record<string, unknown> })
+            .where(eq(workflowRunSteps.id, step.id))
+
+          // Persist the full resume frame: where to continue inside this
+          // branch, which split branch is still pending, and the merge point.
+          context._resume = {
+            nodeId: node.nextNodeId,
+            inBranch: true,
+            pendingBranch: continuation.pendingBranch,
+            mergeNodeId: continuation.mergeNodeId,
+          }
+          await db
+            .update(workflowRuns)
+            .set({
+              status: "waiting",
+              currentNodeId: node.nextNodeId,
+              context: context as unknown as Record<string, unknown>,
+            })
+            .where(eq(workflowRuns.id, runId))
+
+          return "waiting" // Delay hit
+        }
+      } else if (node.type === "condition" || node.type === "split") {
+        // v1 limitation: the resume frame is a single level deep, so nested
+        // control flow inside a branch cannot be resumed correctly. Fail with
+        // a clear message instead of misreading the node as an action.
+        throw new Error(
+          `Nested ${node.type} nodes inside a condition/split branch are not supported`
+        )
       } else {
-        const output = { delayed: true, resumeAt: resumeAt.toISOString() }
-        context.nodes[node.id] = { output, status: "completed" }
-
+        // Action node
+        const actionType = node.config.actionType as string
+        const result = await executeAction(actionType, node.config, context, runId)
+        context.nodes[node.id] = { output: result.output, status: "completed" }
+        await completeStep(step.id, result.output)
+        await persistContext(runId, context)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const errorOutput = (error as Error & { output?: Record<string, unknown> }).output
+      if (step) {
         await db
           .update(workflowRunSteps)
-          .set({ status: "waiting", resumeAt, output: output as Record<string, unknown> })
-          .where(eq(workflowRunSteps.id, step.id))
-
-        await db
-          .update(workflowRuns)
           .set({
-            status: "waiting",
-            currentNodeId: node.nextNodeId,
-            context: context as unknown as Record<string, unknown>,
+            status: "failed",
+            output: errorOutput ?? ({ error: message } as Record<string, unknown>),
+            completedAt: new Date(),
           })
-          .where(eq(workflowRuns.id, runId))
-
-        return true // Delay hit
+          .where(eq(workflowRunSteps.id, step.id))
       }
-    } else {
-      // Action node (no nested conditions in v1)
-      const actionType = (node.config as Record<string, unknown>).actionType as string
-      const result = await executeAction(actionType, node.config as Record<string, unknown>, context, runId)
-      context.nodes[node.id] = { output: result.output, status: "completed" }
-      await completeStep(step.id, result.output)
-      await persistContext(runId, context)
+      await failRun(runId, `Node '${node.id}' (${node.label}) failed: ${message}`, node.id)
+      return "failed"
     }
 
     currentNodeId = node.nextNodeId
   }
 
-  return false
+  return "ok"
 }
 
 async function completeStep(stepId: string, output: Record<string, unknown>): Promise<void> {

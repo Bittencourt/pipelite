@@ -1,3 +1,4 @@
+import { and, eq } from "drizzle-orm"
 import { db } from "@/db"
 import { workflowRuns } from "@/db/schema/workflows"
 import type { WorkflowRun } from "@/db/schema/workflows"
@@ -45,4 +46,28 @@ export async function createWorkflowRun(
     .returning()
 
   return run
+}
+
+/**
+ * Atomically claim a pending workflow run for in-process (synchronous) execution.
+ *
+ * The execution processor polls for runs with status "pending" and claims them
+ * with `UPDATE ... WHERE status = 'pending'`. A caller that wants to execute a
+ * run itself (e.g. the inbound webhook route waiting on a webhook_response node)
+ * MUST claim the run through this helper first, using the exact same status
+ * protocol: flip "pending" -> "running" atomically. Whichever side wins the
+ * UPDATE owns the run; the other side sees zero affected rows and backs off.
+ *
+ * Returns true if this caller claimed the run (and may execute it), false if
+ * the run was not claimable (already claimed by the processor, or created in a
+ * non-pending state such as the recursion-limit "failed" short-circuit).
+ */
+export async function claimWorkflowRun(runId: string): Promise<boolean> {
+  const claimed = await db
+    .update(workflowRuns)
+    .set({ status: "running", startedAt: new Date() })
+    .where(and(eq(workflowRuns.id, runId), eq(workflowRuns.status, "pending")))
+    .returning({ id: workflowRuns.id })
+
+  return claimed.length > 0
 }
