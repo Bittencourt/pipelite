@@ -185,3 +185,15 @@ All code implementation is complete and properly wired. All 5 requirement IDs (T
 
 _Verified: 2026-03-28T21:00:00Z_
 _Verifier: Claude (gsd-verifier)_
+
+---
+
+## UAT Verification (2026-08-08)
+
+All four human-verification items confirmed live:
+1. **HTTP template selector** — dropdown above Method lists all 6 built-ins under a "Built-in" header; selecting Discord Webhook populated method/URL/headers/body.
+2. **Save as Template** — dialog with Name + Description; saving showed "Template saved" and the template appeared under a "Custom" group in the selector (persisted to http_templates).
+3. **Create dialog** — New Workflow shows "Blank Workflow" plus a 4-card starter grid; selecting one creates the workflow and navigates to the editor.
+4. **Export/Import round-trip** — Export produced `schemaVersion: "pipelite/v1"` with an `Authorization` header stripped to `{{PLACEHOLDER}}`; importing pipelite/v1 files created new workflows and navigated to the editor.
+
+Bug found & fixed during UAT: all four **starter templates** were authored with `actionType` at the node level using short names (http/crm/transform), so every starter-created workflow failed at runtime with "action type: undefined". Rewrote all four to put canonical `actionType` inside `config`, match action-schema field names, and add node labels (commit on feat/workflows).

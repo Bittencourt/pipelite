@@ -128,3 +128,14 @@ No gaps. All 9 observable truths verified, all 18 artifacts exist with substanti
 
 _Verified: 2026-03-28_
 _Verifier: Claude (gsd-verifier)_
+
+---
+
+## UAT Verification (2026-08-08)
+
+All three human-verification items confirmed live:
+1. **Badges & step list** — runs list shows color-coded badges (emerald Completed, red Failed observed live; running/waiting/pending/skipped mapped in run-status-badge.tsx). Run detail shows failed step with red left border and expandable Input/Output JSON viewers.
+2. **Status filter URL** — selecting "Failed" set `?status=failed` and filtered to matching rows; browser Back restored "All statuses" and the full list.
+3. **Error banner node name** — run detail renders "Failed at: Memory bomb — …", resolving the node UUID (`n1`) to its human-readable label.
+
+Fix required for #3: `failRun` didn't persist `current_node_id`, so the banner (gated on it) never rendered — now recorded (commit on feat/workflows).
