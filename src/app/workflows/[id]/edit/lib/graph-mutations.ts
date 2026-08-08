@@ -7,6 +7,7 @@ import type {
   DelayNode,
   SplitNode,
 } from "@/lib/execution/types"
+import { defaultActionConfig } from "@/lib/execution/actions/types"
 
 /**
  * Insert a new node after the specified node in the chain.
@@ -183,7 +184,10 @@ export function createNewNode(
         id,
         type: "action",
         label: actionType ? actionType.replace(/_/g, " ") : "New Action",
-        config: { actionType: actionType || "http_request" },
+        // Structurally valid minimal config: every key the schema requires
+        // exists with a safe empty value, so the node can be saved before
+        // the user configures it and runtime never reads `undefined`.
+        config: defaultActionConfig(actionType || "http_request"),
         nextNodeId: null,
       } as ActionNode
 

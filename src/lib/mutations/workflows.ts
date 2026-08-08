@@ -5,7 +5,8 @@ import { z } from "zod"
 import type { Workflow } from "@/db/schema/workflows"
 import { generateWebhookSecret } from "@/lib/triggers/webhook-secret"
 import { computeNextRun, getScheduleTrigger } from "@/lib/triggers/schedule-utils"
-import type { TriggerConfig } from "@/lib/triggers/types"
+import type { TriggerConfig, ScheduleTriggerConfig } from "@/lib/triggers/types"
+import { validateActionConfigStructure } from "@/lib/execution/actions/types"
 
 // --- Schemas ---
 
@@ -39,6 +40,51 @@ type DeleteResult =
   | { success: true }
   | { success: false; error: string }
 
+// --- Node config validation ---
+
+/**
+ * Structurally validate every action node's config before persisting.
+ *
+ * Policy: action configs are validated on EVERY save (create and update),
+ * not just on activation — but only structurally (known actionType, required
+ * keys present, correct value types). Business completeness such as a
+ * non-empty URL is not enforced, so incomplete drafts with safe-empty
+ * defaults still save. Non-action node types (condition/delay/split) are
+ * left alone here.
+ *
+ * Returns an error message naming the offending node, or null if all valid.
+ */
+function findInvalidActionNode(
+  nodes: Array<Record<string, unknown>>
+): string | null {
+  for (const node of nodes) {
+    if (node.type !== "action") continue
+
+    const config = (node.config ?? {}) as Record<string, unknown>
+    const result = validateActionConfigStructure(config)
+    if (!result.success) {
+      const label =
+        typeof node.label === "string" && node.label.length > 0
+          ? node.label
+          : null
+      const id = typeof node.id === "string" ? node.id : "unknown"
+      const nodeName = label ? `"${label}" (${id})` : id
+      return `Invalid config for action node ${nodeName}: ${result.error}`
+    }
+  }
+  return null
+}
+
+/**
+ * Normalized identity of a schedule trigger's effective config, used to
+ * detect whether the schedule actually changed between saves (key-order and
+ * unrelated-trigger changes must not reset the clock).
+ */
+function scheduleKey(schedule: ScheduleTriggerConfig | null): string {
+  if (!schedule) return ""
+  return `${schedule.mode}|${schedule.intervalMinutes ?? ""}|${schedule.cronExpression ?? ""}`
+}
+
 // --- Mutations ---
 
 export async function createWorkflow(
@@ -50,6 +96,11 @@ export async function createWorkflow(
   }
 
   const { name, description, triggers, nodes, createdBy } = parsed.data
+
+  const nodeError = findInvalidActionNode(nodes)
+  if (nodeError) {
+    return { success: false, error: nodeError }
+  }
 
   const [workflow] = await db
     .insert(workflows)
@@ -94,13 +145,36 @@ export async function updateWorkflow(
   if (data.nodes !== undefined) updates.nodes = data.nodes
   if (data.active !== undefined) updates.active = data.active
 
+  if (data.nodes !== undefined) {
+    const nodeError = findInvalidActionNode(data.nodes)
+    if (nodeError) {
+      return { success: false, error: nodeError }
+    }
+  }
+
   // The schedule processor only claims workflows with nextRunAt <= now, and
-  // nothing else seeds that column — (re)compute it whenever triggers or
-  // active state change, so schedule triggers actually fire.
-  if (data.triggers !== undefined || data.active !== undefined) {
-    const effectiveTriggers = (data.triggers ?? existing.triggers ?? []) as TriggerConfig[]
-    const effectiveActive = data.active ?? existing.active
-    const schedule = getScheduleTrigger(effectiveTriggers)
+  // nothing else seeds that column — nextRunAt is (re)computed here so
+  // schedule triggers actually fire. However, the editor sends `triggers`
+  // on every save, so recomputing unconditionally would reset an interval
+  // schedule's clock on each save (a workflow edited more often than its
+  // interval would never fire). Only recompute when:
+  //   - the active flag actually flips (activation seeds, deactivation
+  //     clears), or
+  //   - the schedule trigger's config actually changed, or
+  //   - an active scheduled workflow is missing nextRunAt (backfill).
+  const effectiveTriggers = (data.triggers ?? existing.triggers ?? []) as TriggerConfig[]
+  const effectiveActive = data.active ?? existing.active
+  const schedule = getScheduleTrigger(effectiveTriggers)
+
+  const activeChanged = data.active !== undefined && data.active !== existing.active
+  const existingSchedule = getScheduleTrigger((existing.triggers ?? []) as TriggerConfig[])
+  const scheduleChanged =
+    data.triggers !== undefined &&
+    scheduleKey(schedule?.trigger ?? null) !== scheduleKey(existingSchedule?.trigger ?? null)
+  const needsBackfill =
+    effectiveActive && schedule !== null && existing.nextRunAt == null
+
+  if (activeChanged || scheduleChanged || needsBackfill) {
     updates.nextRunAt =
       effectiveActive && schedule ? computeNextRun(schedule.trigger) : null
   }
