@@ -63,7 +63,8 @@ export function HttpConfig({ nodeId, config }: Props) {
   const retryCount = (config.retryCount as number) ?? 0
 
   const headerEntries = Object.entries(headers)
-  const showBody = ["POST", "PUT", "PATCH"].includes(method)
+  const BODY_METHODS = ["POST", "PUT", "PATCH"]
+  const showBody = BODY_METHODS.includes(method)
 
   // Custom templates state
   const [customTemplates, setCustomTemplates] = useState<HttpTemplateRecord[]>([])
@@ -122,7 +123,7 @@ export function HttpConfig({ nodeId, config }: Props) {
         method: cfg.method,
         url: cfg.url,
         headers: cfg.headers,
-        body: cfg.body,
+        body: cfg.body ?? "",
         timeout: cfg.timeout,
         retryCount: cfg.retryCount,
       })
@@ -261,7 +262,18 @@ export function HttpConfig({ nodeId, config }: Props) {
       {/* Method */}
       <div>
         <Label className="text-xs">Method</Label>
-        <Select value={method} onValueChange={(v) => update({ method: v })}>
+        <Select
+          value={method}
+          onValueChange={(v) => {
+            const patch: Record<string, unknown> = { method: v }
+            // Clear stale body when switching to a method whose Body field
+            // is hidden (GET/HEAD must never carry a body)
+            if (!BODY_METHODS.includes(v) && body) {
+              patch.body = ""
+            }
+            update(patch)
+          }}
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>

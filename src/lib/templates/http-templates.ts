@@ -2,7 +2,8 @@ export interface HttpTemplateConfig {
   method: string
   url: string
   headers: Record<string, string>
-  body: string
+  /** Omitted for GET/HEAD templates — those requests must not carry a body */
+  body?: string
   timeout: number
   retryCount: number
 }
@@ -84,7 +85,6 @@ export const builtInHttpTemplates: HttpTemplate[] = [
       method: "GET",
       url: "https://api.tally.so/forms/{{FORM_ID}}/responses",
       headers: { Authorization: "Bearer {{API_KEY}}" },
-      body: "",
       timeout: 30,
       retryCount: 0,
     },
@@ -98,7 +98,6 @@ export const builtInHttpTemplates: HttpTemplate[] = [
       method: "GET",
       url: "https://api.typeform.com/forms/{{FORM_ID}}/responses",
       headers: { Authorization: "Bearer {{API_TOKEN}}" },
-      body: "",
       timeout: 30,
       retryCount: 0,
     },

@@ -151,6 +151,116 @@ describe("HTTP action handler", () => {
     expect(init.headers["content-type"]).toBe("application/json")
   })
 
+  it("GET with empty-string body omits body (built-in GET templates ship body: '')", async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({ ok: true }),
+      text: () => Promise.resolve('{"ok":true}'),
+    })
+
+    await executeAction(
+      "http_request",
+      {
+        actionType: "http_request",
+        method: "GET",
+        url: "https://api.example.com/forms/responses",
+        headers: { Authorization: "Bearer token" },
+        body: "",
+        timeout: 30,
+        retryCount: 0,
+      },
+      makeContext(),
+      "run-1"
+    )
+
+    const [, init] = fetchSpy.mock.calls[0]
+    expect(init.body).toBeUndefined()
+    // No auto Content-Type since there is no body
+    expect(init.headers["content-type"]).toBeUndefined()
+  })
+
+  it("GET with non-empty body never attaches it (fetch forbids GET/HEAD bodies)", async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({}),
+      text: () => Promise.resolve("{}"),
+    })
+
+    await executeAction(
+      "http_request",
+      {
+        actionType: "http_request",
+        method: "GET",
+        url: "https://api.example.com/data",
+        body: '{"stale":"body"}',
+        timeout: 30,
+        retryCount: 0,
+      },
+      makeContext(),
+      "run-1"
+    )
+
+    const [, init] = fetchSpy.mock.calls[0]
+    expect(init.body).toBeUndefined()
+  })
+
+  it("HEAD request omits body", async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({}),
+      text: () => Promise.resolve(""),
+    })
+
+    await executeAction(
+      "http_request",
+      {
+        actionType: "http_request",
+        method: "HEAD",
+        url: "https://api.example.com/data",
+        body: '{"stale":"body"}',
+        timeout: 30,
+        retryCount: 0,
+      },
+      makeContext(),
+      "run-1"
+    )
+
+    const [, init] = fetchSpy.mock.calls[0]
+    expect(init.body).toBeUndefined()
+  })
+
+  it("POST with empty-string body sends no body", async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({}),
+      text: () => Promise.resolve("{}"),
+    })
+
+    await executeAction(
+      "http_request",
+      {
+        actionType: "http_request",
+        method: "POST",
+        url: "https://api.example.com/data",
+        body: "",
+        timeout: 30,
+        retryCount: 0,
+      },
+      makeContext(),
+      "run-1"
+    )
+
+    const [, init] = fetchSpy.mock.calls[0]
+    expect(init.body).toBeUndefined()
+  })
+
   it("interpolates variables in URL", async () => {
     fetchSpy.mockResolvedValue({
       ok: true,

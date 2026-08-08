@@ -91,6 +91,81 @@ const lookupDefs: Record<string, LookupDef> = {
   },
 }
 
+// ---- Field type coercion ----
+
+type CoercibleFieldType = "number" | "date" | "boolean"
+
+/**
+ * Known non-string fields per entity, mirroring the Zod schemas in
+ * src/lib/mutations/*.ts. fieldMapping values arrive as strings (editor
+ * text inputs / interpolation), so they must be coerced before validation.
+ */
+const crmFieldTypes: Record<string, Record<string, CoercibleFieldType>> = {
+  deal: {
+    value: "number", // dealSchema: z.number().min(0).optional().nullable()
+    expectedCloseDate: "date", // dealSchema: z.date().optional().nullable()
+  },
+  person: {},
+  organization: {},
+  activity: {
+    dueDate: "date", // activitySchema: z.date()
+  },
+}
+
+/**
+ * Coerce a single interpolated value to the target field's expected type.
+ * Values that cannot be coerced are returned unchanged so Zod validation
+ * surfaces a meaningful error.
+ */
+function coerceValue(value: unknown, type: CoercibleFieldType): unknown {
+  if (typeof value !== "string") return value
+  const trimmed = value.trim()
+
+  switch (type) {
+    case "number": {
+      const num = Number(trimmed)
+      return Number.isNaN(num) ? value : num
+    }
+    case "date": {
+      const date = new Date(trimmed)
+      return Number.isNaN(date.getTime()) ? value : date
+    }
+    case "boolean": {
+      if (/^(true|1|yes)$/i.test(trimmed)) return true
+      if (/^(false|0|no)$/i.test(trimmed)) return false
+      return value
+    }
+  }
+}
+
+/**
+ * Coerce interpolated fieldMapping values to the types the entity's Zod
+ * schema expects. String fields pass through untouched. Empty strings for
+ * typed (number/date/boolean) fields are omitted so they don't fail
+ * validation or clobber existing data.
+ */
+function coerceFieldMapping(
+  entity: string,
+  fields: Record<string, unknown>
+): Record<string, unknown> {
+  const typeMap = crmFieldTypes[entity] ?? {}
+  const result: Record<string, unknown> = {}
+
+  for (const [key, value] of Object.entries(fields)) {
+    const type = typeMap[key]
+    if (!type) {
+      result[key] = value
+      continue
+    }
+    if (typeof value === "string" && value.trim() === "") {
+      continue // omit empty values for typed fields
+    }
+    result[key] = coerceValue(value, type)
+  }
+
+  return result
+}
+
 /**
  * Resolve entity ID via field lookup.
  * Uses ilike for case-insensitive text matching.
@@ -175,7 +250,10 @@ async function handleCrmAction(
   }
 
   const depth = getCurrentExecutionDepth()
-  const interpolatedFields = interpolateDeep(fieldMapping, context)
+  const interpolatedFields = coerceFieldMapping(
+    entity,
+    interpolateDeep(fieldMapping, context)
+  )
 
   switch (operation) {
     case "create": {

@@ -65,9 +65,11 @@ async function httpHandler(
   // SSRF check
   await validateUrl(url)
 
-  // Build body
+  // Build body — never attach one for GET/HEAD (fetch/undici throws
+  // "Request with GET/HEAD method cannot have body"), and skip empty strings.
+  const methodAllowsBody = !["GET", "HEAD"].includes(method.toUpperCase())
   let body: string | undefined
-  if (rawBody !== undefined) {
+  if (methodAllowsBody && rawBody !== undefined && rawBody !== "") {
     if (typeof rawBody === "string") {
       body = interpolate(rawBody, context)
     } else {
