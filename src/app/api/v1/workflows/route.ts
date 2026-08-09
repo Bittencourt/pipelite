@@ -20,11 +20,9 @@ export async function GET(request: NextRequest) {
     try {
       const { offset, limit } = parsePagination(req)
 
-      // TODO(scoping): listWorkflows (src/lib/mutations/workflows.ts) does not
-      // filter by owner, so any valid API key sees every workflow. Ownership
-      // scoping must be added at the mutation level (it also affects the UI
-      // list); filtering here after the fact would break pagination totals.
-      const result = await listWorkflows({ offset, limit })
+      // Scope to the authed user so one API key can't enumerate another
+      // user's workflows (consistent with the deals API's owner scoping).
+      const result = await listWorkflows({ offset, limit, createdBy: context.userId })
 
       const data = result.workflows.map(serializeWorkflow)
 

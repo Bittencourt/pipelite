@@ -490,7 +490,9 @@ describe("listWorkflows", () => {
 
     mockDb.query.workflows.findMany.mockResolvedValue(mockWorkflows)
     mockDb.select.mockReturnValue({
-      from: vi.fn().mockReturnValue([{ total: 2 }]),
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue([{ total: 2 }]),
+      }),
     })
 
     const result = await listWorkflows({ offset: 0, limit: 50 })
@@ -499,5 +501,22 @@ describe("listWorkflows", () => {
       workflows: mockWorkflows,
       total: 2,
     })
+  })
+
+  it("scopes the query to the owner when createdBy is provided", async () => {
+    mockDb.query.workflows.findMany.mockResolvedValue([])
+    const whereSpy = vi.fn().mockReturnValue([{ total: 0 }])
+    mockDb.select.mockReturnValue({
+      from: vi.fn().mockReturnValue({ where: whereSpy }),
+    })
+
+    await listWorkflows({ offset: 0, limit: 50, createdBy: "user-1" })
+
+    // Count query filtered by owner...
+    expect(whereSpy).toHaveBeenCalledWith(expect.anything())
+    // ...and the row query too (a defined `where` means the owner filter applied).
+    expect(mockDb.query.workflows.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.anything() })
+    )
   })
 })
