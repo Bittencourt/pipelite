@@ -1,6 +1,6 @@
 import { db } from "@/db"
 import { workflows, workflowRuns, workflowRunSteps } from "@/db/schema/workflows"
-import { eq, desc, count, inArray } from "drizzle-orm"
+import { eq, desc, count, inArray, and } from "drizzle-orm"
 import { z } from "zod"
 import type { Workflow } from "@/db/schema/workflows"
 import { generateWebhookSecret } from "@/lib/triggers/webhook-secret"
@@ -214,9 +214,20 @@ export async function deleteWorkflow(id: string): Promise<DeleteResult> {
   return { success: true }
 }
 
-export async function getWorkflow(id: string): Promise<Workflow | null> {
+/**
+ * Fetch a workflow by id. When `createdBy` is provided, the workflow is only
+ * returned if that user owns it — callers use this as an ownership gate so a
+ * non-owner gets `null` (and, at the API layer, a 404) instead of another
+ * user's workflow. Omit `createdBy` for trusted server-side callers.
+ */
+export async function getWorkflow(
+  id: string,
+  createdBy?: string
+): Promise<Workflow | null> {
   const workflow = await db.query.workflows.findFirst({
-    where: eq(workflows.id, id),
+    where: createdBy
+      ? and(eq(workflows.id, id), eq(workflows.createdBy, createdBy))
+      : eq(workflows.id, id),
   })
 
   return workflow ?? null
@@ -269,15 +280,22 @@ export async function regenerateWebhookSecret(
 }
 
 export async function listWorkflows(
-  options: { offset?: number; limit?: number } = {}
+  options: { offset?: number; limit?: number; createdBy?: string } = {}
 ): Promise<{ workflows: Workflow[]; total: number }> {
-  const { offset = 0, limit = 50 } = options
+  const { offset = 0, limit = 50, createdBy } = options
+
+  // Scope to the owner when provided (API callers pass the authed user) so one
+  // user can't enumerate another's workflows; total must reflect the same
+  // filter or pagination reports counts the caller can't actually see.
+  const ownerFilter = createdBy ? eq(workflows.createdBy, createdBy) : undefined
 
   const [{ total }] = await db
     .select({ total: count() })
     .from(workflows)
+    .where(ownerFilter)
 
   const results = await db.query.workflows.findMany({
+    where: ownerFilter,
     orderBy: desc(workflows.createdAt),
     offset,
     limit,

@@ -24,11 +24,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     try {
       const { id } = await params
 
-      // TODO(scoping): getWorkflow (src/lib/mutations/workflows.ts) does not
-      // check ownership, so any valid API key can read any workflow by id.
-      // Ownership scoping must be decided/added at the mutation level to stay
-      // consistent with the UI, which shares these mutations.
-      const workflow = await getWorkflow(id)
+      // Scope by owner: a non-owner gets 404 (not another user's workflow).
+      const workflow = await getWorkflow(id, context.userId)
 
       if (!workflow) {
         return Problems.notFound("Workflow")
@@ -66,6 +63,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         return Problems.validation(errors)
       }
 
+      // Ownership gate: reject updates to workflows the caller doesn't own.
+      const owned = await getWorkflow(id, context.userId)
+      if (!owned) {
+        return Problems.notFound("Workflow")
+      }
+
       const result = await updateWorkflow(id, parseResult.data)
 
       if (!result.success) {
@@ -84,6 +87,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   return withApiAuth(request, async (req: NextRequest, context: ApiAuthContext) => {
     try {
       const { id } = await params
+
+      // Ownership gate: reject deletes of workflows the caller doesn't own.
+      const owned = await getWorkflow(id, context.userId)
+      if (!owned) {
+        return Problems.notFound("Workflow")
+      }
 
       const result = await deleteWorkflow(id)
 

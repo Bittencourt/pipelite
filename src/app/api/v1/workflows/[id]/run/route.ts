@@ -19,8 +19,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   return withApiAuth(request, async (req: NextRequest, context: ApiAuthContext) => {
     const { id } = await params
 
-    // Look up workflow
-    const workflow = await getWorkflow(id)
+    // Look up workflow, scoped to the authed user so a non-owner can't run
+    // (or probe the existence of) another user's workflow.
+    const workflow = await getWorkflow(id, context.userId)
     if (!workflow) {
       return Problems.notFound("Workflow")
     }
