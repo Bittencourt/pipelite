@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Workflows
-status: "Milestone v1.2 shipped — PR #7"
-last_updated: "2026-08-08T19:51:58.744Z"
-last_activity: 2026-08-08
+status: "Milestone v1.2 complete — shipped PR #7, hardened via PR #8/#9, engine verified end-to-end. Next milestone not yet scoped."
+last_updated: "2026-08-12T00:00:00.000Z"
+last_activity: 2026-08-12
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 26
   completed_plans: 26
-  percent: 99
+  percent: 100
 ---
 
 # Session State
@@ -20,23 +20,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 30 — templates-portability
+**Current focus:** Between milestones — v1.2 complete, v1.3 not yet scoped
 
 ## Position
 
-Phase: 31 of 30 (templates & portability)
-Plan: Not started
-Status: Milestone v1.2 shipped — PR #7
-Last activity: 2026-08-08
+Phase: 31 of 31 (workflow-wiring-fixes) — complete
+Plan: 26 of 26 executed
+Status: Milestone v1.2 complete — shipped PR #7, hardened via PR #8/#9, engine verified end-to-end
+Last activity: 2026-08-12
 
-Progress: [██████████] 99% (90/91 plans)
+Progress: [██████████] 100% (26/26 v1.2 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 85 (across v1.0 + v1.1)
-- v1.2 plans completed: 9
+- Total plans completed: 111 (v1.0: 73, v1.1: 12, v1.2: 26)
+- v1.2 plans completed: 26 (8 phases, 52 tasks)
 
 ## Decisions
 
@@ -125,6 +125,8 @@ Progress: [██████████] 99% (90/91 plans)
 - v1.1 Reliability & Operations shipped 2026-03-26 (5 phases, 12 plans)
 - Formula Reactivity and Bulk Operations deferred from v1.1 (removed from scope)
 - v1.2 Workflows roadmap created 2026-03-26 (7 phases, 27 requirements)
+- v1.2 Workflows shipped 2026-03-28 (8 phases incl. gap-closure Phase 31, 26 plans)
+- Deferred v1.1 scope captured as backlog 2026-08-12: 999.1 formula reactivity, 999.2 bulk operations
 
 ### Research Flags
 
@@ -134,7 +136,7 @@ Progress: [██████████] 99% (90/91 plans)
 
 ### Blockers/Concerns
 
-None yet.
+None open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working tree clean.
 
 ## Session Log
 
@@ -156,3 +158,7 @@ None yet.
 - 2026-03-28: 28-01 complete -- editor data layer: graph converter (lossless round-trip), dagre layout, zustand store, graph mutations, variable schema (25 tests)
 - 2026-03-28: 28-03 complete -- side panel with type picker, reorder controls, 9 config forms (trigger, HTTP, CRM, condition, email, notification, delay, transform, webhook-response)
 - 2026-03-28: 28-04 complete -- variable picker autocomplete with {{ detection, keyboard navigation, all config forms integrated with VariableInput/VariableTextarea
+- 2026-03-28: Milestone v1.2 shipped (PR #7) -- phases 24-31, 26 plans, archived to .planning/milestones/
+- 2026-08-08: Post-ship hardening merged -- PR #8 (workflow runtime: execution-engine resume, run-entry guards, schedule triggers, webhook response body, action handlers, wall-clock cycle budget), PR #9 (REST API workflow list/get/run/update/delete scoped to authed user)
+- 2026-08-08: Debug workflow-engine-not-firing RESOLVED -- two root causes: reorderDealsMutation missing CRM event emission, and Next.js standalone build omitting instrumentation.js so register() never ran in Docker (all four processors dead in production). Fixed via Dockerfile post-build chunk copy. Verified end-to-end in browser: deal stage drag -> deal.stage_changed -> run completed in 298ms.
+- 2026-08-12: Backlog review -- captured deferred v1.1 scope as 999.1 (formula reactivity) and 999.2 (bulk operations); removed stale 27-action-nodes/deferred-items.md (http.test.ts fixed, 14/14 pass)
