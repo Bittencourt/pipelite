@@ -53,8 +53,8 @@
 
 ### Known Gaps
 
-- FORMULA-01, FORMULA-02: Formula reactivity (server-side recalc on save) — deferred, removed from v1.1 scope
-- BULK-01 through BULK-04: Bulk operations (select, delete, reassign, export) — deferred, removed from v1.1 scope
+- FORMULA-01, FORMULA-02: Formula reactivity (server-side recalc on save) — deferred, removed from v1.1 scope. Captured 2026-08-12 as backlog Phase 999.1.
+- BULK-01 through BULK-04: Bulk operations (select, delete, reassign, export) — deferred, removed from v1.1 scope. Captured 2026-08-12 as backlog Phase 999.2.
 
 ---
 
