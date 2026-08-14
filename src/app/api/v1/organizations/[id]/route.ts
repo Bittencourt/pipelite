@@ -97,13 +97,19 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return Problems.notFound("Organization")
     }
 
-    // Build update object - handle custom_fields merge and field mapping
+    // Build update object - field mapping only. `custom_fields` is routed THROUGH the mutation,
+    // which owns the shallow merge (plan 34-02), the formula-key strip and the recalculation
+    // (plan 34-07). The route used to perform its own second `db.update` here; that write landed
+    // after the mutation's recalculation and would have overwritten freshly computed formula
+    // wrappers with the caller's raw blob — a client-controlled overwrite of server-derived data
+    // (threat T-34-19). One write, one place.
     const { name, website, industry, notes, custom_fields } = parseResult.data
     const mutationData: Record<string, unknown> = {}
     if (name !== undefined) mutationData.name = name
     if (website !== undefined) mutationData.website = website
     if (industry !== undefined) mutationData.industry = industry
     if (notes !== undefined) mutationData.notes = notes
+    if (custom_fields !== undefined) mutationData.customFields = custom_fields
 
     // Use mutation for update + event emission
     const result = await updateOrganizationMutation(id, mutationData, context.userId)
@@ -112,28 +118,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return Problems.validation([{ field: "body", code: "mutation_error", message: result.error }])
     }
 
-    // Re-fetch updated org for response (mutation doesn't return the entity for updates)
+    // Re-fetch updated org for response (mutation doesn't return the entity for updates).
+    // This read follows the mutation's recalculation write, so it carries the recomputed values.
     const updated = await db.query.organizations.findFirst({
       where: eq(organizations.id, id),
     })
-
-    // Handle custom_fields merge separately (mutation doesn't handle API-specific merge)
-    if (custom_fields !== undefined && updated) {
-      await db
-        .update(organizations)
-        .set({
-          customFields: {
-            ...((existing.customFields as Record<string, unknown>) || {}),
-            ...custom_fields,
-          },
-        })
-        .where(eq(organizations.id, id))
-
-      const refreshed = await db.query.organizations.findFirst({
-        where: eq(organizations.id, id),
-      })
-      return singleResponse(serializeOrganization(refreshed!))
-    }
 
     return singleResponse(serializeOrganization(updated!))
   })

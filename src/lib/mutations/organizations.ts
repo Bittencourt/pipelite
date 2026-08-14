@@ -1,9 +1,16 @@
 import { db } from "@/db"
 import { organizations } from "@/db/schema"
+import type { EntityType, CustomFieldDefinition } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
 import { z } from "zod"
 import { crmBus } from "@/lib/events"
 import type { CrmEventPayload } from "@/lib/events"
+import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import {
+  recalculateFormulas,
+  stripFormulaKeys,
+  ENTITY_NATIVE_ATTRIBUTES,
+} from "@/lib/formula-recalc"
 
 // ---- Zod Schemas ----
 
@@ -26,6 +33,97 @@ interface CreateOrganizationInput {
   notes?: string
   customFields?: Record<string, unknown>
   userId: string
+}
+
+// ---- Formula recalculation helpers (D-01 / D-03 / D-17 / T-34-04) ----
+
+const ENTITY: EntityType = "organization"
+
+/**
+ * The organization native attribute COLUMN names, derived from the plan 34-03 single source of
+ * truth rather than hard-coded. `changedFields` carries column names (`name`), while a formula
+ * ref is the attribute name (`Name`); the helper's scoping maps between the two.
+ */
+const NATIVE_COLUMNS = Object.values(ENTITY_NATIVE_ATTRIBUTES[ENTITY])
+
+type DefinitionsCache = Map<EntityType, CustomFieldDefinition[]>
+
+/** One definition read per mutation, shared with `recalculateFormulas` via `definitionsCache`. */
+async function loadDefinitions(cache: DefinitionsCache): Promise<CustomFieldDefinition[]> {
+  const cached = cache.get(ENTITY)
+  if (cached) return cached
+
+  const definitions = await getActiveFieldDefinitions(ENTITY)
+  cache.set(ENTITY, definitions)
+  return definitions
+}
+
+/**
+ * Drop formula-typed keys from caller-supplied custom fields (threat T-34-04).
+ *
+ * The server is the sole writer of formula values. Without this, any API caller could set an
+ * arbitrary value on a server-derived field simply by naming it in `customFields`.
+ *
+ * If the definition read itself fails we log and persist the caller's blob unchanged rather than
+ * failing the user's save: the recalculation that follows overwrites every in-scope formula key
+ * anyway, and D-05 forbids formula machinery blocking an edit.
+ */
+async function stripCallerFormulaKeys(
+  values: Record<string, unknown>,
+  cache: DefinitionsCache
+): Promise<Record<string, unknown>> {
+  try {
+    return stripFormulaKeys(values, await loadDefinitions(cache))
+  } catch (error) {
+    console.error(
+      "[formula-recalc] failed to load organization field definitions for the formula-key strip:",
+      error
+    )
+    return values
+  }
+}
+
+/**
+ * Recalculate this organization's formulas and return the blob to emit with (D-01 / D-17).
+ *
+ * MUST be awaited between the row write and `crmBus.emit`: the webhook payload and the
+ * workflow-trigger envelope are emit-time snapshots of the row object, so recalculating after
+ * the emit would ship stale values even though the stored value is correct.
+ *
+ * This is also the cascade's primary trigger (D-03): the organization is the only entity with
+ * two child relations (deals and people), and the largest measured fan-out in the live data is
+ * one organization with 114 deals plus 10 people. The cascade is therefore left at its default
+ * `true`, bounded by plan 34-04's single shared 500-evaluation budget — never one budget per
+ * child — and by `CASCADE_DEPTH = 1`. Ownership is deliberately ignored (D-09): a stale derived
+ * value on another user's deal is exactly the defect this phase removes.
+ *
+ * Resolves rather than rejects on failure (D-05) — the entity write already succeeded and a
+ * broken admin-authored formula must never block a user's edit. The failure is logged, never
+ * swallowed.
+ */
+async function recalcCustomFieldsForEmit(
+  entityId: string,
+  changedFields: string[],
+  row: Record<string, unknown>,
+  cache: DefinitionsCache
+): Promise<Record<string, unknown>> {
+  try {
+    const recalced = await recalculateFormulas({
+      entityType: ENTITY,
+      entityId,
+      changedFields,
+      // From `.returning()`, so the helper does not re-read the row it was just handed.
+      row,
+      definitionsCache: cache,
+    })
+    return recalced.customFields
+  } catch (error) {
+    console.error(
+      "[formula-recalc] organization recalculation failed; emitting the pre-recalc blob:",
+      error
+    )
+    return (row.customFields ?? {}) as Record<string, unknown>
+  }
 }
 
 // ---- Helpers ----
@@ -66,7 +164,14 @@ export async function createOrganizationMutation(
     return { success: false, error: validated.error.issues[0]?.message || "Invalid input" }
   }
 
+  const definitionsCache: DefinitionsCache = new Map()
+
   try {
+    // T-34-04: strip client-set formula keys before they reach the column.
+    const customFieldsToPersist = validated.data.customFields !== undefined
+      ? await stripCallerFormulaKeys(validated.data.customFields, definitionsCache)
+      : {}
+
     const [organization] = await db.insert(organizations).values({
       name: validated.data.name,
       website: validated.data.website || null,
@@ -74,14 +179,23 @@ export async function createOrganizationMutation(
       notes: validated.data.notes || null,
       ownerId: input.userId,
       // custom_fields is never SQL NULL in this database — default to {}.
-      customFields: validated.data.customFields ?? {},
+      customFields: customFieldsToPersist,
     }).returning()
 
-    // Emit CRM event
+    // A create writes every field, so `changedFields` is the full native column list plus the
+    // custom field keys actually persisted. Not a wildcard — FORMULA-02 must still hold.
+    const customFields = await recalcCustomFieldsForEmit(
+      organization.id,
+      [...NATIVE_COLUMNS, ...Object.keys(customFieldsToPersist)],
+      organization as unknown as Record<string, unknown>,
+      definitionsCache,
+    )
+
+    // Emit CRM event — after the recalculation, never before (D-17).
     crmBus.emit("organization.created", buildEventPayload(
       organization.id,
       "created",
-      organization as unknown as Record<string, unknown>,
+      { ...organization, customFields } as unknown as Record<string, unknown>,
       input.userId,
     ))
 
@@ -112,6 +226,8 @@ export async function updateOrganizationMutation(
     return { success: false, error: "Organization not found" }
   }
 
+  const definitionsCache: DefinitionsCache = new Map()
+
   try {
     // Build update data and track changed fields
     const updateData: Record<string, unknown> = { updatedAt: new Date() }
@@ -138,9 +254,10 @@ export async function updateOrganizationMutation(
     }
     if (validated.data.customFields !== undefined) {
       // Shallow-merge onto the stored blob so an unrelated edit cannot wipe keys.
+      // T-34-04: strip client-set formula keys before the merge.
       updateData.customFields = {
         ...(organization.customFields ?? {}),
-        ...validated.data.customFields,
+        ...(await stripCallerFormulaKeys(validated.data.customFields, definitionsCache)),
       }
       changedFields.push("customFields")
     }
@@ -151,11 +268,20 @@ export async function updateOrganizationMutation(
       .where(eq(organizations.id, id))
       .returning()
 
-    // Emit CRM event
+    // `changedFields` is passed through verbatim: the plan 34-04 cascade decides the deal and
+    // people fan-out from it, so pre-filtering or embellishing it here would change scoping.
+    const customFields = await recalcCustomFieldsForEmit(
+      id,
+      changedFields,
+      updatedOrg as unknown as Record<string, unknown>,
+      definitionsCache,
+    )
+
+    // Emit CRM event — after the recalculation, never before (D-17).
     crmBus.emit("organization.updated", buildEventPayload(
       id,
       "updated",
-      updatedOrg as unknown as Record<string, unknown>,
+      { ...updatedOrg, customFields } as unknown as Record<string, unknown>,
       userId,
       changedFields.length > 0 ? changedFields : null,
     ))
@@ -186,6 +312,8 @@ export async function deleteOrganizationMutation(
       .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where(eq(organizations.id, id))
 
+    // No recalculation here: a soft delete is not a save. (Deals and people of a deleted
+    // organization keeping a stale derived value is a known limitation for plan 34-11.)
     // Emit CRM event
     crmBus.emit("organization.deleted", buildEventPayload(
       id,

@@ -18,8 +18,42 @@ vi.mock("@/lib/events", () => ({
   },
 }))
 
+// The mocked recalculation result every call resolves with, so a test can tell a POST-recalc
+// payload from the pre-recalc row's blob. `vi.hoisted` because vi.mock factories are hoisted
+// above every other statement in the file.
+const { RECALC_RESULT } = vi.hoisted(() => ({
+  RECALC_RESULT: {
+    customFields: { Score: { formula: true, value: 42, error: null } } as Record<string, unknown>,
+    evaluations: 1,
+  },
+}))
+
+// Mock the field-definition read used by the T-34-04 strip. The real one hits the database.
+vi.mock("@/lib/custom-fields", () => ({
+  getActiveFieldDefinitions: vi.fn(async () => []),
+}))
+
+// Mock the recalculation helper. These mutations are tested for CALL ORDERING and ARGUMENTS;
+// evaluation behaviour is covered exhaustively by formula-recalc.test.ts. `importOriginal` keeps
+// ENTITY_NATIVE_ATTRIBUTES real, so a drift between the map and the create path's changedFields
+// cannot pass silently.
+vi.mock("@/lib/formula-recalc", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/formula-recalc")>()
+  return {
+    ...actual,
+    recalculateFormulas: vi.fn(async () => RECALC_RESULT),
+    stripFormulaKeys: vi.fn((values: Record<string, unknown>) => values),
+  }
+})
+
 import { db } from "@/db"
 import { crmBus } from "@/lib/events"
+import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import {
+  recalculateFormulas,
+  stripFormulaKeys,
+  ENTITY_NATIVE_ATTRIBUTES,
+} from "@/lib/formula-recalc"
 import {
   createOrganizationMutation,
   updateOrganizationMutation,
@@ -229,6 +263,255 @@ describe("customFields persistence (D-12)", () => {
 
     expect(Object.keys(firstArg(setFn))).not.toContain("customFields")
     expect(updatedChangedFields() ?? []).not.toContain("customFields")
+  })
+})
+
+describe("formula recalculation (D-01/D-17)", () => {
+  const mockRecalc = vi.mocked(recalculateFormulas)
+  const mockStrip = vi.mocked(stripFormulaKeys)
+  const mockGetDefs = vi.mocked(getActiveFieldDefinitions)
+
+  // `Score` is a formula key the caller must never be able to set (T-34-04).
+  const callerCustomFields: Record<string, unknown> = {
+    Origem: ["Outbound Manual"],
+    Score: 999,
+  }
+
+  // Deliberately NOT equal to RECALC_RESULT.customFields — the emit assertions would be
+  // vacuous otherwise.
+  const preRecalcOrg = {
+    id: "org1",
+    name: "Acme Corp",
+    website: "https://acme.com",
+    industry: "Tech",
+    notes: null,
+    ownerId: "u1",
+    defaultCurrency: "USD",
+    customFields: {
+      Origem: ["Outbound Manual"],
+      Score: { formula: true, value: 0, error: null },
+    } as Record<string, unknown>,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: null,
+  }
+
+  function stubInsert(row: Record<string, unknown> = preRecalcOrg) {
+    const returningFn = vi.fn().mockResolvedValue([row])
+    const valuesFn = vi.fn().mockReturnValue({ returning: returningFn })
+    mockDb.insert.mockReturnValue({ values: valuesFn })
+    return valuesFn
+  }
+
+  function stubUpdate(row: Record<string, unknown> = preRecalcOrg) {
+    const returningFn = vi.fn().mockResolvedValue([row])
+    const whereFn = vi.fn().mockReturnValue({ returning: returningFn })
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    return setFn
+  }
+
+  const emittedData = (event: string) => {
+    const call = mockEmit.mock.calls.find((c) => c[0] === event)
+    return (call?.[1] as { data: Record<string, unknown> } | undefined)?.data
+  }
+
+  const recalcInput = () => mockRecalc.mock.calls[0][0]
+
+  describe("createOrganizationMutation", () => {
+    it("calls recalculateFormulas exactly once with the entity type, id and the .returning() row", async () => {
+      stubInsert()
+
+      await createOrganizationMutation({ name: "Acme Corp", userId: "u1" })
+
+      expect(mockRecalc).toHaveBeenCalledTimes(1)
+      expect(recalcInput().entityType).toBe("organization")
+      expect(recalcInput().entityId).toBe("org1")
+      // Identity, not deep equality: a re-read would be a redundant query.
+      expect(recalcInput().row).toBe(preRecalcOrg)
+    })
+
+    it("passes every organization native attribute column plus the caller's custom field keys as changedFields", async () => {
+      stubInsert()
+
+      await createOrganizationMutation({
+        name: "Acme Corp",
+        customFields: callerCustomFields,
+        userId: "u1",
+      })
+
+      const changed = recalcInput().changedFields
+      for (const column of Object.values(ENTITY_NATIVE_ATTRIBUTES.organization)) {
+        expect(changed).toContain(column)
+      }
+      expect(changed).toContain("Origem")
+      // A create genuinely writes every field, but it is still not a wildcard.
+      expect(changed).not.toContain("*")
+    })
+
+    it("recalculates BEFORE emitting organization.created (D-17)", async () => {
+      stubInsert()
+
+      await createOrganizationMutation({ name: "Acme Corp", userId: "u1" })
+
+      expect(mockRecalc.mock.invocationCallOrder[0]).toBeLessThan(
+        mockEmit.mock.invocationCallOrder[0]
+      )
+    })
+
+    it("emits organization.created carrying the POST-recalc customFields, not the row's", async () => {
+      stubInsert()
+
+      await createOrganizationMutation({ name: "Acme Corp", userId: "u1" })
+
+      expect(emittedData("organization.created")?.customFields).toEqual(
+        RECALC_RESULT.customFields
+      )
+      expect(emittedData("organization.created")?.customFields).not.toEqual(
+        preRecalcOrg.customFields
+      )
+    })
+
+    it("strips caller-supplied formula keys before persisting (T-34-04)", async () => {
+      stubInsert()
+
+      await createOrganizationMutation({
+        name: "Acme Corp",
+        customFields: callerCustomFields,
+        userId: "u1",
+      })
+
+      expect(mockStrip).toHaveBeenCalledWith(callerCustomFields, expect.anything())
+    })
+
+    it("reads field definitions once and shares that cache with recalculateFormulas", async () => {
+      stubInsert()
+
+      await createOrganizationMutation({
+        name: "Acme Corp",
+        customFields: callerCustomFields,
+        userId: "u1",
+      })
+
+      expect(mockGetDefs).toHaveBeenCalledTimes(1)
+      expect(recalcInput().definitionsCache?.has("organization")).toBe(true)
+    })
+
+    it("still succeeds and still emits when recalculation rejects (D-05)", async () => {
+      stubInsert()
+      mockRecalc.mockRejectedValueOnce(new Error("boom"))
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+      const result = await createOrganizationMutation({ name: "Acme Corp", userId: "u1" })
+
+      expect(result).toEqual({ success: true, id: "org1", organization: preRecalcOrg })
+      expect(mockEmit).toHaveBeenCalledTimes(1)
+      expect(errorSpy).toHaveBeenCalled()
+      expect(String(errorSpy.mock.calls[0][0])).toContain("[formula-recalc]")
+      errorSpy.mockRestore()
+    })
+  })
+
+  describe("updateOrganizationMutation", () => {
+    it("calls recalculateFormulas exactly once with the id and the .returning() row", async () => {
+      mockDb.query.organizations.findFirst.mockResolvedValue(preRecalcOrg)
+      stubUpdate()
+
+      await updateOrganizationMutation("org1", { name: "New Acme" }, "u1")
+
+      expect(mockRecalc).toHaveBeenCalledTimes(1)
+      expect(recalcInput().entityType).toBe("organization")
+      expect(recalcInput().entityId).toBe("org1")
+      expect(recalcInput().row).toBe(preRecalcOrg)
+    })
+
+    it("passes changedFields through unchanged — the cascade decides child fan-out from it", async () => {
+      mockDb.query.organizations.findFirst.mockResolvedValue(preRecalcOrg)
+      stubUpdate()
+
+      await updateOrganizationMutation("org1", { name: "New Acme" }, "u1")
+
+      // Not pre-filtered, not embellished: plan 34-04's cascade reads this verbatim, and the
+      // organization is the cascade's parent for BOTH deals and people.
+      expect(recalcInput().changedFields).toEqual(["name"])
+    })
+
+    it("leaves the cascade enabled — an organization save is the cascade's primary trigger (D-03)", async () => {
+      mockDb.query.organizations.findFirst.mockResolvedValue(preRecalcOrg)
+      stubUpdate()
+
+      await updateOrganizationMutation("org1", { name: "New Acme" }, "u1")
+
+      // `cascade` defaults to true; passing false here would silently drop the 114-deal
+      // fan-out the D-13 budget was sized against.
+      expect(recalcInput().cascade).not.toBe(false)
+    })
+
+    it("recalculates BEFORE emitting organization.updated (D-17)", async () => {
+      mockDb.query.organizations.findFirst.mockResolvedValue(preRecalcOrg)
+      stubUpdate()
+
+      await updateOrganizationMutation("org1", { name: "New Acme" }, "u1")
+
+      expect(mockRecalc.mock.invocationCallOrder[0]).toBeLessThan(
+        mockEmit.mock.invocationCallOrder[0]
+      )
+    })
+
+    it("emits organization.updated carrying the POST-recalc customFields, not the row's", async () => {
+      mockDb.query.organizations.findFirst.mockResolvedValue(preRecalcOrg)
+      stubUpdate()
+
+      await updateOrganizationMutation("org1", { name: "New Acme" }, "u1")
+
+      expect(emittedData("organization.updated")?.customFields).toEqual(
+        RECALC_RESULT.customFields
+      )
+      expect(emittedData("organization.updated")?.customFields).not.toEqual(
+        preRecalcOrg.customFields
+      )
+    })
+
+    it("strips caller-supplied formula keys before the merge (T-34-04)", async () => {
+      mockDb.query.organizations.findFirst.mockResolvedValue(preRecalcOrg)
+      stubUpdate()
+
+      await updateOrganizationMutation("org1", { customFields: callerCustomFields }, "u1")
+
+      expect(mockStrip).toHaveBeenCalledWith(callerCustomFields, expect.anything())
+    })
+
+    it("still succeeds and still emits when recalculation rejects (D-05)", async () => {
+      mockDb.query.organizations.findFirst.mockResolvedValue(preRecalcOrg)
+      stubUpdate()
+      mockRecalc.mockRejectedValueOnce(new Error("boom"))
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+      const result = await updateOrganizationMutation("org1", { name: "New Acme" }, "u1")
+
+      expect(result).toEqual({ success: true })
+      expect(mockEmit).toHaveBeenCalledTimes(1)
+      expect(errorSpy).toHaveBeenCalled()
+      expect(String(errorSpy.mock.calls[0][0])).toContain("[formula-recalc]")
+      errorSpy.mockRestore()
+    })
+  })
+
+  describe("deleteOrganizationMutation", () => {
+    it("does NOT recalculate — a soft delete is not a save", async () => {
+      mockDb.query.organizations.findFirst.mockResolvedValue({
+        id: "org1",
+        ownerId: "u1",
+        deletedAt: null,
+      })
+      const whereFn = vi.fn().mockResolvedValue(undefined)
+      const setFn = vi.fn().mockReturnValue({ where: whereFn })
+      mockDb.update.mockReturnValue({ set: setFn })
+
+      await deleteOrganizationMutation("org1", "u1")
+
+      expect(mockRecalc).toHaveBeenCalledTimes(0)
+    })
   })
 })
 
