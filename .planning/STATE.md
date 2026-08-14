@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
-status: verifying
-last_updated: "2026-08-14T15:51:39.255Z"
+status: executing
+last_updated: "2026-08-14T20:32:12.036Z"
 last_activity: 2026-08-14
 progress:
   total_phases: 12
   completed_phases: 2
-  total_plans: 9
+  total_plans: 20
   completed_plans: 9
   percent: 17
 ---
@@ -20,13 +20,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 33 — Database Indexes for the CRM Core
+**Current focus:** Phase 34 — Formula Reactivity
 
 ## Position
 
 Phase: 33 - Database Indexes for the CRM Core (complete — 3/3 plans)
 Plan: 3 of 3 complete
-Status: Phase complete — ready for verification
+Status: Executing Phase 34
 Last activity: 2026-08-14
 
 Progress: [██░░░░░░░░] 17% (2/12 v1.3 phases complete)
@@ -184,7 +184,7 @@ None open. No pending todos, no UAT/verification debt (audit-uat: 0 items), work
 
 ## Current Position
 
-Phase: 33 (Database Indexes for the CRM Core) — COMPLETE (3/3 plans)
-Plan: 3 of 3 complete
-Status: Phase complete — ready for verification
-Last activity: 2026-08-14 -- 33-03 complete: migration 0012 applied, 11 indexes live. Kanban Seq Scan -> Bitmap Index Scan on deals_stage_id_idx (2414 -> 426 buffers); reminder cron Seq Scan -> Index Scan using activities_due_date_idx (cost 5072.02 -> 12.21, 3294 -> 5 buffers). All 11 columns catalog-proven index_backed = t. Zero rows mutated, zero test files touched, all three gates green.
+Phase: 34 (Formula Reactivity) — EXECUTING
+Plan: 1 of 11
+Status: Executing Phase 34
+Last activity: 2026-08-14 -- Phase 34 execution started
