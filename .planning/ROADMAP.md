@@ -102,7 +102,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 32-02-PLAN.md — Fix the `LOGIC.isBlank` source bug, repair the stale `deleteWorkflow` mock, and cover the cascade branch (CI-03)
+- [x] 32-02-PLAN.md — Fix the `LOGIC.isBlank` source bug, repair the stale `deleteWorkflow` mock, and cover the cascade branch (CI-03)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -278,7 +278,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 32. Test Infrastructure & CI | 3/6 | In Progress|  |
+| 32. Test Infrastructure & CI | 4/6 | In Progress|  |
 | 33. Database Indexes for the CRM Core | 0/? | Not started | - |
 | 34. Formula Reactivity | 0/? | Not started | - |
 | 35. Notes & Record Timeline | 0/? | Not started | - |
