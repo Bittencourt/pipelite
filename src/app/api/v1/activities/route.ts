@@ -21,6 +21,9 @@ const createActivitySchema = z.object({
   custom_fields: z.record(z.string(), z.unknown()).optional(),
 })
 
+/** The three `users` columns the `?expand=owner` payload projects, anchored to the schema. */
+type ExpandedOwner = Pick<typeof users.$inferSelect, "id" | "name" | "email">
+
 /** The exact shape Drizzle accepts for the relational `with` key on an activity list query. */
 type ActivityWith = NonNullable<Parameters<typeof db.query.activities.findMany>[0]>["with"]
 
@@ -31,7 +34,7 @@ type ActivityExpanded = typeof activities.$inferSelect & {
     organization?: Parameters<typeof serializeOrganization>[0] | null
     person?: Parameters<typeof serializePerson>[0] | null
   }) | null
-  owner?: { id: string; name: string | null; email: string } | null
+  owner?: ExpandedOwner | null
 }
 
 // GET /api/v1/activities - List activities with pagination and filters

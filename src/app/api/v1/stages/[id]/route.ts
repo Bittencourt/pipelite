@@ -27,7 +27,7 @@ type StageWith = NonNullable<Parameters<typeof db.query.stages.findFirst>[0]>["w
 
 /** A stage row plus the pipeline relation the ownership check and `expand` handler read. */
 type StageExpanded = typeof stages.$inferSelect & {
-  pipeline?: Parameters<typeof serializePipeline>[0] | null
+  pipeline?: typeof pipelines.$inferSelect | null
 }
 
 // Helper to verify stage ownership through pipeline

@@ -24,7 +24,7 @@ type StageWith = NonNullable<Parameters<typeof db.query.stages.findMany>[0]>["wi
 
 /** A stage row plus the pipeline relation the `expand` handler may have loaded. */
 type StageExpanded = typeof stages.$inferSelect & {
-  pipeline?: Parameters<typeof serializePipeline>[0] | null
+  pipeline?: typeof pipelines.$inferSelect | null
 }
 
 // GET /api/v1/stages - List stages with pagination and filters

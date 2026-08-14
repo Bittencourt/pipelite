@@ -6,7 +6,7 @@ import { singleResponse, noContentResponse } from "@/lib/api/response"
 import { serializePipeline, serializeStage } from "@/lib/api/serialize"
 
 import { db } from "@/db"
-import { pipelines } from "@/db/schema"
+import { pipelines, users } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
 import { z } from "zod"
 
@@ -19,12 +19,15 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
+/** The three `users` columns the `?expand=owner` payload projects, anchored to the schema. */
+type ExpandedOwner = Pick<typeof users.$inferSelect, "id" | "name" | "email">
+
 /** The exact shape Drizzle accepts for the relational `with` key on a pipeline query. */
 type PipelineWith = NonNullable<Parameters<typeof db.query.pipelines.findFirst>[0]>["with"]
 
 /** A pipeline row plus the relations the `expand` handler may have loaded. */
 type PipelineExpanded = typeof pipelines.$inferSelect & {
-  owner?: { id: string; name: string | null; email: string } | null
+  owner?: ExpandedOwner | null
   stages?: Parameters<typeof serializeStage>[0][]
 }
 
