@@ -901,7 +901,9 @@ No project-level `./CLAUDE.md` exists (verified). The global user instructions a
 | A7 | The current `.next/` build (BUILD_ID dated Mar 23) is not representative of what Phase 32/33 produces. | Runtime State Inventory | Low — only affects how much weight to give the "no `.wasm` in the server output" observation. |
 | A8 | `POST /api/internal/email/process` (write path #17) does not touch any field a formula reads, so it needs no recalc call. | Write-Path Inventory | Low — verify while implementing; adding the call is one line. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All five closed before planning locked: Q1 by D-08 (full entity-name prefix), Q2 by D-09 (cascade ignores ownership), Q3 by D-10 (chaining supported), Q4 delegated to Claude's Discretion and implemented as a `console.warn` in plan 34-04, Q5 by D-12 (mutation-layer drop is in scope).
 
 1. **What is the canonical cross-entity prefix vocabulary?**
    - What we know: `extractDependencies` returns raw dot strings; `evaluateFormula` looks up `relatedEntities[prefix]` with an arbitrary key; the dead `FormulaEditor` documents `{{Organization.Revenue}}`; the live `field-dialog.tsx` documents no dot notation at all; **no caller ever passes `relatedEntities`**, so cross-entity formulas are non-functional today.
