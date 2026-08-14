@@ -106,7 +106,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 32-05-PLAN.md — Prove all gates green from a clean checkout, ship `.github/workflows/ci.yml`, document the merge gate (CI-04)
+- [x] 32-05-PLAN.md — Prove all gates green from a clean checkout, ship `.github/workflows/ci.yml`, document the merge gate (CI-04)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -278,7 +278,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 32. Test Infrastructure & CI | 4/6 | In Progress|  |
+| 32. Test Infrastructure & CI | 5/6 | In Progress|  |
 | 33. Database Indexes for the CRM Core | 0/? | Not started | - |
 | 34. Formula Reactivity | 0/? | Not started | - |
 | 35. Notes & Record Timeline | 0/? | Not started | - |
@@ -295,7 +295,47 @@ Plans:
 
 Unsequenced items awaiting a milestone. Promote with `/gsd:review-backlog` when ready.
 
-_Empty._ All 12 backlog items (999.1-999.12, captured 2026-08-12 and 2026-08-13) were promoted
+**999.13 — Proper fix for the five React Compiler lint findings** (captured 2026-08-14, Phase 32)
+Phase 32 suppressed five `react-hooks/*` errors with scoped `// eslint-disable-next-line <rule> -- <reason>`
+comments per D-02. The rules remain at `error` severity project-wide, so a sixth occurrence still fails CI —
+but these five need a real refactor in a UI-focused phase that has UI test coverage (per 32-CONTEXT.md
+§ Deferred Ideas). Full written justification for each is in `32-04-SUMMARY.md` § Suppression Register:
+
+| # | File:Line | Rule |
+|---|-----------|------|
+| 1 | `src/app/(auth)/reset-password/page.tsx:42` | `react-hooks/set-state-in-effect` |
+| 2 | `src/app/(auth)/verify-email/page.tsx:20` | `react-hooks/immutability` |
+| 3 | `src/app/settings/profile/profile-settings-form.tsx:38` | `react-hooks/set-state-in-effect` |
+| 4 | `src/components/ui/relative-time.tsx:17` | `react-hooks/set-state-in-effect` |
+| 5 | `src/app/import/import-wizard.tsx:91` | `react-hooks/preserve-manual-memoization` |
+
+Each is behaviour-adjacent (auth error UX, single-use token fetch, hydration guard, wizard step
+transitions), which is why none was mechanically "fixed" inside an infrastructure phase.
+Grep the live set with `grep -rn 'eslint-disable-next-line react-hooks/' src/`.
+
+**999.14 — Dockerfile pins `node:20-alpine`, below vite 7's engines floor** (captured 2026-08-14, Phase 32)
+`vite@7.3.1` declares `engines: ^20.19.0 || >=22.12.0`, reached transitively via vitest. The image tag
+currently resolves to something >= 20.19 (the container builds today), so this is latent rather than broken.
+CI pins Node 24 and does not inherit the Dockerfile's tag. Resolution: raise the base image, or pin the
+patch explicitly so a future `node:20-alpine` rebuild cannot drift below the floor.
+Source: `32-RESEARCH.md` Open Question 4 / Pitfall 6.
+
+**999.15 — `GET /api/v1/stages/:id` returns 403 to the legitimate owner** (captured 2026-08-14, Phase 32)
+The ownership check reads `stage.pipeline`, which is only loaded when `?expand=pipeline` is passed, so a
+request without that query parameter fails authorization for the resource owner. Found by plan 32-03 and
+deliberately left unchanged there because T-32-10 required that plan's typing work to be behaviour-neutral.
+This is a real pre-existing auth bug, not a typing artifact — fixing it changes runtime behaviour and needs
+its own test. See `32-03-SUMMARY.md` § Decisions Made.
+
+**999.16 — 39 npm advisories in the committed lockfile** (captured 2026-08-14, Phase 32)
+`npm ci` reports 39 vulnerabilities (3 low, 9 moderate, 23 high, 4 critical). CI-04 does not ask for an
+audit gate, and adding `npm audit --audit-level=high` to `ci.yml` would make the required check red on day
+one, so it was deliberately not bolted on. Resolution: triage the criticals/highs, then decide whether an
+audit step or a `.npmrc` audit policy belongs in CI.
+
+---
+
+All 12 original backlog items (999.1-999.12, captured 2026-08-12 and 2026-08-13) were promoted
 into v1.3 on 2026-08-13 and now live as Phases 32-43 above:
 
 | Backlog item | Now |
