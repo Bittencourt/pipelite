@@ -18,8 +18,8 @@ the motivating evidence stays one hop away.
 
 ### Database Performance (999.4)
 
-- [ ] **PERF-01**: Core CRM foreign keys and hot filter columns are indexed — `deals.stage_id`, `deals.deleted_at`, `deals.organization_id`, `deals.person_id`, `deals.owner_id`, `activities.due_date`, `activities.deal_id`, `people.organization_id`, and the `deleted_at` columns on orgs/people/activities
-- [ ] **PERF-02**: The kanban board query and the activity-reminder cron query use index scans rather than sequential scans, confirmed by `EXPLAIN ANALYZE` before and after
+- [x] **PERF-01**: Core CRM foreign keys and hot filter columns are indexed — `deals.stage_id`, `deals.deleted_at`, `deals.organization_id`, `deals.person_id`, `deals.owner_id`, `activities.due_date`, `activities.deal_id`, `people.organization_id`, and the `deleted_at` columns on orgs/people/activities
+- [x] **PERF-02**: The kanban board query and the activity-reminder cron query use index scans rather than sequential scans, confirmed by `EXPLAIN ANALYZE` before and after
 
 ### Formula Reactivity (999.1 — carried from v1.1)
 
@@ -112,8 +112,8 @@ Which phases cover which requirements. Populated during roadmap creation (2026-0
 | CI-02 | Phase 32 | Complete |
 | CI-03 | Phase 32 | Complete |
 | CI-04 | Phase 32 | Complete |
-| PERF-01 | Phase 33 | Pending |
-| PERF-02 | Phase 33 | Pending |
+| PERF-01 | Phase 33 | Complete |
+| PERF-02 | Phase 33 | Complete |
 | FORMULA-01 | Phase 34 | Pending |
 | FORMULA-02 | Phase 34 | Pending |
 | NOTE-01 | Phase 35 | Pending |

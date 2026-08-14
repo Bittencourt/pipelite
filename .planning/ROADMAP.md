@@ -65,7 +65,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 ### v1.3 Foundation & CRM Depth (Phases 32-43)
 
 - [x] **Phase 32: Test Infrastructure & CI** - Green suite, one command to run it, and a merge gate that keeps it green (completed 2026-08-14)
-- [ ] **Phase 33: Database Indexes for the CRM Core** - Index the foreign keys and hot filter columns the v1.0 tables never got
+- [x] **Phase 33: Database Indexes for the CRM Core** - Index the foreign keys and hot filter columns the v1.0 tables never got (completed 2026-08-14)
 - [ ] **Phase 34: Formula Reactivity** - Server-side, dependency-aware recalc so stored formula values stop going stale
 - [ ] **Phase 35: Notes & Record Timeline** - Append-only attributed notes plus one chronological timeline per record
 - [ ] **Phase 36: Audit Log** - Field-level change history with actor kind, fed by crmBus, with retention
@@ -128,11 +128,11 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 33-01-PLAN.md — Capture the BEFORE EXPLAIN plans for both named queries and the empty catalog assertion, before any index DDL exists (D-07)
+- [x] 33-01-PLAN.md — Capture the BEFORE EXPLAIN plans for both named queries and the empty catalog assertion, before any index DDL exists (D-07)
 **Wave 2**
-- [ ] 33-02-PLAN.md — Declare all eleven plain single-column indexes in the four Drizzle schema files (D-06)
+- [x] 33-02-PLAN.md — Declare all eleven plain single-column indexes in the four Drizzle schema files (D-06)
 **Wave 3**
-- [ ] 33-03-PLAN.md — Generate and gate the single index migration, apply it, then capture the AFTER plans and close SC-1..SC-4
+- [x] 33-03-PLAN.md — Generate and gate the single index migration, apply it, then capture the AFTER plans and close SC-1..SC-4
 
 ### Phase 34: Formula Reactivity
 
@@ -287,7 +287,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 32. Test Infrastructure & CI | 6/6 | Complete   | 2026-08-14 |
-| 33. Database Indexes for the CRM Core | 0/? | Not started | - |
+| 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 0/? | Not started | - |
 | 35. Notes & Record Timeline | 0/? | Not started | - |
 | 36. Audit Log | 0/? | Not started | - |

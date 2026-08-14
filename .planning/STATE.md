@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
-status: executing
-last_updated: "2026-08-14T15:34:26.131Z"
+status: verifying
+last_updated: "2026-08-14T15:51:39.255Z"
 last_activity: 2026-08-14
 progress:
   total_phases: 12
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 9
-  completed_plans: 6
-  percent: 8
+  completed_plans: 9
+  percent: 17
 ---
 
 # Session State
@@ -24,19 +24,25 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 ## Position
 
-Phase: 32 - Test Infrastructure & CI (complete — 6/6 plans)
-Plan: 6 of 6 complete
-Status: Executing Phase 33
+Phase: 33 - Database Indexes for the CRM Core (complete — 3/3 plans)
+Plan: 3 of 3 complete
+Status: Phase complete — ready for verification
 Last activity: 2026-08-14
 
-Progress: [█░░░░░░░░░] 8% (1/12 v1.3 phases complete)
+Progress: [██░░░░░░░░] 17% (2/12 v1.3 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
 
 - Total plans completed: 111 across 3 shipped milestones (v1.0: 73, v1.1: 12, v1.2: 26)
-- v1.3 plans completed: 6 (Phase 32 complete)
+- v1.3 plans completed: 9 (Phases 32 and 33 complete)
+
+| Phase / Plan | Duration | Tasks | Files |
+|---|---|---|---|
+| Phase 33 P01 | 12min | 2 tasks | 2 files |
+| Phase 33 P02 | 9min | 2 tasks | 4 files |
+| Phase 33 P03 | 21min | 3 tasks | 4 files |
 
 ## Decisions
 
@@ -104,6 +110,12 @@ Progress: [█░░░░░░░░░] 8% (1/12 v1.3 phases complete)
 - [Phase 28]: Used defaultEdgeOptions on ReactFlow instead of modifying graph-converter edge creation
 - [Phase 30]: Used db.select() instead of db.query for workflowTemplates (no relations defined for standalone table)
 - [Phase 30]: Export is pure client-side via Blob/ObjectURL (no server round-trip)
+- [Phase 33]: Indexes declared in the Drizzle schema files and generated, never hand-written into migration SQL (D-06) -- a hand-written index was silently dropped by a later generate in this repo (0009 -> 0010)
+- [Phase 33]: All 11 CRM indexes are plain single-column btrees -- no partial (D-02, breaks the stage-delete guard and buys nothing measurable), no CONCURRENTLY (D-03, drizzle-kit wraps migrations in a transaction), no composite (stage_id, position) (D-04, measured to push the planner back to Seq Scan and actively fail SC-1)
+- [Phase 33]: Bitmap Index Scan accepted as satisfying an "index scan" criterion (D-01) -- a plain Index Scan node is physically unachievable for a ~3,753-row scattered fetch at any selectivity where the index wins
+- [Phase 33]: deals.owner_id is verified by pg_indexes catalog assertion only, never by EXPLAIN (D-05) -- n_distinct = 1 in this dataset, so the planner correctly ignores that index forever
+- [Phase 33]: random_page_cost left at the Postgres default of 4 (D-08) -- it is why the deals selectivity crossover sits at 15-19%; tuning it for SSD is server config, not an index, and is deferred
+- [Phase 33]: Corrected STATE.md's stale "partial index on next_run_at WHERE active=true" precedent -- that index no longer exists in the database (dropped by 0010); it is a cautionary tale, not a supporting pattern
 
 ### Quick Tasks Completed
 
@@ -168,10 +180,11 @@ None open. No pending todos, no UAT/verification debt (audit-uat: 0 items), work
 - 2026-08-13: Roadmap created (12 phases: 32-43), backlog 999.1-999.12 fully promoted
 - 2026-08-12: Backlog review -- captured deferred v1.1 scope as 999.1 (formula reactivity) and 999.2 (bulk operations); removed stale 27-action-nodes/deferred-items.md (http.test.ts fixed, 14/14 pass)
 - 2026-08-14: Phase 32 COMPLETE (6 plans) -- `npm test`/`typecheck` scripts, vitest scoped to src/, suite green (455 pass), 0 eslint errors, `.github/workflows/ci.yml`, and an active `master protection` ruleset (id 20851119) requiring the `ci` check. First CI run on GitHub hardware: 71s, success. Merge gate proven behaviourally via throwaway PR #10 (red `ci`, `mergeStateStatus: BLOCKED`), closed unmerged. Direct push to master retained via one repository-admin bypass actor (D-07 option B).
+- 2026-08-14: Phase 33 COMPLETE (3 plans) -- 11 plain single-column btree indexes declared in `src/db/schema/{deals,activities,people,organizations}.ts` and delivered via one generated migration, `drizzle/0012_typical_radioactive_man.sql`. BEFORE plans captured and committed before any DDL (D-07). Kanban query (BDR - Base Fria default pipeline): `Seq Scan on deals` cost 2729.07 / 2414 buffers -> `Bitmap Heap Scan` fed by `Bitmap Index Scan on deals_stage_id_idx` cost 2613.98 / 426 buffers. Reminder cron: `Seq Scan on activities` cost 5072.02 / 3294 buffers -> literal `Index Scan using activities_due_date_idx` cost 12.21 / 5 buffers (415x cheaper, 659x fewer buffers). All 11 target columns catalog-proven `index_backed = t`. Cost: 7328 kB index storage, ~1.08s write-blocking ShareLock per deploy. Zero rows mutated on the 25,206-deal real-data DB, zero `*.test.ts` touched, all three gates green (41 files / 461 passed / 4 skipped).
 
 ## Current Position
 
-Phase: 33 (Database Indexes for the CRM Core) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 33
-Last activity: 2026-08-14 -- Phase 33 execution started
+Phase: 33 (Database Indexes for the CRM Core) — COMPLETE (3/3 plans)
+Plan: 3 of 3 complete
+Status: Phase complete — ready for verification
+Last activity: 2026-08-14 -- 33-03 complete: migration 0012 applied, 11 indexes live. Kanban Seq Scan -> Bitmap Index Scan on deals_stage_id_idx (2414 -> 426 buffers); reminder cron Seq Scan -> Index Scan using activities_due_date_idx (cost 5072.02 -> 12.21, 3294 -> 5 buffers). All 11 columns catalog-proven index_backed = t. Zero rows mutated, zero test files touched, all three gates green.
