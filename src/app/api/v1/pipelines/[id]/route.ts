@@ -19,6 +19,15 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
+/** The exact shape Drizzle accepts for the relational `with` key on a pipeline query. */
+type PipelineWith = NonNullable<Parameters<typeof db.query.pipelines.findFirst>[0]>["with"]
+
+/** A pipeline row plus the relations the `expand` handler may have loaded. */
+type PipelineExpanded = typeof pipelines.$inferSelect & {
+  owner?: { id: string; name: string | null; email: string } | null
+  stages?: Parameters<typeof serializeStage>[0][]
+}
+
 // GET /api/v1/pipelines/:id - Get a single pipeline
 export async function GET(request: NextRequest, { params }: RouteParams) {
   return withApiAuth(request, async (req: NextRequest, ctx: ApiAuthContext) => {
@@ -26,19 +35,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const expand = parseExpand(req)
 
     // Build with options based on expand
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let withOptions: any = undefined
-    if (expand.size > 0) {
-      withOptions = {}
-      if (expand.has("owner")) withOptions.owner = true
-      if (expand.has("stages")) withOptions.stages = true
-    }
+    const withOptions: PipelineWith = expand.size > 0 ? {
+      ...(expand.has("owner") ? { owner: true as const } : {}),
+      ...(expand.has("stages") ? { stages: true as const } : {}),
+    } : undefined
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pipeline = await db.query.pipelines.findFirst({
       where: and(eq(pipelines.id, id), isNull(pipelines.deletedAt)),
       with: withOptions,
-    }) as any
+    }) as PipelineExpanded | undefined
 
     if (!pipeline) {
       return Problems.notFound("Pipeline")

@@ -19,6 +19,14 @@ const createStageSchema = z.object({
   description: z.string().optional().nullable(),
 })
 
+/** The exact shape Drizzle accepts for the relational `with` key on a stage list query. */
+type StageWith = NonNullable<Parameters<typeof db.query.stages.findMany>[0]>["with"]
+
+/** A stage row plus the pipeline relation the `expand` handler may have loaded. */
+type StageExpanded = typeof stages.$inferSelect & {
+  pipeline?: Parameters<typeof serializePipeline>[0] | null
+}
+
 // GET /api/v1/stages - List stages with pagination and filters
 export async function GET(request: NextRequest) {
   return withApiAuth(request, async (req: NextRequest, ctx: ApiAuthContext) => {
@@ -43,21 +51,18 @@ export async function GET(request: NextRequest) {
     const stageConditions = pipelineId ? [eq(stages.pipelineId, pipelineId)] : []
 
     // Build with options based on expand
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let withOptions: any = undefined
-    if (expand.has("pipeline")) {
-      withOptions = { pipeline: true }
-    }
+    const withOptions: StageWith = expand.has("pipeline")
+      ? { pipeline: true as const }
+      : undefined
 
     // Query stages
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const stageList = await db.query.stages.findMany({
       where: stageConditions.length > 0 ? and(...stageConditions) : undefined,
       orderBy: [asc(stages.position)],
       offset,
       limit,
       with: withOptions,
-    }) as any[]
+    }) as StageExpanded[]
 
     // Filter to only stages from user's pipelines (when no specific pipeline filter)
     let userStages = stageList

@@ -16,6 +16,15 @@ const createPipelineSchema = z.object({
   is_default: z.boolean().optional(),
 })
 
+/** The exact shape Drizzle accepts for the relational `with` key on a pipeline list query. */
+type PipelineWith = NonNullable<Parameters<typeof db.query.pipelines.findMany>[0]>["with"]
+
+/** A pipeline row plus the relations the `expand` handler may have loaded. */
+type PipelineExpanded = typeof pipelines.$inferSelect & {
+  owner?: { id: string; name: string | null; email: string } | null
+  stages?: Parameters<typeof serializeStage>[0][]
+}
+
 // GET /api/v1/pipelines - List pipelines with pagination
 export async function GET(request: NextRequest) {
   return withApiAuth(request, async (req: NextRequest, ctx: ApiAuthContext) => {
@@ -26,15 +35,11 @@ export async function GET(request: NextRequest) {
     const conditions = [eq(pipelines.ownerId, ctx.userId), isNull(pipelines.deletedAt)]
 
     // Build with options based on expand
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let withOptions: any = undefined
-    if (expand.size > 0) {
-      withOptions = {}
-      if (expand.has("owner")) withOptions.owner = true
-      if (expand.has("stages")) withOptions.stages = true
-    }
+    const withOptions: PipelineWith = expand.size > 0 ? {
+      ...(expand.has("owner") ? { owner: true as const } : {}),
+      ...(expand.has("stages") ? { stages: true as const } : {}),
+    } : undefined
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [pipelineList, countResult] = await Promise.all([
       db.query.pipelines.findMany({
         where: and(...conditions),
@@ -42,7 +47,7 @@ export async function GET(request: NextRequest) {
         offset,
         limit,
         with: withOptions,
-      }) as Promise<any[]>,
+      }) as Promise<PipelineExpanded[]>,
       db.select({ count: sql<number>`count(*)` })
         .from(pipelines)
         .where(and(...conditions))
