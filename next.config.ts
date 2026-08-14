@@ -5,7 +5,7 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["argon2", "pipedrive"],
+  serverExternalPackages: ["argon2", "pipedrive", "quickjs-emscripten"],
 }
 
 export default withNextIntl(nextConfig)
