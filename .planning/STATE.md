@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Workflows
-status: "Milestone v1.2 complete — shipped PR #7, hardened via PR #8/#9, engine verified end-to-end. Next milestone not yet scoped."
-last_updated: "2026-08-12T00:00:00.000Z"
-last_activity: 2026-08-12
+milestone: v1.3
+milestone_name: Foundation & CRM Depth
+status: planning
+last_updated: "2026-08-14T01:02:03.363Z"
+last_activity: 2026-08-14
 progress:
-  total_phases: 8
-  completed_phases: 8
-  total_plans: 26
-  completed_plans: 26
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Session State
@@ -20,23 +20,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Between milestones — v1.2 complete, v1.3 not yet scoped
+**Current focus:** v1.3 Foundation & CRM Depth — defining requirements
 
 ## Position
 
-Phase: 31 of 31 (workflow-wiring-fixes) — complete
-Plan: 26 of 26 executed
-Status: Milestone v1.2 complete — shipped PR #7, hardened via PR #8/#9, engine verified end-to-end
-Last activity: 2026-08-12
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-08-13 — Milestone v1.3 started
 
-Progress: [██████████] 100% (26/26 v1.2 plans)
+Progress: [░░░░░░░░░░] 0% (v1.3 not yet roadmapped)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 111 (v1.0: 73, v1.1: 12, v1.2: 26)
-- v1.2 plans completed: 26 (8 phases, 52 tasks)
+- Total plans completed: 111 across 3 shipped milestones (v1.0: 73, v1.1: 12, v1.2: 26)
+- v1.3 plans completed: 0
 
 ## Decisions
 
@@ -163,3 +163,10 @@ None open. No pending todos, no UAT/verification debt (audit-uat: 0 items), work
 - 2026-08-08: Post-ship hardening merged -- PR #8 (workflow runtime: execution-engine resume, run-entry guards, schedule triggers, webhook response body, action handlers, wall-clock cycle budget), PR #9 (REST API workflow list/get/run/update/delete scoped to authed user)
 - 2026-08-08: Debug workflow-engine-not-firing RESOLVED -- two root causes: reorderDealsMutation missing CRM event emission, and Next.js standalone build omitting instrumentation.js so register() never ran in Docker (all four processors dead in production). Fixed via Dockerfile post-build chunk copy. Verified end-to-end in browser: deal stage drag -> deal.stage_changed -> run completed in 298ms.
 - 2026-08-12: Backlog review -- captured deferred v1.1 scope as 999.1 (formula reactivity) and 999.2 (bulk operations); removed stale 27-action-nodes/deferred-items.md (http.test.ts fixed, 14/14 pass)
+
+## Current Position
+
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-08-14 — Milestone v1.3 started

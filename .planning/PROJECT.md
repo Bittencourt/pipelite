@@ -8,6 +8,34 @@ A lightweight, self-hostable CRM inspired by Pipedrive with a built-in workflow 
 
 API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features (email sync, automation, reporting) can be built externally via the API.
 
+## Current Milestone: v1.3 Foundation & CRM Depth
+
+**Goal:** Harden what v1.2 left soft and close the CRM gaps — make regressions unmergeable,
+index the core, fix stale formula data, and add the notes, audit, and operational surfaces a
+self-hosted CRM needs.
+
+**Target features:**
+- Test infrastructure & CI — 3 tests fail on master today with nothing running them
+- Database indexes for the v1.0 CRM core — currently zero non-PK indexes on deals/people/orgs/activities
+- Formula reactivity — server-side recalc so API, exports, and webhooks stop serving stale values
+- Notes & activity timeline — replace the overwrite-in-place notes column with an attributed feed
+- Audit log — fed by the existing crmBus, answers "did a human or a workflow change this?"
+- Bulk operations — select, delete, reassign, export
+- Duplicate detection & record merge
+- Saved views & shared filters
+- Trash & restore for soft-deleted records
+- Workflow operator affordances — replay, dry-run, failure alerting
+- Observability — structured logging, error tracking, health endpoint
+- Type-safety & deployment-docs polish
+
+**Sequencing note:** CI lands first. Three tests fail on `master` today, so every later phase's
+verification is untrustworthy until the suite is green.
+
+**Open design questions** (decide during phase discussion, do not assume):
+- Audit-log retention and pruning — this table grows fastest of anything in the schema, on a
+  self-hosted product where nobody may be watching disk
+- Duplicate-detection heuristics — which field combinations constitute a match
+
 ## Requirements
 
 ### Validated
@@ -36,9 +64,8 @@ API-complete CRM core that handles fundamentals well — pipelines, orgs, people
 
 ### Active
 
-(None — planning next milestone. 12 candidate items are captured in ROADMAP.md `## Backlog` as
-999.1–999.12, each carrying its motivating evidence. Suggested v1.3 slice: 999.3 CI →
-999.4 indexes → 999.1 formula reactivity → 999.5 notes timeline → 999.6 audit log.)
+All 12 backlog items (999.1–999.12) are scoped into v1.3 — see Current Milestone above.
+REQ-IDs are defined in `.planning/REQUIREMENTS.md`; phase mapping in `.planning/ROADMAP.md`.
 
 ### Out of Scope
 
@@ -47,8 +74,10 @@ API-complete CRM core that handles fundamentals well — pipelines, orgs, people
 - Native third-party integration nodes — generic HTTP + templates covers the need
 - Multi-tenancy — single company per deployment
 - Mobile app — web-first, responsive design sufficient
-- Formula reactivity (server-side recalc on save) — deferred, revisit when needed
-- Bulk operations (select, delete, reassign, export) — deferred, revisit when needed
+
+*(Formula reactivity and bulk operations were listed here as deferred through v1.2. Both moved
+into scope for v1.3 — formula reactivity because stale JSONB values now feed workflow branching
+decisions, not just display.)*
 
 ## Context
 
@@ -95,5 +124,22 @@ Known issues / tech debt after v1.2:
 | Typed static template arrays (not DB-stored built-ins) | Simpler deployment, no seed migration needed | ✓ Good — 6 HTTP + 4 workflow templates ship with code |
 | pipelite/v1 schema versioning for exports | Forward compatibility for workflow JSON format | ✓ Good — validation rejects unknown versions |
 
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd:complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
 ---
-*Last updated: 2026-03-28 after v1.2 milestone completion*
+*Last updated: 2026-08-13 — v1.3 Foundation & CRM Depth milestone started*
