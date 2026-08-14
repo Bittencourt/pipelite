@@ -572,19 +572,47 @@ describe("resolveFieldPath — prototype keys are not resolvable (T-34-21)", () 
 })
 
 describe("resolveFieldPath — parsing is linear, not backtracking (T-34-20)", () => {
-  it("handles a pathological path in well under 100ms", () => {
+  const pathologicalPaths = (n: number) => [
+    "trigger.data" + '["a"]'.repeat(n),
+    'trigger.data.customFields["' + "a".repeat(n * 10), // unterminated
+    "trigger." + "a.".repeat(n) + "b",
+    'trigger.data["' + '"'.repeat(n) + '"]',
+  ]
+
+  it("does not throw and resolves undefined on pathological paths", () => {
     const ctx = realCtx()
-    const pathological = [
-      "trigger.data" + '["a"]'.repeat(20000),
-      'trigger.data.customFields["' + "a".repeat(200000), // unterminated
-      "trigger." + "a.".repeat(50000) + "b",
-      'trigger.data["' + '"'.repeat(50000) + '"]',
-    ]
-    const start = Date.now()
-    for (const path of pathological) {
+    for (const path of pathologicalPaths(20000)) {
       expect(() => resolveFieldPath(ctx, path)).not.toThrow()
       expect(resolveFieldPath(ctx, path)).toBeUndefined()
     }
-    expect(Date.now() - start).toBeLessThan(100)
+  })
+
+  // A ReDoS regression shows up as super-linear growth, so assert on the SCALING
+  // ratio rather than an absolute wall-clock budget. An absolute threshold is
+  // flaky: it passes on an idle machine and fails under parallel suite load
+  // (observed at 125ms against a 100ms limit). Both measurements here run under
+  // the same conditions, so the ratio is load-independent.
+  it("scales linearly, not quadratically, with path length", () => {
+    const ctx = realCtx()
+    const time = (n: number) => {
+      const paths = pathologicalPaths(n)
+      // Best-of-3 to damp scheduler noise and JIT warm-up.
+      let best = Infinity
+      for (let run = 0; run < 3; run++) {
+        const start = performance.now()
+        for (const path of paths) resolveFieldPath(ctx, path)
+        best = Math.min(best, performance.now() - start)
+      }
+      return best
+    }
+
+    time(2000) // warm-up, discarded
+    const small = Math.max(time(4000), 0.5) // floor avoids divide-by-noise
+    const large = time(16000) // 4x the input
+
+    // Linear parsing predicts ~4x. Quadratic backtracking predicts ~16x or worse.
+    // 10x sits between the two, so this fails on a genuine regression while
+    // tolerating ordinary timing jitter.
+    expect(large / small).toBeLessThan(10)
   })
 })
