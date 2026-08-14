@@ -333,6 +333,29 @@ audit gate, and adding `npm audit --audit-level=high` to `ci.yml` would make the
 one, so it was deliberately not bolted on. Resolution: triage the criticals/highs, then decide whether an
 audit step or a `.npmrc` audit policy belongs in CI.
 
+**999.17 — SECURITY: `/api/v1/activities` has no ownership check (IDOR)** (captured 2026-08-14, Phase 32)
+`src/app/api/v1/activities/[id]/route.ts` GET/PUT/DELETE and `src/app/api/v1/activities/route.ts` GET
+perform **no ownership check at all**. Any valid API key can read (`[id]:80-116`), modify
+(`[id]:126-216`, **including reassigning `owner_id`**) or soft-delete (`[id]:226-237`) *any* user's
+activity by id, and the list endpoint returns every user's activities. Compare `pipelines/[id]`,
+which does check `ownerId`. Pre-existing — Phase 32's diff only retyped `withOptions` — but surfaced
+by the Phase 32 code review, and **more severe than anything found in the phase itself**. These six
+route files have zero test coverage, so add tests with the fix. Prioritise ahead of the cosmetic
+backlog items. See `32-REVIEW.md` § "Pre-existing, out of diff scope".
+
+**999.18 — `stages/route.ts` passes a JS array into a raw `sql` fragment** (captured 2026-08-14, Phase 32)
+`src/app/api/v1/stages/route.ts:73` uses ``sql`${pipelines.id} IN ${pipelineIds}` `` instead of
+`inArray()`. Unreachable with an empty array today (guarded by `stageList` being non-empty) but
+fragile — a future refactor removing that guard changes it from awkward to broken. Mechanical fix.
+
+**999.19 — Pipedrive importer hardcodes stage type `"open"`** (captured 2026-08-14, Phase 32)
+`src/lib/import/pipedrive-api-transformers.ts:164-167` reads
+`const type: "open" | "won" | "lost" = "open"` under a comment promising "Determine stage type based
+on `rotten_flag` and `deal_probability`". The won/lost mapping was never implemented; Phase 32's
+`let`→`const` change (L-06) removed the last hint that it is a placeholder. Deliberately deferred
+from the Phase 32 fix pass — it is a product decision about Pipedrive stage mapping, not a
+regression. Address alongside the import wizard's terminal-stage handling.
+
 ---
 
 All 12 original backlog items (999.1-999.12, captured 2026-08-12 and 2026-08-13) were promoted
