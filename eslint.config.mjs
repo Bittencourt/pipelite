@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Agent git worktrees contain a full second copy of src/, which otherwise
+    // doubles the reported problem count and — worse — lets a transient copy
+    // fail the repo's lint gate for reasons unrelated to the real tree.
+    ".claude/**",
   ]),
 ]);
 
