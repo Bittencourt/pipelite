@@ -135,6 +135,25 @@ None — no external service configuration required. This plan installed zero pa
 - **Watch item for the CI workflow:** the suite passes with `DATABASE_URL` unset, so no Postgres service container is needed (T-32-09). Confirmed here indirectly — the run used no database.
 - **Residual lint debt:** 130 warnings remain repo-wide, 0 errors. If a future phase tightens the gate to `--max-warnings 0`, that is a separate, larger effort.
 
+## Self-Check: PASSED
+
+| Claim | Verification | Result |
+|-------|-------------|--------|
+| `src/lib/formula-engine.ts` modified | `test -f` + `git diff --name-only 4548dd0 HEAD` | FOUND |
+| `src/lib/mutations/workflows.test.ts` modified | `test -f` + `git diff --name-only 4548dd0 HEAD` | FOUND |
+| `32-02-SUMMARY.md` created **and tracked** | `git ls-tree -r HEAD --name-only` | FOUND in HEAD |
+| Commit `a1db53a` (Task 1) | `git cat-file -t a1db53a` | `commit` |
+| Commit `140b734` (Task 2) | `git cat-file -t 140b734` | `commit` |
+| Commit `aeb0218` (summary) | `git cat-file -t aeb0218` | `commit` |
+| `usesNullSafe` gates exactly 3 early-returns | `node -e` count of `&& !usesNullSafe` | 3 |
+| `hasArithmetic` gone | `node -e` count | 0 |
+| `toHaveBeenCalledTimes(3)` present once | `node -e` count | 1 |
+| No new `.skip` / `.todo` / `.only` | `node -e` over `git diff -U0 4548dd0 HEAD` added lines | 0 of 39 added lines |
+| STATE.md / ROADMAP.md untouched | `git diff --name-only 4548dd0 HEAD` | neither listed |
+| `npm test` | re-run after all commits | exit 0, 41 files, 455 passed, 4 skipped |
+| `npm run typecheck` | direct run | exit 0 |
+| `npm run lint` | direct run | exit 0, 0 errors, 130 warnings |
+
 ---
 *Phase: 32-test-infrastructure-ci*
 *Completed: 2026-08-14*
