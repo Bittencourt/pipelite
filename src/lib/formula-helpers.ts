@@ -110,6 +110,98 @@ export async function validateFormula(
   return { valid: true, dependencies }
 }
 
+/* -------------------------------------------------------------------------------------------
+ * Stored formula wrapper primitives
+ *
+ * A recalculated formula value is persisted in the entity's `customFields` JSONB as
+ * `{ formula: true, value, error }` - the shape `formula-field.tsx:50` already detects via
+ * `'formula' in value`. These helpers are the single place that shape is understood.
+ *
+ * They live here, and NOT in `formula-recalc.ts`, precisely because this module imports no
+ * database client: the CSV exporter, the webhook payload builder and the workflow trigger
+ * envelope all need to read a wrapper without dragging the db module (and its env
+ * requirements) into their bundle. A test greps this file for a database-alias import and
+ * fails if one appears - keep it that way.
+ * ----------------------------------------------------------------------------------------- */
+
+/** The single key that marks a stored value as a computed formula result. */
+export const FORMULA_WRAPPER_KEY = 'formula'
+
+/** The persisted shape of a formula field value (D-05). */
+export interface FormulaWrapper {
+  formula: true
+  value: unknown
+  error: string | null
+}
+
+/**
+ * Narrow an arbitrary stored JSONB value to the formula wrapper shape.
+ *
+ * The `!Array.isArray` guard is load-bearing: every `multi_select` value in this database is
+ * stored as an array (`{"Origem":["Outbound Manual"]}`), and `'formula' in []` would otherwise
+ * be evaluated against an array's prototype chain rather than rejected outright.
+ */
+export function isFormulaWrapper(value: unknown): value is FormulaWrapper {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    FORMULA_WRAPPER_KEY in value
+  )
+}
+
+/**
+ * Reduce a stored value to the scalar a formula should see.
+ *
+ * Required before a value enters `evaluateFormula`'s `fieldValues`: a wrapper object reaching
+ * the sandbox makes arithmetic yield `NaN`, which `vm.dump` surfaces as `null` - a silent blank
+ * with no error at all (RESEARCH Pitfall 2). Non-wrappers pass through untouched.
+ */
+export function unwrapFormulaValue(value: unknown): unknown {
+  return isFormulaWrapper(value) ? value.value : value
+}
+
+/**
+ * Render a stored value for a text-ish reader (CSV cells, webhook/trigger envelopes).
+ *
+ * An errored wrapper becomes `#ERROR: <message>` rather than the scalar `null`, so a broken
+ * formula is visible in an export instead of looking like an empty cell. Without this,
+ * `Papa.unparse` writes `[object Object]` for every wrapper (measured, papaparse 5.5.3).
+ */
+export function formatFormulaValueForText(value: unknown): unknown {
+  if (!isFormulaWrapper(value)) return value
+  if (value.error !== null && value.error !== undefined) return `#ERROR: ${value.error}`
+  return value.value
+}
+
+/** Maximum length of a persisted formula error message, before the ellipsis. */
+export const FORMULA_ERROR_MAX_LENGTH = 200
+
+/** Shown when the underlying message is missing or empty after sanitisation. */
+export const FORMULA_ERROR_FALLBACK = 'Formula evaluation failed'
+
+/**
+ * Reduce any thrown/returned error into a string that is safe to persist in user-visible JSONB
+ * (threat T-34-06).
+ *
+ * Two untrusted sources feed this: QuickJS hands back a raw `e.message` from an admin-authored
+ * expression, and the recalc helper's outer catch can see a Drizzle error carrying SQL text.
+ * Neither may be stored verbatim, because the stored `error` is rendered by `formula-field.tsx`
+ * and exported to CSV. So: first line only (drops any stack), trimmed, and capped.
+ */
+export function sanitizeFormulaError(message: unknown): string {
+  if (message === null || message === undefined) return FORMULA_ERROR_FALLBACK
+
+  const raw = message instanceof Error ? message.message : String(message)
+  const firstLine = raw.split('\n')[0].trim()
+
+  if (!firstLine) return FORMULA_ERROR_FALLBACK
+
+  return firstLine.length > FORMULA_ERROR_MAX_LENGTH
+    ? `${firstLine.slice(0, FORMULA_ERROR_MAX_LENGTH)}…`
+    : firstLine
+}
+
 /**
  * Get example expressions for help
  */
