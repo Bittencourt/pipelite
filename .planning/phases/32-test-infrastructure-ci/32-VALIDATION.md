@@ -1,8 +1,8 @@
 ---
 phase: 32
 slug: test-infrastructure-ci
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-08-13
 ---
@@ -77,11 +77,11 @@ Existing infrastructure covers all phase requirements — vitest is installed an
 
 ## Validation Sign-Off
 
-- [ ] All tasks have an automated verify command (except CI-04d, which is manual by nature — documented above)
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers the vitest config change that all other verification depends on
-- [ ] No watch-mode flags — `vitest run`, never bare `vitest`
-- [ ] Feedback latency < 25s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have an automated verify command (except plan 32-06 Task 2, a justified `checkpoint:decision` — branch protection is a repo setting, documented above)
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers the vitest config change that all other verification depends on — delivered by plan 32-01 (wave 1), which every other plan depends on transitively
+- [x] No watch-mode flags — `vitest run`, never bare `vitest`
+- [x] Feedback latency < 25s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-08-13 (gsd-plan-checker: VERIFICATION PASSED across 6 plans)

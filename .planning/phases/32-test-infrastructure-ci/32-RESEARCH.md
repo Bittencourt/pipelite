@@ -631,22 +631,24 @@ The verification for SC-4 is behavioural, not file-based: open a throwaway PR th
 | A6 | `if: ${{ !cancelled() }}` is supported on steps in current GitHub Actions | Pattern 3 / Code Examples §3 | If unsupported, fall back to `if: always()`. `cancelled()` is a documented status-check function; step-level `if` is standard. Low risk. |
 | A7 | The intended semantics of `usesNullSafeFunction` is what the helper's own docstring says | Diagnosis, Failure 1 | If the author actually intended null-propagation to win over null-safe functions, the *test* would be wrong instead. Evidence strongly favours the source-bug reading: the helper exists, is documented for exactly this case, is computed, and is unused. And the verified fix keeps `propagates null values` green. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does Phase 32 absorb all 26 eslint errors, or ratchet?**
+All four were resolved before planning locked. Resolutions are recorded inline below.
+
+1. **Does Phase 32 absorb all 26 eslint errors, or ratchet?** — **(RESOLVED — user decision, CONTEXT.md D-01/D-02/D-03)**: fix the 21 mechanical errors properly; scoped `eslint-disable-next-line ... -- reason` for the 5 React Compiler errors; hard-fail lint gate, no ratchet. Implemented by plans 32-03 and 32-04.
    - What we know: exact rule/file/line breakdown above; 21 are mechanical, 5 are React Compiler refactors touching `reset-password`, `verify-email`, `profile-settings-form`, `relative-time`, `import-wizard`.
    - What's unclear: whether touching 5 UI components' effect logic is acceptable inside an infrastructure phase.
    - Recommendation: fix the 21 mechanical errors; add `// eslint-disable-next-line <rule> -- <reason>` for the 5 React Compiler errors with a backlog item for a proper fix. Keeps the gate real and the phase bounded.
 
-2. **Does `deleteWorkflow`'s cascade path need its own test, or is the minimal mock stub enough?**
+2. **Does `deleteWorkflow`'s cascade path need its own test, or is the minimal mock stub enough?** — **(RESOLVED — user decision, CONTEXT.md D-06)**: add the cascade test. Implemented by plan 32-02.
    - What we know: SC-3 says "including `mutations/workflows.test.ts > deleteWorkflow` (**the cascade-delete path**)". The minimal stub returns `[]` runs, so the cascade branch stays uncovered.
    - Recommendation: add the second test (written and verified above — 23/23 green). It is ~14 lines and is what SC-3 literally asks for.
 
-3. **Should CI also run `npm run build`?**
+3. **Should CI also run `npm run build`?** — **(RESOLVED — out of scope)**: no. CI-04 names only tsc + eslint + test. Plans 32-05/32-06 ship exactly those three gates.
    - What we know: CI-04 names only tsc + eslint + test. `next build` needs a dummy `DATABASE_URL` (the Dockerfile does exactly this) and adds minutes.
    - Recommendation: **no**, out of scope. Note as a candidate for a future phase.
 
-4. **`Dockerfile` pins `node:20-alpine`, below vite 7's `^20.19.0` floor.**
+4. **`Dockerfile` pins `node:20-alpine`, below vite 7's `^20.19.0` floor.** — **(RESOLVED — out of scope, backlogged)**: captured as backlog item 999.13 by plan 32-05. CI pins Node 24 and does not inherit the Dockerfile's tag.
    - What we know: it currently builds (the running container is 5 days old), so the tag is resolving ≥ 20.19 today. `next build` may not exercise vite at all.
    - Recommendation: out of scope; capture as backlog. Do not let it pull Node 20 into the CI workflow.
 
