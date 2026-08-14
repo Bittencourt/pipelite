@@ -159,6 +159,14 @@ None - no external service configuration required.
 - No dependency on plan 32-01's `vitest.config.ts` / `package.json` work; all verification here used explicit file paths.
 - Note for whoever wires CI: the worktree used a symlinked `node_modules`. CI will need a real `npm ci` step — nothing in this plan assumes otherwise.
 
+## Self-Check: PASSED
+
+- All ten `files_modified` paths exist on disk and appear in `git diff --name-only 12ba143..HEAD`.
+- Task commits `adeeca3` and `e7b5f77` are present in `git log`.
+- `32-03-SUMMARY.md` exists and is tracked (staged with `git add -f`, since `.planning/` is gitignored but its contents are tracked).
+- No commit in this plan deleted a tracked file (`git diff --diff-filter=D HEAD~1 HEAD` empty for each).
+- `STATE.md` and `ROADMAP.md` were not modified — the orchestrator owns those.
+
 ---
 *Phase: 32-test-infrastructure-ci*
 *Completed: 2026-08-14*
