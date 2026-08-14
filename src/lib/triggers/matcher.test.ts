@@ -395,3 +395,178 @@ describe("matchAndFireTriggers", () => {
     expect(mockCreateWorkflowRun).toHaveBeenCalledTimes(2)
   })
 })
+
+// --- Formula wrapper normalisation in the trigger envelope (SC-3 / D-17) ---
+
+describe("matchAndFireTriggers formula wrapper normalisation", () => {
+  function mockOneUpdatedWorkflow() {
+    const mockFrom = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue([
+        {
+          id: "wf-formula",
+          active: true,
+          triggers: [
+            { type: "crm_event", entity: "deal", action: "updated", fieldFilters: [] },
+          ],
+        },
+      ]),
+    })
+    mockDb.select.mockReturnValue({ from: mockFrom })
+  }
+
+  function envelopeOf(): { data: Record<string, unknown> } & Record<string, unknown> {
+    return mockCreateWorkflowRun.mock.calls[0][1]
+  }
+
+  const updatedPayload = (data: Record<string, unknown>): CrmEventPayload => ({
+    entity: "deal",
+    entityId: "deal-1",
+    action: "updated",
+    data,
+    changedFields: ["customFields"],
+    userId: "user-1",
+    timestamp: "2026-03-28T00:00:00Z",
+  })
+
+  const OK_WRAPPER = { formula: true, value: 1035, error: null }
+  const ERR_WRAPPER = { formula: true, value: null, error: "Unknown field: Nope" }
+
+  it("normalises a camelCase customFields wrapper to its scalar", async () => {
+    mockOneUpdatedWorkflow()
+
+    await matchAndFireTriggers(
+      "deal.updated",
+      updatedPayload({ title: "Acme", customFields: { Margin: OK_WRAPPER } })
+    )
+
+    const customFields = envelopeOf().data.customFields as Record<string, unknown>
+    expect(customFields.Margin).toBe(1035)
+    expect(typeof customFields.Margin).toBe("number")
+  })
+
+  it("normalises a snake_case custom_fields wrapper identically (serializeDeal write path)", async () => {
+    mockOneUpdatedWorkflow()
+
+    await matchAndFireTriggers(
+      "deal.updated",
+      updatedPayload({ title: "Acme", custom_fields: { Margin: OK_WRAPPER } })
+    )
+
+    const customFields = envelopeOf().data.custom_fields as Record<string, unknown>
+    expect(customFields.Margin).toBe(1035)
+  })
+
+  it("normalises an errored wrapper to null, so a greater_than condition cannot become true", async () => {
+    mockOneUpdatedWorkflow()
+
+    await matchAndFireTriggers(
+      "deal.updated",
+      updatedPayload({ customFields: { Margin: ERR_WRAPPER } })
+    )
+
+    const customFields = envelopeOf().data.customFields as Record<string, unknown>
+    expect(customFields.Margin).toBeNull()
+    // The error string must not leak into the envelope as a truthy comparable value.
+    expect(JSON.stringify(customFields)).not.toContain("Unknown field")
+    expect(Number(customFields.Margin) > 1000).toBe(false)
+  })
+
+  it("passes non-formula custom field values through byte-identically", async () => {
+    mockOneUpdatedWorkflow()
+
+    const plain = {
+      Origem: ["Outbound Manual"],
+      "CNPJ / CPF": "12.345.678/0001-90",
+      Consumo: 42,
+      Vazio: null,
+      Nested: { some: "object", without: "the formula key" },
+    }
+
+    await matchAndFireTriggers("deal.updated", updatedPayload({ customFields: { ...plain } }))
+
+    expect(envelopeOf().data.customFields).toEqual(plain)
+  })
+
+  it("leaves an envelope with no custom fields deep-equal to the pre-change shape", async () => {
+    mockOneUpdatedWorkflow()
+
+    await matchAndFireTriggers("deal.updated", updatedPayload({ title: "Test Deal" }))
+
+    expect(envelopeOf()).toEqual({
+      trigger_type: "crm_event",
+      trigger_id: expect.stringMatching(/^deal\.updated-\d+$/),
+      timestamp: "2026-03-28T00:00:00Z",
+      data: {
+        title: "Test Deal",
+        entity: "deal",
+        entityId: "deal-1",
+        action: "updated",
+        changedFields: ["customFields"],
+        userId: "user-1",
+      },
+    })
+  })
+
+  it("preserves envelope metadata and the write-after-spread anti-clobber invariant", async () => {
+    const mockFrom = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue([
+        {
+          id: "wf-stage",
+          active: true,
+          triggers: [
+            { type: "crm_event", entity: "deal", action: "stage_changed", fieldFilters: [] },
+          ],
+        },
+      ]),
+    })
+    mockDb.select.mockReturnValue({ from: mockFrom })
+
+    const stagePayload: DealStageChangedPayload = {
+      entity: "deal",
+      entityId: "deal-1",
+      action: "updated",
+      data: {
+        title: "Test Deal",
+        customFields: { Margin: OK_WRAPPER },
+        // Record fields attempting to spoof metadata must still lose to the post-spread write.
+        entityId: "spoofed",
+        action: "deleted",
+        userId: "spoofed-user",
+      },
+      changedFields: ["stageId"],
+      userId: "user-1",
+      timestamp: "2026-03-28T00:00:00Z",
+      oldStageId: "stage-a",
+      newStageId: "stage-b",
+    }
+
+    await matchAndFireTriggers("deal.stage_changed", stagePayload)
+
+    const envelope = envelopeOf()
+    expect(envelope.data).toMatchObject({
+      entity: "deal",
+      entityId: "deal-1",
+      action: "updated",
+      changedFields: ["stageId"],
+      userId: "user-1",
+      oldStageId: "stage-a",
+      newStageId: "stage-b",
+      title: "Test Deal",
+    })
+    expect((envelope.data.customFields as Record<string, unknown>).Margin).toBe(1035)
+  })
+
+  it("does not mutate the shared crmBus payload — the webhook body keeps the full wrapper (D-17)", async () => {
+    mockOneUpdatedWorkflow()
+
+    const wrapper = { formula: true, value: 1035, error: null }
+    const payload = updatedPayload({ customFields: { Margin: wrapper } })
+
+    await matchAndFireTriggers("deal.updated", payload)
+
+    // The webhook subscriber forwards payload.data verbatim; unwrapping here would silently
+    // strip the structured error signal from the webhook body too.
+    expect((payload.data.customFields as Record<string, unknown>).Margin).toBe(wrapper)
+    expect(wrapper).toEqual({ formula: true, value: 1035, error: null })
+  })
+})
