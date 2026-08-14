@@ -7,7 +7,7 @@ import { serializeActivity, serializeDeal, serializeOrganization, serializePerso
 import { crmBus } from "@/lib/events"
 import type { CrmEventPayload } from "@/lib/events"
 import { db } from "@/db"
-import { activities } from "@/db/schema"
+import { activities, activityTypes } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
 import { z } from "zod"
 
@@ -24,6 +24,19 @@ const updateActivitySchema = z.object({
 
 interface RouteParams {
   params: Promise<{ id: string }>
+}
+
+/** The exact shape Drizzle accepts for the relational `with` key on an activity query. */
+type ActivityWith = NonNullable<Parameters<typeof db.query.activities.findFirst>[0]>["with"]
+
+/** An activity row plus the relations the `expand` handler may have loaded. */
+type ActivityExpanded = typeof activities.$inferSelect & {
+  type?: typeof activityTypes.$inferSelect | null
+  deal?: (Parameters<typeof serializeDeal>[0] & {
+    organization?: Parameters<typeof serializeOrganization>[0] | null
+    person?: Parameters<typeof serializePerson>[0] | null
+  }) | null
+  owner?: { id: string; name: string | null; email: string } | null
 }
 
 function buildActivityEventPayload(
@@ -51,27 +64,23 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const expand = parseExpand(req)
 
     // Build with options based on expand
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let withOptions: any = undefined
-    if (expand.size > 0) {
-      withOptions = {}
-      if (expand.has("type")) withOptions.type = true
-      if (expand.has("deal")) {
-        withOptions.deal = {
+    const withOptions: ActivityWith = expand.size > 0 ? {
+      ...(expand.has("type") ? { type: true as const } : {}),
+      ...(expand.has("deal") ? {
+        deal: {
           with: {
-            organization: true,
-            person: true,
-          }
-        }
-      }
-      if (expand.has("owner")) withOptions.owner = true
-    }
+            organization: true as const,
+            person: true as const,
+          },
+        },
+      } : {}),
+      ...(expand.has("owner") ? { owner: true as const } : {}),
+    } : undefined
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const activity = await db.query.activities.findFirst({
       where: and(eq(activities.id, id), isNull(activities.deletedAt)),
       with: withOptions,
-    }) as any
+    }) as ActivityExpanded | undefined
 
     if (!activity) {
       return Problems.notFound("Activity")

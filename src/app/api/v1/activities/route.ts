@@ -21,6 +21,19 @@ const createActivitySchema = z.object({
   custom_fields: z.record(z.string(), z.unknown()).optional(),
 })
 
+/** The exact shape Drizzle accepts for the relational `with` key on an activity list query. */
+type ActivityWith = NonNullable<Parameters<typeof db.query.activities.findMany>[0]>["with"]
+
+/** An activity row plus the relations the `expand` handler may have loaded. */
+type ActivityExpanded = typeof activities.$inferSelect & {
+  type?: typeof activityTypes.$inferSelect | null
+  deal?: (Parameters<typeof serializeDeal>[0] & {
+    organization?: Parameters<typeof serializeOrganization>[0] | null
+    person?: Parameters<typeof serializePerson>[0] | null
+  }) | null
+  owner?: { id: string; name: string | null; email: string } | null
+}
+
 // GET /api/v1/activities - List activities with pagination and filters
 export async function GET(request: NextRequest) {
   return withApiAuth(request, async (req: NextRequest, ctx: ApiAuthContext) => {
@@ -47,24 +60,20 @@ export async function GET(request: NextRequest) {
     }
 
     // Build with options based on expand
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let withOptions: any = undefined
-    if (expand.size > 0) {
-      withOptions = {}
-      if (expand.has("type")) withOptions.type = true
-      if (expand.has("deal")) {
-        withOptions.deal = {
+    const withOptions: ActivityWith = expand.size > 0 ? {
+      ...(expand.has("type") ? { type: true as const } : {}),
+      ...(expand.has("deal") ? {
+        deal: {
           with: {
-            organization: expand.has("deal"),
-            person: expand.has("deal"),
-          }
-        }
-      }
-      if (expand.has("owner")) withOptions.owner = true
-    }
+            organization: true as const,
+            person: true as const,
+          },
+        },
+      } : {}),
+      ...(expand.has("owner") ? { owner: true as const } : {}),
+    } : undefined
 
     // Query activities with count
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [activityList, countResult] = await Promise.all([
       db.query.activities.findMany({
         where: and(...conditions),
@@ -72,7 +81,7 @@ export async function GET(request: NextRequest) {
         offset,
         limit,
         with: withOptions,
-      }) as Promise<any[]>,
+      }) as Promise<ActivityExpanded[]>,
       db.select({ count: sql<number>`count(*)` })
         .from(activities)
         .where(and(...conditions))

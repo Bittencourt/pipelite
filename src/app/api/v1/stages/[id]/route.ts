@@ -22,13 +22,22 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
+/** The exact shape Drizzle accepts for the relational `with` key on a stage query. */
+type StageWith = NonNullable<Parameters<typeof db.query.stages.findFirst>[0]>["with"]
+
+/** A stage row plus the pipeline relation the ownership check and `expand` handler read. */
+type StageExpanded = typeof stages.$inferSelect & {
+  pipeline?: Parameters<typeof serializePipeline>[0] | null
+}
+
 // Helper to verify stage ownership through pipeline
 async function verifyStageOwnership(stageId: string, userId: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ownershipWith: StageWith = { pipeline: true as const }
+
   const stage = await db.query.stages.findFirst({
     where: eq(stages.id, stageId),
-    with: { pipeline: true } as any,
-  }) as any
+    with: ownershipWith,
+  }) as StageExpanded | undefined
 
   if (!stage) {
     return { stage: null, owned: false }
@@ -48,17 +57,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const expand = parseExpand(req)
 
     // Build with options based on expand
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let withOptions: any = undefined
-    if (expand.has("pipeline")) {
-      withOptions = { pipeline: true }
-    }
+    const withOptions: StageWith = expand.has("pipeline")
+      ? { pipeline: true as const }
+      : undefined
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const stage = await db.query.stages.findFirst({
       where: eq(stages.id, id),
       with: withOptions,
-    }) as any
+    }) as StageExpanded | undefined
 
     if (!stage) {
       return Problems.notFound("Stage")
