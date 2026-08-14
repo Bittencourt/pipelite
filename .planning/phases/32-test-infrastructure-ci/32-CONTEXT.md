@@ -25,6 +25,16 @@ Out of scope:
 <decisions>
 ## Implementation Decisions
 
+### Lint Gate Scope
+- **D-01**: Phase 32 fixes the 21 mechanical eslint errors properly — `no-explicit-any` (12), `no-unescaped-entities` (8), `no-unsafe-function-type` (1). No blanket suppressions for these.
+- **D-02**: The 5 React Compiler errors (3 × `react-hooks/set-state-in-effect`, 1 × `preserve-manual-memoization`, 1 × immutability) get scoped `// eslint-disable-next-line <rule> -- <reason>` comments with a written reason, not a rule-level disable. They touch effect logic in 5 UI components; a real fix is backlogged, not attempted here.
+- **D-03**: The lint gate is a hard failure in CI (`eslint` must exit 0). No warn-only ratchet, no baseline file — SC-4 means a PR with a lint error genuinely cannot merge.
+
+### Test Repairs
+- **D-04**: `formula-engine.ts > LOGIC.isBlank` is a SOURCE bug, not a test bug — the `usesNullSafe` result at `formula-engine.ts:164` is computed and discarded, so the null-propagation guard short-circuits before QuickJS sees the expression. Fix the source; keep the existing `propagates null values` regression guard passing.
+- **D-05**: `mutations/workflows.test.ts > deleteWorkflow` is a STALE TEST — `db.select()` is never stubbed. Fix by stubbing `mockDb.select`.
+- **D-06**: Additionally add a new test covering the cascade-delete branch (asserting 3 delete calls). SC-3 names that path explicitly; repairing the mock alone leaves it uncovered.
+
 ### Claude's Discretion
 All implementation choices are at Claude's discretion — pure infrastructure phase. Constraints that follow from the codebase and ROADMAP success criteria:
 
@@ -69,5 +79,7 @@ No specific requirements — infrastructure phase. The four ROADMAP success crit
 
 - Coverage reporting / thresholds — not required by any v1.3 requirement
 - E2E test infrastructure — no requirement in this milestone
+- Proper fix for the 5 React Compiler lint errors (suppressed with reasons in this phase per D-02) — belongs in a UI-focused phase with UI coverage
+- The 140 eslint *warnings* — only errors gate CI in this phase
 
 </deferred>
