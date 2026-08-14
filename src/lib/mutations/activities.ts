@@ -103,6 +103,8 @@ export async function createActivityMutation(
       ownerId: input.userId,
       dueDate: validated.data.dueDate,
       notes: validated.data.notes || null,
+      // custom_fields is never SQL NULL in this database — default to {}.
+      customFields: validated.data.customFields ?? {},
     }).returning()
 
     // Emit CRM event
@@ -192,6 +194,14 @@ export async function updateActivityMutation(
     if (validated.data.assigneeId !== undefined) {
       updateData.assigneeId = validated.data.assigneeId || null
       if ((validated.data.assigneeId || null) !== activity.assigneeId) changedFields.push("assigneeId")
+    }
+    if (validated.data.customFields !== undefined) {
+      // Shallow-merge onto the stored blob so an unrelated edit cannot wipe keys.
+      updateData.customFields = {
+        ...(activity.customFields ?? {}),
+        ...validated.data.customFields,
+      }
+      changedFields.push("customFields")
     }
 
     const [updatedActivity] = await db

@@ -95,6 +95,8 @@ export async function createPersonMutation(
       notes: validated.data.notes || null,
       organizationId,
       ownerId: input.userId,
+      // custom_fields is never SQL NULL in this database — default to {}.
+      customFields: validated.data.customFields ?? {},
     }).returning()
 
     // Emit CRM event
@@ -179,6 +181,14 @@ export async function updatePersonMutation(
     if (organizationId !== undefined) {
       updateData.organizationId = organizationId
       if (organizationId !== person.organizationId) changedFields.push("organizationId")
+    }
+    if (validated.data.customFields !== undefined) {
+      // Shallow-merge onto the stored blob so an unrelated edit cannot wipe keys.
+      updateData.customFields = {
+        ...(person.customFields ?? {}),
+        ...validated.data.customFields,
+      }
+      changedFields.push("customFields")
     }
 
     const [updatedPerson] = await db

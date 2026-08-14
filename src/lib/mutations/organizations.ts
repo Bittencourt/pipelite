@@ -73,6 +73,8 @@ export async function createOrganizationMutation(
       industry: validated.data.industry || null,
       notes: validated.data.notes || null,
       ownerId: input.userId,
+      // custom_fields is never SQL NULL in this database — default to {}.
+      customFields: validated.data.customFields ?? {},
     }).returning()
 
     // Emit CRM event
@@ -133,6 +135,14 @@ export async function updateOrganizationMutation(
       const newNotes = validated.data.notes || null
       updateData.notes = newNotes
       if (newNotes !== organization.notes) changedFields.push("notes")
+    }
+    if (validated.data.customFields !== undefined) {
+      // Shallow-merge onto the stored blob so an unrelated edit cannot wipe keys.
+      updateData.customFields = {
+        ...(organization.customFields ?? {}),
+        ...validated.data.customFields,
+      }
+      changedFields.push("customFields")
     }
 
     const [updatedOrg] = await db
