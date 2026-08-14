@@ -88,7 +88,15 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
   2. A test run collects source tests only — nothing is collected from `.next/**` or `node_modules/**`, so the stale `.next/standalone` formula-engine copy stops running as a second suite
   3. The full suite passes with zero failures, including `mutations/workflows.test.ts > deleteWorkflow` (the cascade-delete path) and `formula-engine.test.ts > LOGIC.isBlank`
   4. A pull request containing a type error, a lint error, or a failing test shows a red required check and cannot be merged
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 32-01-PLAN.md — Add `test`/`typecheck` scripts and scope vitest collection to `src/`, excluding `.next/**` (CI-01, CI-02)
+- [ ] 32-02-PLAN.md — Fix the `LOGIC.isBlank` source bug, repair the stale `deleteWorkflow` mock, and cover the cascade branch (CI-03)
+- [ ] 32-03-PLAN.md — Clear 14 eslint errors: type the Drizzle `any` casts in the v1 API routes and the test mock factories (CI-04)
+- [ ] 32-04-PLAN.md — Clear 13 eslint errors: escape JSX quotes and add five justified React Compiler suppressions (CI-04)
+- [ ] 32-05-PLAN.md — Prove all gates green from a clean checkout, ship `.github/workflows/ci.yml`, document the merge gate (CI-04)
+- [ ] 32-06-PLAN.md — Run CI once on master, create the `master` ruleset requiring the `ci` check, prove a broken PR is blocked (CI-04)
 
 ### Phase 33: Database Indexes for the CRM Core
 **Goal**: The v1.0 CRM tables stop sequential-scanning on their hottest queries
