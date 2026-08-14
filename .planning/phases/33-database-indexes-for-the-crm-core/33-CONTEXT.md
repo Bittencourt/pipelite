@@ -25,6 +25,16 @@ Out of scope:
 <decisions>
 ## Implementation Decisions
 
+### Acceptance & Verification (locked after research)
+- **D-01**: `Bitmap Heap Scan` ← `Bitmap Index Scan using deals_stage_id_idx` **satisfies SC-1**. A plain `Index Scan` node is physically unachievable at any selectivity where the index wins (a ~3,753-row scattered fetch is inherently a bitmap plan). This acceptance must be stated explicitly in the plan and in verification so `/gsd:verify-work` cannot false-fail on node-name wording. SC-2 is unaffected and does produce a literal `Index Scan`.
+- **D-02**: All eleven indexes are **plain, not partial**. Drizzle 0.45.1 can express partial indexes, but on this data a partial `(stage_id) WHERE deleted_at IS NULL` is byte-identical in size and cost to the plain form **and** breaks the stage-delete guard at `src/app/admin/pipelines/actions.ts:483-489`, which queries `stage_id` with no `deleted_at` filter.
+- **D-03**: Do **not** use `.concurrently()`. `drizzle-kit migrate` wraps migrations in `session.transaction()`, and Postgres forbids `CREATE INDEX CONCURRENTLY` inside a transaction — it would hard-fail the migration.
+- **D-04**: Do **not** create a composite `(stage_id, position)` index. Measured: `position` defeats btree deduplication, the index grows 200 kB → 1696 kB, bitmap cost exceeds seq scan, and the planner reverts to `Seq Scan` — it would actively fail SC-1.
+- **D-05**: `deals.owner_id` cannot be demonstrated via `EXPLAIN` (`n_distinct = 1` — every deal shares one owner, so the planner correctly ignores the index). Verify SC-3 by `pg_indexes` catalog assertion across all eleven columns, not by EXPLAIN.
+- **D-06**: Indexes are declared in the Drizzle **schema files** and generated, never hand-written into migration SQL. `workflows_next_run_at_idx` was hand-written into `0009` and silently dropped by `0010` because it existed in the snapshot but never in `workflows.ts` — that scar is why. STATE.md's "partial index precedent" no longer exists in the database; treat it as a cautionary tale, not a pattern.
+- **D-07**: BEFORE-capture of both `EXPLAIN ANALYZE` plans must happen **before** the migration is applied, or SC-1/SC-2's "previously showed a sequential scan" clause becomes unprovable. Task ordering is non-negotiable.
+- **D-08**: `random_page_cost = 4` (SSD-inappropriate default) is why the selectivity crossover sits at 15–19%. Out of scope — it is server config, not an index.
+
 ### Claude's Discretion
 All implementation choices are at Claude's discretion — schema-only infrastructure phase. Constraints that follow from the codebase and success criteria:
 
@@ -60,9 +70,11 @@ All implementation choices are at Claude's discretion — schema-only infrastruc
 
 The four ROADMAP success criteria are the spec.
 
-**Verification risk the planner must confront head-on:** SC-1 and SC-2 require `EXPLAIN ANALYZE` to show an *index scan where it previously showed a sequential scan*. Postgres will prefer a sequential scan on a small table regardless of whether an index exists, because a seq scan is genuinely cheaper there. If the dev database has only a handful of rows, these two criteria cannot be demonstrated by running `EXPLAIN ANALYZE` as-is, and a naive check would either falsely fail or get "fixed" by disabling seq scans, which proves nothing.
+**The small-table risk originally recorded here is VOID — research measured the live DB.** It holds 25,206 deals / 79,023 activities / 46,055 orgs / 38,345 people. Both named queries genuinely sequential-scan today and both flip to index-driven plans with **no seeding needed**. Do not seed — the dev database contains real imported CRM data.
 
-The plan must establish the row counts first and pick an honest strategy — most likely seeding enough representative rows to make the index the cheaper plan, and capturing before/after plans against the same dataset. Do not use `SET enable_seqscan = off` as the proof; it demonstrates only that an index is usable, not that the planner will choose it.
+`SET enable_seqscan = off` remains prohibited: it only applies a cost penalty, so it proves an index is *usable*, never that the planner *prefers* it.
+
+**The real risk is selectivity, not table size.** The measured crossover on `deals` sits between 15% and 19% of the table. The pipeline the kanban page actually loads is `BDR - Base Fria` (no pipeline has `is_default = true`, so the code falls through to `allPipelines[0]`) at 14.9% — inside the winning region but with only a **4% cost margin**. The `Closer` pipeline at 61% correctly keeps a seq scan; that is the planner being right, not a failure. Verification must therefore be pinned to the specific stage IDs the research doc lists, not run against an arbitrary pipeline.
 
 </specifics>
 
