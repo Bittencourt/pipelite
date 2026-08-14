@@ -252,6 +252,23 @@ Process completed with exit code 1
 | `git status --porcelain` | ✅ 0 lines |
 | `src/components/ci-gate-probe.tsx` on master | ✅ does not exist |
 
+### Post-commit: the admin bypass proven, and GitHub says so out loud
+
+Pushing this SUMMARY commit (`6cba5cf`) to `master` with the ruleset already active produced the strongest available confirmation that both rules are in force *and* that `actor_id: 5` really is the admin role:
+
+```
+remote: Bypassed rule violations for refs/heads/master:
+remote: - Required status check "ci" is expected.
+remote: - Changes must be made through a pull request.
+   7de0a5b..6cba5cf  master -> master
+```
+
+GitHub enumerated exactly the two rules that were violated — the required `ci` check and the pull-request requirement — and then allowed the push because the pusher holds the bypassing role. Had the derived `actor_id` been wrong (for example a guessed `4`, which is `write`), this push would have been **rejected** instead. So the derivation is confirmed behaviourally, not just by the role name GraphQL reported.
+
+This also demonstrates the residual risk of D-07 option B in the plainest possible terms: an admin push carrying a red or absent `ci` check lands anyway, with only this `remote:` notice and the ruleset bypass log as the audit trail. That is the accepted trade-off, and it is why CONTRIBUTING.md states it explicitly.
+
+The push triggered **run 31806975288** on `master`, which concluded **`success`** — the default branch is left green.
+
 ## Decisions Made
 
 - **`strict_required_status_checks_policy: false`.** "Require branches to be up to date before merging" is strictly safer but forces a rebase and a fresh ~70 s run on every merge. SC-4 does not ask for it, and CONTRIBUTING.md already lists it as *Optional*. Left off deliberately.
@@ -341,6 +358,16 @@ Task 3 — cleanup
   latest master run                              -> success (31806015296)
   git status --porcelain                         -> 0 lines
   src/components/ci-gate-probe.tsx on master     -> absent
+
+Post-commit — admin bypass confirmed behaviourally
+  git push origin master (6cba5cf, ruleset active)
+    -> accepted, with: "Bypassed rule violations for refs/heads/master:
+                        - Required status check \"ci\" is expected.
+                        - Changes must be made through a pull request."
+    -> both rules confirmed in force; actor_id 5 confirmed to be the bypassing admin role
+  run 31806975288 (master @ 6cba5cf)          -> success  (master left green)
+  file deletions in the SUMMARY commit         -> 0
+  git status --porcelain after commit          -> 0 lines
 
 Doc/reality alignment (T-32-30)
   CONTRIBUTING.md "Enabling the merge gate" table vs applied ruleset -> matches on all 6 rows
