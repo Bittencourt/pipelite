@@ -88,8 +88,20 @@ function getFromRelatedEntities(
 }
 
 /**
+ * Replace string literals with empty ones so that operators and function names that only
+ * appear inside quoted text are never mistaken for code. Without this, an expression such as
+ * `{{A}} + " LOGIC.if("` would be treated as using a null-safe function.
+ */
+function stripStringLiterals(expression: string): string {
+  return expression
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+}
+
+/**
  * Check if expression uses null-safe functions (LOGIC.isBlank, LOGIC.isNumber, LOGIC.if)
- * These functions can handle null arguments and should not trigger null propagation
+ * These functions can handle null arguments and should not trigger null propagation.
+ * Expects an expression whose string literals have already been stripped.
  */
 function usesNullSafeFunction(expression: string): boolean {
   const nullSafePatterns = [
@@ -103,6 +115,36 @@ function usesNullSafeFunction(expression: string): boolean {
   return nullSafePatterns.some(pattern => pattern.test(expression))
 }
 
+const ARITHMETIC_OPERATOR = /[+\-*/%]/
+
+/**
+ * Check whether a specific `{{Field}}` reference is used as an arithmetic operand anywhere in
+ * the expression, by looking at the nearest non-whitespace character on either side of each
+ * occurrence of that reference.
+ *
+ * This is deliberately per-reference rather than per-expression: a null value handed to
+ * `TEXT.len(...)` is handled by the function library (`?? ''`), but the same null used as an
+ * operand of `+ - * / %` is coerced to `0` by the sandbox, which would render a blank field as
+ * a plausible-looking number. Adjacent-only (we never look past a `)`) so that
+ * `TEXT.len({{A}}) + 1` correctly counts as a null-safe use of `{{A}}` while
+ * `{{A}} - {{B}}` does not.
+ *
+ * Expects an expression whose string literals have already been stripped.
+ */
+function isReferenceUsedInArithmetic(expression: string, reference: string): boolean {
+  const referencePattern = /\{\{([^}]+)\}\}/g
+  let match: RegExpExecArray | null
+  while ((match = referencePattern.exec(expression)) !== null) {
+    if (match[1].trim() !== reference) continue
+    const before = expression.slice(0, match.index).trimEnd().slice(-1)
+    const after = expression.slice(match.index + match[0].length).trimStart().charAt(0)
+    if (ARITHMETIC_OPERATOR.test(before) || ARITHMETIC_OPERATOR.test(after)) {
+      return true
+    }
+  }
+  return false
+}
+
 /**
  * Evaluate a formula expression in a sandboxed QuickJS environment
  */
@@ -114,14 +156,23 @@ export async function evaluateFormula(
   // Normalize fieldValues to an empty object if not provided
   const fields = fieldValues ?? {}
   
-  // Null-safe functions (LOGIC.isBlank, TEXT.*, ...) accept null arguments, so they must
-  // reach the sandbox instead of short-circuiting on the null early-returns below.
+  // Null-safe functions (LOGIC.isBlank, TEXT.*, ...) accept null arguments, so a null field
+  // that is only handed to one of them must reach the sandbox instead of short-circuiting on
+  // the null early-returns below. That carve-out must NOT extend to a null field used as an
+  // arithmetic operand: the sandbox coerces `null` to `0` there, so a blank currency field
+  // would render as a plausible-looking number (`{{Price}} - {{Discount}}` -> `-10`) instead of
+  // blank. So the carve-out is decided per field reference, not for the whole expression.
   // Computed before the dependency loop, which returns early.
-  const usesNullSafe = usesNullSafeFunction(expression)
+  const scannedExpression = stripStringLiterals(expression)
+  const usesNullSafe = usesNullSafeFunction(scannedExpression)
 
   // Check for missing fields - if a referenced field doesn't exist at all, return error
   const deps = extractDependencies(expression)
   for (const dep of deps) {
+    // A null value short-circuits to blank unless every use of it is null-safe.
+    const propagateNull =
+      !usesNullSafe || isReferenceUsedInArithmetic(scannedExpression, dep)
+
     // Handle related entity references
     if (dep.includes('.')) {
       const [entity, field] = dep.split('.')
@@ -132,7 +183,7 @@ export async function evaluateFormula(
       if (!(field.trim() in entityData)) {
         return { value: null, error: `Field "${field.trim()}" not found on ${entity.trim()}` }
       }
-      if (entityData[field.trim()] === null && !usesNullSafe) {
+      if (entityData[field.trim()] === null && propagateNull) {
         return { value: null, error: null }
       }
     } else {
@@ -143,10 +194,10 @@ export async function evaluateFormula(
         if (fromRelated === undefined) {
           return { value: null, error: `Unknown field: ${dep}` }
         }
-        if (fromRelated === null && !usesNullSafe) {
+        if (fromRelated === null && propagateNull) {
           return { value: null, error: null }
         }
-      } else if (fields[dep] === null && !usesNullSafe) {
+      } else if (fields[dep] === null && propagateNull) {
         // Field exists but is null
         return { value: null, error: null }
       }

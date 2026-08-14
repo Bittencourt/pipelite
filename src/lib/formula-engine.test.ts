@@ -44,6 +44,65 @@ describe('formula-engine', () => {
       expect(result.value).toBeNull()
     })
 
+    // Regression guards: a null field used as an arithmetic operand must stay blank even when
+    // the expression also calls a null-safe function elsewhere. The sandbox coerces `null` to
+    // `0`, so losing this turns a blank currency field into a plausible-looking number.
+    it('propagates null for an arithmetic operand even when the expression uses TEXT.*', async () => {
+      const result = await evaluateFormula(
+        '{{Price}} - {{Discount}} + TEXT.len({{Name}})',
+        { Price: null, Discount: 10, Name: 'ab' }
+      )
+      expect(result.value).toBeNull()
+      expect(result.error).toBeNull()
+    })
+
+    it('propagates null for an arithmetic operand inside a LOGIC.if branch', async () => {
+      const result = await evaluateFormula(
+        'LOGIC.if(LOGIC.isBlank({{Discount}}), {{Price}}, {{Price}} - {{Discount}})',
+        { Price: null, Discount: 10 }
+      )
+      expect(result.value).toBeNull()
+      expect(result.error).toBeNull()
+    })
+
+    it('propagates null for a related-entity field used in arithmetic', async () => {
+      const result = await evaluateFormula(
+        'TEXT.upper({{Org.Rev}}) + {{Org.Rev2}} * 2',
+        {},
+        { Org: { Rev: 'x', Rev2: null } }
+      )
+      expect(result.value).toBeNull()
+      expect(result.error).toBeNull()
+    })
+
+    it('propagates null when a null-safe function name only appears inside a string literal', async () => {
+      const result = await evaluateFormula('{{A}} + " LOGIC.if("', { A: null })
+      expect(result.value).toBeNull()
+      expect(result.error).toBeNull()
+    })
+
+    it('still reaches the sandbox for a null field passed only to a null-safe function', async () => {
+      // Guards the CI-03 fix: LOGIC.isBlank must see the null, not be short-circuited.
+      const isBlank = await evaluateFormula('LOGIC.isBlank({{Value}})', { Value: null })
+      expect(isBlank.value).toBe(true)
+
+      // The null-safe carve-out is per reference, so arithmetic on a *different* field
+      // must not disable it for this one.
+      const mixed = await evaluateFormula(
+        'LOGIC.if(LOGIC.isBlank({{Value}}), "blank", {{Count}} * 2)',
+        { Value: null, Count: 3 }
+      )
+      expect(mixed.value).toBe('blank')
+    })
+
+    it('still reports unknown entities and fields ahead of null propagation', async () => {
+      const unknownEntity = await evaluateFormula('LOGIC.isBlank({{Org.Rev}})', {})
+      expect(unknownEntity.error).toBe('Unknown entity: Org')
+
+      const unknownField = await evaluateFormula('LOGIC.isBlank({{Nope}})', {})
+      expect(unknownField.error).toBe('Unknown field: Nope')
+    })
+
     it('handles missing field as null', async () => {
       const result = await evaluateFormula('{{NonExistent}}', {})
       expect(result.value).toBeNull()
