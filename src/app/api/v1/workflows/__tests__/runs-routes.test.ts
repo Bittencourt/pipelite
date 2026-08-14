@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { NextRequest } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
+// Type-only import: erased at runtime, so it does not resurrect the mocked module below.
+import type { ApiAuthContext } from "@/lib/api/auth"
+
+/** Mirrors the real `withApiAuth` handler contract in src/lib/api/auth.ts. */
+type ApiRouteHandler = (
+  request: NextRequest,
+  context: ApiAuthContext
+) => Promise<NextResponse>
 
 // Mock db
 vi.mock("@/db", () => {
@@ -11,7 +19,7 @@ vi.mock("@/db", () => {
 
 // Mock auth - auto-approve all requests, pass NextRequest through
 vi.mock("@/lib/api/auth", () => ({
-  withApiAuth: vi.fn((req: NextRequest, handler: Function) =>
+  withApiAuth: vi.fn((req: NextRequest, handler: ApiRouteHandler) =>
     handler(req, { userId: "user-1", keyId: "key-1" })
   ),
 }))

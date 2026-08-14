@@ -5,7 +5,7 @@ const { mockAuth, mockUpdate, mockSelect, mockInsert, mockRevalidatePath } = vi.
   const mockReturning = vi.fn()
   const mockWhere = vi.fn(() => ({ returning: mockReturning }))
   const mockSet = vi.fn(() => ({ where: mockWhere }))
-  const mockUpdate = vi.fn(() => ({ set: mockSet }))
+  const mockUpdate = vi.fn<(table?: unknown) => { set: typeof mockSet }>(() => ({ set: mockSet }))
 
   const mockSelectResult = vi.fn()
   const mockSelectWhere = vi.fn(() => mockSelectResult)
@@ -14,7 +14,7 @@ const { mockAuth, mockUpdate, mockSelect, mockInsert, mockRevalidatePath } = vi.
 
   const mockInsertReturning = vi.fn()
   const mockInsertValues = vi.fn(() => ({ returning: mockInsertReturning }))
-  const mockInsert = vi.fn(() => ({ values: mockInsertValues }))
+  const mockInsert = vi.fn<(table?: unknown) => { values: typeof mockInsertValues }>(() => ({ values: mockInsertValues }))
 
   const mockAuth = vi.fn()
   const mockRevalidatePath = vi.fn()
@@ -40,9 +40,9 @@ vi.mock("@/auth", () => ({ auth: mockAuth }))
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }))
 vi.mock("@/db", () => ({
   db: {
-    update: (table: unknown) => (mockUpdate as any)(table),
-    select: () => (mockSelect as any)(),
-    insert: (table: unknown) => (mockInsert as any)(table),
+    update: (table: unknown) => mockUpdate(table),
+    select: () => mockSelect(),
+    insert: (table: unknown) => mockInsert(table),
   },
 }))
 // Mock drizzle-orm operators as passthrough

@@ -164,7 +164,7 @@ export function transformPipedriveStage(
   // Determine stage type based on rotten_flag and deal_probability
   // In Pipedrive, won/lost stages are typically identified differently
   // For now, default to 'open' - the import wizard will handle terminal stages
-  let type: "open" | "won" | "lost" = "open"
+  const type: "open" | "won" | "lost" = "open"
 
   return {
     pipelineId,

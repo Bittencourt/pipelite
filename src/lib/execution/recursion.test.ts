@@ -64,13 +64,13 @@ describe("createWorkflowRun with depth enforcement", () => {
   const { mockReturning, mockValues, mockInsert } = vi.hoisted(() => {
     const mockReturning = vi.fn()
     const mockValues = vi.fn(() => ({ returning: mockReturning }))
-    const mockInsert = vi.fn(() => ({ values: mockValues }))
+    const mockInsert = vi.fn<(table?: unknown) => { values: typeof mockValues }>(() => ({ values: mockValues }))
     return { mockReturning, mockValues, mockInsert }
   })
 
   vi.mock("@/db", () => ({
     db: {
-      insert: (table: unknown) => (mockInsert as any)(table),
+      insert: (table: unknown) => mockInsert(table),
     },
   }))
 
