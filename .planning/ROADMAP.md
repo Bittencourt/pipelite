@@ -364,6 +364,14 @@ on `rotten_flag` and `deal_probability`". The won/lost mapping was never impleme
 from the Phase 32 fix pass — it is a product decision about Pipedrive stage mapping, not a
 regression. Address alongside the import wizard's terminal-stage handling.
 
+**999.20 — `npm run db:migrate` cannot reach the DB from the host** (captured 2026-08-14, Phase 33)
+`drizzle.config.ts` reads `DATABASE_URL`. `.env` sets it to `postgres:5432` (the Docker-network hostname —
+unresolvable from the host, fails `EAI_AGAIN`) and `.env.local` sets it to `localhost:5432` — the **wrong
+port**, since Postgres publishes on **5433**. So the documented migrate command fails from the host and has
+to be run with an inline `DATABASE_URL` override. Phase 33 worked around it without editing a tracked file.
+Fix: point `.env.local` at `localhost:5433`. This will bite every future phase that runs a migration
+(34, 35, 36, 37, 39, 40 all add schema). Cheap fix, high recurring cost if left.
+
 ---
 
 All 12 original backlog items (999.1-999.12, captured 2026-08-12 and 2026-08-13) were promoted
