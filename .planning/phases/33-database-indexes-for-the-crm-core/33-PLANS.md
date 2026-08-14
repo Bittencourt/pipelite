@@ -175,4 +175,186 @@ proof path that is the only admissible evidence for `deals.owner_id` (D-05).
 
 ## AFTER (11 indexes)
 
-_Pending — filled in by plan 33-03 after the migration is applied._
+Captured 2026-08-14, plan 33-03, immediately after `drizzle/0012_typical_radioactive_man.sql`
+was applied. Produced by re-running `verify-plans.sql` **byte-identically** — the file was not
+edited between the two halves (`git diff --name-only HEAD -- verify-plans.sql` is empty), which is
+what makes the comparison sound. `psql -f` exit 0. Verified at capture time: exactly 11 non-pkey
+indexes across the four tables, row counts still 25,206 / 79,023 / 46,055 / 38,345,
+`drizzle.__drizzle_migrations` at 5 rows, `random_page_cost` still 4.
+
+### Q1 — SC-1, kanban board, `BDR - Base Fria` default pipeline (14.9% selectivity)
+
+Purpose: identical statement to the BEFORE Q1. Must now reach `deals` through the index.
+
+```
+                                                               QUERY PLAN                                                               
+----------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=2836.92..2846.31 rows=3755 width=73) (actual time=3.643..3.800 rows=3753 loops=1)
+   Sort Key: "position"
+   Sort Method: quicksort  Memory: 474kB
+   Buffers: shared hit=423 read=6
+   ->  Bitmap Heap Scan on deals  (cost=45.68..2613.98 rows=3755 width=73) (actual time=0.301..1.893 rows=3753 loops=1)
+         Recheck Cond: (stage_id = ANY ('{ad4d9fb5-92c7-4170-8e93-2163153a99d9,01374f39-b838-4977-a48e-8fd126aa83f5}'::text[]))
+         Filter: (deleted_at IS NULL)
+         Heap Blocks: exact=419
+         Buffers: shared hit=420 read=6
+         ->  Bitmap Index Scan on deals_stage_id_idx  (cost=0.00..44.75 rows=3755 width=0) (actual time=0.240..0.240 rows=3753 loops=1)
+               Index Cond: (stage_id = ANY ('{ad4d9fb5-92c7-4170-8e93-2163153a99d9,01374f39-b838-4977-a48e-8fd126aa83f5}'::text[]))
+               Buffers: shared hit=1 read=6
+ Planning:
+   Buffers: shared hit=255
+ Planning Time: 3.810 ms
+ Execution Time: 4.103 ms
+(16 rows)
+```
+
+`Bitmap Heap Scan on deals` fed by `Bitmap Index Scan on deals_stage_id_idx`, exactly the plan
+D-01 pre-accepted. The plan carries no hash-join condition against the `stages` table, so the
+literal value-list form held across both runs (Pitfall 4) rather than the subquery form leaking in.
+
+### Q2 — SC-1 wide-margin corroboration, single stage (~1.3% selectivity)
+
+```
+                                                               QUERY PLAN                                                               
+----------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=2827.13..2835.80 rows=3467 width=73) (actual time=2.715..2.859 rows=3465 loops=1)
+   Sort Key: "position"
+   Sort Method: quicksort  Memory: 447kB
+   Buffers: shared hit=392
+   ->  Bitmap Heap Scan on deals  (cost=43.16..2623.28 rows=3467 width=73) (actual time=0.180..1.235 rows=3465 loops=1)
+         Recheck Cond: (stage_id = 'ad4d9fb5-92c7-4170-8e93-2163153a99d9'::text)
+         Filter: (deleted_at IS NULL)
+         Heap Blocks: exact=387
+         Buffers: shared hit=392
+         ->  Bitmap Index Scan on deals_stage_id_idx  (cost=0.00..42.29 rows=3467 width=0) (actual time=0.133..0.134 rows=3465 loops=1)
+               Index Cond: (stage_id = 'ad4d9fb5-92c7-4170-8e93-2163153a99d9'::text)
+               Buffers: shared hit=5
+ Planning Time: 0.095 ms
+ Execution Time: 3.116 ms
+(14 rows)
+```
+
+### Q3 — SC-2, activity-reminder cron query
+
+```
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
+ Index Scan using activities_due_date_idx on activities  (cost=0.30..12.21 rows=1 width=130) (actual time=0.037..0.037 rows=0 loops=1)
+   Index Cond: ((due_date >= now()) AND (due_date <= (now() + '01:00:00'::interval)))
+   Filter: ((completed_at IS NULL) AND (deleted_at IS NULL) AND (reminder_sent_at IS NULL))
+   Buffers: shared hit=5
+ Planning:
+   Buffers: shared hit=96
+ Planning Time: 0.974 ms
+ Execution Time: 0.055 ms
+(8 rows)
+```
+
+A literal `Index Scan using activities_due_date_idx`. The `due_date` range moved from the Filter
+into the `Index Cond`; the three `IS NULL` predicates remain a cheap residual Filter over the
+single candidate row, exactly as designed (see "Not gaps" on the declined narrow partial index).
+
+### Q4 — SC-3, catalog assertion
+
+Eleven `t` rows — the required AFTER result, and the only proof available for `deals.owner_id`.
+
+```
+      tbl      |       col       | index_backed 
+---------------+-----------------+--------------
+ activities    | deal_id         | t
+ activities    | deleted_at      | t
+ activities    | due_date        | t
+ deals         | deleted_at      | t
+ deals         | organization_id | t
+ deals         | owner_id        | t
+ deals         | person_id       | t
+ deals         | stage_id        | t
+ organizations | deleted_at      | t
+ people        | deleted_at      | t
+ people        | organization_id | t
+(11 rows)
+```
+
+---
+
+## Deltas
+
+Taken from the two captures in **this file**, not from `33-RESEARCH.md`. Costs and buffers are the
+graded figures.
+
+| Statement | BEFORE node | AFTER node | Cost (before → after) | Buffers on the scanned table (before → after) |
+|-----------|-------------|------------|------------------------|-----------------------------------------------|
+| **Q1** kanban, BDR - Base Fria (14.9%) | `Seq Scan on deals` | `Bitmap Heap Scan on deals` ← `Bitmap Index Scan on deals_stage_id_idx` | 2729.07 → **2613.98** (−4.2%) | 2414 → **426** (420 hit + 6 read) — **5.7× fewer** |
+| **Q2** kanban, single stage (~1.3%) | `Seq Scan on deals` | `Bitmap Heap Scan on deals` ← `Bitmap Index Scan on deals_stage_id_idx` | 2729.07 → **2623.28** | 2414 → **392** — 6.2× fewer |
+| **Q3** reminder cron | `Seq Scan on activities`, `Rows Removed by Filter: 79023` | `Index Scan using activities_due_date_idx` | 5072.02 → **12.21** — **415× cheaper** | 3294 → **5** — **659× fewer** |
+| **Q4** catalog | eleven `index_backed = f` | eleven `index_backed = t` | — | — |
+
+Total-query cost including the `Sort` node: Q1 2952.02 → 2836.92, Q2 2932.93 → 2827.13. The `Sort`
+survives in every variant — `ORDER BY position` across a multi-value `stage_id = ANY (...)` cannot
+be satisfied by a leading-`stage_id` index, and the composite that might have removed it was
+measured to fail SC-1 outright (D-04).
+
+Execution times are reported for interest only and are **not graded**, because they fluctuate run
+to run with cache state: Q1 13.243 ms → 4.103 ms, Q2 11.789 ms → 3.116 ms, Q3 15.197 ms →
+0.055 ms.
+
+---
+
+## Verdicts
+
+ROADMAP Phase 33 success criteria, quoted verbatim.
+
+| SC | Criterion (verbatim) | Verdict | Evidence |
+|----|----------------------|---------|----------|
+| **SC-1** | "`EXPLAIN ANALYZE` on the kanban board query shows an index scan on `deals.stage_id` where it previously showed a sequential scan" | ✅ **SATISFIED** | AFTER Q1 shows `Bitmap Heap Scan on deals` fed by `Bitmap Index Scan on deals_stage_id_idx` with `Index Cond: (stage_id = ANY (...))`, where BEFORE Q1 — the byte-identical statement, in the same file — shows `Seq Scan on deals … Rows Removed by Filter: 21453`. Buffers on the deals node 2414 → 426. **Per D-01 the bitmap node form IS an index scan for grading purposes**: the index is unambiguously the access path, and a literal plain `Index Scan` node on `deals_stage_id_idx` is physically unachievable for a ~3,753-row scattered fetch at any selectivity where the index beats a sequential scan. Its absence must **not** be required or graded as a failure. Q2 corroborates at ~1.3% selectivity, where the margin is far wider, with the same index-driven plan. |
+| **SC-2** | "`EXPLAIN ANALYZE` on the activity-reminder cron query shows an index scan on `activities.due_date`" | ✅ **SATISFIED** | AFTER Q3 shows the literal `Index Scan using activities_due_date_idx on activities`, cost **5072.02 → 12.21** (415× cheaper) and buffers **3294 → 5** (659× fewer), where BEFORE Q3 shows `Seq Scan on activities` with `Rows Removed by Filter: 79023`. The `due_date` range predicate moved into `Index Cond`. |
+| **SC-3** | "Every core CRM foreign key (`deals.organization_id`, `deals.person_id`, `deals.owner_id`, `activities.deal_id`, `people.organization_id`) and every `deleted_at` filter column on deals/orgs/people/activities is index-backed via a single migration" | ✅ **SATISFIED** | AFTER Q4 returns eleven `index_backed = t` rows against the live catalog, testing the **leading** index column (`a.attnum = i.indkey[0]`), up from eleven `f` in the BEFORE half. Delivered by exactly one generated migration, `drizzle/0012_typical_radioactive_man.sql`, containing 11 `CREATE INDEX` statements and nothing else. `deals.owner_id` is **catalog-proven only (D-05)**: `n_distinct = 1` in this dataset, so the planner correctly ignores that index forever and no plan capture can demonstrate it — SC-3 asks for index-backing, which is a catalog fact. |
+| **SC-4** | "Application behavior is unchanged — the suite passes with no test modifications" | ✅ **SATISFIED** | All three Phase 32 gates green: `npm test` exit 0 at exactly the baseline (41 files passed, 461 passed / 4 skipped), `npm run typecheck` exit 0, `npm run lint` exit 0. The whole-phase diff touches **zero** `*.test.ts` files and nothing outside the four schema files, the 0012 migration, its snapshot and the journal. No query, server action or route was modified; row visibility is byte-identical because soft-delete remains enforced solely by the app's untouched `isNull(deletedAt)` predicates. |
+
+---
+
+## Not gaps
+
+Correct behaviour that must not be mistaken for a missing result:
+
+- **The `Closer` pipeline keeps its `Seq Scan`.** It covers 61% of the deals table, well past the
+  measured 15–19% selectivity crossover, so a sequential scan is genuinely cheaper. The planner is
+  right. Deliberately not measured here.
+- **`deals.owner_id` never uses its index.** `n_distinct = 1` — every deal shares one owner — so
+  `owner_id = ?` matches 100% or 0% of rows. Catalog-backed (Q4), plan-invisible forever (D-05).
+- **The `deleted_at IS NULL` read path is correctly NOT faster.** Those predicates match ~100% of
+  rows, so the planner rightly ignores the index (measured: `organizations WHERE deleted_at IS NULL
+  ORDER BY name LIMIT 50` still chooses a `Seq Scan`). The four `deleted_at` indexes serve the
+  `IS NOT NULL` direction — `deals WHERE deleted_at IS NOT NULL` → `Index Scan using
+  deals_deleted_at_idx`, cost 8.30 — which is what Phase 37 Trash & Restore needs. SC-3 asks only
+  that the columns be index-backed.
+- **The `Sort` node survives on Q1/Q2.** No single-column index can satisfy `ORDER BY position`
+  across a multi-value `stage_id = ANY (...)`, and the `(stage_id, position)` composite that might
+  have was measured to grow the index 200 kB → 1696 kB and push the planner back to `Seq Scan`,
+  actively failing SC-1 (D-04).
+- **No narrow partial index was added for the reminder cron.** `(due_date) WHERE completed_at IS
+  NULL AND deleted_at IS NULL AND reminder_sent_at IS NULL` is cheaper in isolation (8.31 vs 12.21,
+  64 kB vs 568 kB), but it would be a twelfth index outside the PERF-01 list and
+  `reminder_sent_at IS NULL` is true for all 79,022 activities today, so it prunes nothing.
+- **`random_page_cost` stays at 4 by decision (D-08).** Verified still `4` after the migration. It
+  is the Postgres default, calibrated for spinning disks, and it is precisely why the crossover
+  sits as low as 15–19%; lowering it to ~1.1 for SSD would widen every index win. That is server
+  configuration rather than an index, and it is deferred to a later milestone.
+
+### Measured cost of this phase
+
+- **Storage:** **7328 kB** of added index footprint across the eleven indexes, measured live —
+  `activities_deal_id_idx` 1328 kB, `deals_person_id_idx` 1280 kB, `people_organization_id_idx`
+  1208 kB, `deals_organization_id_idx` 1192 kB, `activities_due_date_idx` 568 kB,
+  `activities_deleted_at_idx` 552 kB, `organizations_deleted_at_idx` 328 kB,
+  `people_deleted_at_idx` 280 kB, `deals_owner_id_idx` 200 kB, `deals_stage_id_idx` 200 kB,
+  `deals_deleted_at_idx` 192 kB.
+- **Write availability:** a **~1.08 s** write-blocking window per deploy. `CREATE INDEX` without
+  `CONCURRENTLY` takes a `ShareLock` per table — reads continue, writes block for the build. All
+  eleven statements run in one transaction, so a failure leaves zero indexes rather than a partial
+  set. Acceptable for a single-instance self-hosted deployment applied at deploy time; a future
+  multi-instance or high-write deployment should re-evaluate rather than rediscover this.
+- **Reversal:** drizzle-kit has no down migrations. Manual reversal is a lossless `DROP INDEX` of
+  the eleven named indexes **plus** removing the declarations from the four schema files — omit the
+  schema revert and the next `generate` would recreate them. No row is altered, moved or
+  reinterpreted, so there is no data-loss path to roll back from.
