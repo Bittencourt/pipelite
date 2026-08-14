@@ -402,6 +402,17 @@ to be run with an inline `DATABASE_URL` override. Phase 33 worked around it with
 Fix: point `.env.local` at `localhost:5433`. This will bite every future phase that runs a migration
 (34, 35, 36, 37, 39, 40 all add schema). Cheap fix, high recurring cost if left.
 
+**999.23 — POST responses echo pre-recalculation formula values** (captured 2026-08-14, Phase 34)
+The create mutations return the raw `.returning()` row, so a `POST /api/v1/{organizations,people,deals,activities}`
+201 body carries the **un-computed** custom-field blob. The stored value, the emitted `crmBus` event and any
+subsequent `GET` are all correct — only the create response is stale, and `PUT` has no such gap.
+
+SC-1 is therefore satisfied ("a subsequent GET returns recomputed values"), which is why Phase 34 did not
+chase it: folding the recalc into the return value would break two plan 34-02 assertions that compare the
+result against a fixture, and weakening existing tests was forbidden. But it leaves an API inconsistency —
+a client that trusts the 201 body sees different data than the same client re-reading the record. Decide
+once for all four entities. See `34-07-SUMMARY.md`.
+
 **999.22 — Condition builder UI has no field picker for bracket paths** (captured 2026-08-14, Phase 34)
 Phase 34 plan 34-12 made `resolveFieldPath` accept bracket-quoted segments, so a workflow condition can now
 reach `customFields["Previsão de início operação"]`. But the condition builder UI offers no picker that
