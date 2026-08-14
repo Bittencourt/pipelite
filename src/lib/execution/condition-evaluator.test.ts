@@ -348,3 +348,243 @@ describe("formula custom fields in conditions", () => {
     expect(evaluateOperator(null, "is_empty", null)).toBe(true)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Bracket-notation field paths (SC-3, plan 34-12)
+//
+// 152 of the 169 custom field definitions in the live database (90%) have names
+// containing spaces or punctuation, so a dot-only path cannot NAME most fields.
+// The fixture below uses real names drawn from that dataset.
+//
+// resolveFieldPath is shared with actions/interpolate.ts and delay-resolver.ts,
+// so the non-regression assertions here matter more than the new capability.
+// ---------------------------------------------------------------------------
+
+const REAL_CUSTOM_FIELDS: Record<string, unknown> = {
+  "Código Mãe": "TYR-4471",
+  "CNPJ / CPF": "12.345.678/0001-90",
+  "UUID UC (TYR Core)": "9f3a1c22-4e0b-4f2a-9a1d-7c53b0e1d004",
+  "Tem solução de solar?": "Sim",
+  "Previsão de início operação": "2026-09-01",
+  "E-mail de Contato 1": "contato@tyrenergia.com.br",
+  "Consumo Médio em MWh": 1035,
+  // A name containing a literal dot — a dot path mis-splits this one.
+  "Índice T.U.S.D.": 0.42,
+  // Nested value, for mixed bracket-then-dot traversal.
+  "Dados Extras": { id: "extra-1", ativo: true },
+}
+
+const realCtx = () => makeCtx({ customFields: { ...REAL_CUSTOM_FIELDS } })
+
+describe("resolveFieldPath — bracket notation", () => {
+  it('resolves a name with spaces and non-ASCII: customFields["Código Mãe"]', () => {
+    expect(
+      resolveFieldPath(realCtx(), 'trigger.data.customFields["Código Mãe"]')
+    ).toBe("TYR-4471")
+  })
+
+  it("accepts single quotes as well as double quotes", () => {
+    expect(
+      resolveFieldPath(realCtx(), "trigger.data.customFields['CNPJ / CPF']")
+    ).toBe("12.345.678/0001-90")
+  })
+
+  it("resolves a name containing parentheses", () => {
+    expect(
+      resolveFieldPath(
+        realCtx(),
+        'trigger.data.customFields["UUID UC (TYR Core)"]'
+      )
+    ).toBe("9f3a1c22-4e0b-4f2a-9a1d-7c53b0e1d004")
+  })
+
+  it("resolves a name containing a question mark and non-ASCII", () => {
+    expect(
+      resolveFieldPath(
+        realCtx(),
+        'trigger.data.customFields["Tem solução de solar?"]'
+      )
+    ).toBe("Sim")
+  })
+
+  it("resolves a name containing a hyphen and a digit", () => {
+    expect(
+      resolveFieldPath(
+        realCtx(),
+        'trigger.data.customFields["E-mail de Contato 1"]'
+      )
+    ).toBe("contato@tyrenergia.com.br")
+  })
+
+  it("treats a dot inside brackets as part of the name, where a dot path mis-splits", () => {
+    const ctx = realCtx()
+    // Bracket-quoted: the dots belong to the name.
+    expect(
+      resolveFieldPath(ctx, 'trigger.data.customFields["Índice T.U.S.D."]')
+    ).toBe(0.42)
+    // Dot notation cannot express it — this is the gap being closed.
+    expect(
+      resolveFieldPath(ctx, "trigger.data.customFields.Índice T.U.S.D.")
+    ).toBeUndefined()
+  })
+
+  it("resolves a bracket segment followed by a dot segment", () => {
+    expect(
+      resolveFieldPath(realCtx(), 'trigger.data.customFields["Dados Extras"].id')
+    ).toBe("extra-1")
+  })
+
+  it("resolves consecutive bracket segments", () => {
+    expect(
+      resolveFieldPath(
+        realCtx(),
+        'trigger["data"]["customFields"]["Consumo Médio em MWh"]'
+      )
+    ).toBe(1035)
+  })
+
+  it("resolves a bracket segment at the root of the path", () => {
+    expect(resolveFieldPath(realCtx(), '["trigger"]["type"]')).toBe("crm_event")
+  })
+
+  it("returns undefined for a bracket key that is absent, without throwing", () => {
+    const ctx = realCtx()
+    expect(() =>
+      resolveFieldPath(ctx, 'trigger.data.customFields["Não Existe"]')
+    ).not.toThrow()
+    expect(
+      resolveFieldPath(ctx, 'trigger.data.customFields["Não Existe"]')
+    ).toBeUndefined()
+  })
+
+  it("branches a workflow condition on a punctuated custom field name (SC-3)", () => {
+    const groups: ConditionGroup[] = [
+      {
+        operator: "and",
+        conditions: [
+          {
+            fieldPath: 'trigger.data.customFields["Consumo Médio em MWh"]',
+            operator: "greater_than",
+            value: 1000,
+          },
+          {
+            fieldPath: 'trigger.data.customFields["Tem solução de solar?"]',
+            operator: "equals",
+            value: "Sim",
+          },
+        ],
+      },
+    ]
+    expect(
+      evaluateCondition({ groups, logicOperator: "and" }, realCtx())
+    ).toBe(true)
+  })
+})
+
+describe("resolveFieldPath — dot-notation non-regression", () => {
+  it("resolves every pre-existing dot path shape identically", () => {
+    const ctx: ExecutionContext = {
+      trigger: { type: "crm_event", data: { deal: { value: 5000 }, customFields: { Margin: 1035 } } },
+      nodes: {
+        "node-1": { output: { result: "success" }, status: "completed" },
+      },
+    }
+    expect(resolveFieldPath(ctx, "trigger.type")).toBe("crm_event")
+    expect(resolveFieldPath(ctx, "trigger.data.deal.value")).toBe(5000)
+    expect(resolveFieldPath(ctx, "trigger.data.customFields.Margin")).toBe(1035)
+    expect(resolveFieldPath(ctx, "nodes.node-1.output.result")).toBe("success")
+    expect(resolveFieldPath(ctx, "nodes.node-1.status")).toBe("completed")
+    // Whole-object resolution still works (interpolate.ts JSON-stringifies these).
+    expect(resolveFieldPath(ctx, "trigger.data.deal")).toEqual({ value: 5000 })
+  })
+
+  it("returns undefined for a missing key and a null intermediate", () => {
+    expect(
+      resolveFieldPath(makeCtx({}), "trigger.data.nonexistent.field")
+    ).toBeUndefined()
+    expect(
+      resolveFieldPath(makeCtx({ deal: null }), "trigger.data.deal.value")
+    ).toBeUndefined()
+  })
+
+  it("returns undefined when traversing into a primitive", () => {
+    expect(resolveFieldPath(makeCtx(), "trigger.type.nope")).toBeUndefined()
+  })
+
+  it("returns undefined for empty and non-string paths without throwing", () => {
+    const ctx = realCtx()
+    expect(resolveFieldPath(ctx, "")).toBeUndefined()
+    expect(resolveFieldPath(ctx, "   ")).toBeUndefined()
+    expect(resolveFieldPath(ctx, null)).toBeUndefined()
+    expect(resolveFieldPath(ctx, undefined)).toBeUndefined()
+    expect(resolveFieldPath(ctx, 42 as unknown as string)).toBeUndefined()
+  })
+
+  it("keeps empty dot segments resolving to undefined as before", () => {
+    const ctx = realCtx()
+    expect(resolveFieldPath(ctx, "trigger..type")).toBeUndefined()
+    expect(resolveFieldPath(ctx, "trigger.type.")).toBeUndefined()
+  })
+})
+
+describe("resolveFieldPath — malformed paths return undefined, never throw", () => {
+  const MALFORMED = [
+    'trigger.data.customFields["oops', // unterminated bracket
+    "trigger.data.customFields['oops", // unterminated, single quote
+    "trigger.data.customFields[]", // empty bracket
+    'trigger.data.customFields[""]', // empty name
+    "trigger.data.customFields[oops]", // unquoted content
+    "trigger.data.customFields[\"oops']", // mismatched quotes
+    'trigger.data.customFields["oops"', // missing closing bracket
+    'trigger.data.customFields["oops"]junk', // trailing junk after ]
+    "trigger.data.customFields[", // dangling open bracket
+    "[", // bare open bracket
+    "]", // bare close bracket
+  ]
+
+  it.each(MALFORMED)("returns undefined for %j without throwing", (path) => {
+    const ctx = realCtx()
+    expect(() => resolveFieldPath(ctx, path)).not.toThrow()
+    expect(resolveFieldPath(ctx, path)).toBeUndefined()
+  })
+})
+
+describe("resolveFieldPath — prototype keys are not resolvable (T-34-21)", () => {
+  const PROTO_PATHS = [
+    "trigger.data.__proto__",
+    'trigger.data["__proto__"]',
+    'trigger.data.customFields["__proto__"]',
+    "trigger.data.constructor",
+    'trigger.data["constructor"]',
+    'trigger.data.constructor["prototype"]',
+    "trigger.data.customFields.prototype",
+  ]
+
+  it.each(PROTO_PATHS)("returns undefined for %j", (path) => {
+    expect(resolveFieldPath(realCtx(), path)).toBeUndefined()
+  })
+
+  it("does not expose inherited properties as field values", () => {
+    expect(
+      resolveFieldPath(realCtx(), 'trigger.data["__proto__"]["polluted"]')
+    ).toBeUndefined()
+  })
+})
+
+describe("resolveFieldPath — parsing is linear, not backtracking (T-34-20)", () => {
+  it("handles a pathological path in well under 100ms", () => {
+    const ctx = realCtx()
+    const pathological = [
+      "trigger.data" + '["a"]'.repeat(20000),
+      'trigger.data.customFields["' + "a".repeat(200000), // unterminated
+      "trigger." + "a.".repeat(50000) + "b",
+      'trigger.data["' + '"'.repeat(50000) + '"]',
+    ]
+    const start = Date.now()
+    for (const path of pathological) {
+      expect(() => resolveFieldPath(ctx, path)).not.toThrow()
+      expect(resolveFieldPath(ctx, path)).toBeUndefined()
+    }
+    expect(Date.now() - start).toBeLessThan(100)
+  })
+})
