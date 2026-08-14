@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, jsonb, index } from "drizzle-orm/pg-core"
 import { users } from "./users"
 
 export const organizations = pgTable('organizations', {
@@ -13,4 +13,6 @@ export const organizations = pgTable('organizations', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   deletedAt: timestamp('deleted_at'),
-})
+}, (table) => ({
+  deletedAtIdx: index('organizations_deleted_at_idx').on(table.deletedAt),
+}))

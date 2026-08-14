@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, jsonb, index } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { deals } from "./deals"
 import { activityTypes } from "./activity-types"
@@ -18,4 +18,8 @@ export const activities = pgTable('activities', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   deletedAt: timestamp('deleted_at', { mode: 'date' }), // Soft delete
-})
+}, (table) => ({
+  dueDateIdx: index('activities_due_date_idx').on(table.dueDate),
+  dealIdIdx: index('activities_deal_id_idx').on(table.dealId),
+  deletedAtIdx: index('activities_deleted_at_idx').on(table.deletedAt),
+}))
