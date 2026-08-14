@@ -1,0 +1,68 @@
+# Gates every push to master and every pull request targeting master on the
+# same three commands a developer runs locally: tsc --noEmit, eslint, vitest run.
+#
+# Action versions confirmed live against the GitHub API on 2026-08-13:
+#   actions/checkout   v7.0.1 (2026-07-20)
+#   actions/setup-node v7.0.0 (2026-07-14)
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  # Deliberately no path filter. A workflow skipped by a path filter never
+  # reports its check, and GitHub treats a required check that never reports as
+  # permanently pending — every docs-only PR would become unmergeable. The full
+  # run is ~95s, so there is nothing worth optimising away.
+
+# Least privilege: this job only reads code. It publishes nothing and comments
+# nothing, so read access to the repository contents is all it ever needs.
+permissions:
+  contents: read
+
+# Supersede in-flight runs for the same ref so rapid pushes don't queue up.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    # This name is the check-run name a maintainer requires in the master
+    # ruleset — keep it short and stable.
+    name: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # Active LTS (EOL 2028-04-30). The binding floor is vite 7's
+          # engines ^20.19.0 || >=22.12.0, reached transitively via vitest —
+          # not next's >=20.9.0.
+          node-version: 24
+          # Caches the global npm cache (not node_modules), keyed on
+          # package-lock.json, so it can never yield a half-installed tree.
+          cache: npm
+
+      - name: Install dependencies
+        # Lockfile-exact and fails on a lockfile/manifest mismatch. Verified to
+        # exit 0 on a clean checkout with no extra install flags.
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        # Report all three gates in one run. Without this, a job aborts at the
+        # first failing step and a contributor discovers the lint failure only
+        # after fixing the type error. This condition is the modern replacement
+        # for always(), which also burns minutes on cancelled runs.
+        if: ${{ !cancelled() }}
+        run: npm run lint
+
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: npm test
