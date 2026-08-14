@@ -15,9 +15,8 @@
  * leaves the entity written with stale formula values — the same state as today, and
  * self-healing on the next save.
  *
- * Scope: ONE entity. The cross-entity cascade, the child lookups and the evaluation budget are
- * plan 34-04's work; `changedRelatedFields` is accepted here already so that plan adds no
- * signature change.
+ * Scope: one entity, plus exactly ONE hop of dependent children (plan 34-04). The cascade is
+ * bounded by a single shared evaluation budget; see `FORMULA_EVALUATION_BUDGET`.
  */
 
 import { db } from "@/db"
@@ -30,7 +29,8 @@ import {
   type CustomFieldDefinition,
   type FormulaConfig,
 } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { and, eq, isNull } from "drizzle-orm"
+import type { AnyPgColumn, PgTable } from "drizzle-orm/pg-core"
 
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import {
@@ -155,6 +155,104 @@ const FORMULA_EVAL_OPTIONS = {
 export const CHANGED_FIELDS_CUSTOM_SENTINEL = "customFields"
 
 const CIRCULAR_DEPENDENCY_ERROR = "Circular dependency detected"
+
+/* ---------------------------------------------------------------------------------------- *
+ * Cascade vocabulary and bounds — D-03 / D-04 / D-09 / D-13
+ * ---------------------------------------------------------------------------------------- */
+
+/**
+ * The maximum number of formula evaluations ONE call to `recalculateFormulas` may perform,
+ * counting the saved entity's own formulas and every cascaded child together (D-04/D-13).
+ *
+ * **Do not "optimise" this away — the arithmetic is the whole point.**
+ *
+ * - 500 x 1.195 ms (host, RESEARCH) = 598 ms; 500 x 0.876 ms (measured IN THE CONTAINER by
+ *   plan 34-01, the number that actually matters) = 438 ms. Both sit inside the ~2000 ms
+ *   ceiling a synchronous request can absorb.
+ * - It admits the entire measured single-hop worst case: the largest organization in the live
+ *   data has 114 deals + 10 people = 124 child rows, so even 4 formulas each is 496.
+ * - It rejects the two-hop case (organization -> deals -> activities, ~626 evaluations,
+ *   ~750 ms) by construction, via `CASCADE_DEPTH`.
+ * - A row-count cap would be strictly worse: it does not scale with formulas per entity, so
+ *   200 rows x 5 formulas = 1000 evaluations would slip straight through it.
+ *
+ * The database is NOT the bottleneck — all four reverse lookups are index-backed by Phase 33
+ * and EXPLAIN-verified at 0.909 ms for the worst-case 114-row fetch. QuickJS is.
+ */
+export const FORMULA_EVALUATION_BUDGET = 500
+
+/**
+ * How many hops of dependent children a save may recalculate (D-13).
+ *
+ * Fixed at 1, and enforced STRUCTURALLY rather than by a counter: children are recalculated
+ * through `recalculateOneEntity`, which has no cascade step at all, so no amount of future
+ * editing inside the per-entity path can accidentally add a second hop. A depth of 2 was
+ * rejected on measurement, not taste: organization -> deals -> activities reaches ~626
+ * evaluations (~750 ms) on the live data's worst organization.
+ */
+export const CASCADE_DEPTH = 1
+
+/** One parent-to-child cascade direction, backed by a real foreign key and a Phase 33 index. */
+export interface CascadeChildRelation {
+  parent: EntityType
+  child: EntityType
+  /** The `FORMULA_ENTITY_PREFIXES` spelling a child formula must use, e.g. `Organization`. */
+  prefix: string
+  table: PgTable
+  foreignKey: AnyPgColumn
+  deletedAt: AnyPgColumn
+}
+
+/**
+ * Every direction the cascade may walk. There is deliberately no `activity -> *` entry: an
+ * activity is a leaf, which is half of why `CASCADE_DEPTH = 1` holds by construction.
+ */
+export const CASCADE_CHILD_RELATIONS: readonly CascadeChildRelation[] = Object.freeze([
+  // deals_organization_id_idx (Phase 33) — Bitmap Index Scan, 114 rows, 0.909 ms.
+  {
+    parent: "organization",
+    child: "deal",
+    prefix: "Organization",
+    table: deals,
+    foreignKey: deals.organizationId,
+    deletedAt: deals.deletedAt,
+  },
+  // people_organization_id_idx (Phase 33) — max fan-out 10, avg 1.02.
+  {
+    parent: "organization",
+    child: "person",
+    prefix: "Organization",
+    table: people,
+    foreignKey: people.organizationId,
+    deletedAt: people.deletedAt,
+  },
+  // deals_person_id_idx (Phase 33) — max fan-out 29, avg 1.09.
+  {
+    parent: "person",
+    child: "deal",
+    prefix: "Person",
+    table: deals,
+    foreignKey: deals.personId,
+    deletedAt: deals.deletedAt,
+  },
+  // activities_deal_id_idx (Phase 33) — max fan-out 117, avg 4.49, p99 33.
+  {
+    parent: "deal",
+    child: "activity",
+    prefix: "Deal",
+    table: activities,
+    foreignKey: activities.dealId,
+    deletedAt: activities.deletedAt,
+  },
+] as const)
+
+/** The `FORMULA_ENTITY_PREFIXES` spelling for an entity type, or `null` (activity has none). */
+function prefixForEntityType(entityType: EntityType): string | null {
+  for (const [prefix, type] of Object.entries(FORMULA_ENTITY_PREFIXES)) {
+    if (type === entityType) return prefix
+  }
+  return null
+}
 
 /* ---------------------------------------------------------------------------------------- *
  * Small helpers
@@ -334,6 +432,47 @@ export function buildFormulaFieldValues({
   return values
 }
 
+export interface BuildRelatedEntitiesInput {
+  parentType: EntityType
+  parentRow: Record<string, unknown>
+  parentDefinitions: CustomFieldDefinition[]
+}
+
+/**
+ * Build the `relatedEntities` argument the engine resolves `{{Organization.Revenue}}` against.
+ *
+ * **This is the first code in the repository to populate that argument.** It was threaded
+ * through three components and passed by ZERO callers, so every dot-ref has always errored with
+ * `Unknown entity: X`. Cross-entity formulas become functional here.
+ *
+ * The value object is built by `buildFormulaFieldValues`, which means the parent's side of a
+ * cross-entity reference gets exactly the same treatment as the same-entity path: native
+ * attributes, then a `null` for every active definition (D-14 — an ABSENT key makes the engine
+ * return `Field "X" not found on Organization`, whereas an explicit `null` propagates blank),
+ * then the stored blob with every `{formula:true,...}` wrapper unwrapped.
+ *
+ * The key is the D-08 full entity name. There is no short `Org` alias, so `{{Org.Name}}` keeps
+ * failing loudly with the engine's own `Unknown entity: Org` rather than silently working in
+ * one spelling and not another. An entity type with no prefix (activity) is never a cascade
+ * parent and yields `{}`.
+ */
+export function buildRelatedEntities({
+  parentType,
+  parentRow,
+  parentDefinitions,
+}: BuildRelatedEntitiesInput): Record<string, Record<string, unknown>> {
+  const prefix = prefixForEntityType(parentType)
+  if (!prefix) return {}
+
+  return {
+    [prefix]: buildFormulaFieldValues({
+      entityType: parentType,
+      definitions: parentDefinitions,
+      row: parentRow,
+    }),
+  }
+}
+
 /* ---------------------------------------------------------------------------------------- *
  * Topological ordering — D-10
  * ---------------------------------------------------------------------------------------- */
@@ -406,7 +545,7 @@ export interface RecalculateFormulasInput {
   changedFields: string[]
   /** The written row, when the caller already has it from `.returning()`. Saves a read. */
   row?: Record<string, unknown> | null
-  /** Prefix -> changed parent field names. Populated by the cascade in plan 34-04. */
+  /** Prefix -> changed parent field names. Set by the cascade when recalculating a child. */
   changedRelatedFields?: Record<string, string[]>
   /** Parent rows keyed by the `FORMULA_ENTITY_PREFIXES` spelling, for dot-refs. */
   relatedEntities?: Record<string, Record<string, unknown>>
@@ -416,6 +555,34 @@ export interface RecalculateFormulasInput {
    * invalidation on every admin field mutation and would not hold across server instances.
    */
   definitionsCache?: Map<EntityType, CustomFieldDefinition[]>
+  /**
+   * Recalculate dependent child rows too (D-03). Defaults to `true`.
+   *
+   * Bulk importers pass `false`: a 100-row CSV batch would otherwise fan out 100 independent
+   * single-hop cascades over the same parents, and the importer already recalculates every row
+   * it touches.
+   */
+  cascade?: boolean
+  /**
+   * Lower the shared evaluation budget for this invocation. Defaults to
+   * `FORMULA_EVALUATION_BUDGET`. Zero or negative means zero evaluations, NOT unlimited.
+   */
+  budget?: number
+}
+
+/**
+ * The shared, decrementing evaluation allowance for one `recalculateFormulas` call.
+ *
+ * ONE counter for the saved entity and every cascaded child together — never one per child,
+ * which is exactly how an "obviously bounded" cascade becomes a request-amplification
+ * primitive (T-34-03).
+ */
+interface EvaluationBudget {
+  /** The allowance this invocation started with, carried purely for the warning's diagnostics. */
+  limit: number
+  remaining: number
+  /** Latched so a multi-relation cascade cannot warn twice about one invocation. */
+  warned: boolean
 }
 
 export interface RecalculateFormulasResult {
@@ -446,15 +613,28 @@ async function loadRow(
   return (rows[0] as Record<string, unknown> | undefined) ?? null
 }
 
+interface RecalculateOneResult extends RecalculateFormulasResult {
+  /**
+   * The formula names this pass rewrote. From a child's point of view these are changed parent
+   * fields, so the cascade folds them into its changed set.
+   */
+  computedNames: string[]
+  /** The row this pass worked from, so the cascade need not read it a second time. */
+  row: Record<string, unknown> | null
+}
+
 /**
- * Recompute and persist one entity's in-scope formula fields.
+ * Recompute and persist ONE entity's in-scope formula fields. No cascade lives here, and that
+ * is deliberate: it is what makes `CASCADE_DEPTH = 1` a structural property rather than a
+ * convention (children are recalculated through this function, so they cannot cascade further).
  *
  * Resolves rather than rejects on any formula failure: a broken admin-authored formula must
  * never block a user's edit (D-05), so every failure mode becomes a stored error.
  */
-export async function recalculateFormulas(
-  input: RecalculateFormulasInput
-): Promise<RecalculateFormulasResult> {
+async function recalculateOneEntity(
+  input: RecalculateFormulasInput,
+  budget: EvaluationBudget
+): Promise<RecalculateOneResult> {
   const { entityType, entityId, changedFields, changedRelatedFields, relatedEntities } = input
 
   const definitions = await loadDefinitions(entityType, input.definitionsCache)
@@ -467,13 +647,13 @@ export async function recalculateFormulas(
   // SC-4: nothing references what changed. No row read, no evaluation, no write.
   if (inScope.length === 0) {
     const existing = (input.row?.customFields ?? {}) as Record<string, unknown>
-    return { customFields: existing, evaluations: 0 }
+    return { customFields: existing, evaluations: 0, computedNames: [], row: input.row ?? null }
   }
 
   const row = input.row ?? (await loadRow(entityType, entityId))
   if (!row) {
     // The entity vanished between its write and this call; nothing to update.
-    return { customFields: {}, evaluations: 0 }
+    return { customFields: {}, evaluations: 0, computedNames: [], row: null }
   }
 
   const fieldValues = buildFormulaFieldValues({ entityType, definitions, row })
@@ -488,6 +668,10 @@ export async function recalculateFormulas(
   }
 
   for (const definition of ordered) {
+    // The shared budget is spent here, by the saved entity and by every cascaded child alike.
+    if (budget.remaining <= 0) break
+    budget.remaining -= 1
+
     let value: unknown = null
     let error: string | null = null
 
@@ -519,6 +703,15 @@ export async function recalculateFormulas(
   // D-06: formula keys are overwritten unconditionally. An errored formula REPLACES whatever
   // was stored — silently retaining a previous value is the exact defect this phase removes.
   const existing = (row.customFields ?? {}) as Record<string, unknown>
+  const computedNames = Object.keys(computed)
+
+  // The budget can be exhausted before a single formula was computed (an explicit `budget: 0`,
+  // or a cascade child reached after the allowance ran out). Writing an unchanged blob would be
+  // a pointless UPDATE, so skip it.
+  if (computedNames.length === 0) {
+    return { customFields: existing, evaluations: 0, computedNames: [], row }
+  }
+
   const merged: Record<string, unknown> = { ...existing, ...computed }
 
   const table = entityTables[entityType]
@@ -530,5 +723,236 @@ export async function recalculateFormulas(
   // second bump would make a derived-value refresh indistinguishable from a user edit in
   // Phase 36's audit log.
 
-  return { customFields: merged, evaluations }
+  return { customFields: merged, evaluations, computedNames, row }
+}
+
+/* ---------------------------------------------------------------------------------------- *
+ * The depth-1 cascade — D-03 / D-04 / D-09 / D-13
+ * ---------------------------------------------------------------------------------------- */
+
+/**
+ * The saved parent's changed field names AS A CHILD'S DOTTED REF SPELLS THEM.
+ *
+ * `changedFields` carries column names (`name`, `title`) while a formula ref carries the
+ * attribute name (`Name`, `Title`), so each changed column is also mapped back through
+ * `ENTITY_NATIVE_ATTRIBUTES`. The coarse `customFields` sentinel — which the v1 routes push
+ * without diffing individual keys — expands to every non-formula definition name.
+ *
+ * `recomputedFormulaNames` is folded in as well: a parent formula that just produced a new
+ * value is a genuine change to any child reading it, and omitting it would leave the child
+ * holding a stale derived value, which is the exact defect this phase exists to remove. It is
+ * precise rather than coarse — only formulas that were actually recomputed are included.
+ */
+function parentChangedRefNames(
+  parentType: EntityType,
+  changedFields: string[],
+  definitions: CustomFieldDefinition[],
+  recomputedFormulaNames: string[]
+): Set<string> {
+  const attributeByColumn = new Map<string, string>()
+  for (const [attribute, column] of Object.entries(ENTITY_NATIVE_ATTRIBUTES[parentType])) {
+    attributeByColumn.set(column, attribute)
+  }
+
+  const changed = new Set<string>(recomputedFormulaNames)
+
+  for (const field of changedFields) {
+    if (field === CHANGED_FIELDS_CUSTOM_SENTINEL) {
+      for (const definition of definitions) {
+        if (!isFormulaDefinition(definition)) changed.add(definition.name)
+      }
+      continue
+    }
+
+    changed.add(field)
+    const attribute = attributeByColumn.get(field)
+    if (attribute !== undefined) changed.add(attribute)
+  }
+
+  return changed
+}
+
+/** Does any of this child type's formulas read a parent field that just changed? */
+function childReferencesChangedParentField(
+  childDefinitions: CustomFieldDefinition[],
+  prefix: string,
+  changed: Set<string>
+): boolean {
+  for (const definition of childDefinitions) {
+    if (!isFormulaDefinition(definition)) continue
+    for (const ref of refsOf(definition)) {
+      if (!ref.includes(".")) continue
+      const [refPrefix, refField] = ref.split(".")
+      if (refPrefix.trim() === prefix && changed.has(refField.trim())) return true
+    }
+  }
+  return false
+}
+
+interface CascadeInput {
+  input: RecalculateFormulasInput
+  /** The parent's post-recalculation blob, so children read fresh values, not stored ones. */
+  parentCustomFields: Record<string, unknown>
+  parentRow: Record<string, unknown> | null
+  recomputedFormulaNames: string[]
+  definitionsCache: Map<EntityType, CustomFieldDefinition[]>
+  budget: EvaluationBudget
+}
+
+/**
+ * Recalculate the dependent child rows of a just-saved parent — exactly one hop (D-03/D-13).
+ *
+ * Resolves to the number of evaluations spent. Never throws: a failed child lookup or a child
+ * evaluation blow-up must not turn a successful parent save into an error response (D-05's
+ * spirit).
+ */
+async function cascadeToChildren({
+  input,
+  parentCustomFields,
+  parentRow,
+  recomputedFormulaNames,
+  definitionsCache,
+  budget,
+}: CascadeInput): Promise<number> {
+  const { entityType: parentType, entityId: parentId, changedFields } = input
+
+  const relations = CASCADE_CHILD_RELATIONS.filter((relation) => relation.parent === parentType)
+  if (relations.length === 0) return 0
+  if (budget.remaining <= 0) return 0
+
+  const parentDefinitions = await loadDefinitions(parentType, definitionsCache)
+  const changed = parentChangedRefNames(
+    parentType,
+    changedFields,
+    parentDefinitions,
+    recomputedFormulaNames
+  )
+  if (changed.size === 0) return 0
+
+  const changedList = [...changed]
+  let evaluations = 0
+  let related: Record<string, Record<string, unknown>> | null = null
+  let row = parentRow
+
+  for (const relation of relations) {
+    const childDefinitions = await loadDefinitions(relation.child, definitionsCache)
+
+    // FORMULA-02 / SC-4: no child formula reads anything that changed, so NO CHILD QUERY is
+    // issued at all. This gate is what keeps the common save as cheap as it was before.
+    if (!childReferencesChangedParentField(childDefinitions, relation.prefix, changed)) continue
+
+    if (budget.remaining <= 0) break
+
+    if (!row) row = await loadRow(parentType, parentId)
+    if (!row) return evaluations
+
+    related =
+      related ??
+      buildRelatedEntities({
+        parentType,
+        parentRow: { ...row, customFields: parentCustomFields },
+        parentDefinitions,
+      })
+
+    let children: Record<string, unknown>[]
+    try {
+      // D-09: NO ownership predicate, deliberately. Recalculation is a derived-value refresh,
+      // not a user edit — a stale computed value sitting on another user's row is precisely the
+      // defect this phase removes, so the cascade must reach rows the actor could not edit.
+      // Do not "fix" this into an access-control filter. Phase 36's audit log attributes these
+      // writes to the system rather than to the acting user (CONTEXT.md D-09).
+      // Index-backed by Phase 33; EXPLAIN-verified Bitmap Index Scan, 114 rows, 0.909 ms.
+      children = (await db
+        .select()
+        .from(relation.table)
+        .where(
+          and(eq(relation.foreignKey, parentId), isNull(relation.deletedAt))
+        )) as unknown as Record<string, unknown>[]
+    } catch (thrown) {
+      console.warn(
+        `[formula-recalc] child lookup failed, parent=${parentType} parentId=${parentId} ` +
+          `child=${relation.child}: ${sanitizeFormulaError(thrown)}`
+      )
+      continue
+    }
+
+    let processed = 0
+    for (const child of children) {
+      if (budget.remaining <= 0) break
+      processed += 1
+
+      try {
+        const result = await recalculateOneEntity(
+          {
+            entityType: relation.child,
+            entityId: String(child.id),
+            // The child's OWN fields did not change; only its parent's did.
+            changedFields: [],
+            row: child,
+            changedRelatedFields: { [relation.prefix]: changedList },
+            relatedEntities: related,
+            definitionsCache,
+          },
+          budget
+        )
+        evaluations += result.evaluations
+      } catch (thrown) {
+        console.warn(
+          `[formula-recalc] child recalculation failed, child=${relation.child} ` +
+            `childId=${String(child.id)}: ${sanitizeFormulaError(thrown)}`
+        )
+      }
+    }
+
+    if (processed < children.length && !budget.warned) {
+      budget.warned = true
+      // T-34-06: identifiers and counts only, never row contents or field values.
+      console.warn(
+        `[formula-recalc] evaluation budget exhausted, cascade truncated: ` +
+          `parent=${parentType} parentId=${parentId} child=${relation.child} ` +
+          `childrenFound=${children.length} childrenSkipped=${children.length - processed} ` +
+          `budget=${budget.limit}`
+      )
+    }
+  }
+
+  return evaluations
+}
+
+/**
+ * Recompute and persist an entity's formula fields, then refresh the dependent child rows that
+ * read them — one hop, budget-capped (D-01/D-03/D-13).
+ *
+ * Resolves rather than rejects on any formula or cascade failure (D-05). The returned
+ * `customFields` is the SAVED ENTITY's blob, for the caller to fold into the payload it is
+ * about to emit (D-17); `evaluations` is the total spent, children included.
+ */
+export async function recalculateFormulas(
+  input: RecalculateFormulasInput
+): Promise<RecalculateFormulasResult> {
+  // A budget of 0 or less means ZERO evaluations, never unlimited.
+  const limit = Math.max(0, input.budget ?? FORMULA_EVALUATION_BUDGET)
+  const budget: EvaluationBudget = { limit, remaining: limit, warned: false }
+  const definitionsCache =
+    input.definitionsCache ?? new Map<EntityType, CustomFieldDefinition[]>()
+
+  const parent = await recalculateOneEntity({ ...input, definitionsCache }, budget)
+
+  if (input.cascade === false) {
+    return { customFields: parent.customFields, evaluations: parent.evaluations }
+  }
+
+  const cascaded = await cascadeToChildren({
+    input,
+    parentCustomFields: parent.customFields,
+    parentRow: parent.row,
+    recomputedFormulaNames: parent.computedNames,
+    definitionsCache,
+    budget,
+  })
+
+  return {
+    customFields: parent.customFields,
+    evaluations: parent.evaluations + cascaded,
+  }
 }
