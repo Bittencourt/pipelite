@@ -499,7 +499,7 @@ Both the object form (`(table) => ({...})`) and the array form (`(table) => ([..
 ### SC-1: capture the kanban plan (run inside the container)
 
 ```bash
-echo "883112" | sudo -S -v
+sudo -v
 sudo -n docker compose exec -T postgres psql -U pipelite -d pipelite -c "
 EXPLAIN (ANALYZE, BUFFERS, COSTS)
 SELECT id, title, position FROM deals
@@ -510,7 +510,7 @@ ORDER BY position ASC;"
 Expected BEFORE: `Seq Scan on deals` … `Rows Removed by Filter: 21453`, cost ≈2729, buffers 2414.
 Expected AFTER: `Bitmap Heap Scan on deals` ← `Bitmap Index Scan on deals_stage_id_idx`, cost ≈2614, buffers ≈426.
 
-> `sudo -S` reads the password from stdin, so it conflicts with `psql -f -` / stdin redirection. Cache credentials with `echo "883112" | sudo -S -v` first, then use `sudo -n`. For multi-statement scripts, write the file into the container (`sudo -n docker compose exec -T postgres bash -c 'cat > /tmp/x.sql' < local.sql`) and run `psql -f /tmp/x.sql`.
+> `sudo -S` reads the password from stdin, so it conflicts with `psql -f -` / stdin redirection. Cache credentials with `sudo -v` first, then use `sudo -n`. For multi-statement scripts, write the file into the container (`sudo -n docker compose exec -T postgres bash -c 'cat > /tmp/x.sql' < local.sql`) and run `psql -f /tmp/x.sql`.
 
 ### SC-2: capture the reminder-cron plan
 
@@ -587,7 +587,7 @@ This is a schema-migration phase, so runtime state matters even though no string
 There is **no `./CLAUDE.md`** in the project root (verified: file does not exist). The operative constraints come from the user's global memory and are binding:
 
 - **Always use Docker; never a local dev server.** Do not run `npm run dev` / `next dev` / `pnpm dev`. This phase needs no dev server at all.
-- **All `docker` commands require `sudo`** (password `883112`). `psql` is not on the host — go through `sudo docker compose exec -T postgres psql`.
+- **All `docker` commands require `sudo`** (password `$SUDO_PASSWORD`). `psql` is not on the host — go through `sudo docker compose exec -T postgres psql`.
 - Postgres: `localhost:5433` from the host, `postgres:5432` inside the Docker network. App: `http://localhost:3001`.
 - Migrations are run with `npx drizzle-kit migrate` (i.e. `npm run db:migrate`) against `localhost:5433`.
 - Schema convention: `src/db/schema/` one file per entity plus `_relations.ts` (which exists to break circular imports — do not add to it here).
@@ -750,7 +750,7 @@ The brief asked me to verify rather than assume. I did:
 | Docker + compose | Everything | ✓ | `pipelite-postgres-1` up 5 days (healthy), `pipelite-app-1` up 5 days | none needed |
 | PostgreSQL | SC-1/SC-2/SC-3 | ✓ | 16.13 (postgres:16-alpine), `localhost:5433` | none needed |
 | `psql` on the **host** | verification | **✗ not installed** | — | `sudo docker compose exec -T postgres psql -U pipelite -d pipelite` (used throughout this research) |
-| `sudo` for docker | all DB access | ✓ | password `883112`; cache with `echo "883112" \| sudo -S -v` then use `sudo -n` | none |
+| `sudo` for docker | all DB access | ✓ | password `$SUDO_PASSWORD`; cache with `echo "$SUDO_PASSWORD" \| sudo -S -v` then use `sudo -n` | none |
 | `drizzle-kit` | generate + migrate | ✓ | 0.31.9, `node_modules/.bin/drizzle-kit` | none |
 | `drizzle-orm` | `index()` builder | ✓ | 0.45.1, `IndexBuilder.where()` present | none |
 | `vitest` | SC-4 | ✓ | 4.0.18, `node_modules/.bin/vitest` | none |
