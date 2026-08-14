@@ -12,11 +12,27 @@ import {
 import { eq, and, isNull, gte, lte } from "drizzle-orm"
 import type { ExportEntityType, ExportFilters, ExportOptions, ExportResult } from "./types"
 import { toPipedriveFormat, exportToPipedriveCSV } from "./pipedrive"
+import { formatFormulaValueForText } from "@/lib/formula-helpers"
 
 // ---------------------------------------------------------------------------
 // Custom field flattening
 // ---------------------------------------------------------------------------
 
+/**
+ * Flatten an entity's `customFields` JSONB into `custom_<name>` columns.
+ *
+ * A recalculated formula field is persisted as `{ formula: true, value, error }` (D-05).
+ * `Papa.unparse` stringifies that object to the literal `[object Object]` in every cell —
+ * measured against the installed papaparse 5.5.3 — so each value is reduced to its scalar
+ * (or `#ERROR: <message>`) here, at the single point every export format shares (D-16 / SC-2).
+ *
+ * `exportToJSON` receives these same flattened rows and therefore inherits the unwrapping:
+ * a JSON consumer sees the scalar, consistent with the CSV. If preserving the structured
+ * wrapper for JSON consumers is later wanted, that is a new export option, not this change.
+ *
+ * `formatFormulaValueForText` lives in `@/lib/formula-helpers`, which imports no database
+ * client, so this adds no db coupling to the export module.
+ */
 export function flattenCustomFields(
   fields: Record<string, unknown> | null | undefined,
   include: boolean
@@ -24,7 +40,7 @@ export function flattenCustomFields(
   if (!include || !fields) return {}
   const flat: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(fields)) {
-    flat[`custom_${key}`] = value
+    flat[`custom_${key}`] = formatFormulaValueForText(value)
   }
   return flat
 }

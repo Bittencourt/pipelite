@@ -1,5 +1,6 @@
 import Papa from "papaparse"
 import type { ExportEntityType } from "./types"
+import { formatFormulaValueForText } from "@/lib/formula-helpers"
 
 // ---------------------------------------------------------------------------
 // Pipedrive field mappings (our field name -> Pipedrive field name)
@@ -64,6 +65,9 @@ const INTERNAL_FIELDS = new Set([
 // Format conversion
 // ---------------------------------------------------------------------------
 
+// Native date fields only (expectedCloseDate / dueDate / completedAt). These are never
+// formula wrappers, so this String() deliberately keeps no unwrapping — the wrapper handling
+// belongs to the custom-field branch in toPipedriveFormat below (D-16).
 function formatDateForPipedrive(value: unknown): string {
   if (!value || value === "") return ""
   const str = String(value)
@@ -108,10 +112,14 @@ export function toPipedriveFormat(
       }
     }
 
-    // Include custom fields (custom_ prefixed fields pass through)
+    // Include custom fields (custom_ prefixed fields pass through).
+    // A stored formula value is `{ formula: true, value, error }` (D-05) and Papa.unparse
+    // renders that as the literal `[object Object]` (measured, papaparse 5.5.3). Rows arriving
+    // from flattenCustomFields are already unwrapped; this second pass keeps toPipedriveFormat
+    // correct for any caller that hands it raw JSONB values directly (D-16 / SC-2).
     for (const [key, value] of Object.entries(row)) {
       if (key.startsWith("custom_")) {
-        result[key] = value
+        result[key] = formatFormulaValueForText(value)
       }
     }
 
