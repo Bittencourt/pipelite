@@ -402,7 +402,19 @@ to be run with an inline `DATABASE_URL` override. Phase 33 worked around it with
 Fix: point `.env.local` at `localhost:5433`. This will bite every future phase that runs a migration
 (34, 35, 36, 37, 39, 40 all add schema). Cheap fix, high recurring cost if left.
 
-**999.21 — Workflow conditions cannot address 90% of custom fields** (captured 2026-08-14, Phase 34)
+**999.22 — Condition builder UI has no field picker for bracket paths** (captured 2026-08-14, Phase 34)
+Phase 34 plan 34-12 made `resolveFieldPath` accept bracket-quoted segments, so a workflow condition can now
+reach `customFields["Previsão de início operação"]`. But the condition builder UI offers no picker that
+emits that syntax — an operator has to hand-type both the bracket form and the exact accented field name,
+with no autocomplete and no validation. So the capability exists at the engine level while remaining
+effectively undiscoverable in the product. A field picker that emits the correct path is what stands
+between the fix and it being usable without documentation. Pairs with 999.21.
+
+Also from 34-12: **escaping is unsupported inside brackets** — a name containing the same quote character
+used to delimit it stops the parser at the first match. The other quote style works around it; a name
+containing *both* quote characters is unaddressable. None of the 169 live definitions hit this today.
+
+**999.21 — Workflow conditions cannot address 90% of custom fields — ENGINE FIXED in Phase 34 (34-12), UI GAP REMAINS** (captured 2026-08-14, Phase 34)
 `resolveFieldPath` splits a condition's field path on `.`, so any custom field whose **name contains a
 space or punctuation is unreachable from a workflow condition**. Measured against the live DB:
 **152 of 169 definitions (90%)** are affected — this dataset's field names are predominantly Portuguese
