@@ -10,8 +10,38 @@ import { stages, pipelines } from "@/db/schema/pipelines"
 import { and, eq, isNull } from "drizzle-orm"
 import { z } from "zod"
 import { crmBus } from "@/lib/events"
+import type { CustomFieldDefinition, EntityType } from "@/db/schema"
+import {
+  recalculateFormulas,
+  ENTITY_NATIVE_ATTRIBUTES,
+  FORMULA_EVALUATION_BUDGET,
+  type RecalculateFormulasInput,
+  type RecalculateFormulasResult,
+} from "@/lib/formula-recalc"
 
 const MAX_BATCH_SIZE = 100
+
+/** Every native column a create writes — a formula over any of them must run. */
+const DEAL_NATIVE_COLUMNS = Object.values(ENTITY_NATIVE_ATTRIBUTES.deal)
+
+/**
+ * Recalculate one inserted row, returning the evaluation count so the caller can spend it
+ * against the batch-wide budget.
+ *
+ * Resolves rather than rejects (D-05): one row's broken formula must not abort the other 99.
+ * A failed row reports zero evaluations, so it cannot corrupt the shared budget arithmetic.
+ */
+async function recalcBatchRow(
+  input: RecalculateFormulasInput,
+  fallback: Record<string, unknown>
+): Promise<RecalculateFormulasResult> {
+  try {
+    return await recalculateFormulas(input)
+  } catch (error) {
+    console.error("[formula-recalc] deal batch recalculation failed:", error)
+    return { customFields: fallback, evaluations: 0 }
+  }
+}
 
 const dealItemSchema = z.object({
   title: z.string().min(1, "Title is required").max(200),
@@ -173,13 +203,39 @@ export async function POST(request: NextRequest) {
     // Insert all deals
     const inserted = await db.insert(deals).values(insertValues).returning()
 
-    // Emit CRM events for each created deal via bus
+    // ONE definitions cache and ONE evaluation budget for the WHOLE request (D-13 / T-34-03).
+    // Granting each row a fresh 500-evaluation allowance would make up to 100 rows worth 50,000
+    // evaluations (~44 s) in a single request — exactly the amplification D-04 exists to
+    // prevent. The budget is threaded through every row and decremented by what each spends.
+    const definitionsCache = new Map<EntityType, CustomFieldDefinition[]>()
+    let remainingBudget = FORMULA_EVALUATION_BUDGET
+
+    // Recalculate each row BEFORE its own emit (D-01 / D-17).
     for (const deal of inserted) {
+      const { customFields, evaluations } = await recalcBatchRow(
+        {
+          entityType: "deal",
+          entityId: deal.id,
+          changedFields: DEAL_NATIVE_COLUMNS,
+          row: deal as unknown as Record<string, unknown>,
+          definitionsCache,
+          // A deal inserted by THIS request cannot have activities yet, so there is no child row
+          // to cascade to — the hop would be pure cost against the shared budget.
+          cascade: false,
+          budget: remainingBudget,
+        },
+        (deal.customFields ?? {}) as Record<string, unknown>
+      )
+      remainingBudget = Math.max(0, remainingBudget - evaluations)
+
       crmBus.emit("deal.created", {
         entity: "deal",
         entityId: deal.id,
         action: "created",
-        data: serializeDeal(deal) as unknown as Record<string, unknown>,
+        data: serializeDeal({
+          ...deal,
+          customFields,
+        }) as unknown as Record<string, unknown>,
         changedFields: null,
         userId: context.userId,
         timestamp: new Date().toISOString(),
