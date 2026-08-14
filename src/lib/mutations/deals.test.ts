@@ -176,6 +176,125 @@ describe("updateDealMutation", () => {
   })
 })
 
+describe("customFields persistence (D-12)", () => {
+  // Real stored keys contain spaces and punctuation; a merge implemented via
+  // anything other than plain object spread would break on them.
+  const sampleCustomFields: Record<string, unknown> = {
+    Origem: ["Outbound Manual"],
+    "CNPJ / CPF": "23466509000120",
+  }
+
+  const storedDeal = {
+    id: "d1",
+    title: "Test Deal",
+    stageId: "s1",
+    value: null,
+    organizationId: "o1",
+    personId: null,
+    ownerId: "u1",
+    position: "10000",
+    expectedCloseDate: null,
+    notes: null,
+    customFields: { A: 1, B: 2 } as Record<string, unknown>,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: null,
+  }
+
+  function stubInsert() {
+    mockDb.query.stages.findFirst.mockResolvedValue({ id: "s1", pipeline: { deletedAt: null } })
+    mockDb.query.organizations.findFirst.mockResolvedValue({ id: "o1", deletedAt: null })
+    mockDb.query.deals.findMany.mockResolvedValue([])
+    const returningFn = vi.fn().mockResolvedValue([storedDeal])
+    const valuesFn = vi.fn().mockReturnValue({ returning: returningFn })
+    mockDb.insert.mockReturnValue({ values: valuesFn })
+    return valuesFn
+  }
+
+  function stubUpdate() {
+    const returningFn = vi.fn().mockResolvedValue([storedDeal])
+    const whereFn = vi.fn().mockReturnValue({ returning: returningFn })
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+
+    // Assignee bookkeeping the update path always performs.
+    const selectWhereFn = vi.fn().mockResolvedValue([])
+    const selectFromFn = vi.fn().mockReturnValue({ where: selectWhereFn })
+    mockDb.select.mockReturnValue({ from: selectFromFn })
+    const deleteWhereFn = vi.fn().mockResolvedValue(undefined)
+    mockDb.delete.mockReturnValue({ where: deleteWhereFn })
+
+    return setFn
+  }
+
+  const firstArg = (fn: ReturnType<typeof vi.fn>) =>
+    fn.mock.calls[0][0] as Record<string, unknown>
+
+  const updatedChangedFields = () => {
+    const call = mockEmit.mock.calls.find((c) => c[0] === "deal.updated")
+    return (call?.[1] as { changedFields: string[] | null } | undefined)?.changedFields
+  }
+
+  it("persists customFields on create", async () => {
+    const valuesFn = stubInsert()
+
+    const result = await createDealMutation({
+      title: "Test Deal",
+      stageId: "s1",
+      organizationId: "o1",
+      customFields: sampleCustomFields,
+      userId: "u1",
+      assigneeIds: [],
+    })
+
+    expect(result.success).toBe(true)
+    expect(firstArg(valuesFn).customFields).toEqual(sampleCustomFields)
+  })
+
+  it("defaults customFields to {} on create when omitted", async () => {
+    const valuesFn = stubInsert()
+
+    await createDealMutation({
+      title: "Test Deal",
+      stageId: "s1",
+      organizationId: "o1",
+      userId: "u1",
+      assigneeIds: [],
+    })
+
+    expect(firstArg(valuesFn).customFields).toEqual({})
+  })
+
+  it("shallow-merges customFields onto the stored blob on update", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(storedDeal)
+    const setFn = stubUpdate()
+
+    const result = await updateDealMutation("d1", { customFields: { B: 99, C: 3 } }, "u1")
+
+    expect(result.success).toBe(true)
+    expect(firstArg(setFn).customFields).toEqual({ A: 1, B: 99, C: 3 })
+  })
+
+  it("pushes customFields into changedFields on update", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(storedDeal)
+    stubUpdate()
+
+    await updateDealMutation("d1", { customFields: { B: 99 } }, "u1")
+
+    expect(updatedChangedFields()).toContain("customFields")
+  })
+
+  it("leaves customFields untouched on an update that does not supply it", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(storedDeal)
+    const setFn = stubUpdate()
+
+    await updateDealMutation("d1", { title: "New Title" }, "u1")
+
+    expect(Object.keys(firstArg(setFn))).not.toContain("customFields")
+    expect(updatedChangedFields() ?? []).not.toContain("customFields")
+  })
+})
+
 describe("deleteDealMutation", () => {
   it("soft-deletes deal and emits deal.deleted", async () => {
     const existingDeal = { id: "d1", ownerId: "u1", deletedAt: null }
