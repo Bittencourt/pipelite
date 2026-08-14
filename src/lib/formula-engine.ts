@@ -104,17 +104,6 @@ function usesNullSafeFunction(expression: string): boolean {
 }
 
 /**
- * Check if expression contains arithmetic operations that should propagate null
- */
-function containsArithmeticOperation(expression: string): boolean {
-  // Check for arithmetic operators outside of function calls
-  // This is a simple heuristic - matches + - * / when not inside parentheses
-  const withoutStrings = expression.replace(/"[^"]*"/g, '')
-  // Check for operators that aren't part of function names or comparison
-  return /[+\-*\/]/.test(withoutStrings.replace(/[<>=!]=?/g, '').replace(/\b(?:and|or|not)\b/gi, ''))
-}
-
-/**
  * Evaluate a formula expression in a sandboxed QuickJS environment
  */
 export async function evaluateFormula(
@@ -125,6 +114,11 @@ export async function evaluateFormula(
   // Normalize fieldValues to an empty object if not provided
   const fields = fieldValues ?? {}
   
+  // Null-safe functions (LOGIC.isBlank, TEXT.*, ...) accept null arguments, so they must
+  // reach the sandbox instead of short-circuiting on the null early-returns below.
+  // Computed before the dependency loop, which returns early.
+  const usesNullSafe = usesNullSafeFunction(expression)
+
   // Check for missing fields - if a referenced field doesn't exist at all, return error
   const deps = extractDependencies(expression)
   for (const dep of deps) {
@@ -138,7 +132,7 @@ export async function evaluateFormula(
       if (!(field.trim() in entityData)) {
         return { value: null, error: `Field "${field.trim()}" not found on ${entity.trim()}` }
       }
-      if (entityData[field.trim()] === null) {
+      if (entityData[field.trim()] === null && !usesNullSafe) {
         return { value: null, error: null }
       }
     } else {
@@ -149,20 +143,16 @@ export async function evaluateFormula(
         if (fromRelated === undefined) {
           return { value: null, error: `Unknown field: ${dep}` }
         }
-        if (fromRelated === null) {
+        if (fromRelated === null && !usesNullSafe) {
           return { value: null, error: null }
         }
-      } else if (fields[dep] === null) {
+      } else if (fields[dep] === null && !usesNullSafe) {
         // Field exists but is null
         return { value: null, error: null }
       }
     }
   }
   
-  // Check for null propagation - only for arithmetic expressions, not null-safe functions
-  const hasArithmetic = containsArithmeticOperation(expression)
-  const usesNullSafe = usesNullSafeFunction(expression)
-
   const QuickJS = await getQuickJS()
   const vm = QuickJS.newContext()
   
@@ -207,7 +197,7 @@ export async function evaluateFormula(
     safeDispose(fieldsResult.value)
     
     // Replace {{Field Name}} with fields["Field Name"]
-    let processedExpr = expression.replace(/\{\{([^}]+)\}\}/g, (_, ref: string) => {
+    const processedExpr = expression.replace(/\{\{([^}]+)\}\}/g, (_, ref: string) => {
       const trimmed = ref.trim()
       // Check if it's a related entity reference (e.g., "Organization.Revenue")
       if (trimmed.includes('.')) {
