@@ -375,3 +375,41 @@ describe('formula-engine', () => {
     })
   })
 })
+
+describe('formula-engine resource limits', () => {
+  it('evaluates normally when no options are passed (default path unchanged)', async () => {
+    const result = await evaluateFormula('{{A}} + 1', { A: 1 })
+    expect(result.value).toBe(2)
+    expect(result.error).toBeNull()
+  })
+
+  it('evaluates normally when memory and timeout limits are supplied', async () => {
+    const result = await evaluateFormula('{{A}} + 1', { A: 1 }, undefined, {
+      memoryLimitBytes: 8 * 1024 * 1024,
+      timeoutMs: 5000,
+    })
+    expect(result.value).toBe(2)
+    expect(result.error).toBeNull()
+  })
+
+  it('interrupts a non-terminating expression instead of hanging', { timeout: 10000 }, async () => {
+    const start = Date.now()
+    const result = await evaluateFormula(
+      'LOGIC.if(true, (function(){ while(true){} })(), 0)',
+      {},
+      undefined,
+      { timeoutMs: 50 }
+    )
+    expect(Date.now() - start).toBeLessThan(5000)
+    expect(result.error).not.toBeNull()
+  })
+
+  it('still evaluates correctly after an interrupted evaluation (no handle leak)', async () => {
+    const result = await evaluateFormula('{{A}} * 3', { A: 7 }, undefined, {
+      memoryLimitBytes: 8 * 1024 * 1024,
+      timeoutMs: 5000,
+    })
+    expect(result.value).toBe(21)
+    expect(result.error).toBeNull()
+  })
+})
