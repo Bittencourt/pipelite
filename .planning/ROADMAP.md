@@ -402,6 +402,19 @@ to be run with an inline `DATABASE_URL` override. Phase 33 worked around it with
 Fix: point `.env.local` at `localhost:5433`. This will bite every future phase that runs a migration
 (34, 35, 36, 37, 39, 40 all add schema). Cheap fix, high recurring cost if left.
 
+**999.24 — CSV export silently drops ALL custom-field columns** (captured 2026-08-14, Phase 34)
+`exportToCSV` calls `Papa.unparse(data, { header: true })`, and papaparse derives the header row from the
+**first object only**. Any key absent from row 1 is omitted for every row. Measured on the live data: a
+46,055-row organization export produced **zero `custom_*` columns**, even though **30,264 rows carry custom
+field values**. Users exporting their CRM are silently losing every custom field unless the very first row
+happens to populate them.
+
+Pre-existing and affects **all** custom fields, not just formulas — Phase 34 did not cause it. But it means
+Phase 34's SC-2 CSV half is **not observable on this dataset**: the unwrapping logic is correct (proven via
+the JSON export, which shares `flattenCustomFields`), yet the columns never reach the file. Fix: compute the
+header as the union of keys across all rows, or pass an explicit `columns` list to `unparse`. This is
+arguably the most user-visible defect found in the milestone so far. See `34-11-SUMMARY.md`.
+
 **999.23 — POST responses echo pre-recalculation formula values** (captured 2026-08-14, Phase 34)
 The create mutations return the raw `.returning()` row, so a `POST /api/v1/{organizations,people,deals,activities}`
 201 body carries the **un-computed** custom-field blob. The stored value, the emitted `crmBus` event and any
