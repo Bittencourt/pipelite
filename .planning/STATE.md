@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-14T13:53:28.028Z"
+last_updated: "2026-08-14T15:34:26.131Z"
 last_activity: 2026-08-14
 progress:
   total_phases: 12
   completed_phases: 1
-  total_plans: 6
+  total_plans: 9
   completed_plans: 6
   percent: 8
 ---
@@ -20,13 +20,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 33 — Database Indexes for the CRM Core (Phase 32 complete)
+**Current focus:** Phase 33 — Database Indexes for the CRM Core
 
 ## Position
 
 Phase: 32 - Test Infrastructure & CI (complete — 6/6 plans)
 Plan: 6 of 6 complete
-Status: Phase 32 complete — ready for Phase 33 (Database Indexes for the CRM Core)
+Status: Executing Phase 33
 Last activity: 2026-08-14
 
 Progress: [█░░░░░░░░░] 8% (1/12 v1.3 phases complete)
@@ -171,7 +171,7 @@ None open. No pending todos, no UAT/verification debt (audit-uat: 0 items), work
 
 ## Current Position
 
-Phase: 32 (Test Infrastructure & CI) — COMPLETE
-Plan: 6 of 6 complete
-Status: Phase 32 complete; next up Phase 33 (Database Indexes for the CRM Core)
-Last activity: 2026-08-14 -- 32-06 complete: master published, first CI run green, `master protection` ruleset (20851119) active and proven to block a broken PR
+Phase: 33 (Database Indexes for the CRM Core) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 33
+Last activity: 2026-08-14 -- Phase 33 execution started
