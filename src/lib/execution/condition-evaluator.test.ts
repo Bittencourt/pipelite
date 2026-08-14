@@ -294,3 +294,57 @@ describe("evaluateCondition", () => {
     expect(evaluateCondition({ groups, logicOperator: "or" }, ctx)).toBe(false)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Formula fields reached through the trigger envelope (SC-3)
+//
+// These tests do not exercise condition-evaluator.ts's own behaviour so much as they pin
+// WHY matcher.ts normalises formula wrappers before building the envelope. The evaluator is
+// deliberately unchanged: it is the envelope that must hand it a scalar.
+// ---------------------------------------------------------------------------
+
+describe("formula custom fields in conditions", () => {
+  const MARGIN_GT_1000: ConditionGroup[] = [
+    {
+      operator: "and",
+      conditions: [
+        {
+          fieldPath: "trigger.data.customFields.Margin",
+          operator: "greater_than",
+          value: 1000,
+        },
+      ],
+    },
+  ]
+
+  it("resolves a normalised envelope value and branches on it", () => {
+    // Shaped like the envelope matcher.ts now produces.
+    const ctx = makeCtx({ customFields: { Margin: 1035 } })
+
+    expect(resolveFieldPath(ctx, "trigger.data.customFields.Margin")).toBe(1035)
+    expect(
+      evaluateCondition({ groups: MARGIN_GT_1000, logicOperator: "and" }, ctx)
+    ).toBe(true)
+  })
+
+  it("would silently never fire against an UN-normalised wrapper — the reason normalisation exists", () => {
+    const ctx = makeCtx({
+      customFields: { Margin: { formula: true, value: 1035, error: null } },
+    })
+
+    // Number({...}) -> NaN -> greater_than is false with no error surfaced anywhere.
+    expect(Number(resolveFieldPath(ctx, "trigger.data.customFields.Margin"))).toBeNaN()
+    expect(
+      evaluateCondition({ groups: MARGIN_GT_1000, logicOperator: "and" }, ctx)
+    ).toBe(false)
+  })
+
+  it("treats an errored formula (normalised to null) as empty rather than comparable", () => {
+    const ctx = makeCtx({ customFields: { Margin: null } })
+
+    expect(
+      evaluateCondition({ groups: MARGIN_GT_1000, logicOperator: "and" }, ctx)
+    ).toBe(false)
+    expect(evaluateOperator(null, "is_empty", null)).toBe(true)
+  })
+})

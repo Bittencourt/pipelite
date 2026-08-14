@@ -5,6 +5,64 @@ import type { CrmEventName, CrmEventPayload, DealStageChangedPayload } from "@/l
 import type { CrmEventTriggerConfig } from "./types"
 import { createWorkflowRun } from "./create-run"
 import type { TriggerEnvelope } from "./types"
+import { unwrapFormulaValue } from "@/lib/formula-helpers"
+
+/** Both key spellings a CRM event payload can carry its custom fields under. */
+const CUSTOM_FIELD_KEYS = ["customFields", "custom_fields"] as const
+
+/**
+ * Return a copy of the payload data in which every custom field value is reduced to its
+ * scalar.
+ *
+ * A recalculated formula is persisted as `{ formula: true, value, error }` (D-05).
+ * `resolveFieldPath` walks dot paths over this envelope, so without normalisation a condition
+ * on `trigger.data.customFields.Margin` receives the wrapper object, `Number({...})` yields
+ * `NaN`, and `greater_than` returns `false` forever — a workflow that silently never fires
+ * and reports no error. SC-3 requires the condition to branch on the current value.
+ *
+ * `unwrapFormulaValue` (raw scalar, or `null` for an errored formula) is used rather than
+ * `formatFormulaValueForText`: a condition must compare against the real value, and turning
+ * an error into the string `#ERROR: ...` would make numeric comparisons behave
+ * unpredictably. `null` is already handled by the existing operators.
+ *
+ * Both `customFields` (camelCase, emitted by the mutation layer) and `custom_fields`
+ * (snake_case, emitted by the v1 routes via `serialize*`) are handled, because the correct
+ * condition path otherwise depends on which write path fired the event.
+ *
+ * The payload object is NEVER mutated. It is shared across `crmBus` subscribers, and the
+ * webhook subscriber (`events/subscribers/webhook.ts`) forwards `payload.data` verbatim.
+ * The webhook body deliberately keeps the full wrapper (D-17): it is structured JSON and
+ * unwrapping would discard the error signal. SC-2's webhook half is satisfied by
+ * recalc-before-emit ordering, not by a reader change.
+ */
+function normalizeFormulaValues(
+  data: Record<string, unknown>
+): Record<string, unknown> {
+  let normalized: Record<string, unknown> | null = null
+
+  for (const key of CUSTOM_FIELD_KEYS) {
+    const fields = data[key]
+    if (
+      typeof fields !== "object" ||
+      fields === null ||
+      Array.isArray(fields)
+    ) {
+      continue
+    }
+
+    const unwrapped: Record<string, unknown> = {}
+    for (const [name, value] of Object.entries(
+      fields as Record<string, unknown>
+    )) {
+      unwrapped[name] = unwrapFormulaValue(value)
+    }
+
+    normalized ??= { ...data }
+    normalized[key] = unwrapped
+  }
+
+  return normalized ?? data
+}
 
 /**
  * Check whether a single CRM event trigger config matches a given event.
@@ -85,7 +143,7 @@ export async function matchAndFireTriggers(
         trigger_id: `${eventName}-${Date.now()}`,
         timestamp: payload.timestamp,
         data: {
-          ...payload.data,
+          ...normalizeFormulaValues(payload.data),
           entity: payload.entity,
           entityId: payload.entityId,
           action: payload.action,
