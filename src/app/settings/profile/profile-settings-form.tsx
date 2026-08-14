@@ -35,6 +35,7 @@ export function ProfileSettingsForm({ initialSettings }: ProfileSettingsFormProp
   // Sync with initial settings when they load
   useEffect(() => {
     if (initialSettings) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- This effect re-syncs locale/timezone when the server-provided `initialSettings` prop arrives or changes, while still letting the user's own Select changes win in between. Replacing it requires either a `key` remount driven by the parent server component or lifting both values to the parent, both of which alter when in-flight optimistic changes get discarded during a save. Proper fix deferred to a UI-focused phase (D-02).
       setLocale(initialSettings.locale)
       setTimezone(initialSettings.timezone)
     }

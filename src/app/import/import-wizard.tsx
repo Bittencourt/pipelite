@@ -88,6 +88,7 @@ export function ImportWizard({ customFieldsByEntity }: ImportWizardProps) {
     return map
   }, [customFieldsByEntity, entityType])
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- The compiler infers a `customFieldTypes` dependency that the manual array [rawData, mapping, entityType] omits. Adding it re-creates this callback whenever `customFieldsByEntity` changes identity, which re-runs mapping/validation and can push the wizard back to the preview step mid-edit. Verifying that needs step-transition tests the import wizard does not have. Proper fix deferred to a UI-focused phase (D-02).
   const handleMappingNext = useCallback(() => {
     // Apply mapping to all rows
     const raw = rawData.map((row) => applyFieldMapping(row, mapping))

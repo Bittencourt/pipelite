@@ -39,6 +39,7 @@ function ResetPasswordContent() {
 
   useEffect(() => {
     if (!token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- The missing-token case is derived from useSearchParams, which is only readable on the client, so the "invalid reset link" state cannot be computed during render without breaking the Suspense boundary this page is wrapped in. Removing the effect-set means deriving status/error from `token` at render time and reworking the four-way status union, which changes the auth error UX with zero UI test coverage to catch a regression. Proper fix deferred to a UI-focused phase (D-02).
       setStatus("error")
       setError("Invalid reset link")
     }
