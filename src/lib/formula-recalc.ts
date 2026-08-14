@@ -17,6 +17,24 @@
  *
  * Scope: one entity, plus exactly ONE hop of dependent children (plan 34-04). The cascade is
  * bounded by a single shared evaluation budget; see `FORMULA_EVALUATION_BUDGET`.
+ *
+ * ---
+ *
+ * **Read `docs/development/formula-fields.md` before changing anything here.** It documents the
+ * formula language, the cross-entity prefix vocabulary, the write-path coverage table and the
+ * known limitations — including several behaviours that look like bugs and are not.
+ *
+ * Four decisions in this module are deliberate, measured, and easy to reverse by accident. Each
+ * is justified at its definition and in that document; do not change one without reading both:
+ *
+ *  1. `CASCADE_DEPTH = 1` — depth 2 reaches ~626 evaluations (~750 ms) on the live data's worst
+ *     organization. Enforced structurally, not by a counter.
+ *  2. `FORMULA_EVALUATION_BUDGET = 500` — 500 x 0.876 ms measured in-container = 438 ms. A
+ *     row-count cap instead would not scale with formulas per entity.
+ *  3. The cascade ignores ownership (D-09). There is no `ownerId` predicate on the child query
+ *     and that is not an oversight: a derived value must be correct regardless of who saved.
+ *  4. The recalculation write is a second `UPDATE` outside any transaction (T-34-11), accepted
+ *     above; it self-heals on the next save.
  */
 
 import { db } from "@/db"

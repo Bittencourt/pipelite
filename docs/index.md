@@ -79,6 +79,7 @@ Documentation for contributors to the Pipelite codebase.
 - **[Database](./development/database.md)** — Schema documentation
 - **[Code Style](./development/code-style.md)** — Coding conventions
 - **[Testing](./development/testing.md)** — Testing guide
+- **[Formula Fields](./development/formula-fields.md)** — Formula language, server-side recalculation, and known limitations
 
 ---
 

@@ -19,6 +19,7 @@ Welcome to the Pipelite developer documentation. This guide is for contributors,
 | [Database Schema](./database.md) | Entity relationships and table documentation |
 | [Code Style Guide](./code-style.md) | Naming conventions, patterns, and linting rules |
 | [Testing Guide](./testing.md) | Writing and running tests with Vitest |
+| [Formula Fields](./formula-fields.md) | Formula language, server-side recalculation, bounds, and known limitations |
 
 ## Tech Stack
 
