@@ -154,6 +154,8 @@ export async function createDealMutation(
       personId: validated.data.personId || null,
       ownerId: validated.data.ownerId || input.userId,
       position,
+      // custom_fields is never SQL NULL in this database — default to {}.
+      customFields: validated.data.customFields ?? {},
     }).returning()
 
     const newAssigneeIds = validated.data.assigneeIds ?? []
@@ -284,6 +286,15 @@ export async function updateDealMutation(
     if (validated.data.ownerId !== undefined) {
       if (validated.data.ownerId !== deal.ownerId) changedFields.push("ownerId")
       updateData.ownerId = validated.data.ownerId
+    }
+
+    if (validated.data.customFields !== undefined) {
+      // Shallow-merge onto the stored blob so an unrelated edit cannot wipe keys.
+      updateData.customFields = {
+        ...(deal.customFields ?? {}),
+        ...validated.data.customFields,
+      }
+      changedFields.push("customFields")
     }
 
     const [updatedDeal] = await db
