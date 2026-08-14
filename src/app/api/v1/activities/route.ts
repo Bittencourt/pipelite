@@ -103,9 +103,9 @@ export async function GET(request: NextRequest) {
 
       if (expand.has("deal") && activity.deal) {
         serialized.deal = {
-          ...serializeDeal(activity.deal as Parameters<typeof serializeDeal>[0]),
-          ...(activity.deal.organization && { organization: serializeOrganization(activity.deal.organization as Parameters<typeof serializeOrganization>[0]) }),
-          ...(activity.deal.person && { person: serializePerson(activity.deal.person as Parameters<typeof serializePerson>[0]) }),
+          ...serializeDeal(activity.deal),
+          ...(activity.deal.organization && { organization: serializeOrganization(activity.deal.organization) }),
+          ...(activity.deal.person && { person: serializePerson(activity.deal.person) }),
         }
       }
 

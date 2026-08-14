@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
       const serialized: Record<string, unknown> = serializeStage(stage)
       
       if (expand.has("pipeline") && stage.pipeline) {
-        serialized.pipeline = serializePipeline(stage.pipeline as Parameters<typeof serializePipeline>[0])
+        serialized.pipeline = serializePipeline(stage.pipeline)
       }
       
       return serialized
