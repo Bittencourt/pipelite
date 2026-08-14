@@ -17,6 +17,7 @@ function VerifyEmailContent() {
 
   useEffect(() => {
     if (token) {
+      // eslint-disable-next-line react-hooks/immutability -- `verifyEmail` is a const arrow declared below this effect, so the compiler sees a binding read before its initialization. Hoisting it above the effect or wrapping it in useCallback changes the identity semantics of a fetch that must fire exactly once per token — a double-fire would consume the single-use verification token and show the user a spurious "Verification failed". Not safe to refactor without email-verification coverage; deferred to a UI-focused phase (D-02).
       verifyEmail(token)
     }
   }, [token])

@@ -285,7 +285,7 @@ export function StageConfigurator({
 
       {stages.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground border rounded-lg">
-          No stages yet. Click "Add Stage" to create your first stage.
+          No stages yet. Click &quot;Add Stage&quot; to create your first stage.
         </div>
       ) : (
         <DndContext

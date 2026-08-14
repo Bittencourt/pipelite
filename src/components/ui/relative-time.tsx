@@ -14,6 +14,7 @@ export function RelativeTime({ date, className }: RelativeTimeProps) {
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- The `mounted` flag is a deliberate SSR/CSR hydration guard: the first paint must render an absolute date so server and client HTML match, and only the post-hydration render may switch to the time-dependent relative string. Removing the effect-set means moving to useSyncExternalStore (or an equivalent hydration signal) and re-verifying that no hydration mismatch appears on every list that renders timestamps. Proper fix deferred to a UI-focused phase (D-02).
     setMounted(true)
   }, [])
 
