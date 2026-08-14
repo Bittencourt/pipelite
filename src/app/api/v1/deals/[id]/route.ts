@@ -13,6 +13,13 @@ import { and, eq, isNull } from "drizzle-orm"
 import { z } from "zod"
 import { crmBus } from "@/lib/events"
 import type { DealStageChangedPayload } from "@/lib/events"
+import type { CustomFieldDefinition, EntityType } from "@/db/schema"
+import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import {
+  recalculateFormulas,
+  stripFormulaKeys,
+  type RecalculateFormulasInput,
+} from "@/lib/formula-recalc"
 
 const updateDealSchema = z.object({
   title: z.string().min(1, "Title is required").max(200).optional(),
@@ -27,6 +34,44 @@ const updateDealSchema = z.object({
 
 interface RouteParams {
   params: Promise<{ id: string }>
+}
+
+/**
+ * Drop caller-supplied formula keys before the merge (threat T-34-04). Fails open and logs —
+ * see the identical helper in `../route.ts` for the rationale.
+ */
+async function stripCallerFormulaKeys(
+  values: Record<string, unknown>,
+  definitionsCache: Map<EntityType, CustomFieldDefinition[]>
+): Promise<Record<string, unknown>> {
+  try {
+    const definitions = await getActiveFieldDefinitions("deal")
+    definitionsCache.set("deal", definitions)
+    return stripFormulaKeys(values, definitions)
+  } catch (error) {
+    console.error("[formula-recalc] deal definition load failed, custom fields not stripped:", error)
+    return values
+  }
+}
+
+/**
+ * Recalculate this deal's formula fields and return the blob to emit (D-01/D-17).
+ *
+ * Must be awaited before `crmBus.emit`: both the webhook body and the workflow-trigger envelope
+ * are emit-time snapshots of the row object, never a re-read. Resolves rather than rejects on
+ * failure (D-05), logging with the `[formula-recalc]` prefix (T-34-17).
+ */
+async function recalcCustomFields(
+  input: RecalculateFormulasInput,
+  fallback: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  try {
+    const { customFields } = await recalculateFormulas(input)
+    return customFields
+  } catch (error) {
+    console.error("[formula-recalc] deal recalculation failed:", error)
+    return fallback
+  }
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -242,11 +287,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         updates.notes = notes
         if (notes !== existing.notes) changedFields.push("notes")
       }
+      // Strip client-supplied formula keys BEFORE the merge (T-34-04), keeping the definitions
+      // so the recalculation below does not read them a second time.
+      const definitionsCache = new Map<EntityType, CustomFieldDefinition[]>()
+      let persistedCustomFieldKeys: string[] = []
       if (custom_fields !== undefined) {
+        const stripped = await stripCallerFormulaKeys(custom_fields, definitionsCache)
+        persistedCustomFieldKeys = Object.keys(stripped)
         // Merge with existing custom fields
         updates.customFields = {
           ...((existing.customFields as Record<string, unknown>) || {}),
-          ...custom_fields,
+          ...stripped,
         }
         changedFields.push("customFields")
       }
@@ -258,14 +309,32 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         .where(eq(deals.id, id))
         .returning()
 
-      const serializedDeal = serializeDeal(updated)
+      // Recalculate AFTER the write and STRICTLY BEFORE both emits (D-01 / D-17). Called ONCE;
+      // the single result feeds every payload this path emits.
+      const recalculatedCustomFields = await recalcCustomFields(
+        {
+          entityType: "deal",
+          entityId: id,
+          // The route's own coarse `customFields` sentinel is passed through untouched (the
+          // helper accepts it as a safety net), plus the precise key names the caller actually
+          // wrote, so FORMULA-02 / SC-4 holds tightly. The EVENT's changedFields below keeps the
+          // sentinel alone — webhook consumers may depend on that exact array.
+          changedFields: [...changedFields, ...persistedCustomFieldKeys],
+          row: updated as unknown as Record<string, unknown>,
+          definitionsCache,
+        },
+        (updated.customFields ?? {}) as Record<string, unknown>
+      )
+
+      const recalculatedDeal = { ...updated, customFields: recalculatedCustomFields }
+      const serializedDeal = serializeDeal(recalculatedDeal)
 
       // CRM events must carry the raw camelCase row (same shape the mutation
       // layer in src/lib/mutations/deals.ts emits) so workflow trigger
       // templates like {{trigger.data.stageId}} behave identically whether
       // the deal was edited via the UI or the REST API. The HTTP response
       // body below stays snake_case for API consumers.
-      const eventData = updated as unknown as Record<string, unknown>
+      const eventData = recalculatedDeal as unknown as Record<string, unknown>
 
       // Emit stage_changed event if stage changed
       if (stage_id !== undefined && stage_id !== oldStageId) {

@@ -11,6 +11,14 @@ import { organizations } from "@/db/schema/organizations"
 import { and, eq, isNull, count } from "drizzle-orm"
 import { z } from "zod"
 import { crmBus } from "@/lib/events"
+import type { CustomFieldDefinition, EntityType } from "@/db/schema"
+import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import {
+  recalculateFormulas,
+  stripFormulaKeys,
+  ENTITY_NATIVE_ATTRIBUTES,
+  type RecalculateFormulasInput,
+} from "@/lib/formula-recalc"
 
 const createPersonSchema = z.object({
   first_name: z.string().min(1, "First name is required").max(100),
@@ -21,6 +29,66 @@ const createPersonSchema = z.object({
   organization_id: z.string().optional(),
   custom_fields: z.record(z.string(), z.unknown()).optional(),
 })
+
+/**
+ * The native columns a create writes. A create genuinely changes every native attribute, so a
+ * formula over `{{FirstName}}` or `{{Email}}` must run even when the request carries no custom
+ * fields at all. Still a precise list rather than a wildcard, so FORMULA-02/SC-4 keeps holding —
+ * note `organizationId` is deliberately absent, because no formula can reference it.
+ */
+const PERSON_NATIVE_COLUMNS = Object.values(ENTITY_NATIVE_ATTRIBUTES.person)
+
+/**
+ * Drop caller-supplied formula keys before they reach the JSONB blob (threat T-34-04).
+ *
+ * The server is the sole writer of formula values; without this an API key could set any value
+ * on a server-derived field and steer a workflow condition that branches on it (T-34-15).
+ *
+ * Fails OPEN, matching plan 34-07: if the definitions read itself throws, the caller's blob is
+ * persisted unstripped and logged, rather than turning a transient DB blip into a 500 on a route
+ * that has no such failure mode today. The recalculation that immediately follows overwrites
+ * every in-scope formula key anyway, so the exposure is narrow.
+ */
+async function stripCallerFormulaKeys(
+  values: Record<string, unknown>,
+  definitionsCache: Map<EntityType, CustomFieldDefinition[]>
+): Promise<Record<string, unknown>> {
+  try {
+    const definitions = await getActiveFieldDefinitions("person")
+    // Hand the definitions to the recalculation so one create issues ONE definitions query.
+    definitionsCache.set("person", definitions)
+    return stripFormulaKeys(values, definitions)
+  } catch (error) {
+    console.error(
+      "[formula-recalc] person definition load failed, custom fields not stripped:",
+      error
+    )
+    return values
+  }
+}
+
+/**
+ * Recalculate this person's formula fields and return the blob to emit (D-01/D-17).
+ *
+ * The caller MUST await this before `crmBus.emit`: the webhook body and the workflow-trigger
+ * envelope are emit-time snapshots of the row object, never a re-read, so recalculating after
+ * the emit leaves both carrying stale values even though the stored row is correct.
+ *
+ * Resolves rather than rejects on failure (D-05), logging with the `[formula-recalc]` prefix so
+ * the failure stays visible rather than swallowed (T-34-17).
+ */
+async function recalcCustomFields(
+  input: RecalculateFormulasInput,
+  fallback: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  try {
+    const { customFields } = await recalculateFormulas(input)
+    return customFields
+  } catch (error) {
+    console.error("[formula-recalc] person recalculation failed:", error)
+    return fallback
+  }
+}
 
 export async function GET(request: NextRequest) {
   return withApiAuth(request, async (req: NextRequest, context: ApiAuthContext) => {
@@ -130,6 +198,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Strip client-supplied formula keys BEFORE the write (T-34-04), keeping the definitions so
+    // the recalculation below does not read them a second time.
+    const definitionsCache = new Map<EntityType, CustomFieldDefinition[]>()
+    const customFieldsToPersist =
+      custom_fields !== undefined
+        ? await stripCallerFormulaKeys(custom_fields, definitionsCache)
+        : {}
+
     // Insert person
     const [person] = await db
       .insert(people)
@@ -141,21 +217,45 @@ export async function POST(request: NextRequest) {
         notes,
         organizationId: organization_id || null,
         ownerId: context.userId,
-        customFields: custom_fields || {},
+        customFields: customFieldsToPersist,
       })
       .returning()
 
-    // Emit CRM event via bus
+    // Recalculate AFTER the write and STRICTLY BEFORE the emit (D-01 / D-17).
+    const recalculatedCustomFields = await recalcCustomFields(
+      {
+        entityType: "person",
+        entityId: person.id,
+        // The precise scope (FORMULA-02 / SC-4): every native column a create writes, plus the
+        // custom-field key names actually persisted. A key the server just stripped was never
+        // written, so listing it as changed would be a lie the scoping would act on.
+        changedFields: [...PERSON_NATIVE_COLUMNS, ...Object.keys(customFieldsToPersist)],
+        row: person as unknown as Record<string, unknown>,
+        definitionsCache,
+      },
+      (person.customFields ?? {}) as Record<string, unknown>
+    )
+
+    // Emit CRM event via bus, from the POST-recalc blob.
+    // This route emits `serializePerson(...)` — snake_case `custom_fields` — while the mutation
+    // layer emits the raw camelCase row. Both spellings are normalised by the trigger envelope;
+    // do NOT harmonise the casing here, it would break existing webhook consumers (T-34-23).
     crmBus.emit("person.created", {
       entity: "person",
       entityId: person.id,
       action: "created",
-      data: serializePerson(person) as unknown as Record<string, unknown>,
+      data: serializePerson({
+        ...person,
+        customFields: recalculatedCustomFields,
+      }) as unknown as Record<string, unknown>,
       changedFields: null,
       userId: context.userId,
       timestamp: new Date().toISOString(),
     })
 
+    // The 201 body deliberately carries the PRE-recalc row: the stored value, the emitted event
+    // and any subsequent GET are all correct (SC-1), and changing a create response is backlog
+    // 999.23, which is being decided once for all four entities rather than per route.
     return createdResponse(serializePerson(person))
   })
 }
