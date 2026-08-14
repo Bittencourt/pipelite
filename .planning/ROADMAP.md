@@ -64,7 +64,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 
 ### v1.3 Foundation & CRM Depth (Phases 32-43)
 
-- [ ] **Phase 32: Test Infrastructure & CI** - Green suite, one command to run it, and a merge gate that keeps it green
+- [x] **Phase 32: Test Infrastructure & CI** - Green suite, one command to run it, and a merge gate that keeps it green (completed 2026-08-14)
 - [ ] **Phase 33: Database Indexes for the CRM Core** - Index the foreign keys and hot filter columns the v1.0 tables never got
 - [ ] **Phase 34: Formula Reactivity** - Server-side, dependency-aware recalc so stored formula values stop going stale
 - [ ] **Phase 35: Notes & Record Timeline** - Append-only attributed notes plus one chronological timeline per record
@@ -110,7 +110,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 32-06-PLAN.md — Run CI once on master, create the `master` ruleset requiring the `ci` check, prove a broken PR is blocked (CI-04)
+- [x] 32-06-PLAN.md — Run CI once on master, create the `master` ruleset requiring the `ci` check, prove a broken PR is blocked (CI-04)
 
 ### Phase 33: Database Indexes for the CRM Core
 
@@ -278,7 +278,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 32. Test Infrastructure & CI | 5/6 | In Progress|  |
+| 32. Test Infrastructure & CI | 6/6 | Complete   | 2026-08-14 |
 | 33. Database Indexes for the CRM Core | 0/? | Not started | - |
 | 34. Formula Reactivity | 0/? | Not started | - |
 | 35. Notes & Record Timeline | 0/? | Not started | - |

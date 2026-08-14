@@ -11,10 +11,10 @@ the motivating evidence stays one hop away.
 
 ### Test Infrastructure & CI (999.3)
 
-- [ ] **CI-01**: Developer can run the full test suite with `npm test` — no such script exists today, the suite is only reachable via `npx vitest`
-- [ ] **CI-02**: Test runs collect only source tests — `vitest.config.ts` excludes `.next/**` and `node_modules/**`, so the stale copy at `.next/standalone/src/lib/formula-engine.test.ts` stops being run as a second suite
-- [ ] **CI-03**: The full suite passes clean — fixes `mutations/workflows.test.ts > deleteWorkflow` (stale mock; cascade delete grew a `db.select` the mock chain does not supply, `workflows.ts:202`) and `formula-engine.test.ts > LOGIC.isBlank` (returns null, expects true)
-- [ ] **CI-04**: Every push and pull request runs `tsc --noEmit`, `eslint`, and the test suite in CI, and a failing check blocks merge
+- [x] **CI-01**: Developer can run the full test suite with `npm test` — no such script exists today, the suite is only reachable via `npx vitest`
+- [x] **CI-02**: Test runs collect only source tests — `vitest.config.ts` excludes `.next/**` and `node_modules/**`, so the stale copy at `.next/standalone/src/lib/formula-engine.test.ts` stops being run as a second suite
+- [x] **CI-03**: The full suite passes clean — fixes `mutations/workflows.test.ts > deleteWorkflow` (stale mock; cascade delete grew a `db.select` the mock chain does not supply, `workflows.ts:202`) and `formula-engine.test.ts > LOGIC.isBlank` (returns null, expects true)
+- [x] **CI-04**: Every push and pull request runs `tsc --noEmit`, `eslint`, and the test suite in CI, and a failing check blocks merge
 
 ### Database Performance (999.4)
 
@@ -108,10 +108,10 @@ Which phases cover which requirements. Populated during roadmap creation (2026-0
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CI-01 | Phase 32 | Pending |
-| CI-02 | Phase 32 | Pending |
-| CI-03 | Phase 32 | Pending |
-| CI-04 | Phase 32 | Pending |
+| CI-01 | Phase 32 | Complete |
+| CI-02 | Phase 32 | Complete |
+| CI-03 | Phase 32 | Complete |
+| CI-04 | Phase 32 | Complete |
 | PERF-01 | Phase 33 | Pending |
 | PERF-02 | Phase 33 | Pending |
 | FORMULA-01 | Phase 34 | Pending |

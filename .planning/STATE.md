@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-14T12:01:26.093Z"
+last_updated: "2026-08-14T13:53:28.028Z"
 last_activity: 2026-08-14
 progress:
   total_phases: 12
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 6
-  completed_plans: 0
-  percent: 0
+  completed_plans: 6
+  percent: 8
 ---
 
 # Session State
@@ -20,23 +20,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 32 — Test Infrastructure & CI
+**Current focus:** Phase 33 — Database Indexes for the CRM Core (Phase 32 complete)
 
 ## Position
 
-Phase: 32 - Test Infrastructure & CI (not started)
-Plan: —
-Status: Executing Phase 32
+Phase: 32 - Test Infrastructure & CI (complete — 6/6 plans)
+Plan: 6 of 6 complete
+Status: Phase 32 complete — ready for Phase 33 (Database Indexes for the CRM Core)
 Last activity: 2026-08-14
 
-Progress: [░░░░░░░░░░] 0% (0/12 v1.3 phases complete)
+Progress: [█░░░░░░░░░] 8% (1/12 v1.3 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
 
 - Total plans completed: 111 across 3 shipped milestones (v1.0: 73, v1.1: 12, v1.2: 26)
-- v1.3 plans completed: 0
+- v1.3 plans completed: 6 (Phase 32 complete)
 
 ## Decisions
 
@@ -116,6 +116,7 @@ Progress: [░░░░░░░░░░] 0% (0/12 v1.3 phases complete)
 | Phase 27 P02 | 6min | 2 tasks | 13 files |
 | Phase 28 P02 | 6min | 2 tasks | 16 files |
 | Phase 28 P05 | 3min | 1 tasks | 2 files |
+| Phase 32 P06 | 13min | 3 tasks | 0 files |
 
 ## Accumulated Context
 
@@ -166,10 +167,11 @@ None open. No pending todos, no UAT/verification debt (audit-uat: 0 items), work
 - 2026-08-13: Requirements defined (37 v1.3 requirements across 12 categories)
 - 2026-08-13: Roadmap created (12 phases: 32-43), backlog 999.1-999.12 fully promoted
 - 2026-08-12: Backlog review -- captured deferred v1.1 scope as 999.1 (formula reactivity) and 999.2 (bulk operations); removed stale 27-action-nodes/deferred-items.md (http.test.ts fixed, 14/14 pass)
+- 2026-08-14: Phase 32 COMPLETE (6 plans) -- `npm test`/`typecheck` scripts, vitest scoped to src/, suite green (455 pass), 0 eslint errors, `.github/workflows/ci.yml`, and an active `master protection` ruleset (id 20851119) requiring the `ci` check. First CI run on GitHub hardware: 71s, success. Merge gate proven behaviourally via throwaway PR #10 (red `ci`, `mergeStateStatus: BLOCKED`), closed unmerged. Direct push to master retained via one repository-admin bypass actor (D-07 option B).
 
 ## Current Position
 
-Phase: 32 (Test Infrastructure & CI) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 32
-Last activity: 2026-08-14 -- Phase 32 execution started
+Phase: 32 (Test Infrastructure & CI) — COMPLETE
+Plan: 6 of 6 complete
+Status: Phase 32 complete; next up Phase 33 (Database Indexes for the CRM Core)
+Last activity: 2026-08-14 -- 32-06 complete: master published, first CI run green, `master protection` ruleset (20851119) active and proven to block a broken PR
