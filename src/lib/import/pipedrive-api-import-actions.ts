@@ -51,7 +51,10 @@ import {
   type NewPersonData,
   type NewDealData,
 } from "./pipedrive-api-transformers"
-import type { FieldType, EntityType } from "@/db/schema/custom-fields"
+import type { CustomFieldDefinition, FieldType, EntityType } from "@/db/schema/custom-fields"
+import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import { stripFormulaKeys, FORMULA_EVALUATION_BUDGET } from "@/lib/formula-recalc"
+import { recalculateImportedRows, type ImportedRow } from "./formula-recalc-batch"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,6 +90,64 @@ async function batchInsert<T extends Record<string, unknown>>(
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE)
     await db.insert(table).values(batch as never)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Formula recalculation — one shared budget for the WHOLE import run
+// ---------------------------------------------------------------------------
+
+/**
+ * The evaluation allowance for one entire `importFromPipedrive` run, shared by organizations,
+ * people, deals, activities and the auto-created stubs alike (D-04/D-13, threat T-34-03).
+ *
+ * A Pipedrive run writes four entity types in sequence, so handing each block its own fresh
+ * `FORMULA_EVALUATION_BUDGET` would multiply the bound by the number of blocks — and a bound
+ * that scales with the amount of work is not a bound. `remaining` is threaded forward instead
+ * and decremented by what each block actually spent.
+ */
+function createImportFormulaBudget() {
+  let remaining = FORMULA_EVALUATION_BUDGET
+  const caches = new Map<EntityType, Map<EntityType, CustomFieldDefinition[]>>()
+
+  /** One definitions cache per entity type, reused by every block that touches it. */
+  function cacheFor(entityType: EntityType): Map<EntityType, CustomFieldDefinition[]> {
+    const existing = caches.get(entityType)
+    if (existing) return existing
+    const created = new Map<EntityType, CustomFieldDefinition[]>()
+    caches.set(entityType, created)
+    return created
+  }
+
+  return {
+    /**
+     * The active definitions for an entity type, read ONCE per run and memoised into the very
+     * cache the recalculation is handed — so the T-34-04 strip and the recalculation share a
+     * single query rather than issuing one each.
+     */
+    async definitionsFor(entityType: EntityType): Promise<CustomFieldDefinition[]> {
+      const cache = cacheFor(entityType)
+      const cached = cache.get(entityType)
+      if (cached) return cached
+
+      const definitions = await getActiveFieldDefinitions(entityType)
+      cache.set(entityType, definitions)
+      return definitions
+    },
+
+    /** Recalculate one block's rows against what is left of the run-wide allowance. */
+    async recalculate(entityType: EntityType, rows: ImportedRow[]): Promise<void> {
+      if (rows.length === 0) return
+
+      const summary = await recalculateImportedRows({
+        entityType,
+        rows,
+        budget: remaining,
+        definitionsCache: cacheFor(entityType),
+      })
+
+      remaining -= summary.evaluations
+    },
   }
 }
 
@@ -327,6 +388,11 @@ export async function importFromPipedrive(
     }
 
     await updateImportState(importId, { totalEntities })
+
+    // ONE formula evaluation allowance for this entire run, spent down by every entity block
+    // below. Created here rather than per block so the D-13 bound cannot be multiplied by the
+    // number of entity types an import happens to cover.
+    const formulaBudget = createImportFormulaBudget()
 
     // ID maps for entity relationships
     const pipelineIdMap = new Map<number, string>()
@@ -602,7 +668,12 @@ export async function importFromPipedrive(
       }
 
       // Insert organizations and build ID map
+      const insertedOrgs: ImportedRow[] = []
       if (newOrgs.length > 0) {
+        // T-34-04: a Pipedrive field mapped onto a formula-typed custom field name cannot seed a
+        // server-derived value. The definitions are read once per run and reused by the recalc.
+        const orgDefinitions = await formulaBudget.definitionsFor("organization")
+
         for (const orgData of newOrgs) {
           const [inserted] = await db
             .insert(organizations)
@@ -613,16 +684,19 @@ export async function importFromPipedrive(
               notes: orgData.notes,
               ownerId: orgData.ownerId,
               defaultCurrency: orgData.defaultCurrency,
-              customFields: orgData.customFields,
+              customFields: stripFormulaKeys(orgData.customFields ?? {}, orgDefinitions),
               createdAt: now,
               updatedAt: now,
             })
             .returning()
 
           orgIdMap.set(orgData.pdId, inserted.id)
+          insertedOrgs.push(inserted as unknown as ImportedRow)
           await incrementImportedCount(importId, 'organizations')
         }
       }
+
+      await formulaBudget.recalculate("organization", insertedOrgs)
 
       await updateCompletedCount(importId, pdOrgs.length)
     }
@@ -678,7 +752,11 @@ export async function importFromPipedrive(
       }
 
       // Insert people and build ID map
+      const insertedPeople: ImportedRow[] = []
       if (newPeople.length > 0) {
+        // T-34-04: strip formula-typed keys from the Pipedrive field mapping.
+        const personDefinitions = await formulaBudget.definitionsFor("person")
+
         for (const personData of newPeople) {
           const [inserted] = await db
             .insert(people)
@@ -690,16 +768,19 @@ export async function importFromPipedrive(
               notes: personData.notes,
               organizationId: personData.organizationId,
               ownerId: personData.ownerId,
-              customFields: personData.customFields,
+              customFields: stripFormulaKeys(personData.customFields ?? {}, personDefinitions),
               createdAt: now,
               updatedAt: now,
             })
             .returning()
 
           personIdMap.set(personData.pdId, inserted.id)
+          insertedPeople.push(inserted as unknown as ImportedRow)
           await incrementImportedCount(importId, 'people')
         }
       }
+
+      await formulaBudget.recalculate("person", insertedPeople)
 
       await updateCompletedCount(importId, pdPeople.length)
     }
@@ -725,6 +806,10 @@ export async function importFromPipedrive(
       // pdDealFields is already populated in the upfront field definitions fetch above.
 
       const newDeals: Array<NewDealData & { pdId: number }> = []
+      // Auto-created stubs are imported rows too: they carry real native attributes (a name, a
+      // notes string) that a formula may read, so they are recalculated alongside the deals.
+      const stubOrgs: ImportedRow[] = []
+      const stubPeople: ImportedRow[] = []
 
       for (const pdDeal of pdDeals) {
         // Deals: match by title + organization_id
@@ -764,6 +849,7 @@ export async function importFromPipedrive(
 
             dealOrgId = stubOrg.id
             orgIdMap.set(pdDeal.org_id, stubOrg.id)
+            stubOrgs.push(stubOrg as unknown as ImportedRow)
             await addReviewItem(importId, 'organization', stubOrg.id, `Stub created for deal "${pdDeal.title}"`)
           }
 
@@ -784,6 +870,7 @@ export async function importFromPipedrive(
 
             dealPersonId = stubPerson.id
             personIdMap.set(pdDeal.person_id, stubPerson.id)
+            stubPeople.push(stubPerson as unknown as ImportedRow)
             await addReviewItem(importId, 'person', stubPerson.id, `Stub created for deal "${pdDeal.title}"`)
           }
 
@@ -805,7 +892,11 @@ export async function importFromPipedrive(
       }
 
       // Insert deals and build ID map
+      const insertedDeals: ImportedRow[] = []
       if (newDeals.length > 0) {
+        // T-34-04: strip formula-typed keys from the Pipedrive field mapping.
+        const dealDefinitions = await formulaBudget.definitionsFor("deal")
+
         for (const dealData of newDeals) {
           const [inserted] = await db
             .insert(deals)
@@ -819,16 +910,21 @@ export async function importFromPipedrive(
               position: dealData.position,
               expectedCloseDate: dealData.expectedCloseDate,
               notes: dealData.notes,
-              customFields: dealData.customFields,
+              customFields: stripFormulaKeys(dealData.customFields ?? {}, dealDefinitions),
               createdAt: now,
               updatedAt: now,
             })
             .returning()
 
           dealIdMap.set(dealData.pdId, inserted.id)
+          insertedDeals.push(inserted as unknown as ImportedRow)
           await incrementImportedCount(importId, 'deals')
         }
       }
+
+      await formulaBudget.recalculate("organization", stubOrgs)
+      await formulaBudget.recalculate("person", stubPeople)
+      await formulaBudget.recalculate("deal", insertedDeals)
 
       await updateCompletedCount(importId, pdDeals.length)
     }
@@ -899,9 +995,15 @@ export async function importFromPipedrive(
         }
 
         // Insert activities
+        const insertedActivities: ImportedRow[] = []
         if (newActivities.length > 0) {
+          // T-34-04: strip formula-typed keys from the Pipedrive field mapping.
+          const activityDefinitions = await formulaBudget.definitionsFor("activity")
+
           for (const activityData of newActivities) {
-            await db.insert(activities).values({
+            // `.returning()` — the recalculation needs the generated id, and passing the row
+            // through saves it a re-read.
+            const [inserted] = await db.insert(activities).values({
               title: activityData.title,
               typeId: activityData.typeId,
               dealId: activityData.dealId,
@@ -909,13 +1011,17 @@ export async function importFromPipedrive(
               dueDate: activityData.dueDate,
               completedAt: activityData.completedAt,
               notes: activityData.notes,
-              customFields: activityData.customFields,
+              customFields: stripFormulaKeys(activityData.customFields ?? {}, activityDefinitions),
               createdAt: now,
               updatedAt: now,
-            })
+            }).returning()
+
+            insertedActivities.push(inserted as unknown as ImportedRow)
             await incrementImportedCount(importId, 'activities')
           }
         }
+
+        await formulaBudget.recalculate("activity", insertedActivities)
       }
 
       await updateCompletedCount(importId, pdActivities.length)

@@ -14,8 +14,27 @@ import {
 import { eq, and, isNull, asc } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { fuzzyMatchOrganization } from "@/lib/import/fuzzy-match"
+import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import { stripFormulaKeys } from "@/lib/formula-recalc"
+import {
+  recalculateImportedRows,
+  type ImportedRow,
+} from "@/lib/import/formula-recalc-batch"
+import type { CustomFieldDefinition, EntityType } from "@/db/schema/custom-fields"
 
 const BATCH_SIZE = 100
+
+/**
+ * This module publishes NO events to the CRM event bus, and that is deliberate — not an
+ * oversight for a later plan to "fix". An import is not a CRM event source: publishing one
+ * event per imported row would fire a workflow run and a webhook delivery per row, so a
+ * 5,000-row file would become 5,000 workflow executions (threat T-34-26, accepted). Formula
+ * recalculation therefore happens here directly, rather than through the emit-time payload
+ * rebuild the mutation layer uses for the interactive write paths.
+ *
+ * A source scan asserts the event-bus identifier does not appear in this file, so do not write
+ * it into prose here either.
+ */
 
 /** Extract custom field values from a mapped row (keys prefixed with "custom_") */
 function extractCustomFields(row: Record<string, unknown>): Record<string, unknown> {
@@ -33,14 +52,69 @@ function extractCustomFields(row: Record<string, unknown>): Record<string, unkno
 
 // ----- Helpers -----
 
-/** Insert rows in batches of BATCH_SIZE */
+/**
+ * Insert rows in batches of BATCH_SIZE, returning what was actually written.
+ *
+ * `.returning()` is what makes formula recalculation possible at all: the recalculation needs
+ * the generated row id, and passing the returned row straight through saves it a re-read per
+ * row. The BATCH_SIZE chunking is unchanged.
+ */
 async function batchInsert<T extends Record<string, unknown>>(
   table: Parameters<typeof db.insert>[0],
   rows: T[]
-): Promise<void> {
+): Promise<ImportedRow[]> {
+  const inserted: ImportedRow[] = []
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE)
-    await db.insert(table).values(batch as never)
+    // The existing `as never` cast on `values` erases the row type, so the returned rows are
+    // widened back to the structural shape the recalculation needs (an id plus a JSONB blob).
+    const returned = await db.insert(table).values(batch as never).returning()
+    inserted.push(...(returned as unknown as ImportedRow[]))
+  }
+  return inserted
+}
+
+/**
+ * Load an entity type's custom field definitions ONCE per import flow.
+ *
+ * The same read serves two purposes: the T-34-04 strip below, and the recalculation's
+ * `definitionsCache` — so an import of 5,000 rows issues one definition query, not 5,000.
+ */
+async function loadImportDefinitions(entityType: EntityType): Promise<{
+  definitions: CustomFieldDefinition[]
+  definitionsCache: Map<EntityType, CustomFieldDefinition[]>
+}> {
+  const definitions = await getActiveFieldDefinitions(entityType)
+  const definitionsCache = new Map<EntityType, CustomFieldDefinition[]>()
+  definitionsCache.set(entityType, definitions)
+  return { definitions, definitionsCache }
+}
+
+/**
+ * Recalculate the formula fields of the rows an import just wrote, and tell the user when the
+ * shared evaluation budget ran out.
+ *
+ * Surfacing the shortfall in the existing `warnings` array matters (T-34-25): budget exhaustion
+ * is otherwise a silent partial recalculation visible only in a server log.
+ */
+async function recalculateImportedRowsAndWarn(
+  entityType: EntityType,
+  inserted: ImportedRow[],
+  definitionsCache: Map<EntityType, CustomFieldDefinition[]>,
+  warnings: string[]
+): Promise<void> {
+  const summary = await recalculateImportedRows({
+    entityType,
+    rows: inserted,
+    definitionsCache,
+  })
+
+  if (summary.skipped > 0) {
+    warnings.push(
+      `Formula fields were not recalculated for ${summary.skipped} of ${inserted.length} imported ` +
+        `${entityType} rows — this import exceeded the formula evaluation budget. Those rows keep ` +
+        `the values they were imported with and will recompute the next time they are saved.`
+    )
   }
 }
 
@@ -124,10 +198,14 @@ export async function importOrganizations(
   }
 
   try {
+    const warnings: string[] = []
+    const { definitions, definitionsCache } = await loadImportDefinitions("organization")
     const now = new Date()
     const rows = data.map((item) => {
       const { name, website, industry, notes, ...rest } = item as Record<string, unknown>
-      const customFields = extractCustomFields(rest)
+      // T-34-04: the server is the sole writer of formula keys, so a `custom_Margin` column in
+      // an uploaded file cannot seed a server-derived value.
+      const customFields = stripFormulaKeys(extractCustomFields(rest), definitions)
       return {
         name: name as string,
         website: (website as string) || null,
@@ -140,13 +218,14 @@ export async function importOrganizations(
       }
     })
 
-    await batchInsert(organizations, rows)
+    const inserted = await batchInsert(organizations, rows)
+    await recalculateImportedRowsAndWarn("organization", inserted, definitionsCache, warnings)
 
     revalidatePath("/organizations")
     return {
       success: true,
       count: rows.length,
-      warnings: [],
+      warnings,
       autoCreated: { orgs: [], people: [] },
     }
   } catch (error) {
@@ -192,6 +271,7 @@ export async function importPeople(
 
     const autoCreatedOrgs = new Map<string, string>()
     const warnings: string[] = []
+    const { definitions, definitionsCache } = await loadImportDefinitions("person")
     const now = new Date()
     const rows: Array<Record<string, unknown>> = []
 
@@ -214,7 +294,8 @@ export async function importPeople(
       }
 
       const { firstName, lastName, email, phone, notes, organizationName: _orgName, ...rest } = item as Record<string, unknown>
-      const customFields = extractCustomFields(rest)
+      // T-34-04: formula-typed keys are stripped from what the uploaded file supplied.
+      const customFields = stripFormulaKeys(extractCustomFields(rest), definitions)
       rows.push({
         firstName: firstName as string,
         lastName: lastName as string,
@@ -229,7 +310,8 @@ export async function importPeople(
       })
     }
 
-    await batchInsert(people, rows)
+    const inserted = await batchInsert(people, rows)
+    await recalculateImportedRowsAndWarn("person", inserted, definitionsCache, warnings)
 
     revalidatePath("/people")
     revalidatePath("/organizations")
@@ -305,6 +387,7 @@ export async function importDeals(
     const autoCreatedOrgs = new Map<string, string>()
     const autoCreatedPeople = new Map<string, string>()
     const warnings: string[] = []
+    const { definitions, definitionsCache } = await loadImportDefinitions("deal")
     const now = new Date()
     const rows: Array<Record<string, unknown>> = []
 
@@ -394,7 +477,8 @@ export async function importDeals(
       }
 
       const { title, value, stageName: _sn, organizationName: _on, personEmail: _pe, expectedCloseDate: _ec, notes, ...rest } = item as Record<string, unknown>
-      const customFields = extractCustomFields(rest)
+      // T-34-04: formula-typed keys are stripped from what the uploaded file supplied.
+      const customFields = stripFormulaKeys(extractCustomFields(rest), definitions)
       rows.push({
         title: title as string,
         value: (value as string) || null,
@@ -411,7 +495,8 @@ export async function importDeals(
       })
     }
 
-    await batchInsert(deals, rows)
+    const inserted = await batchInsert(deals, rows)
+    await recalculateImportedRowsAndWarn("deal", inserted, definitionsCache, warnings)
 
     revalidatePath("/deals")
     revalidatePath("/people")
@@ -474,6 +559,7 @@ export async function importActivities(
     })
 
     const warnings: string[] = []
+    const { definitions, definitionsCache } = await loadImportDefinitions("activity")
     const now = new Date()
     const rows: Array<Record<string, unknown>> = []
 
@@ -515,7 +601,8 @@ export async function importActivities(
       }
 
       const { title, typeName: _tn, dueDate: _dd, dealTitle: _dt, notes, ...rest } = item as Record<string, unknown>
-      const customFields = extractCustomFields(rest)
+      // T-34-04: formula-typed keys are stripped from what the uploaded file supplied.
+      const customFields = stripFormulaKeys(extractCustomFields(rest), definitions)
       rows.push({
         title: title as string,
         typeId,
@@ -529,7 +616,8 @@ export async function importActivities(
       })
     }
 
-    await batchInsert(activities, rows)
+    const inserted = await batchInsert(activities, rows)
+    await recalculateImportedRowsAndWarn("activity", inserted, definitionsCache, warnings)
 
     revalidatePath("/activities")
 
