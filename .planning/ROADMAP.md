@@ -124,7 +124,15 @@ Plans:
   3. Every core CRM foreign key (`deals.organization_id`, `deals.person_id`, `deals.owner_id`, `activities.deal_id`, `people.organization_id`) and every `deleted_at` filter column on deals/orgs/people/activities is index-backed via a single migration
   4. Application behavior is unchanged — the suite passes with no test modifications
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+- [ ] 33-01-PLAN.md — Capture the BEFORE EXPLAIN plans for both named queries and the empty catalog assertion, before any index DDL exists (D-07)
+**Wave 2**
+- [ ] 33-02-PLAN.md — Declare all eleven plain single-column indexes in the four Drizzle schema files (D-06)
+**Wave 3**
+- [ ] 33-03-PLAN.md — Generate and gate the single index migration, apply it, then capture the AFTER plans and close SC-1..SC-4
 
 ### Phase 34: Formula Reactivity
 
