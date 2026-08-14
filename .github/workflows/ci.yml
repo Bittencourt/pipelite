@@ -1,9 +1,11 @@
 # Gates every push to master and every pull request targeting master on the
 # same three commands a developer runs locally: tsc --noEmit, eslint, vitest run.
 #
-# Action versions confirmed live against the GitHub API on 2026-08-13:
-#   actions/checkout   v7.0.1 (2026-07-20)
-#   actions/setup-node v7.0.0 (2026-07-14)
+# Actions are pinned to full commit SHAs, not to the mutable `v7` major tag an owner can
+# re-point at any commit. Resolved against the GitHub API on 2026-08-14 (both SHAs are what
+# `v7` pointed at that day), so the pin is behaviour-preserving:
+#   actions/checkout   v7.0.1 -> 3d3c42e5aac5ba805825da76410c181273ba90b1
+#   actions/setup-node v7.0.0 -> 820762786026740c76f36085b0efc47a31fe5020
 name: CI
 
 on:
@@ -35,9 +37,14 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job only reads code; it never pushes. Without this, checkout leaves the
+          # GITHUB_TOKEN in .git/config while `npm ci` below runs third-party postinstall
+          # scripts in the same job.
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           # Active LTS (EOL 2028-04-30). The binding floor is vite 7's
           # engines ^20.19.0 || >=22.12.0, reached transitively via vitest —
