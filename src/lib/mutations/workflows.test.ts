@@ -441,8 +441,18 @@ describe("updateWorkflow nextRunAt scheduling", () => {
 })
 
 describe("deleteWorkflow", () => {
+  // NOTE: mockDb.select is stubbed inside each test, never in a beforeEach.
+  // The file-level beforeEach uses vi.clearAllMocks(), which clears call history
+  // but NOT implementations set via mockReturnValue -- a hoisted stub would leak
+  // into every later test in this file and cause order-dependent failures.
   it("deletes existing workflow", async () => {
     mockDb.query.workflows.findFirst.mockResolvedValue({ id: "wf-1" })
+    // No runs, so the cascade branch is skipped and only the workflow is deleted.
+    mockDb.select.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    })
     mockDb.delete.mockReturnValue({
       where: vi.fn().mockResolvedValue(undefined),
     })
@@ -450,6 +460,24 @@ describe("deleteWorkflow", () => {
     const result = await deleteWorkflow("wf-1")
 
     expect(result).toEqual({ success: true })
+  })
+
+  it("cascades to run steps and runs before deleting the workflow", async () => {
+    mockDb.query.workflows.findFirst.mockResolvedValue({ id: "wf-1" })
+    // Two runs exist, so `runs.length > 0` is entered.
+    mockDb.select.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ id: "run-1" }, { id: "run-2" }]),
+      }),
+    })
+    const deleteWhere = vi.fn().mockResolvedValue(undefined)
+    mockDb.delete.mockReturnValue({ where: deleteWhere })
+
+    const result = await deleteWorkflow("wf-1")
+
+    expect(result).toEqual({ success: true })
+    // steps -> runs -> workflow
+    expect(mockDb.delete).toHaveBeenCalledTimes(3)
   })
 
   it("returns error for non-existent workflow", async () => {
