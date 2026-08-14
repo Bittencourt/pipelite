@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-14T02:30:16.256Z"
+last_updated: "2026-08-14T12:01:26.093Z"
 last_activity: 2026-08-14
 progress:
   total_phases: 12
@@ -20,13 +20,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** v1.3 Foundation & CRM Depth — roadmapped (Phases 32-43), ready to plan Phase 32
+**Current focus:** Phase 32 — Test Infrastructure & CI
 
 ## Position
 
 Phase: 32 - Test Infrastructure & CI (not started)
 Plan: —
-Status: Ready to execute
+Status: Executing Phase 32
 Last activity: 2026-08-14
 
 Progress: [░░░░░░░░░░] 0% (0/12 v1.3 phases complete)
@@ -169,7 +169,7 @@ None open. No pending todos, no UAT/verification debt (audit-uat: 0 items), work
 
 ## Current Position
 
-Phase: 32 - Test Infrastructure & CI (not started)
-Plan: —
-Status: Ready to execute
-Last activity: 2026-08-14 -- Phase 32 planning complete
+Phase: 32 (Test Infrastructure & CI) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 32
+Last activity: 2026-08-14 -- Phase 32 execution started
