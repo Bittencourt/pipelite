@@ -1,8 +1,8 @@
 ---
 phase: 33
 slug: database-indexes-for-the-crm-core
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-08-14
 ---
@@ -62,7 +62,7 @@ created: 2026-08-14
 
 Existing infrastructure covers all phase requirements — vitest and the three CI gates were established in Phase 32, and Postgres is up and healthy.
 
-- [ ] BEFORE `EXPLAIN ANALYZE` capture (D-07) is a hard prerequisite for SC-1/SC-2 and must be the first task
+- [x] BEFORE `EXPLAIN ANALYZE` capture (D-07) is a hard prerequisite for SC-1/SC-2 and must be the first task
 
 ---
 
@@ -78,13 +78,13 @@ Existing infrastructure covers all phase requirements — vitest and the three C
 
 ## Validation Sign-Off
 
-- [ ] All tasks have an automated verify command
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] BEFORE-capture ordering (D-07) enforced by task sequence, not by convention
-- [ ] SC-1 acceptance pre-states that `Bitmap Index Scan` passes (D-01) so verification cannot false-fail on wording
-- [ ] `deals.owner_id` verified by catalog, not EXPLAIN (D-05)
-- [ ] No watch-mode flags
-- [ ] No seeding, truncation, or row mutation of the live dev database
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have an automated verify command
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] BEFORE-capture ordering (D-07) enforced by task sequence, not by convention
+- [x] SC-1 acceptance pre-states that `Bitmap Index Scan` passes (D-01) so verification cannot false-fail on wording
+- [x] `deals.owner_id` verified by catalog, not EXPLAIN (D-05)
+- [x] No watch-mode flags
+- [x] No seeding, truncation, or row mutation of the live dev database
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-08-14 (gsd-plan-checker: VERIFICATION PASSED, 3 plans, 0 blockers)

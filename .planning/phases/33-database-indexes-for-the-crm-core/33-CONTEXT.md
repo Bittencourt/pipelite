@@ -40,7 +40,7 @@ All implementation choices are at Claude's discretion — schema-only infrastruc
 
 - **Definition site:** declare indexes in the Drizzle schema files under `src/db/schema/` and generate the migration with `drizzle-kit generate`, rather than hand-writing SQL. Three existing schema files (`workflows.ts`, `webhooks.ts`, `webhook-deliveries.ts`) already use Drizzle's `index()` builder, so that is the established pattern. Hand-written SQL is justified only if `drizzle-kit generate` cannot express what is needed.
 - **Single migration:** SC-3 says "via a single migration" — all index DDL lands in one generated migration file, not one per table.
-- **Partial vs plain on `deleted_at`:** at the planner's discretion. A partial index (`WHERE deleted_at IS NULL`) is usually the better fit for a soft-delete filter and there is precedent in this repo (STATE.md records a partial index on `next_run_at WHERE active = true` from the v1.2 work). If Drizzle cannot generate the partial form cleanly, a plain index is acceptable — document which was chosen and why.
+- ~~**Partial vs plain on `deleted_at`:** at the planner's discretion.~~ **SUPERSEDED by D-02** — research measured this and locked it to plain indexes. Not a discretionary choice.
 - **No behavior change:** do not modify any test, query, or server action. SC-4 is explicit.
 
 </decisions>
