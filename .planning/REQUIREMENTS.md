@@ -104,53 +104,54 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ## Traceability
 
-Which phases cover which requirements. Populated during roadmap creation.
+Which phases cover which requirements. Populated during roadmap creation (2026-08-13).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CI-01 | TBD | Pending |
-| CI-02 | TBD | Pending |
-| CI-03 | TBD | Pending |
-| CI-04 | TBD | Pending |
-| PERF-01 | TBD | Pending |
-| PERF-02 | TBD | Pending |
-| FORMULA-01 | TBD | Pending |
-| FORMULA-02 | TBD | Pending |
-| NOTE-01 | TBD | Pending |
-| NOTE-02 | TBD | Pending |
-| NOTE-03 | TBD | Pending |
-| AUDIT-01 | TBD | Pending |
-| AUDIT-02 | TBD | Pending |
-| AUDIT-03 | TBD | Pending |
-| AUDIT-04 | TBD | Pending |
-| BULK-01 | TBD | Pending |
-| BULK-02 | TBD | Pending |
-| BULK-03 | TBD | Pending |
-| BULK-04 | TBD | Pending |
-| DEDUP-01 | TBD | Pending |
-| DEDUP-02 | TBD | Pending |
-| DEDUP-03 | TBD | Pending |
-| VIEW-01 | TBD | Pending |
-| VIEW-02 | TBD | Pending |
-| VIEW-03 | TBD | Pending |
-| TRASH-01 | TBD | Pending |
-| TRASH-02 | TBD | Pending |
-| TRASH-03 | TBD | Pending |
-| WFOPS-01 | TBD | Pending |
-| WFOPS-02 | TBD | Pending |
-| WFOPS-03 | TBD | Pending |
-| WFOPS-04 | TBD | Pending |
-| OBS-01 | TBD | Pending |
-| OBS-02 | TBD | Pending |
-| OBS-03 | TBD | Pending |
-| POLISH-01 | TBD | Pending |
-| POLISH-02 | TBD | Pending |
+| CI-01 | Phase 32 | Pending |
+| CI-02 | Phase 32 | Pending |
+| CI-03 | Phase 32 | Pending |
+| CI-04 | Phase 32 | Pending |
+| PERF-01 | Phase 33 | Pending |
+| PERF-02 | Phase 33 | Pending |
+| FORMULA-01 | Phase 34 | Pending |
+| FORMULA-02 | Phase 34 | Pending |
+| NOTE-01 | Phase 35 | Pending |
+| NOTE-02 | Phase 35 | Pending |
+| NOTE-03 | Phase 35 | Pending |
+| AUDIT-01 | Phase 36 | Pending |
+| AUDIT-02 | Phase 36 | Pending |
+| AUDIT-03 | Phase 36 | Pending |
+| AUDIT-04 | Phase 36 | Pending |
+| BULK-01 | Phase 38 | Pending |
+| BULK-02 | Phase 38 | Pending |
+| BULK-03 | Phase 38 | Pending |
+| BULK-04 | Phase 38 | Pending |
+| DEDUP-01 | Phase 39 | Pending |
+| DEDUP-02 | Phase 39 | Pending |
+| DEDUP-03 | Phase 39 | Pending |
+| VIEW-01 | Phase 40 | Pending |
+| VIEW-02 | Phase 40 | Pending |
+| VIEW-03 | Phase 40 | Pending |
+| TRASH-01 | Phase 37 | Pending |
+| TRASH-02 | Phase 37 | Pending |
+| TRASH-03 | Phase 37 | Pending |
+| WFOPS-01 | Phase 41 | Pending |
+| WFOPS-02 | Phase 41 | Pending |
+| WFOPS-03 | Phase 41 | Pending |
+| WFOPS-04 | Phase 41 | Pending |
+| OBS-01 | Phase 42 | Pending |
+| OBS-02 | Phase 42 | Pending |
+| OBS-03 | Phase 42 | Pending |
+| POLISH-01 | Phase 43 | Pending |
+| POLISH-02 | Phase 43 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 37 total
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 37 ⚠️
+- Mapped to phases: 37 ✓
+- Unmapped: 0 ✓
+- Phases: 12 (Phases 32-43)
 
 ---
 *Requirements defined: 2026-08-13*
-*Last updated: 2026-08-13 after initial definition*
+*Last updated: 2026-08-13 — traceability populated from ROADMAP.md (Phases 32-43)*

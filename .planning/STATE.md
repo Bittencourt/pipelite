@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
-status: planning
-last_updated: "2026-08-14T01:02:03.363Z"
-last_activity: 2026-08-14
+status: roadmapped
+last_updated: "2026-08-13T00:00:00.000Z"
+last_activity: 2026-08-13
 progress:
-  total_phases: 0
+  total_phases: 12
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,16 +20,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** v1.3 Foundation & CRM Depth — defining requirements
+**Current focus:** v1.3 Foundation & CRM Depth — roadmapped (Phases 32-43), ready to plan Phase 32
 
 ## Position
 
-Phase: Not started (defining requirements)
+Phase: 32 - Test Infrastructure & CI (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-08-13 — Milestone v1.3 started
+Status: Roadmap created, awaiting `/gsd:plan-phase 32`
+Last activity: 2026-08-13 — v1.3 roadmap created (12 phases, 32-43)
 
-Progress: [░░░░░░░░░░] 0% (v1.3 not yet roadmapped)
+Progress: [░░░░░░░░░░] 0% (0/12 v1.3 phases complete)
 
 ## Performance Metrics
 
@@ -128,6 +128,7 @@ Progress: [░░░░░░░░░░] 0% (v1.3 not yet roadmapped)
 - v1.2 Workflows shipped 2026-03-28 (8 phases incl. gap-closure Phase 31, 26 plans)
 - Deferred v1.1 scope captured as backlog 2026-08-12: 999.1 formula reactivity, 999.2 bulk operations
 - Post-v1.2 codebase review 2026-08-13: 10 findings captured as backlog 999.3-999.12 (CI, indexes, notes timeline, audit log, dedup, saved views, trash/restore, workflow ops, observability, polish)
+- v1.3 roadmap created 2026-08-13: all 12 backlog items promoted into Phases 32-43, 37 requirements mapped, backlog now empty
 
 ### Research Flags
 
@@ -162,11 +163,13 @@ None open. No pending todos, no UAT/verification debt (audit-uat: 0 items), work
 - 2026-03-28: Milestone v1.2 shipped (PR #7) -- phases 24-31, 26 plans, archived to .planning/milestones/
 - 2026-08-08: Post-ship hardening merged -- PR #8 (workflow runtime: execution-engine resume, run-entry guards, schedule triggers, webhook response body, action handlers, wall-clock cycle budget), PR #9 (REST API workflow list/get/run/update/delete scoped to authed user)
 - 2026-08-08: Debug workflow-engine-not-firing RESOLVED -- two root causes: reorderDealsMutation missing CRM event emission, and Next.js standalone build omitting instrumentation.js so register() never ran in Docker (all four processors dead in production). Fixed via Dockerfile post-build chunk copy. Verified end-to-end in browser: deal stage drag -> deal.stage_changed -> run completed in 298ms.
+- 2026-08-13: Requirements defined (37 v1.3 requirements across 12 categories)
+- 2026-08-13: Roadmap created (12 phases: 32-43), backlog 999.1-999.12 fully promoted
 - 2026-08-12: Backlog review -- captured deferred v1.1 scope as 999.1 (formula reactivity) and 999.2 (bulk operations); removed stale 27-action-nodes/deferred-items.md (http.test.ts fixed, 14/14 pass)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 32 - Test Infrastructure & CI (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-08-14 — Milestone v1.3 started
+Status: Roadmap created, awaiting `/gsd:plan-phase 32`
+Last activity: 2026-08-13 — v1.3 roadmap created (12 phases, 32-43)

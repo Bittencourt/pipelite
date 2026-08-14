@@ -5,6 +5,7 @@
 - ✅ **v1.0 MVP** -- Phases 1-16 (shipped 2026-03-14)
 - ✅ **v1.1 Reliability & Operations** -- Phases 17-20, 23 (shipped 2026-03-26)
 - ✅ **v1.2 Workflows** -- Phases 24-31 (shipped 2026-03-28)
+- 🚧 **v1.3 Foundation & CRM Depth** -- Phases 32-43 (in progress)
 
 ## Phases
 
@@ -61,192 +62,204 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 
 </details>
 
+### v1.3 Foundation & CRM Depth (Phases 32-43)
+
+- [ ] **Phase 32: Test Infrastructure & CI** - Green suite, one command to run it, and a merge gate that keeps it green
+- [ ] **Phase 33: Database Indexes for the CRM Core** - Index the foreign keys and hot filter columns the v1.0 tables never got
+- [ ] **Phase 34: Formula Reactivity** - Server-side, dependency-aware recalc so stored formula values stop going stale
+- [ ] **Phase 35: Notes & Record Timeline** - Append-only attributed notes plus one chronological timeline per record
+- [ ] **Phase 36: Audit Log** - Field-level change history with actor kind, fed by crmBus, with retention
+- [ ] **Phase 37: Trash & Restore** - Make soft-deleted records visible, restorable, and eventually purged
+- [ ] **Phase 38: Bulk Operations** - Multi-select with bulk delete, owner reassignment, and scoped export
+- [ ] **Phase 39: Duplicate Detection & Merge** - Warn on likely duplicates and merge without orphaning children
+- [ ] **Phase 40: Saved Views & Shared Filters** - Persist, share, default, and export named filter sets
+- [ ] **Phase 41: Workflow Operator Affordances** - Replay, dry-run, failure alerting, and the single-instance constraint documented
+- [ ] **Phase 42: Observability** - Structured logging, opt-in error tracking, and a health endpoint that sees the processors
+- [ ] **Phase 43: Type Safety & Deployment Docs** - Clear the 14 type suppressions and document backup/restore
+
+## Phase Details
+
+### Phase 32: Test Infrastructure & CI
+**Goal**: A regression cannot reach master unnoticed — one command runs the whole suite, the suite is green, and CI blocks merges that break it
+**Depends on**: Nothing (first phase of v1.3; everything downstream is verified against this suite)
+**Requirements**: CI-01, CI-02, CI-03, CI-04
+**Success Criteria** (what must be TRUE):
+  1. Developer runs `npm test` from a clean checkout, gets the full suite, and gets a non-zero exit on any failure
+  2. A test run collects source tests only — nothing is collected from `.next/**` or `node_modules/**`, so the stale `.next/standalone` formula-engine copy stops running as a second suite
+  3. The full suite passes with zero failures, including `mutations/workflows.test.ts > deleteWorkflow` (the cascade-delete path) and `formula-engine.test.ts > LOGIC.isBlank`
+  4. A pull request containing a type error, a lint error, or a failing test shows a red required check and cannot be merged
+**Plans**: TBD
+
+### Phase 33: Database Indexes for the CRM Core
+**Goal**: The v1.0 CRM tables stop sequential-scanning on their hottest queries
+**Depends on**: Nothing (schema-only, independent of every other phase)
+**Requirements**: PERF-01, PERF-02
+**Success Criteria** (what must be TRUE):
+  1. `EXPLAIN ANALYZE` on the kanban board query shows an index scan on `deals.stage_id` where it previously showed a sequential scan
+  2. `EXPLAIN ANALYZE` on the activity-reminder cron query shows an index scan on `activities.due_date`
+  3. Every core CRM foreign key (`deals.organization_id`, `deals.person_id`, `deals.owner_id`, `activities.deal_id`, `people.organization_id`) and every `deleted_at` filter column on deals/orgs/people/activities is index-backed via a single migration
+  4. Application behavior is unchanged — the suite passes with no test modifications
+**Plans**: TBD
+
+### Phase 34: Formula Reactivity
+**Goal**: A formula field's stored value is correct everywhere it is read, not just where it is rendered
+**Depends on**: Phase 32 (this is TDD-heavy against `formula-engine.test.ts`, the suite CI-03 repairs)
+**Requirements**: FORMULA-01, FORMULA-02
+**Success Criteria** (what must be TRUE):
+  1. After saving an entity through the UI, a server action, or the REST API, a subsequent `GET` returns recomputed formula values without any page load having occurred
+  2. A CSV export and a webhook payload produced right after a save carry the recalculated values
+  3. A workflow condition evaluated against a formula field branches on the current value, not the value from the last page render
+  4. Saving a field that no formula references triggers no recalculation — recalc is scoped to formulas whose source fields actually changed, so bulk saves do not fan out
+**Plans**: TBD
+
+### Phase 35: Notes & Record Timeline
+**Goal**: A record accumulates an attributed history of what people wrote about it instead of one overwritable text box
+**Depends on**: Phase 32
+**Requirements**: NOTE-01, NOTE-02, NOTE-03
+**Success Criteria** (what must be TRUE):
+  1. User adds several notes to a deal, organization, person, or activity and sees each one with its author and timestamp, with earlier notes intact
+  2. User opens a record and sees one chronological timeline interleaving notes, activities, and stage changes
+  3. After migration, every record that had `notes` text shows that text as its first timeline entry, attributed and dated
+  4. Pre- and post-migration content reconciles — no record loses note text
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 36: Audit Log
+**Goal**: Any change to a CRM record can be traced to who or what made it, and the table does not eat the disk
+**Depends on**: Phase 35 (per-record history renders into the timeline built there); Phase 34 (formula recalcs are writes and must not flood the log with derived-value noise)
+**Requirements**: AUDIT-01, AUDIT-02, AUDIT-03, AUDIT-04
+**Success Criteria** (what must be TRUE):
+  1. After a user edits a deal, that record's history shows the changed fields with before/after values and the user's name
+  2. After a workflow CRM action edits a record, the record's history attributes the change to a workflow run, and the run detail page links to every record that run mutated
+  3. Changes made via API key and via the Pipedrive importer are distinguishable by actor kind from user-made changes
+  4. Admin sets an audit retention window and entries older than it disappear without manual intervention
+  5. Audit capture required no edit to any mutation function — it subscribes to the existing `crmBus`
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 37: Trash & Restore
+**Goal**: Soft-deleted records are recoverable rather than merely invisible
+**Depends on**: Phase 36 (TRASH-01 shows who deleted a record, which the audit log supplies)
+**Requirements**: TRASH-01, TRASH-02, TRASH-03
+**Success Criteria** (what must be TRUE):
+  1. User opens a trash view per entity type and sees soft-deleted records with deletion time and the actor who deleted them
+  2. User restores a trashed record and finds it back in its list with its children reattached, including children orphaned when the parent was deleted
+  3. Admin permanently purges a trashed record and it stops appearing anywhere in the app
+  4. Records past the retention window leave trash automatically, with no admin action
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 38: Bulk Operations
+**Goal**: A user acts on many records at once without losing safety, attribution, or recoverability
+**Depends on**: Phase 36 (bulk changes must land in the audit log), Phase 37 (bulk delete must be restorable, not a mass unrecoverable delete)
+**Requirements**: BULK-01, BULK-02, BULK-03, BULK-04
+**Success Criteria** (what must be TRUE):
+  1. User selects rows via checkboxes on Organizations, People, Deals, and Activities lists, including select-all from the header
+  2. User bulk deletes selected records after a count-aware confirmation, and finds those records in trash afterwards
+  3. User bulk reassigns owner for selected records, and any per-record failure is named rather than silently swallowed
+  4. User exports only the selected records to CSV, not the whole table
+  5. Bulk deletes and reassignments appear in each affected record's change history
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 39: Duplicate Detection & Merge
+**Goal**: Duplicates entering through the importer or manual entry are caught and collapsible without data loss
+**Depends on**: Phase 35 (DEDUP-03 must reassign notes, which only exist as child records after Phase 35), Phase 36 (a merge is destructive and must be auditable)
+**Requirements**: DEDUP-01, DEDUP-02, DEDUP-03
+**Success Criteria** (what must be TRUE):
+  1. Creating an organization or person whose details match an existing record warns the user before the record is saved
+  2. User scans an entity type on demand and gets a list of likely duplicate pairs
+  3. User merges two records, choosing the winning value field by field for every conflict
+  4. After a merge, every deal, activity, note, file, and custom field value from the losing record is attached to the survivor — nothing is orphaned
+  5. The merge is visible in the surviving record's change history
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 40: Saved Views & Shared Filters
+**Goal**: The filter combinations users rebuild daily become named, shareable, exportable objects
+**Depends on**: Phase 32
+**Requirements**: VIEW-01, VIEW-02, VIEW-03
+**Success Criteria** (what must be TRUE):
+  1. User saves the current filter set on a list page as a named view and reopens it later with the filters restored
+  2. User marks a view shared and a teammate sees it; a private view stays invisible to everyone else
+  3. User sets a default view per entity type and lands on it when opening that list
+  4. User exports the records matching a saved view
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 41: Workflow Operator Affordances
+**Goal**: A failed or unproven workflow has a recovery path that does not require re-triggering by hand
+**Depends on**: Phase 32 (CI-03 repairs the workflow mutation test that guards the cascade-delete path this phase builds on)
+**Requirements**: WFOPS-01, WFOPS-02, WFOPS-03, WFOPS-04
+**Success Criteria** (what must be TRUE):
+  1. User re-runs a failed workflow run from its detail page and gets a new run with its own step history
+  2. User dry-runs a workflow from the editor against sample trigger data, sees per-node output, and can confirm no CRM record changed
+  3. When a run fails, the user is notified rather than discovering it by browsing run history
+  4. Deployment docs state the webhook-response single-instance constraint and which engine components are already multi-instance safe
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 42: Observability
+**Goal**: A production failure is detectable from an endpoint and a log stream, not from grepping container stdout months later
+**Depends on**: Nothing (cross-cutting, independent of the CRM feature phases)
+**Requirements**: OBS-01, OBS-02, OBS-03
+**Success Criteria** (what must be TRUE):
+  1. Application logs are structured and level-controlled; no bare `console.*` calls remain in non-test source
+  2. With the error-tracking env var unset nothing leaves the deployment; with it set, an unhandled server error appears in the tracker
+  3. `/api/health` reports database connectivity plus the liveness of all four background processors, so a dead `register()` is visible from the endpoint alone
+**Plans**: TBD
+
+### Phase 43: Type Safety & Deployment Docs
+**Goal**: No standing type suppressions, and a self-hoster can recover their data
+**Depends on**: Phase 38 (BULK-01 adds a checkbox column to the same `organizations/columns.tsx` and `people/columns.tsx` files POLISH-01 retypes)
+**Requirements**: POLISH-01, POLISH-02
+**Success Criteria** (what must be TRUE):
+  1. `tsc --noEmit` passes and the codebase contains zero `@ts-expect-error` suppressions
+  2. Table meta callbacks across pipelines, organizations, and people columns are typed through one shared `TableMeta` interface
+  3. Operator follows documented steps to back up and restore a self-hosted deployment, with the restore exercised at least once against a real dump
+**Plans**: TBD
+
+## Progress
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 32. Test Infrastructure & CI | 0/? | Not started | - |
+| 33. Database Indexes for the CRM Core | 0/? | Not started | - |
+| 34. Formula Reactivity | 0/? | Not started | - |
+| 35. Notes & Record Timeline | 0/? | Not started | - |
+| 36. Audit Log | 0/? | Not started | - |
+| 37. Trash & Restore | 0/? | Not started | - |
+| 38. Bulk Operations | 0/? | Not started | - |
+| 39. Duplicate Detection & Merge | 0/? | Not started | - |
+| 40. Saved Views & Shared Filters | 0/? | Not started | - |
+| 41. Workflow Operator Affordances | 0/? | Not started | - |
+| 42. Observability | 0/? | Not started | - |
+| 43. Type Safety & Deployment Docs | 0/? | Not started | - |
+
 ## Backlog
 
 Unsequenced items awaiting a milestone. Promote with `/gsd:review-backlog` when ready.
 
-Items 999.3-999.12 came from a post-v1.2 codebase review on 2026-08-13. Each carries the
-evidence that motivated it so planning doesn't have to re-derive it.
+_Empty._ All 12 backlog items (999.1-999.12, captured 2026-08-12 and 2026-08-13) were promoted
+into v1.3 on 2026-08-13 and now live as Phases 32-43 above:
 
-**Suggested v1.3 slice** (coherent "make the foundation trustworthy" milestone):
-999.3 (CI) → 999.4 (indexes) → 999.1 (formula reactivity) → 999.5 (notes timeline) → 999.6 (audit log).
-Remaining items are v1.4+ candidates.
+| Backlog item | Now |
+|--------------|-----|
+| 999.1 Formula reactivity | Phase 34 |
+| 999.2 Bulk operations | Phase 38 |
+| 999.3 Test infrastructure & CI | Phase 32 |
+| 999.4 Database indexes | Phase 33 |
+| 999.5 Notes & activity timeline | Phase 35 |
+| 999.6 Audit log | Phase 36 |
+| 999.7 Duplicate detection & merge | Phase 39 |
+| 999.8 Saved views & shared filters | Phase 40 |
+| 999.9 Trash & restore | Phase 37 |
+| 999.10 Workflow operator affordances | Phase 41 |
+| 999.11 Observability | Phase 42 |
+| 999.12 Type-safety & deployment-docs polish | Phase 43 |
 
-### Phase 999.1: Formula reactivity -- server-side recalc on save (BACKLOG)
-
-**Goal:** [Captured for future planning] Formula field values recalculate server-side so stored JSONB values stay correct in API responses, exports, and webhook payloads.
-**Requirements:** FORMULA-01, FORMULA-02 (carried from v1.1, originally Phase 21)
-**Plans:** 0 plans
-
-- FORMULA-01: Formula field values are recalculated server-side when any entity field is saved (values stored in JSONB; appear in API responses, exports, and webhook payloads)
-- FORMULA-02: Formula recalculation only runs for formulas whose referenced source fields actually changed (dependency-aware, prevents fan-out during bulk saves)
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.2: Bulk operations -- select, delete, reassign, export (BACKLOG)
-
-**Goal:** [Captured for future planning] Multi-select on entity list pages with bulk delete, owner reassignment, and scoped CSV export.
-**Requirements:** BULK-01 through BULK-04 (carried from v1.1, originally Phase 22)
-**Plans:** 0 plans
-
-- BULK-01: User can select multiple records via checkbox column on Organizations, People, Deals, and Activities list pages (header select-all, individual row checkboxes)
-- BULK-02: User can bulk delete selected records (count-aware confirmation modal; per-record permission check; partial failure surfaced)
-- BULK-03: User can bulk reassign owner for selected records (member picker; partial failure surfaced per record)
-- BULK-04: User can export only the currently selected records to CSV (scoped export, not full table)
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.3: Test infrastructure & CI (BACKLOG)
-
-**Goal:** [Captured for future planning] Make regressions impossible to merge silently. Three tests fail on master today and nothing runs them.
-**Requirements:** CI-01 through CI-04 (proposed)
-**Plans:** 0 plans
-
-- CI-01: `package.json` exposes a `test` script (`vitest run`) -- none exists today, so the suite is only reachable via `npx vitest`
-- CI-02: `vitest.config.ts` excludes build output (`.next/**`, `node_modules/**`) -- it currently collects and runs `.next/standalone/src/lib/formula-engine.test.ts`, a stale copy of a real suite
-- CI-03: Fix the three failing tests: `mutations/workflows.test.ts > deleteWorkflow` (stale mock -- cascade delete grew a `db.select` the mock chain does not supply, `workflows.ts:202`), and `formula-engine.test.ts > LOGIC.isBlank` (returns null, expects true -- pre-existing, fails in both copies)
-- CI-04: GitHub Actions workflow running `tsc --noEmit`, `eslint`, and `vitest run` on push and PR -- no `.github/workflows/` exists
-
-**Evidence:** Full suite as of 2026-08-13: 3 failed / 508 passed / 4 skipped across 42 files. The `deleteWorkflow` failure means the cascade delete (steps -> runs -> workflow), the most destructive path in the workflow subsystem, is currently unverified. Likely collateral from the PR #8/#9 hardening merges.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.4: Database indexes for the v1.0 CRM core (BACKLOG)
-
-**Goal:** [Captured for future planning] Index the foreign keys and hot filter columns on the core CRM tables. Best performance-per-effort available in the repo.
-**Requirements:** PERF-01, PERF-02 (proposed)
-**Plans:** 0 plans
-
-- PERF-01: Add indexes on the sequential-scan paths -- `deals.stage_id` (kanban's primary query), `deals.deleted_at` (filtered on every deal query), `deals.organization_id`, `deals.person_id`, `deals.owner_id`, `activities.due_date` (reminder cron, every 5 min), `activities.deal_id`, `people.organization_id`, and the matching `deleted_at` columns on orgs/people/activities
-- PERF-02: Confirm plan changes with `EXPLAIN ANALYZE` on the kanban and reminder-cron queries before and after
-
-**Evidence:** All 8 indexes in the schema are on v1.1/v1.2 tables (`webhooks`, `webhook_deliveries`, `workflows` x3, `workflow_runs` x2, `workflow_run_steps` x2). `deals`, `people`, `organizations`, `activities`, and `custom_field_definitions` have zero non-PK indexes. Postgres does not auto-index FK columns -- only the referenced side. Zero behavior change; roughly one migration.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.5: Notes & activity timeline per entity (BACKLOG)
-
-**Goal:** [Captured for future planning] Replace the overwrite-in-place notes column with a chronological, attributed feed on each record.
-**Requirements:** NOTE-01 through NOTE-03 (proposed)
-**Plans:** 0 plans
-
-- NOTE-01: Notes table with author, timestamps, and entity polymorphic reference -- append-only rather than overwrite
-- NOTE-02: Combined timeline on deal/org/person detail pages interleaving notes with activities and stage changes
-- NOTE-03: Migrate existing `notes` text column content into the first note per record
-
-**Evidence:** `deals.notes` (and the equivalents on orgs/people/activities) is a single `text` column. No history, no author, no per-entry timestamps. This is the largest UX gap relative to the Pipedrive baseline the project is measured against.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.6: Audit log (BACKLOG)
-
-**Goal:** [Captured for future planning] Answer "who changed this record, when, and was it a human or a workflow?" Makes the v1.2 automation engine trustworthy.
-**Requirements:** AUDIT-01 through AUDIT-03 (proposed)
-**Plans:** 0 plans
-
-- AUDIT-01: Audit log table capturing entity, field-level before/after, actor, and actor kind (user / workflow run / API key / import)
-- AUDIT-02: Subscriber on the existing `crmBus` -- the 13 typed events already fire on every mutation, so no mutation code needs to change
-- AUDIT-03: Per-record history view, and a link from a workflow run to the records it mutated
-
-**Evidence:** Workflows now mutate CRM data autonomously via the CRM action node, and nothing records that they did. Retention/pruning policy needs deciding during planning -- this table grows fastest of anything in the schema.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.7: Duplicate detection & record merge (BACKLOG)
-
-**Goal:** [Captured for future planning] Detect and merge duplicate organizations, people, and deals.
-**Requirements:** DEDUP-01 through DEDUP-03 (proposed)
-**Plans:** 0 plans
-
-- DEDUP-01: Duplicate detection on create and on demand (email, name+org, phone)
-- DEDUP-02: Merge UI with per-field winner selection
-- DEDUP-03: Merge reassigns child records (deals, activities, notes, files) rather than orphaning them
-
-**Evidence:** The project ships a Pipedrive API importer, which is precisely how duplicates enter a CRM. There is currently no detection and no merge path.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.8: Saved views & shared filters (BACKLOG)
-
-**Goal:** [Captured for future planning] Let users persist, name, and share the filter combinations they rebuild daily.
-**Requirements:** VIEW-01 through VIEW-03 (proposed)
-**Plans:** 0 plans
-
-- VIEW-01: Save the current filter set as a named view per entity type
-- VIEW-02: Private vs. shared visibility, with a per-user default view
-- VIEW-03: Views usable as the deal scope for exports
-
-**Evidence:** Filtering exists across the list pages (Phase 8) but nothing about it is persistable.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.9: Trash & restore for soft-deleted records (BACKLOG)
-
-**Goal:** [Captured for future planning] Make `deletedAt` recoverable instead of merely invisible.
-**Requirements:** TRASH-01 through TRASH-03 (proposed)
-**Plans:** 0 plans
-
-- TRASH-01: Trash view listing soft-deleted records per entity type with deletion time and actor
-- TRASH-02: Restore action, including relinking children whose parent was deleted
-- TRASH-03: Retention policy and permanent-purge path for admins
-
-**Evidence:** `deletedAt` is set consistently across entities, but the app has only 4 `restore` references. Deleted records are unreachable rather than recoverable, so soft delete currently buys nothing a hard delete wouldn't.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.10: Workflow operator affordances (BACKLOG)
-
-**Goal:** [Captured for future planning] Give the workflow engine the operational controls its newness demands -- replay, dry-run, and failure alerting.
-**Requirements:** WFOPS-01 through WFOPS-04 (proposed)
-**Plans:** 0 plans
-
-- WFOPS-01: Re-run / replay a failed run from the run detail page -- mirror the existing webhook DLQ replay pattern
-- WFOPS-02: Dry-run in the editor -- execute against sample trigger data without mutating CRM records
-- WFOPS-03: Notify on `status = failed` (email and/or in-app) -- runs can currently fail silently forever
-- WFOPS-04: Document the webhook-response single-instance constraint (in-memory promise map coordinating waitFor/send) -- everything else, including the atomic `UPDATE...RETURNING` claims on schedules and runs, is already multi-instance safe
-
-**Evidence:** v1.2's first real-world test found the entire engine dead in Docker for months (see `debug/resolved/workflow-engine-not-firing.md`). The engine is verified working now, but a transient HTTP 503 in an action still has no recovery path short of re-triggering by hand.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.11: Observability -- structured logging, error tracking, health endpoint (BACKLOG)
-
-**Goal:** [Captured for future planning] Make production failures detectable without grepping container stdout.
-**Requirements:** OBS-01 through OBS-03 (proposed)
-**Plans:** 0 plans
-
-- OBS-01: Structured logger (pino or equivalent) replacing the 108 bare `console.*` calls in non-test source
-- OBS-02: Error tracking integration (Sentry or equivalent), opt-in via env var to preserve the self-hosted no-phone-home default
-- OBS-03: `/api/health` reporting DB connectivity and the liveness of all four background processors
-
-**Evidence:** No pino/winston/Sentry in the dependency tree. `docker-compose.yml` healthchecks Postgres, not the app. The instrumentation failure that killed the workflow, webhook, and email processors went undetected from March to August precisely because nothing reported processor liveness.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.12: Type-safety & deployment-docs polish (BACKLOG)
-
-**Goal:** [Captured for future planning] Clear the standing type suppressions and document the self-hosting operational story.
-**Requirements:** POLISH-01, POLISH-02 (proposed)
-**Plans:** 0 plans
-
-- POLISH-01: Shared typed `TableMeta` interface for TanStack Table, removing all 14 `@ts-expect-error` suppressions (`admin/pipelines/columns.tsx`, `organizations/columns.tsx`, `people/columns.tsx` -- all the same meta-callback typing issue)
-- POLISH-02: Backup and restore documentation -- the product is self-hosted and the user owns the database, but no backup story is documented
-
-**Evidence:** The 14 suppressions are the only `@ts-expect-error` instances in the codebase and share one root cause, so one shared interface clears all of them.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
+The evidence captured with each backlog item is preserved in the v1.3 requirement text
+(`.planning/REQUIREMENTS.md`) — each category there names its originating backlog item.
 
 ---
-*Roadmap updated: 2026-08-13 -- captured 10 post-v1.2 review findings as backlog items 999.3-999.12*
+*Roadmap updated: 2026-08-13 -- v1.3 roadmapped as Phases 32-43, all 12 backlog items promoted*
