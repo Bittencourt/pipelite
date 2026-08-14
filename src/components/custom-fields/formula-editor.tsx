@@ -153,7 +153,7 @@ export function FormulaEditor({ definition, existingFields, onSave, onCancel }: 
             )
           ) : (
             <div className="text-sm text-muted-foreground">
-              Click "Test" to preview the result with sample values
+              Click &quot;Test&quot; to preview the result with sample values
             </div>
           )}
         </CardContent>

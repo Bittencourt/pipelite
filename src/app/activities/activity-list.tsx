@@ -513,7 +513,7 @@ export function ActivityList({
           <AlertDialogHeader>
             <AlertDialogTitle>{t('deleteActivity')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{activityToDelete?.title}"? This action
+              Are you sure you want to delete &quot;{activityToDelete?.title}&quot;? This action
               cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
