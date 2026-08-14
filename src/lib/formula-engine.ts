@@ -1,4 +1,4 @@
-import { getQuickJS, QuickJSHandle } from "quickjs-emscripten"
+import { getQuickJS, QuickJSHandle, QuickJSRuntime } from "quickjs-emscripten"
 
 // Formula function library
 const FORMULA_FUNCTIONS = `
@@ -56,6 +56,22 @@ interface EvalResult {
 
 interface RelatedEntities {
   [entityName: string]: Record<string, unknown>
+}
+
+/**
+ * Optional resource bounds for a single evaluation.
+ *
+ * Omitting this argument entirely preserves the historical, unbounded code path
+ * (`QuickJS.newContext()` with no explicit runtime), which is what the browser
+ * live-preview callers use. Server-side callers, which execute admin-authored
+ * expressions inside the shared Node process, should always pass bounds so a
+ * pathological expression cannot pin a worker (threat T-34-02).
+ */
+export interface EvaluateFormulaOptions {
+  /** Hard cap on sandbox heap, in bytes (mirrors transform.ts's 8 MB). */
+  memoryLimitBytes?: number
+  /** Wall-clock budget in milliseconds, enforced via a QuickJS interrupt handler. */
+  timeoutMs?: number
 }
 
 /**
@@ -151,7 +167,8 @@ function isReferenceUsedInArithmetic(expression: string, reference: string): boo
 export async function evaluateFormula(
   expression: string,
   fieldValues?: Record<string, unknown>,
-  relatedEntities?: RelatedEntities
+  relatedEntities?: RelatedEntities,
+  options?: EvaluateFormulaOptions
 ): Promise<EvalResult> {
   // Normalize fieldValues to an empty object if not provided
   const fields = fieldValues ?? {}
@@ -205,8 +222,30 @@ export async function evaluateFormula(
   }
   
   const QuickJS = await getQuickJS()
-  const vm = QuickJS.newContext()
-  
+
+  // Sandbox construction is the ONLY thing that branches on `options`. With no options
+  // this is byte-for-byte the historical path (a context created straight off the module,
+  // no explicit runtime), so every existing caller and every existing test is unaffected.
+  // With options, we own the runtime so setMemoryLimit/setInterruptHandler have somewhere
+  // to live - mirroring src/lib/execution/actions/transform.ts:92-108.
+  let runtime: QuickJSRuntime | undefined
+  if (options) {
+    runtime = QuickJS.newRuntime()
+    if (options.memoryLimitBytes !== undefined) {
+      try {
+        runtime.setMemoryLimit(options.memoryLimitBytes)
+      } catch {
+        // API may not be available in all versions
+      }
+    }
+    if (options.timeoutMs !== undefined) {
+      const startTime = Date.now()
+      const budgetMs = options.timeoutMs
+      runtime.setInterruptHandler(() => Date.now() - startTime > budgetMs)
+    }
+  }
+  const vm = runtime ? runtime.newContext() : QuickJS.newContext()
+
   try {
     // Set up function library
     const functionsResult = vm.evalCode(FORMULA_FUNCTIONS)
@@ -290,7 +329,22 @@ export async function evaluateFormula(
   } catch (e) {
     return { value: null, error: e instanceof Error ? e.message : 'Unknown error' }
   } finally {
-    vm.dispose()
+    if (runtime) {
+      // Context first, then runtime. Each guarded so a dispose failure on an
+      // interrupted sandbox cannot mask the result we are about to return.
+      try {
+        vm.dispose()
+      } catch {
+        // Ignore disposal errors
+      }
+      try {
+        runtime.dispose()
+      } catch {
+        // Ignore disposal errors
+      }
+    } else {
+      vm.dispose()
+    }
   }
 }
 
