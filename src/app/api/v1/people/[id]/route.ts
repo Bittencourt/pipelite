@@ -10,6 +10,13 @@ import { organizations } from "@/db/schema/organizations"
 import { and, eq, isNull } from "drizzle-orm"
 import { z } from "zod"
 import { crmBus } from "@/lib/events"
+import type { CustomFieldDefinition, EntityType } from "@/db/schema"
+import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import {
+  recalculateFormulas,
+  stripFormulaKeys,
+  type RecalculateFormulasInput,
+} from "@/lib/formula-recalc"
 
 const updatePersonSchema = z.object({
   first_name: z.string().min(1, "First name is required").max(100).optional(),
@@ -23,6 +30,47 @@ const updatePersonSchema = z.object({
 
 interface RouteParams {
   params: Promise<{ id: string }>
+}
+
+/**
+ * Drop caller-supplied formula keys before the merge (threat T-34-04). Fails open and logs —
+ * see the identical helper in `../route.ts` for the rationale.
+ */
+async function stripCallerFormulaKeys(
+  values: Record<string, unknown>,
+  definitionsCache: Map<EntityType, CustomFieldDefinition[]>
+): Promise<Record<string, unknown>> {
+  try {
+    const definitions = await getActiveFieldDefinitions("person")
+    definitionsCache.set("person", definitions)
+    return stripFormulaKeys(values, definitions)
+  } catch (error) {
+    console.error(
+      "[formula-recalc] person definition load failed, custom fields not stripped:",
+      error
+    )
+    return values
+  }
+}
+
+/**
+ * Recalculate this person's formula fields and return the blob to emit (D-01/D-17).
+ *
+ * Must be awaited before `crmBus.emit`: both the webhook body and the workflow-trigger envelope
+ * are emit-time snapshots of the row object, never a re-read. Resolves rather than rejects on
+ * failure (D-05), logging with the `[formula-recalc]` prefix (T-34-17).
+ */
+async function recalcCustomFields(
+  input: RecalculateFormulasInput,
+  fallback: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  try {
+    const { customFields } = await recalculateFormulas(input)
+    return customFields
+  } catch (error) {
+    console.error("[formula-recalc] person recalculation failed:", error)
+    return fallback
+  }
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -165,11 +213,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       updates.organizationId = organization_id
       if (organization_id !== existing.organizationId) changedFields.push("organizationId")
     }
+    // Strip client-supplied formula keys BEFORE the merge (T-34-04), keeping the definitions so
+    // the recalculation below does not read them a second time.
+    const definitionsCache = new Map<EntityType, CustomFieldDefinition[]>()
+    let persistedCustomFieldKeys: string[] = []
     if (custom_fields !== undefined) {
+      const stripped = await stripCallerFormulaKeys(custom_fields, definitionsCache)
+      persistedCustomFieldKeys = Object.keys(stripped)
       // Merge with existing custom fields
       updates.customFields = {
         ...((existing.customFields as Record<string, unknown>) || {}),
-        ...custom_fields,
+        ...stripped,
       }
       changedFields.push("customFields")
     }
@@ -181,18 +235,38 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .where(eq(people.id, id))
       .returning()
 
-    // Emit CRM event via bus
+    // Recalculate AFTER the write and STRICTLY BEFORE the emit (D-01 / D-17).
+    const recalculatedCustomFields = await recalcCustomFields(
+      {
+        entityType: "person",
+        entityId: id,
+        // The route's own coarse `customFields` sentinel is passed through untouched (the helper
+        // accepts it as a safety net), plus the precise key names the caller actually wrote, so
+        // FORMULA-02 / SC-4 holds tightly. The EVENT's changedFields below keeps the sentinel
+        // alone — webhook consumers may depend on that exact array.
+        changedFields: [...changedFields, ...persistedCustomFieldKeys],
+        row: updated as unknown as Record<string, unknown>,
+        definitionsCache,
+      },
+      (updated.customFields ?? {}) as Record<string, unknown>
+    )
+
+    const recalculatedPerson = { ...updated, customFields: recalculatedCustomFields }
+
+    // Emit CRM event via bus, from the POST-recalc row.
     crmBus.emit("person.updated", {
       entity: "person",
       entityId: updated.id,
       action: "updated",
-      data: serializePerson(updated) as unknown as Record<string, unknown>,
+      data: serializePerson(recalculatedPerson) as unknown as Record<string, unknown>,
       changedFields: changedFields.length > 0 ? changedFields : null,
       userId: context.userId,
       timestamp: new Date().toISOString(),
     })
 
-    return singleResponse(serializePerson(updated))
+    // The response carries the post-recalc value too, so a caller doing PUT then GET does not
+    // see two different values for the same field (matches PUT /api/v1/activities/[id]).
+    return singleResponse(serializePerson(recalculatedPerson))
   })
 }
 
