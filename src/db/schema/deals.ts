@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, numeric, jsonb } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, numeric, jsonb, index } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { stages } from "./pipelines"
 import { organizations } from "./organizations"
@@ -19,4 +19,10 @@ export const deals = pgTable('deals', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   deletedAt: timestamp('deleted_at'),
-})
+}, (table) => ({
+  stageIdIdx: index('deals_stage_id_idx').on(table.stageId),
+  organizationIdIdx: index('deals_organization_id_idx').on(table.organizationId),
+  personIdIdx: index('deals_person_id_idx').on(table.personId),
+  ownerIdIdx: index('deals_owner_id_idx').on(table.ownerId),
+  deletedAtIdx: index('deals_deleted_at_idx').on(table.deletedAt),
+}))
