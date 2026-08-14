@@ -66,7 +66,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 
 - [x] **Phase 32: Test Infrastructure & CI** - Green suite, one command to run it, and a merge gate that keeps it green (completed 2026-08-14)
 - [x] **Phase 33: Database Indexes for the CRM Core** - Index the foreign keys and hot filter columns the v1.0 tables never got (completed 2026-08-14)
-- [ ] **Phase 34: Formula Reactivity** - Server-side, dependency-aware recalc so stored formula values stop going stale
+- [x] **Phase 34: Formula Reactivity** - Server-side, dependency-aware recalc so stored formula values stop going stale (completed 2026-08-14)
 - [ ] **Phase 35: Notes & Record Timeline** - Append-only attributed notes plus one chronological timeline per record
 - [ ] **Phase 36: Audit Log** - Field-level change history with actor kind, fed by crmBus, with retention
 - [ ] **Phase 37: Trash & Restore** - Make soft-deleted records visible, restorable, and eventually purged
@@ -151,32 +151,32 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 34-01-PLAN.md — Prove server-side QuickJS works in the Docker standalone build and bound it (D-11)
-- [ ] 34-02-PLAN.md — Fix the silent `customFields` drop in all four mutations, with regression tests (D-12)
+- [x] 34-01-PLAN.md — Prove server-side QuickJS works in the Docker standalone build and bound it (D-11)
+- [x] 34-02-PLAN.md — Fix the silent `customFields` drop in all four mutations, with regression tests (D-12)
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 34-03-PLAN.md — `recalculateFormulas` single-entity core: scoping, seeding, unwrap, topological order, error persistence
+- [x] 34-03-PLAN.md — `recalculateFormulas` single-entity core: scoping, seeding, unwrap, topological order, error persistence
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 34-04-PLAN.md — Bounded depth-1 cross-entity cascade with a 500-evaluation budget (D-03, D-04, D-09, D-13)
-- [ ] 34-05-PLAN.md — Fix the CSV `[object Object]` defect and normalise the workflow trigger envelope (D-16, SC-2, SC-3)
+- [x] 34-04-PLAN.md — Bounded depth-1 cross-entity cascade with a 500-evaluation budget (D-03, D-04, D-09, D-13)
+- [x] 34-05-PLAN.md — Fix the CSV `[object Object]` defect and normalise the workflow trigger envelope (D-16, SC-2, SC-3)
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 34-06-PLAN.md — Recalc before emit in the deal and activity write paths
-- [ ] 34-07-PLAN.md — Recalc before emit in the person and organization write paths
-- [ ] 34-08-PLAN.md — Recalc, diff and strip formula keys in the UI custom-field save path
+- [x] 34-06-PLAN.md — Recalc before emit in the deal and activity write paths
+- [x] 34-07-PLAN.md — Recalc before emit in the person and organization write paths
+- [x] 34-08-PLAN.md — Recalc, diff and strip formula keys in the UI custom-field save path
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 34-09-PLAN.md — Recalc before emit in the six v1 deal and people routes
-- [ ] 34-10-PLAN.md — Bounded batch recalc for the CSV and Pipedrive importers
+- [x] 34-09-PLAN.md — Recalc before emit in the six v1 deal and people routes
+- [x] 34-10-PLAN.md — Bounded batch recalc for the CSV and Pipedrive importers
 
 **Wave 6** *(blocked on Wave 5)*
 
-- [ ] 34-11-PLAN.md — Write-path coverage audit, Docker end-to-end verification, and limitations documentation
+- [x] 34-11-PLAN.md — Write-path coverage audit, Docker end-to-end verification, and limitations documentation
 
 ### Phase 35: Notes & Record Timeline
 
@@ -318,7 +318,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 32. Test Infrastructure & CI | 6/6 | Complete   | 2026-08-14 |
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
-| 34. Formula Reactivity | 0/? | Not started | - |
+| 34. Formula Reactivity | 12/12 | Complete   | 2026-08-14 |
 | 35. Notes & Record Timeline | 0/? | Not started | - |
 | 36. Audit Log | 0/? | Not started | - |
 | 37. Trash & Restore | 0/? | Not started | - |

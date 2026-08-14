@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
-status: executing
-last_updated: "2026-08-14T20:32:12.036Z"
+status: verifying
+last_updated: "2026-08-14T23:43:41.075Z"
 last_activity: 2026-08-14
 progress:
   total_phases: 12
-  completed_phases: 2
-  total_plans: 20
-  completed_plans: 9
-  percent: 17
+  completed_phases: 3
+  total_plans: 21
+  completed_plans: 21
+  percent: 25
 ---
 
 # Session State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 Phase: 33 - Database Indexes for the CRM Core (complete — 3/3 plans)
 Plan: 3 of 3 complete
-Status: Executing Phase 34
+Status: Phase complete — ready for verification
 Last activity: 2026-08-14
 
-Progress: [██░░░░░░░░] 17% (2/12 v1.3 phases complete)
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -43,6 +43,7 @@ Progress: [██░░░░░░░░] 17% (2/12 v1.3 phases complete)
 | Phase 33 P01 | 12min | 2 tasks | 2 files |
 | Phase 33 P02 | 9min | 2 tasks | 4 files |
 | Phase 33 P03 | 21min | 3 tasks | 4 files |
+| Phase 34 P11 | 70min | 3 tasks | 4 files |
 
 ## Decisions
 
@@ -116,6 +117,8 @@ Progress: [██░░░░░░░░] 17% (2/12 v1.3 phases complete)
 - [Phase 33]: deals.owner_id is verified by pg_indexes catalog assertion only, never by EXPLAIN (D-05) -- n_distinct = 1 in this dataset, so the planner correctly ignores that index forever
 - [Phase 33]: random_page_cost left at the Postgres default of 4 (D-08) -- it is why the deals selectivity crossover sits at 15-19%; tuning it for SSD is server config, not an index, and is deferred
 - [Phase 33]: Corrected STATE.md's stale "partial index on next_run_at WHERE active=true" precedent -- that index no longer exists in the database (dropped by 0010); it is a cautionary tale, not a supporting pattern
+- [Phase ?]: Phase 34: all 17 write paths dispositioned by source inspection; D-11 proven end to end in Docker with a real formula field
+- [Phase ?]: SC-3 is mechanically delivered but only partially usable: bracket field paths work, no UI emits them, 152/169 field names require the syntax
 
 ### Quick Tasks Completed
 
@@ -151,7 +154,9 @@ Progress: [██░░░░░░░░] 17% (2/12 v1.3 phases complete)
 
 ### Blockers/Concerns
 
-None open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working tree clean.
+open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working tree clean.
+
+- CSV export drops every custom_* column unless the first exported row carries it (papaparse header derivation); pre-existing, affects all custom fields
 
 ## Session Log
 
@@ -186,5 +191,5 @@ None open. No pending todos, no UAT/verification debt (audit-uat: 0 items), work
 
 Phase: 34 (Formula Reactivity) — EXECUTING
 Plan: 1 of 11
-Status: Executing Phase 34
-Last activity: 2026-08-14 -- Phase 34 execution started
+Status: Phase complete — ready for verification
+Last activity: 2026-08-14

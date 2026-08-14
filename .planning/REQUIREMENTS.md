@@ -23,8 +23,8 @@ the motivating evidence stays one hop away.
 
 ### Formula Reactivity (999.1 — carried from v1.1)
 
-- [ ] **FORMULA-01**: Formula field values are recalculated server-side when any entity field is saved, so stored JSONB values are correct in API responses, CSV exports, webhook payloads, and workflow condition evaluation
-- [ ] **FORMULA-02**: Formula recalculation only runs for formulas whose referenced source fields actually changed (dependency-aware, prevents fan-out during bulk saves)
+- [x] **FORMULA-01**: Formula field values are recalculated server-side when any entity field is saved, so stored JSONB values are correct in API responses, CSV exports, webhook payloads, and workflow condition evaluation
+- [x] **FORMULA-02**: Formula recalculation only runs for formulas whose referenced source fields actually changed (dependency-aware, prevents fan-out during bulk saves)
 
 ### Notes & Timeline (999.5)
 
@@ -114,8 +114,8 @@ Which phases cover which requirements. Populated during roadmap creation (2026-0
 | CI-04 | Phase 32 | Complete |
 | PERF-01 | Phase 33 | Complete |
 | PERF-02 | Phase 33 | Complete |
-| FORMULA-01 | Phase 34 | Pending |
-| FORMULA-02 | Phase 34 | Pending |
+| FORMULA-01 | Phase 34 | Complete |
+| FORMULA-02 | Phase 34 | Complete |
 | NOTE-01 | Phase 35 | Pending |
 | NOTE-02 | Phase 35 | Pending |
 | NOTE-03 | Phase 35 | Pending |
