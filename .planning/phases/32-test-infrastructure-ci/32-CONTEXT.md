@@ -35,6 +35,9 @@ Out of scope:
 - **D-05**: `mutations/workflows.test.ts > deleteWorkflow` is a STALE TEST — `db.select()` is never stubbed. Fix by stubbing `mockDb.select`.
 - **D-06**: Additionally add a new test covering the cascade-delete branch (asserting 3 delete calls). SC-3 names that path explicitly; repairing the mock alone leaves it uncovered.
 
+### Merge Gate Enforcement
+- **D-07**: The `master` branch ruleset uses **option B** — require a pull request (0 approvals required) AND require the `ci` status check, WITH a single repository-admin bypass actor (`bypass_mode: always`). Chosen so the GSD loop can keep committing directly to `master` for the remaining v1.3 phases while the gate stays real for any future contributor or fork. The residual risk (an admin can land untested code on `master`) is knowingly accepted and must be stated plainly in `CONTRIBUTING.md`.
+
 ### Claude's Discretion
 All implementation choices are at Claude's discretion — pure infrastructure phase. Constraints that follow from the codebase and ROADMAP success criteria:
 
