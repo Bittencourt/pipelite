@@ -18,6 +18,7 @@ vi.mock("@/db", () => {
 })
 
 import { db } from "@/db"
+import { workflows, workflowRuns, workflowRunSteps } from "@/db/schema/workflows"
 import {
   createWorkflow,
   updateWorkflow,
@@ -42,6 +43,22 @@ const mockDb = db as unknown as {
 beforeEach(() => {
   vi.clearAllMocks()
 })
+
+/**
+ * Pull the bound parameter values out of a drizzle SQL clause (e.g. `inArray(col, ids)`),
+ * so a where() clause captured by a mock can be asserted on. Bound values are `Param`
+ * chunks (they carry an `encoder`); literal SQL text chunks are not.
+ */
+function boundParamValues(clause: unknown): unknown[] {
+  const chunks = (clause as { queryChunks?: unknown[] }).queryChunks ?? []
+  return chunks
+    .flat()
+    .filter(
+      (chunk): chunk is { value: unknown; encoder: unknown } =>
+        typeof chunk === "object" && chunk !== null && "value" in chunk && "encoder" in chunk
+    )
+    .map((chunk) => chunk.value)
+}
 
 describe("createWorkflow", () => {
   it("creates workflow with valid input and returns success", async () => {
@@ -476,8 +493,17 @@ describe("deleteWorkflow", () => {
     const result = await deleteWorkflow("wf-1")
 
     expect(result).toEqual({ success: true })
-    // steps -> runs -> workflow
-    expect(mockDb.delete).toHaveBeenCalledTimes(3)
+    // The order is load-bearing: Postgres rejects the workflowRuns delete while
+    // workflowRunSteps rows still reference those runs via the runId FK. Asserting the
+    // table arguments (not just the call count) is what makes a swap fail this test.
+    const deletedTables = mockDb.delete.mock.calls.map((call) => call[0])
+    expect(deletedTables).toHaveLength(3)
+    expect(deletedTables[0]).toBe(workflowRunSteps)
+    expect(deletedTables[1]).toBe(workflowRuns)
+    expect(deletedTables[2]).toBe(workflows)
+    // Every where() is awaited, and the step cascade must cover both run ids, not just the first.
+    expect(deleteWhere).toHaveBeenCalledTimes(3)
+    expect(boundParamValues(deleteWhere.mock.calls[0][0])).toEqual(["run-1", "run-2"])
   })
 
   it("returns error for non-existent workflow", async () => {
