@@ -8,8 +8,11 @@ import { crmBus } from "@/lib/events"
 import type { CrmEventPayload } from "@/lib/events"
 import { db } from "@/db"
 import { activities, activityTypes, users } from "@/db/schema"
+import type { CustomFieldDefinition, EntityType } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
 import { z } from "zod"
+import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import { recalculateFormulas, stripFormulaKeys } from "@/lib/formula-recalc"
 
 const updateActivitySchema = z.object({
   title: z.string().min(1).optional(),
@@ -195,10 +198,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     // Handle custom_fields with merge
+    // Definitions are loaded once and reused by the recalculation below through the cache.
+    const definitionsCache = new Map<EntityType, CustomFieldDefinition[]>()
     if (updates.custom_fields !== undefined) {
+      const definitions = await getActiveFieldDefinitions("activity")
+      definitionsCache.set("activity", definitions)
       updateData.customFields = {
         ...((existingActivity.customFields as Record<string, unknown>) || {}),
-        ...updates.custom_fields,
+        // T-34-04: the server is the sole writer of formula keys.
+        ...stripFormulaKeys(updates.custom_fields, definitions),
       }
     }
 
@@ -207,16 +215,38 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .where(eq(activities.id, id))
       .returning()
 
+    // Recalculate BEFORE the emit (D-17): the webhook body and the workflow-trigger envelope are
+    // emit-time snapshots of this object, so recalculating afterwards would leave both stale.
+    // A rejected recalculation is logged and stepped over — a broken formula must never block a
+    // caller's update (D-05).
+    let recalculatedCustomFields = (updatedActivity.customFields ?? {}) as Record<string, unknown>
+    try {
+      const recalced = await recalculateFormulas({
+        entityType: "activity",
+        entityId: id,
+        // The event's own changedFields carries the coarse literal "customFields"; the recalc
+        // scope carries the precise key names so SC-4 holds tightly on this path too.
+        changedFields: [...changedFields, ...Object.keys(updates.custom_fields ?? {})],
+        row: updatedActivity as unknown as Record<string, unknown>,
+        definitionsCache,
+      })
+      recalculatedCustomFields = recalced.customFields
+    } catch (error) {
+      console.error("[formula-recalc] activity recalculation failed:", error)
+    }
+
+    const recalculatedActivity = { ...updatedActivity, customFields: recalculatedCustomFields }
+
     // Emit CRM event via bus
     crmBus.emit("activity.updated", buildActivityEventPayload(
       id,
       "updated",
-      updatedActivity as unknown as Record<string, unknown>,
+      recalculatedActivity as unknown as Record<string, unknown>,
       ctx.userId,
       changedFields.length > 0 ? changedFields : null,
     ))
 
-    return singleResponse(serializeActivity(updatedActivity))
+    return singleResponse(serializeActivity(recalculatedActivity))
   })
 }
 

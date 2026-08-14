@@ -1,9 +1,17 @@
 import { db } from "@/db"
 import { deals, stages, organizations, people, dealAssignees } from "@/db/schema"
+import type { CustomFieldDefinition, EntityType } from "@/db/schema"
 import { eq, and, isNull, desc, sql } from "drizzle-orm"
 import { z } from "zod"
 import { crmBus } from "@/lib/events"
 import type { CrmEventPayload, DealStageChangedPayload } from "@/lib/events"
+import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import {
+  recalculateFormulas,
+  stripFormulaKeys,
+  ENTITY_NATIVE_ATTRIBUTES,
+  type RecalculateFormulasInput,
+} from "@/lib/formula-recalc"
 
 // ---- Zod Schemas ----
 
@@ -55,6 +63,37 @@ function buildEventPayload(
     changedFields,
     userId,
     timestamp: new Date().toISOString(),
+  }
+}
+
+/**
+ * The native columns a create writes. A create genuinely changes every field, so a formula over
+ * any of them must run — but this is still a precise list, not a wildcard, so FORMULA-02/SC-4
+ * keeps holding for the update, stage-change and reorder paths.
+ */
+const DEAL_NATIVE_COLUMNS = Object.values(ENTITY_NATIVE_ATTRIBUTES.deal)
+
+/**
+ * Recalculate this deal's formula custom fields and return the blob to emit (D-01/D-17).
+ *
+ * The caller MUST await this before `crmBus.emit`: the webhook body and the workflow-trigger
+ * envelope are emit-time snapshots of the row object, never a re-read, so recalculating after
+ * the emit would leave both carrying stale values even though the stored row was correct.
+ *
+ * Resolves rather than rejects on failure (D-05): a broken admin-authored formula must never
+ * block a user's edit. The failure is logged, not swallowed (T-34-17), and the pre-recalc blob
+ * is emitted so the payload still describes the row as it stands.
+ */
+async function recalcCustomFields(
+  input: RecalculateFormulasInput,
+  fallback: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  try {
+    const { customFields } = await recalculateFormulas(input)
+    return customFields
+  } catch (error) {
+    console.error("[formula-recalc] deal recalculation failed:", error)
+    return fallback
   }
 }
 
@@ -146,6 +185,17 @@ export async function createDealMutation(
     const maxPosition = existingDeals[0]?.position ?? 0
     const position = (parseFloat(String(maxPosition)) + 10000).toString()
 
+    // T-34-04: the server is the sole writer of formula keys, so a client-supplied value for a
+    // formula-typed field is dropped before it can reach the JSONB blob. The definitions are
+    // handed to the recalculation through `definitionsCache` so they are not read twice.
+    const definitionsCache = new Map<EntityType, CustomFieldDefinition[]>()
+    let customFieldsToPersist: Record<string, unknown> = {}
+    if (validated.data.customFields !== undefined) {
+      const definitions = await getActiveFieldDefinitions("deal")
+      definitionsCache.set("deal", definitions)
+      customFieldsToPersist = stripFormulaKeys(validated.data.customFields, definitions)
+    }
+
     const [deal] = await db.insert(deals).values({
       title: validated.data.title,
       value: validated.data.value !== undefined ? validated.data.value?.toString() : null,
@@ -155,7 +205,7 @@ export async function createDealMutation(
       ownerId: validated.data.ownerId || input.userId,
       position,
       // custom_fields is never SQL NULL in this database — default to {}.
-      customFields: validated.data.customFields ?? {},
+      customFields: customFieldsToPersist,
     }).returning()
 
     const newAssigneeIds = validated.data.assigneeIds ?? []
@@ -165,11 +215,23 @@ export async function createDealMutation(
       )
     }
 
+    // Recalculate BEFORE the emit (D-17), never after.
+    const recalculatedCustomFields = await recalcCustomFields(
+      {
+        entityType: "deal",
+        entityId: deal.id,
+        changedFields: [...DEAL_NATIVE_COLUMNS, ...Object.keys(customFieldsToPersist)],
+        row: deal as unknown as Record<string, unknown>,
+        definitionsCache,
+      },
+      (deal.customFields ?? {}) as Record<string, unknown>,
+    )
+
     // Emit CRM event
     crmBus.emit("deal.created", buildEventPayload(
       deal.id,
       "created",
-      deal as unknown as Record<string, unknown>,
+      { ...deal, customFields: recalculatedCustomFields } as unknown as Record<string, unknown>,
       input.userId,
     ))
 
@@ -242,6 +304,8 @@ export async function updateDealMutation(
     // Build update object and track changed fields
     const updateData: Record<string, unknown> = { updatedAt: new Date() }
     const changedFields: string[] = []
+    // Shared with the recalculation below, so the definition query runs at most once.
+    const definitionsCache = new Map<EntityType, CustomFieldDefinition[]>()
 
     const oldStageId = deal.stageId
 
@@ -289,10 +353,13 @@ export async function updateDealMutation(
     }
 
     if (validated.data.customFields !== undefined) {
+      // T-34-04: drop client-supplied formula keys before they reach the blob.
+      const definitions = await getActiveFieldDefinitions("deal")
+      definitionsCache.set("deal", definitions)
       // Shallow-merge onto the stored blob so an unrelated edit cannot wipe keys.
       updateData.customFields = {
         ...(deal.customFields ?? {}),
-        ...validated.data.customFields,
+        ...stripFormulaKeys(validated.data.customFields, definitions),
       }
       changedFields.push("customFields")
     }
@@ -318,11 +385,28 @@ export async function updateDealMutation(
       )
     }
 
+    // Recalculate ONCE, before either emit (D-17). FORMULA-02/SC-4: `changedFields` is passed
+    // straight through as the recalc scope, so a stage drag scopes to zero evaluations.
+    const recalculatedCustomFields = await recalcCustomFields(
+      {
+        entityType: "deal",
+        entityId: id,
+        changedFields,
+        row: updatedDeal as unknown as Record<string, unknown>,
+        definitionsCache,
+      },
+      (updatedDeal.customFields ?? {}) as Record<string, unknown>,
+    )
+    const eventData = {
+      ...updatedDeal,
+      customFields: recalculatedCustomFields,
+    } as unknown as Record<string, unknown>
+
     // Emit deal.updated event
     crmBus.emit("deal.updated", buildEventPayload(
       id,
       "updated",
-      updatedDeal as unknown as Record<string, unknown>,
+      eventData,
       userId,
       changedFields.length > 0 ? changedFields : null,
     ))
@@ -333,7 +417,7 @@ export async function updateDealMutation(
         ...buildEventPayload(
           id,
           "updated",
-          updatedDeal as unknown as Record<string, unknown>,
+          eventData,
           userId,
           changedFields,
         ),
@@ -369,6 +453,8 @@ export async function deleteDealMutation(
   }
 
   try {
+    // No formula recalculation here: a soft delete is not a save. Children of a deleted parent
+    // keeping a stale derived value is a known limitation, recorded in plan 34-11.
     await db
       .update(deals)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -429,11 +515,32 @@ export async function updateDealStageMutation(
       .set({ stageId, position, updatedAt: new Date() })
       .where(eq(deals.id, id))
 
+    // The post-write state, handed to the recalculation so it need not re-read the row.
+    const rowAfterUpdate = { ...deal, stageId, position } as unknown as Record<string, unknown>
+
+    // Recalculate once, before either emit (D-17). `stageId` is absent from
+    // ENTITY_NATIVE_ATTRIBUTES.deal, so a stage drag scopes to zero evaluations (SC-4); the call
+    // is retained so this path stays correct if the native attribute map ever grows.
+    const recalculatedCustomFields = await recalcCustomFields(
+      {
+        entityType: "deal",
+        entityId: id,
+        changedFields: ["stageId"],
+        row: rowAfterUpdate,
+        definitionsCache: new Map<EntityType, CustomFieldDefinition[]>(),
+      },
+      (deal.customFields ?? {}) as Record<string, unknown>,
+    )
+    const eventData = {
+      ...rowAfterUpdate,
+      customFields: recalculatedCustomFields,
+    } as unknown as Record<string, unknown>
+
     // Emit deal.updated
     crmBus.emit("deal.updated", buildEventPayload(
       id,
       "updated",
-      { ...deal, stageId, position } as unknown as Record<string, unknown>,
+      eventData,
       userId,
       ["stageId"],
     ))
@@ -443,7 +550,7 @@ export async function updateDealStageMutation(
       ...buildEventPayload(
         id,
         "updated",
-        { ...deal, stageId, position } as unknown as Record<string, unknown>,
+        eventData,
         userId,
         ["stageId"],
       ),
@@ -523,9 +630,36 @@ export async function reorderDealsMutation(
       .set({ stageId: targetStageId, position: newPosition, updatedAt: new Date() })
       .where(eq(deals.id, dealId))
 
+    // One cache for the whole reorder, so the definition query runs once however many deals this
+    // path ends up touching rather than once per row.
+    const definitionsCache = new Map<EntityType, CustomFieldDefinition[]>()
+    const stageChanged = deal.stageId !== targetStageId
+    const rowAfterUpdate = {
+      ...deal,
+      stageId: targetStageId,
+      position: newPosition,
+    } as unknown as Record<string, unknown>
+
+    // Neither `position` nor `stageId` appears in ENTITY_NATIVE_ATTRIBUTES.deal, so the helper
+    // early-returns with zero evaluations — that is the intended SC-4 behaviour, and the call is
+    // retained so the path stays correct if the native attribute map ever grows.
+    const recalculatedCustomFields = await recalcCustomFields(
+      {
+        entityType: "deal",
+        entityId: dealId,
+        changedFields: stageChanged ? ["position", "stageId"] : ["position"],
+        row: rowAfterUpdate,
+        definitionsCache,
+      },
+      (deal.customFields ?? {}) as Record<string, unknown>,
+    )
+
     // Emit CRM events when stage actually changed (not position-only reorder)
-    if (deal.stageId !== targetStageId) {
-      const updatedData = { ...deal, stageId: targetStageId, position: newPosition } as unknown as Record<string, unknown>
+    if (stageChanged) {
+      const updatedData = {
+        ...rowAfterUpdate,
+        customFields: recalculatedCustomFields,
+      } as unknown as Record<string, unknown>
 
       crmBus.emit("deal.updated", buildEventPayload(
         dealId,

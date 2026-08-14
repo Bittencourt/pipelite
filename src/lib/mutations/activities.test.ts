@@ -20,8 +20,32 @@ vi.mock("@/lib/events", () => ({
   },
 }))
 
+// Mock the recalculation helper. This suite tests CALL ORDERING and ARGUMENTS — evaluation
+// behaviour is covered exhaustively by formula-recalc.test.ts. importOriginal keeps the real
+// vocabulary constants (ENTITY_NATIVE_ATTRIBUTES) so the create-path scope assertion compares
+// against the single source of truth rather than a hard-coded copy.
+vi.mock("@/lib/formula-recalc", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/formula-recalc")>()
+  return {
+    ...actual,
+    recalculateFormulas: vi.fn(),
+    stripFormulaKeys: vi.fn((values: Record<string, unknown>) => values),
+  }
+})
+
+// Field definitions are read only to feed stripFormulaKeys (T-34-04); no DB access in tests.
+vi.mock("@/lib/custom-fields", () => ({
+  getActiveFieldDefinitions: vi.fn(async () => []),
+}))
+
 import { db } from "@/db"
 import { crmBus } from "@/lib/events"
+import {
+  recalculateFormulas,
+  stripFormulaKeys,
+  ENTITY_NATIVE_ATTRIBUTES,
+  type RecalculateFormulasInput,
+} from "@/lib/formula-recalc"
 import {
   createActivityMutation,
   updateActivityMutation,
@@ -40,9 +64,13 @@ const mockDb = db as unknown as {
 }
 
 const mockEmit = crmBus.emit as ReturnType<typeof vi.fn>
+const mockRecalc = recalculateFormulas as unknown as ReturnType<typeof vi.fn>
+const mockStrip = stripFormulaKeys as unknown as ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockRecalc.mockResolvedValue({ customFields: {}, evaluations: 0 })
+  mockStrip.mockImplementation((values: Record<string, unknown>) => values)
 })
 
 describe("createActivityMutation", () => {
@@ -263,6 +291,245 @@ describe("customFields persistence (D-12)", () => {
 
     expect(Object.keys(firstArg(setFn))).not.toContain("customFields")
     expect(updatedChangedFields() ?? []).not.toContain("customFields")
+  })
+})
+
+describe("formula recalculation (D-01/D-17)", () => {
+  // Deliberately different from every fixture's stored blob, so an assertion on the EMITTED
+  // payload can only pass if the post-recalc value was folded in — a database-row assertion
+  // could not tell recalc-before-emit from recalc-after-emit apart (Pitfall 3).
+  const RECALCED: Record<string, unknown> = {
+    Margin: { formula: true, value: 1035, error: null },
+  }
+  const RECALC_RESULT = { customFields: RECALCED, evaluations: 1 }
+
+  const ACTIVITY_NATIVE_COLUMNS = Object.values(ENTITY_NATIVE_ATTRIBUTES.activity)
+
+  const STORED_CUSTOM_FIELDS: Record<string, unknown> = { Origem: ["Inbound"] }
+
+  const baseActivity = {
+    id: "act1",
+    title: "Call client",
+    typeId: "type1",
+    dealId: null,
+    ownerId: "u1",
+    assigneeId: null,
+    dueDate: new Date(),
+    completedAt: null,
+    notes: null,
+    customFields: STORED_CUSTOM_FIELDS,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: null,
+  }
+
+  beforeEach(() => {
+    mockRecalc.mockResolvedValue(RECALC_RESULT)
+  })
+
+  function stubCreate(row: Record<string, unknown>) {
+    mockDb.query.activityTypes.findFirst.mockResolvedValue({ id: "type1", name: "Call" })
+    const returningFn = vi.fn().mockResolvedValue([row])
+    const valuesFn = vi.fn().mockReturnValue({ returning: returningFn })
+    mockDb.insert.mockReturnValue({ values: valuesFn })
+    return valuesFn
+  }
+
+  function stubUpdateWithReturning(row: Record<string, unknown>) {
+    const returningFn = vi.fn().mockResolvedValue([row])
+    const whereFn = vi.fn().mockReturnValue({ returning: returningFn })
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    return setFn
+  }
+
+  const recalcArgs = (index = 0) =>
+    mockRecalc.mock.calls[index][0] as RecalculateFormulasInput
+
+  const emittedData = (event: string, index = 0): Record<string, unknown> => {
+    const calls = mockEmit.mock.calls.filter((c) => c[0] === event)
+    return ((calls[index]?.[1] as { data?: Record<string, unknown> } | undefined)?.data ?? {})
+  }
+
+  // ---- createActivityMutation ----
+
+  describe("createActivityMutation", () => {
+    const create = (customFields?: Record<string, unknown>) =>
+      createActivityMutation({
+        title: "Call client",
+        typeId: "type1",
+        dueDate: new Date(),
+        ...(customFields ? { customFields } : {}),
+        userId: "u1",
+      })
+
+    it("recalculates exactly once, from the .returning() row (no redundant re-read)", async () => {
+      stubCreate(baseActivity)
+
+      await create()
+
+      expect(mockRecalc).toHaveBeenCalledTimes(1)
+      const args = recalcArgs()
+      expect(args.entityType).toBe("activity")
+      expect(args.entityId).toBe("act1")
+      expect(args.row).toBe(baseActivity)
+    })
+
+    it("recalculates BEFORE crmBus.emit (D-17)", async () => {
+      stubCreate(baseActivity)
+
+      await create()
+
+      expect(vi.mocked(recalculateFormulas).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(crmBus.emit).mock.invocationCallOrder[0]
+      )
+    })
+
+    it("emits activity.created carrying the POST-recalc customFields (SC-2/SC-3)", async () => {
+      stubCreate(baseActivity)
+
+      await create()
+
+      expect(emittedData("activity.created").customFields).toEqual(RECALCED)
+      expect(emittedData("activity.created").customFields).not.toEqual(STORED_CUSTOM_FIELDS)
+      expect(emittedData("activity.created").id).toBe("act1")
+    })
+
+    it("scopes the create recalc to every native column plus the supplied custom field keys", async () => {
+      stubCreate(baseActivity)
+
+      await create({ Origem: ["Inbound"] })
+
+      const changed = recalcArgs().changedFields
+      expect(changed).toEqual(expect.arrayContaining(ACTIVITY_NATIVE_COLUMNS))
+      expect(changed).toContain("Origem")
+      expect(changed.length).toBeGreaterThan(0)
+      expect(changed).not.toContain("*")
+    })
+
+    it("strips caller-supplied formula keys before the insert (T-34-04)", async () => {
+      const valuesFn = stubCreate(baseActivity)
+      const caller = { Origem: ["Inbound"], Margin: 999 }
+      mockStrip.mockReturnValue({ Origem: ["Inbound"] })
+
+      await create(caller)
+
+      expect(mockStrip).toHaveBeenCalledWith(caller, expect.anything())
+      expect((valuesFn.mock.calls[0][0] as Record<string, unknown>).customFields).toEqual({
+        Origem: ["Inbound"],
+      })
+    })
+  })
+
+  // ---- updateActivityMutation ----
+
+  describe("updateActivityMutation", () => {
+    it("recalculates once with the .returning() row and the mutation's own changedFields", async () => {
+      mockDb.query.activities.findFirst.mockResolvedValue(baseActivity)
+      const updated = { ...baseActivity, title: "Email client" }
+      stubUpdateWithReturning(updated)
+
+      await updateActivityMutation("act1", { title: "Email client" }, "u1")
+
+      expect(mockRecalc).toHaveBeenCalledTimes(1)
+      const args = recalcArgs()
+      expect(args.entityType).toBe("activity")
+      expect(args.entityId).toBe("act1")
+      expect(args.row).toBe(updated)
+      expect(args.changedFields).toEqual(["title"])
+    })
+
+    it("recalculates BEFORE crmBus.emit, and the payload carries the post-recalc blob", async () => {
+      mockDb.query.activities.findFirst.mockResolvedValue(baseActivity)
+      stubUpdateWithReturning({ ...baseActivity, title: "Email client" })
+
+      await updateActivityMutation("act1", { title: "Email client" }, "u1")
+
+      expect(vi.mocked(recalculateFormulas).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(crmBus.emit).mock.invocationCallOrder[0]
+      )
+      expect(emittedData("activity.updated").customFields).toEqual(RECALCED)
+    })
+
+    it("strips caller-supplied formula keys before the merge (T-34-04)", async () => {
+      mockDb.query.activities.findFirst.mockResolvedValue({ ...baseActivity, customFields: { A: 1 } })
+      const setFn = stubUpdateWithReturning(baseActivity)
+      const caller = { B: 2, Margin: 999 }
+      mockStrip.mockReturnValue({ B: 2 })
+
+      await updateActivityMutation("act1", { customFields: caller }, "u1")
+
+      expect(mockStrip).toHaveBeenCalledWith(caller, expect.anything())
+      expect((setFn.mock.calls[0][0] as Record<string, unknown>).customFields).toEqual({ A: 1, B: 2 })
+    })
+
+    it("still succeeds, still emits and logs when recalculation rejects (D-05)", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+      mockDb.query.activities.findFirst.mockResolvedValue(baseActivity)
+      stubUpdateWithReturning({ ...baseActivity, title: "Email client" })
+      mockRecalc.mockRejectedValue(new Error("QuickJS exploded"))
+
+      const result = await updateActivityMutation("act1", { title: "Email client" }, "u1")
+
+      expect(result).toEqual({ success: true })
+      expect(mockEmit).toHaveBeenCalledTimes(1)
+      expect(emittedData("activity.updated").customFields).toEqual(STORED_CUSTOM_FIELDS)
+      expect(errorSpy).toHaveBeenCalled()
+      errorSpy.mockRestore()
+    })
+  })
+
+  // ---- deleteActivityMutation ----
+
+  describe("deleteActivityMutation", () => {
+    it("does NOT recalculate — a soft delete is not a save", async () => {
+      mockDb.query.activities.findFirst.mockResolvedValue({ id: "act1", ownerId: "u1", deletedAt: null })
+      const whereFn = vi.fn().mockResolvedValue(undefined)
+      const setFn = vi.fn().mockReturnValue({ where: whereFn })
+      mockDb.update.mockReturnValue({ set: setFn })
+
+      const result = await deleteActivityMutation("act1", "u1")
+
+      expect(result).toEqual({ success: true })
+      expect(mockRecalc).toHaveBeenCalledTimes(0)
+      expect(mockEmit).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  // ---- toggleActivityCompletionMutation ----
+
+  describe("toggleActivityCompletionMutation", () => {
+    it("recalculates before emit, scoped so a {{CompletedAt}} formula is in scope", async () => {
+      mockDb.query.activities.findFirst.mockResolvedValue(baseActivity)
+      const updated = { ...baseActivity, completedAt: new Date() }
+      stubUpdateWithReturning(updated)
+
+      const result = await toggleActivityCompletionMutation("act1", "u1")
+
+      expect(result).toEqual({ success: true, completed: true })
+      expect(mockRecalc).toHaveBeenCalledTimes(1)
+      const args = recalcArgs()
+      expect(args.entityId).toBe("act1")
+      expect(args.row).toBe(updated)
+      // "completed" is what the mutation already pushes into the event; "completedAt" is the
+      // column the CompletedAt native attribute maps to, so scoping can actually select it.
+      expect(args.changedFields).toContain("completed")
+      expect(args.changedFields).toContain("completedAt")
+      expect(vi.mocked(recalculateFormulas).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(crmBus.emit).mock.invocationCallOrder[0]
+      )
+    })
+
+    it("emits activity.updated carrying the POST-recalc customFields, changedFields unchanged", async () => {
+      mockDb.query.activities.findFirst.mockResolvedValue({ ...baseActivity, completedAt: new Date() })
+      stubUpdateWithReturning({ ...baseActivity, completedAt: null })
+
+      await toggleActivityCompletionMutation("act1", "u1")
+
+      expect(emittedData("activity.updated").customFields).toEqual(RECALCED)
+      const call = mockEmit.mock.calls.find((c) => c[0] === "activity.updated")
+      expect((call?.[1] as { changedFields: string[] }).changedFields).toEqual(["completed"])
+    })
   })
 })
 
