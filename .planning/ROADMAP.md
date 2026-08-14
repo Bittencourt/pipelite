@@ -402,6 +402,20 @@ to be run with an inline `DATABASE_URL` override. Phase 33 worked around it with
 Fix: point `.env.local` at `localhost:5433`. This will bite every future phase that runs a migration
 (34, 35, 36, 37, 39, 40 all add schema). Cheap fix, high recurring cost if left.
 
+**999.21 — Workflow conditions cannot address 90% of custom fields** (captured 2026-08-14, Phase 34)
+`resolveFieldPath` splits a condition's field path on `.`, so any custom field whose **name contains a
+space or punctuation is unreachable from a workflow condition**. Measured against the live DB:
+**152 of 169 definitions (90%)** are affected — this dataset's field names are predominantly Portuguese
+with spaces and punctuation (`Código Mãe`, `Previsão de início operação`, `CNPJ / CPF`,
+`UUID UC (TYR Core)`, `Tem solução de solar?`).
+
+Pre-existing and affects **all** custom fields, not just formula fields — Phase 34 did not introduce it and
+explicitly scoped it out. But it materially limits Phase 34's SC-3: the formula value now normalises
+correctly into the trigger envelope, yet in practice a workflow condition can only reach a formula field
+whose name is a simple identifier. Fix needs a quoting/escaping syntax or an id-based field reference.
+Worth prioritising — it silently makes a headline feature inapplicable to most of the real data.
+See `34-05-SUMMARY.md`.
+
 ---
 
 All 12 original backlog items (999.1-999.12, captured 2026-08-12 and 2026-08-13) were promoted
