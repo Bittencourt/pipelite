@@ -36,7 +36,9 @@ API-complete CRM core that handles fundamentals well — pipelines, orgs, people
 
 ### Active
 
-(None — planning next milestone)
+(None — planning next milestone. 12 candidate items are captured in ROADMAP.md `## Backlog` as
+999.1–999.12, each carrying its motivating evidence. Suggested v1.3 slice: 999.3 CI →
+999.4 indexes → 999.1 formula reactivity → 999.5 notes timeline → 999.6 audit log.)
 
 ### Out of Scope
 

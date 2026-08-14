@@ -127,6 +127,7 @@ Progress: [██████████] 100% (26/26 v1.2 plans)
 - v1.2 Workflows roadmap created 2026-03-26 (7 phases, 27 requirements)
 - v1.2 Workflows shipped 2026-03-28 (8 phases incl. gap-closure Phase 31, 26 plans)
 - Deferred v1.1 scope captured as backlog 2026-08-12: 999.1 formula reactivity, 999.2 bulk operations
+- Post-v1.2 codebase review 2026-08-13: 10 findings captured as backlog 999.3-999.12 (CI, indexes, notes timeline, audit log, dedup, saved views, trash/restore, workflow ops, observability, polish)
 
 ### Research Flags
 
