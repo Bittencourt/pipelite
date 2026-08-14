@@ -280,6 +280,21 @@ batch that gets recalculated, so their formula values stay blank until their fir
 The Pipedrive importer's equivalent stub rows **are** covered. This is the one place the two
 importers differ.
 
+**The CSV export drops every custom column unless the first exported row carries it.**
+`exportToCSV` calls `Papa.unparse(data, { header: true })`, and papaparse derives the header from
+the **first object only** — any `custom_*` key absent from row 1 is silently omitted from every row.
+Measured against the live data: a 46,055-row organization export produced **zero** `custom_*`
+columns even though 30,264 of those rows have populated custom fields. This is **pre-existing and
+affects all custom fields, not formulas specifically**; the formula unwrapping itself is correct and
+verified (the JSON export, which shares `flattenCustomFields` and has no header-derivation step,
+carries the scalars faithfully). Until it is fixed, a CSV export is not a reliable way to observe a
+formula value.
+
+**Attaching a parent does not refresh cross-entity formulas.** Setting a deal's `organization_id`
+changes a foreign key, not a field any formula references, so `{{Organization.…}}` formulas on that
+deal stay blank until the parent is next saved or the deal's own referenced fields change. Correct
+under the scoping rules, and worth knowing when a newly linked row shows a blank cross-entity value.
+
 **Soft deletes do not recalculate.** A child of a soft-deleted parent keeps its last computed value.
 The deleted row is excluded from future cascades, so the child's derived value simply stops being
 refreshed until that child is itself saved.
@@ -316,6 +331,8 @@ rediscovered. **None of these are acted on by the formula system.**
 - `POST /api/custom-fields/save` performs no per-entity ownership check on `entityId`.
 - CSV formula injection: a cell value beginning with `=`, `+`, `-` or `@` can execute on open. This
   affects every text column in the export, not only formula fields, and wants a dedicated pass.
+- Fix the CSV export header derivation: compute the union of keys across all rows and pass it as
+  papaparse's `columns` option, so a custom field present on any row survives the export.
 - Wire `validateFormula` into the authoring dialog so a broken expression is rejected at authoring
   time instead of stored as an error on every row.
 - Update the authoring help text at `src/app/admin/fields/[entityType]/field-dialog.tsx` to document
