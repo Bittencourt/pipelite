@@ -96,9 +96,9 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 Plans:
 **Wave 1**
 
-- [ ] 32-01-PLAN.md — Add `test`/`typecheck` scripts and scope vitest collection to `src/`, excluding `.next/**` (CI-01, CI-02)
-- [ ] 32-03-PLAN.md — Clear 14 eslint errors: type the Drizzle `any` casts in the v1 API routes and the test mock factories (CI-04)
-- [ ] 32-04-PLAN.md — Clear 13 eslint errors: escape JSX quotes and add five justified React Compiler suppressions (CI-04)
+- [x] 32-01-PLAN.md — Add `test`/`typecheck` scripts and scope vitest collection to `src/`, excluding `.next/**` (CI-01, CI-02)
+- [x] 32-03-PLAN.md — Clear 14 eslint errors: type the Drizzle `any` casts in the v1 API routes and the test mock factories (CI-04)
+- [x] 32-04-PLAN.md — Clear 13 eslint errors: escape JSX quotes and add five justified React Compiler suppressions (CI-04)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -278,7 +278,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 32. Test Infrastructure & CI | 0/? | Not started | - |
+| 32. Test Infrastructure & CI | 3/6 | In Progress|  |
 | 33. Database Indexes for the CRM Core | 0/? | Not started | - |
 | 34. Formula Reactivity | 0/? | Not started | - |
 | 35. Notes & Record Timeline | 0/? | Not started | - |
