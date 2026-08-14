@@ -293,3 +293,16 @@ gh api repos/Bittencourt/pipelite/rulesets
 - **Handoff to the orchestrator:** apply the backlog block above to `.planning/ROADMAP.md` (999.13 is required by this plan's must-haves).
 - **Handoff to plan 32-06:** the required check name is exactly `ci`; the ruleset settings are already written down; nothing has been pushed and no GitHub setting has been touched.
 - No blockers.
+
+## Self-Check: PASSED
+
+- `FOUND .github/workflows/ci.yml`, `FOUND CONTRIBUTING.md`, `FOUND .planning/phases/32-test-infrastructure-ci/32-05-SUMMARY.md`
+- All three commits exist: `a675792`, `5fcf087`, `eb06eb8` (this SUMMARY commit).
+- `git diff --name-only 80fdda6..HEAD` lists exactly three paths: `.github/workflows/ci.yml`, `.planning/phases/32-test-infrastructure-ci/32-05-SUMMARY.md`, `CONTRIBUTING.md`. **`STATE.md` and `ROADMAP.md` are absent from the range.**
+- The SUMMARY is tracked (`git ls-files` returns it) — added with `git add -f` because `.planning/` is gitignored while its contents are tracked.
+- Working tree clean; `git worktree list` shows the main checkout plus this locked agent worktree, and no disposable third entry.
+- No `git push`, no PR, no `gh api` mutation was executed.
+
+---
+*Phase: 32-test-infrastructure-ci*
+*Completed: 2026-08-14*
