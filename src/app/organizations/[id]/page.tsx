@@ -11,10 +11,11 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ExternalLink, Calendar, User, Globe, Building2, FileText, Users, Mail } from "lucide-react"
+import { ExternalLink, Calendar, User, Globe, Building2, Users, Mail } from "lucide-react"
 import { OrganizationDetailClient } from "./organization-detail-client"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
-import type { EntityType, CustomFieldDefinition } from "@/db/schema"
+import { RecordTimeline } from "@/components/timeline/record-timeline"
+import type { CustomFieldDefinition } from "@/db/schema"
 import { getFormatter, getTranslations } from 'next-intl/server'
 
 interface PageProps {
@@ -172,17 +173,6 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
             </div>
           </div>
 
-          {organization.notes && (
-            <div className="mt-6 pt-6 border-t">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <FileText className="h-4 w-4" />
-                  {t('notes')}
-                </div>
-                <p className="text-sm whitespace-pre-wrap">{organization.notes}</p>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -195,9 +185,18 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
           Name: organization.name,
           Website: organization.website,
           Industry: organization.industry,
+          // The legacy rendered block is gone, but this attribute STAYS. `buildClientFieldValues`
+          // seeds the live formula evaluation map from these keys, and an absent key makes the
+          // engine answer "Unknown field" and render an error cell — the CFUI-03 regression this
+          // repo already shipped and fixed once.
           Notes: organization.notes,
         }}
       />
+
+      {/* The record timeline replaces the legacy read-only notes block deleted above. It is a
+          server component taking two plain string props; no React element crosses the boundary
+          into a Radix `asChild` slot (CFUI-01). */}
+      <RecordTimeline entityType="organization" entityId={organization.id} />
 
       <Card className="mt-6">
         <CardHeader>

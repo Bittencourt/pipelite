@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, Users, DollarSign } from "lucide-react"
+import { ArrowLeft, Calendar, CheckCircle2, Clock, Users, DollarSign } from "lucide-react"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
+import { RecordTimeline } from "@/components/timeline/record-timeline"
 import type { CustomFieldDefinition } from "@/db/schema"
 import { getFormatter, getTimeZone, getTranslations } from 'next-intl/server'
 
@@ -235,17 +236,6 @@ export default async function ActivityDetailPage({ params }: PageProps) {
             </div>
           </div>
 
-          {activity.notes && (
-            <div className="mt-6 pt-6 border-t">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <FileText className="h-4 w-4" />
-                  {t('notes')}
-                </div>
-                <p className="text-sm whitespace-pre-wrap">{activity.notes}</p>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -256,11 +246,20 @@ export default async function ActivityDetailPage({ params }: PageProps) {
         values={(activity.customFields as Record<string, unknown>) || {}}
         entityAttributes={{
           Title: activity.title,
+          // The legacy rendered block is gone, but this attribute STAYS. `buildClientFieldValues`
+          // seeds the live formula evaluation map from these keys, and an absent key makes the
+          // engine answer "Unknown field" and render an error cell — the CFUI-03 regression this
+          // repo already shipped and fixed once.
           Notes: activity.notes,
           DueDate: activity.dueDate,
           CompletedAt: activity.completedAt,
         }}
       />
+
+      {/* The record timeline replaces the legacy read-only notes block deleted above. It is a
+          server component taking two plain string props; no React element crosses the boundary
+          into a Radix `asChild` slot (CFUI-01). */}
+      <RecordTimeline entityType="activity" entityId={activity.id} />
     </div>
   )
 }
