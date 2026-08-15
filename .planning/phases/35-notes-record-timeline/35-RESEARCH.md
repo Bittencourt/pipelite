@@ -1279,7 +1279,11 @@ and the real SQL plan **cannot** be covered by vitest — they are verified by t
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All six questions below were answered by the **Post-Research Addendum** in `35-CONTEXT.md`
+> (decided 2026-08-15, after this document) and each answer is carried into a specific plan.
+> The original question text is preserved for provenance; the resolution is appended to each.
 
 1. **Do the four create/edit dialogs lose their Notes textarea in this phase?**
    - What we know: CONTEXT locks "nothing reads or writes [the column] after this phase." All four
@@ -1290,6 +1294,7 @@ and the real SQL plan **cannot** be covered by vitest — they are verified by t
    - Recommendation: **remove the field from all four dialogs and from `deal-card.tsx`**, keeping
      `notes` optional in the mutation and v1 schemas. Surface this to the user before planning —
      it is the difference between NOTE-01 being met and being cosmetically met.
+   - **RESOLVED** by 35-CONTEXT.md § Post-Research Addendum: the four create dialogs KEEP a Notes textarea but it now writes a first note row, and the edit paths drop the field entirely; `deal-card.tsx` stops rendering the legacy column. Implemented by plan **35-15** (nine write/render sites, not four).
 
 2. **What is the activity entry's chronological position — `created_at` or `dueDate`?**
    - What we know: activities carry `createdAt`, `dueDate` (not null), and `completedAt`.
@@ -1297,18 +1302,21 @@ and the real SQL plan **cannot** be covered by vitest — they are verified by t
      "history" feed under `dueDate`.
    - Recommendation: `created_at`, with the due/completed date rendered as entry content per the
      UI-SPEC copy. State it in the plan so it is not re-litigated at execution.
+   - **RESOLVED** by 35-CONTEXT.md § Post-Research Addendum: activity timeline entries sort on `created_at`. Implemented and test-asserted by plan **35-08** (the activities branch ORDER BY).
 
 3. **Are soft-deleted records' legacy notes migrated?**
    - What we know: 12 soft-deleted deals, 1 each elsewhere; the migration `WHERE` clause as written
      does not filter them.
    - Recommendation: migrate them (simpler, lossless, keeps both halves of SC-4 consistent). Just
      be explicit — do not leave it implicit in a `WHERE` clause.
+   - **RESOLVED** by 35-CONTEXT.md § Post-Research Addendum: notes on soft-deleted records ARE migrated (15 rows), with no soft-delete carve-out on either side of the SC-4 reconciliation. Implemented by plan **35-03** (the data migration `WHERE` clauses and `scripts/reconcile-notes.sql` carry no `deleted_at` filter, grep-gated).
 
 4. **Is the optional `activities (deal_id, created_at DESC)` index worth adding?**
    - What we know: measured 17.15 ms → 0.267 ms on the cold worst case; ~0.4 ms → 0.267 ms warm.
      Max 117 activities per deal.
    - Recommendation: **skip it.** If added, declare it in the schema (D-06) and capture BEFORE/AFTER
      evidence like Phase 33 did.
+   - **RESOLVED** by 35-CONTEXT.md § Post-Research Addendum: the optional `activities (deal_id, created_at DESC)` index is SKIPPED. Recorded as an explicit decision in plan **35-08**'s SUMMARY rather than silently omitted.
 
 5. **Does anything need to happen about imports writing to the dead column?**
    - What we know: five import/transform modules plus the v1 create/update routes still write
@@ -1316,12 +1324,14 @@ and the real SQL plan **cannot** be covered by vitest — they are verified by t
    - Recommendation: out of scope for building, **in scope for documenting**. Add a comment to
      `scripts/reconcile-notes.sql` stating that a non-zero delta after this phase means something
      wrote to the legacy column. Turns the SC-4 artifact into a permanent detector.
+   - **RESOLVED** by 35-CONTEXT.md § Post-Research Addendum: option 2 — the importers' continued writes to the dead column are documented in the reconciliation script rather than fixed here, turning the SC-4 artifact into a permanent regression detector. Implemented by plan **35-03** task 2 (the five write sites are named in the file header, grep-gated).
 
 6. **`public/openapi.yaml` and `docs/api/` updates.**
    - What we know: 2,393-line spec covering 22 paths; three new paths are needed. No test gates
      spec coverage — omitting it fails nothing.
    - Recommendation: include the spec edit as an explicit task, precisely *because* nothing enforces
      it.
+   - **RESOLVED** by 35-CONTEXT.md § Post-Research Addendum: `public/openapi.yaml` and `docs/api/` updates are an explicit task. Implemented by plan **35-10** task 3, gated by falsifiable path and schema assertions precisely because no test enforces spec coverage.
 
 ---
 
