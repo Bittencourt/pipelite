@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -86,7 +86,17 @@ interface ActivityDialogProps {
   activityTypes: ActivityType[]
   deals: Deal[]
   users?: { id: string; name: string | null; email: string }[]
-  onSuccess?: () => void
+  /**
+   * REFRESH ONLY — THIS CALLBACK MUST NEVER CLOSE THE DIALOG.
+   *
+   * It means "the record behind this dialog changed, re-read your data", not "we are
+   * done". The dialog decides for itself when it is done and closes through
+   * `onOpenChange(false)`. A call site that also flips its `open` state here defeats the
+   * one path that must stay open: a create whose record landed but whose note did not
+   * (T-35-31 — see `createdRecordIdRef` below). The prop is deliberately no longer named
+   * for success alone: a name that said only "it worked" is what invited the close.
+   */
+  onRecordSaved?: () => void
 }
 
 // Icon mapping for activity types
@@ -104,7 +114,7 @@ export function ActivityDialog({
   activityTypes,
   deals,
   users = [],
-  onSuccess,
+  onRecordSaved,
 }: ActivityDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -119,10 +129,20 @@ export function ActivityDialog({
    * presence turns the next submit into an UPDATE of that record rather than a second
    * CREATE, which is what lets the dialog stay open — and staying open is the only thing
    * that keeps the user's typed note, which may be an arbitrarily long paste, recoverable.
-   * `notes.error.saveFailed` promises the text is still in the box; closing the dialog and
-   * resetting the form on that path broke that promise while claiming success.
+   *
+   * A ref and not state, deliberately: the reset-on-open effect below has to read it, and
+   * a state value would have to be an effect dependency, so setting it would re-run the
+   * effect and `reset()` away the very draft it exists to protect. That matters most here:
+   * this effect also depends on the `activityTypes` array prop, whose identity changes on
+   * every parent refresh.
+   *
+   * Lifecycle — a create must never silently become an update of an unrelated record:
+   *   set    only on the note-failure branch of a create, to the id just created
+   *   read   only on the create branch of `onSubmit`
+   *   clear  on close (handleClose), on `open` going false by any other route, on a fresh
+   *          open, and whenever the dialog is pointed at an edit target
    */
-  const [createdPendingNoteId, setCreatedPendingNoteId] = useState<string | null>(null)
+  const createdRecordIdRef = useRef<string | null>(null)
 
   const {
     register,
@@ -150,37 +170,49 @@ export function ActivityDialog({
 
   // Reset form when dialog opens or activity changes
   useEffect(() => {
-    if (open) {
-      // A fresh open is a fresh create: never carry a previous session's half-finished
-      // record forward into it.
-      setCreatedPendingNoteId(null)
-      if (activity) {
-        // Format date for input
-        const dueDate = new Date(activity.dueDate)
-        const dateStr = dueDate.toISOString().split("T")[0]
-        const timeStr = dueDate.toTimeString().slice(0, 5)
-        
-        // No notes value is seeded here: the edit dialog has no Notes field, and the
-        // legacy column is dormant. Notes are written and edited in the record timeline.
-        reset({
-          title: activity.title,
-          typeId: activity.typeId,
-          dueDate: dateStr,
-          dueTime: timeStr,
-          dealId: activity.dealId || "",
-          assigneeId: activity.assigneeId || "",
-        })
-      } else {
-        reset({
-          title: "",
-          typeId: activityTypes[0]?.id || "",
-          dueDate: "",
-          dueTime: "09:00",
-          dealId: "",
-          notes: "",
-        })
-      }
+    if (!open) {
+      // Any close ends the pending create, including a parent that flips `open` directly
+      // instead of going through handleClose.
+      createdRecordIdRef.current = null
+      return
     }
+
+    if (activity) {
+      // An edit target can never inherit a create's half-finished record id.
+      createdRecordIdRef.current = null
+      // Format date for input
+      const dueDate = new Date(activity.dueDate)
+      const dateStr = dueDate.toISOString().split("T")[0]
+      const timeStr = dueDate.toTimeString().slice(0, 5)
+
+      // No notes value is seeded here: the edit dialog has no Notes field, and the
+      // legacy column is dormant. Notes are written and edited in the record timeline.
+      reset({
+        title: activity.title,
+        typeId: activity.typeId,
+        dueDate: dateStr,
+        dueTime: timeStr,
+        dealId: activity.dealId || "",
+        assigneeId: activity.assigneeId || "",
+      })
+      return
+    }
+
+    // A create whose record landed but whose note did not: the dialog is deliberately
+    // still open and the textarea still holds the draft. The refresh that failure fired
+    // re-renders the parent and hands this effect a new `activityTypes` array, and that
+    // must not reset the form out from under the user (T-35-31). Cleared on close, so the
+    // next open still starts clean.
+    if (createdRecordIdRef.current) return
+
+    reset({
+      title: "",
+      typeId: activityTypes[0]?.id || "",
+      dueDate: "",
+      dueTime: "09:00",
+      dealId: "",
+      notes: "",
+    })
   }, [open, activity, activityTypes, reset])
 
   const onSubmit = async (data: ActivityFormData) => {
@@ -209,7 +241,7 @@ export function ActivityDialog({
         // A retry after a failed note updates the record that already exists instead of
         // creating a second one, so any field the user changed while the dialog stayed
         // open is still saved.
-        let recordId = createdPendingNoteId
+        let recordId = createdRecordIdRef.current
         if (recordId) {
           const result = await updateActivity(recordId, activityData)
           if (!result.success) {
@@ -239,18 +271,19 @@ export function ActivityDialog({
           if (!noteSaved) {
             // Do NOT close, do NOT reset, and do NOT claim success: the note is the one
             // thing that did not happen, and the draft is the thing being protected.
-            // `onSuccess` still runs because the record itself did land, so the list
-            // behind the dialog must not go stale.
-            setCreatedPendingNoteId(recordId)
+            // `onRecordSaved` still runs because the record itself did land, so the list
+            // behind the dialog must not go stale — and it is contractually forbidden
+            // from closing this dialog, which is what makes the draft survive.
+            createdRecordIdRef.current = recordId
             toast.error(tNotes("error.recordCreatedNoteFailed"))
-            onSuccess?.()
+            onRecordSaved?.()
             return
           }
         }
       }
 
       toast.success(isEditMode ? "Activity updated!" : "Activity created!")
-      onSuccess?.()
+      onRecordSaved?.()
       handleClose()
     } catch {
       toast.error("An unexpected error occurred")
@@ -271,7 +304,7 @@ export function ActivityDialog({
       }
       toast.success("Activity deleted")
       setShowDeleteDialog(false)
-      onSuccess?.()
+      onRecordSaved?.()
       handleClose()
     } catch {
       toast.error("An unexpected error occurred")
@@ -282,7 +315,7 @@ export function ActivityDialog({
 
   const handleClose = () => {
     reset()
-    setCreatedPendingNoteId(null)
+    createdRecordIdRef.current = null
     onOpenChange(false)
   }
 

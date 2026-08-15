@@ -241,8 +241,9 @@ export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col
             personId: deal.personId,
           }}
           stages={[]}
-          onSuccess={() => {
-            setEditDialogOpen(false)
+          // Refresh only. The dialog closes itself through onOpenChange; closing from
+          // here is what broke the note-failure path this contract now protects.
+          onRecordSaved={() => {
             window.location.reload()
           }}
         />

@@ -53,8 +53,9 @@ export function PersonDetailClient({
     }
   }
 
-  const handleEditSuccess = () => {
-    setEditDialogOpen(false)
+  // Refresh only. The dialog closes itself through onOpenChange; closing from here is
+  // what broke the note-failure path this contract now protects.
+  const handleRecordSaved = () => {
     router.refresh()
   }
 
@@ -99,7 +100,7 @@ export function PersonDetailClient({
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
         person={person}
-        onSuccess={handleEditSuccess}
+        onRecordSaved={handleRecordSaved}
       />
 
       <DeleteDialog

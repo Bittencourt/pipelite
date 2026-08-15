@@ -81,9 +81,16 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
     }
   }
 
-  const handleSuccess = () => {
-    setDialogOpen(false)
-    setEditingPerson(null)
+  // Closing is the dialog's decision, taken through onOpenChange. This callback refreshes
+  // the list and nothing else: a create whose record landed but whose note did not stays
+  // open on purpose so the typed note survives (T-35-31), and closing it from here is
+  // exactly what defeated that.
+  const handleDialogOpenChange = (next: boolean) => {
+    setDialogOpen(next)
+    if (!next) setEditingPerson(null)
+  }
+
+  const handleRecordSaved = () => {
     refresh?.()
   }
 
@@ -209,9 +216,9 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
 
       <PersonDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={handleDialogOpenChange}
         person={editingPerson}
-        onSuccess={handleSuccess}
+        onRecordSaved={handleRecordSaved}
       />
 
       <DeleteDialog

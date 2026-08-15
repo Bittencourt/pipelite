@@ -72,9 +72,16 @@ export function ActivitiesClient({
     setDialogOpen(true)
   }
 
-  const handleSuccess = () => {
-    setDialogOpen(false)
-    setEditingActivity(null)
+  // Closing is the dialog's decision, taken through onOpenChange. This callback refreshes
+  // the list and nothing else: a create whose record landed but whose note did not stays
+  // open on purpose so the typed note survives (T-35-31), and closing it from here is
+  // exactly what defeated that.
+  const handleDialogOpenChange = (next: boolean) => {
+    setDialogOpen(next)
+    if (!next) setEditingActivity(null)
+  }
+
+  const handleRecordSaved = () => {
     startTransition(() => {
       router.refresh()
     })
@@ -197,12 +204,12 @@ export function ActivitiesClient({
       {/* Create/Edit Dialog */}
       <ActivityDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={handleDialogOpenChange}
         activity={editingActivity}
         activityTypes={activityTypes}
         deals={deals}
         users={users}
-        onSuccess={handleSuccess}
+        onRecordSaved={handleRecordSaved}
       />
     </div>
   )

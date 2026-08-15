@@ -256,14 +256,16 @@ export function KanbanBoard({
     router.refresh()
   }
 
-  const handleDealDialogSuccess = () => {
-    setDealDialogOpen(false)
-    setSelectedDeal(null)
-    router.refresh()
+  // Closing is the dialog's decision, taken through onOpenChange. These callbacks refresh
+  // the board and nothing else: a create whose record landed but whose note did not stays
+  // open on purpose so the typed note survives (T-35-31), and closing it from here is
+  // exactly what defeated that.
+  const handleDealDialogOpenChange = (next: boolean) => {
+    setDealDialogOpen(next)
+    if (!next) setSelectedDeal(null)
   }
 
-  const handleCreateDialogSuccess = () => {
-    setCreateDialogOpen(false)
+  const handleDealSaved = () => {
     router.refresh()
   }
 
@@ -411,7 +413,7 @@ export function KanbanBoard({
         <DealDialog
           mode="edit"
           open={dealDialogOpen}
-          onOpenChange={setDealDialogOpen}
+          onOpenChange={handleDealDialogOpenChange}
           deal={{
             id: selectedDeal.id,
             title: selectedDeal.title,
@@ -425,7 +427,7 @@ export function KanbanBoard({
           }}
           stages={stages}
           users={users}
-          onSuccess={handleDealDialogSuccess}
+          onRecordSaved={handleDealSaved}
         />
       )}
 
@@ -437,7 +439,7 @@ export function KanbanBoard({
         stages={stages}
         users={users}
         defaultStageId={defaultStageId}
-        onSuccess={handleCreateDialogSuccess}
+        onRecordSaved={handleDealSaved}
       />
     </div>
   )
