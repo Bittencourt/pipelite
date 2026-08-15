@@ -192,12 +192,16 @@ function diffChangedFields(
  * workflow fires for a UI custom-field edit today. Adding one here would start firing workflows
  * on every custom-field edit — a behavioural change with real side-effect risk, outside this
  * phase's boundary. It is recorded as a known limitation, not an oversight.
+ *
+ * Returns the post-recalculation blob as `values` (CFUI-02). `recalculateFormulas` already
+ * computes it; without handing it back, the caller's local state can never learn the new formula
+ * wrapper and the display stays pinned to page-load state until a reload.
  */
 export async function saveFieldValues(
   entityType: EntityType,
   entityId: string,
   values: Record<string, unknown>
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; values?: Record<string, unknown> }> {
   // Validate first — before any read or write, exactly as before.
   const validation = await validateFieldValues(entityType, values)
   if (!validation.valid) {
@@ -238,26 +242,32 @@ export async function saveFieldValues(
     })
     .where(eq(table.id, entityId))
 
+  // CFUI-02: seeded with the blob actually written, so the caller always gets something
+  // truthful to merge — including on the D-05 swallow path below, where no recalculation ran.
+  let recalculated: Record<string, unknown> = next
+
   try {
     // `row` is deliberately omitted. `getFieldValues` selects only `customFields`, so a row
     // built here would be missing every native attribute ({{Value}}, {{Title}}, ...) and would
     // fabricate errors on any formula reading one. The helper's own primary-key lookup runs
     // after the update above, so it sees both the persisted blob and the real columns.
-    await recalculateFormulas({
+    const result = await recalculateFormulas({
       entityType,
       entityId,
       changedFields,
       definitionsCache: new Map<EntityType, CustomFieldDefinition[]>([[entityType, definitions]]),
     })
+    recalculated = result.customFields
   } catch (error) {
-    // D-05: a broken admin-authored formula must never block a user's edit.
+    // D-05: a broken admin-authored formula must never block a user's edit. Unchanged — the
+    // fallback to `next` above is what makes swallowing safe for the caller.
     console.error(
       `[formula-recalc] saveFieldValues failed, entityType=${entityType} entityId=${entityId}:`,
       error
     )
   }
 
-  return { success: true }
+  return { success: true, values: recalculated }
 }
 
 // Get field definitions with values for rendering
