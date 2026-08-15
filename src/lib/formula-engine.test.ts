@@ -413,3 +413,33 @@ describe('formula-engine resource limits', () => {
     expect(result.error).toBeNull()
   })
 })
+
+/**
+ * The contract D-14's `null` seeding pass exists to exploit, and the reason
+ * `buildClientFieldValues` (src/lib/client-field-values.ts) has to exist at all.
+ *
+ * An ABSENT key and a PRESENT-AND-NULL key are two different things to this engine:
+ * absent takes the `!(dep in fields)` branch and fabricates `Unknown field: X`, while
+ * present-and-null takes the `propagateNull` branch and returns a blank. Every evaluator in
+ * the codebase must therefore make every known definition name a present key before calling
+ * in. These assertions pass today; they are here so that a refactor which drops the seeding
+ * fails with a legible message rather than as `#ERROR` in a browser six weeks later.
+ */
+describe('evaluateFormula — absent key vs present-and-null (D-14 / CFUI-03)', () => {
+  const expression = '{{GSD Base Value}} * 2'
+
+  it('fabricates `Unknown field` when the key is ABSENT — the CFUI-03 symptom', async () => {
+    const result = await evaluateFormula(expression, {})
+    expect(result).toEqual({ value: null, error: 'Unknown field: GSD Base Value' })
+  })
+
+  it('returns a blank when the key is PRESENT and null — what the seeding buys', async () => {
+    const result = await evaluateFormula(expression, { 'GSD Base Value': null })
+    expect(result).toEqual({ value: null, error: null })
+  })
+
+  it('evaluates normally when the key holds a real value — the seed must not shadow it', async () => {
+    const result = await evaluateFormula(expression, { 'GSD Base Value': 3 })
+    expect(result).toEqual({ value: 6, error: null })
+  })
+})
