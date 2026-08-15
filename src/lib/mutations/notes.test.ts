@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { PgDialect } from "drizzle-orm/pg-core"
+import type { SQL } from "drizzle-orm"
 
 // Mock db. The polymorphic parent-existence check (T-35-04) dispatches to one of four
 // tables keyed by entityType, so all four `findFirst` handles must exist on the mock.
@@ -331,6 +333,34 @@ describe("updateNoteMutation (what makes the \"edited\" marker meaningful)", () 
     expect(result.success).toBe(false)
     expect(set).not.toHaveBeenCalled()
   })
+
+  it("guards the UPDATE on deleted_at so an edit cannot resurrect a deleted note", async () => {
+    // WR-04 REGRESSION. The UPDATE matched on id alone, so a note soft-deleted between
+    // `findNoteById` and the write was edited anyway — and `returning()` came back empty.
+    mockDb.query.notes.findFirst.mockResolvedValue(fakeNote())
+    const { where } = stubUpdate([fakeNote({ content: "new" })])
+
+    await updateNoteMutation("n1", "new")
+
+    const predicate = new PgDialect().sqlToQuery(where.mock.calls[0][0] as SQL).sql.toLowerCase()
+    expect(predicate).toContain('"deleted_at" is null')
+  })
+
+  it("returns not-found rather than a bare success when the UPDATE matched nothing", async () => {
+    // WR-04 REGRESSION. `const [note] = await ...returning()` is `undefined` when the row
+    // was deleted mid-flight, and the declared return type is `{ success: true; note: Note }`,
+    // so both callers trusted it: the v1 route handed `undefined` to `serializeNote` and
+    // 500'd where a 404 was correct, and the server action threw inside `toTimelineEntry`.
+    // `tsconfig.json` has `strict` but not `noUncheckedIndexedAccess`, so the compiler
+    // typed it as `Note` and could not see any of it.
+    mockDb.query.notes.findFirst.mockResolvedValue(fakeNote())
+    stubUpdate([])
+
+    const result = await updateNoteMutation("n1", "new")
+
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toBe("Note not found")
+  })
 })
 
 describe("softDeleteNoteMutation", () => {
@@ -355,6 +385,31 @@ describe("softDeleteNoteMutation", () => {
 
     expect(result.success).toBe(false)
     expect(set).not.toHaveBeenCalled()
+    expect(mockDb.delete).not.toHaveBeenCalled()
+  })
+
+  it("guards the UPDATE on deleted_at so a second delete cannot move the timestamp", async () => {
+    // WR-07 REGRESSION. The soft delete matched on id alone, so two concurrent deletes
+    // both passed their `findNoteById` check and both wrote, and the second overwrote the
+    // first `deletedAt` with a later timestamp. The soft-delete design is grounded in the
+    // migration reconciliation and in `notes_migration_uniq` holding forever; a deletion
+    // timestamp that moves undermines the audit value that justifies keeping the row.
+    mockDb.query.notes.findFirst.mockResolvedValue(fakeNote())
+    const { where } = stubUpdate([fakeNote({ deletedAt: NOW })])
+
+    await softDeleteNoteMutation("n1")
+
+    const predicate = new PgDialect().sqlToQuery(where.mock.calls[0][0] as SQL).sql.toLowerCase()
+    expect(predicate).toContain('"deleted_at" is null')
+  })
+
+  it("reports success when the guarded UPDATE matched nothing (already deleted)", async () => {
+    // Losing the race means the note is already gone, which is what the caller asked for.
+    // Reporting failure would make a double-click through two tabs look like an error.
+    mockDb.query.notes.findFirst.mockResolvedValue(fakeNote())
+    stubUpdate([])
+
+    await expect(softDeleteNoteMutation("n1")).resolves.toEqual({ success: true })
     expect(mockDb.delete).not.toHaveBeenCalled()
   })
 })

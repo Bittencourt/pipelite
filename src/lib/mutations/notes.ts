@@ -142,6 +142,15 @@ export async function createNoteMutation(
       })
       .returning()
 
+    // `returning()` is typed as a non-empty array but is not one, and `tsconfig.json`
+    // does not set `noUncheckedIndexedAccess`, so the compiler cannot see this. An INSERT
+    // realistically always returns its row; if it ever does not, `note.id` below would
+    // throw inside the try and surface as an opaque 500 instead of a handled failure.
+    if (!note) {
+      console.error("Failed to create note: INSERT ... RETURNING produced no row")
+      return { success: false, error: "Failed to create note" }
+    }
+
     return { success: true, id: note.id, note }
   } catch (error) {
     console.error("Failed to create note:", error)
@@ -173,8 +182,21 @@ export async function updateNoteMutation(
     const [note] = await db
       .update(notes)
       .set({ content: validated.data.content, updatedAt: new Date() })
-      .where(eq(notes.id, noteId))
+      // Never resurrect-edit a row deleted since `findNoteById` above (T-35-06). Matching
+      // on id alone let an edit land on a note that had been soft-deleted in between, and
+      // `returning()` then yielded nothing.
+      .where(and(eq(notes.id, noteId), isNull(notes.deletedAt)))
       .returning()
+
+    // The declared return type promises a `Note`, and `noUncheckedIndexedAccess` is off,
+    // so the compiler believed it. Both callers trusted it too: the v1 route handed
+    // `undefined` to `serializeNote` and 500'd where a 404 was the right answer, and the
+    // server action handed it to `toTimelineEntry` and reported a generic edit failure.
+    if (!note) {
+      // Lost the race with a concurrent soft delete — same answer as a missing note, and
+      // deliberately the same string, so neither is an existence oracle (T-35-10).
+      return { success: false, error: "Note not found" }
+    }
 
     return { success: true, note }
   } catch (error) {
@@ -200,8 +222,17 @@ export async function softDeleteNoteMutation(
     await db
       .update(notes)
       .set({ deletedAt: now, updatedAt: now })
-      .where(eq(notes.id, noteId))
+      // IDEMPOTENT. Matching on id alone let two concurrent deletes — the API surface and
+      // the browser, or a double-click through two tabs — both pass their `findNoteById`
+      // check and both write, so the second silently overwrote the first `deletedAt` with
+      // a later timestamp. The soft-delete design above is grounded in the migration
+      // reconciliation and in `notes_migration_uniq` holding forever; a deletion timestamp
+      // that moves undermines exactly the audit value that justifies keeping the row.
+      .where(and(eq(notes.id, noteId), isNull(notes.deletedAt)))
 
+    // Deliberately not conditioned on a row having been updated. Losing the race means
+    // the note is already deleted, which is what the caller asked for — reporting failure
+    // would make a double-click look like an error.
     return { success: true }
   } catch (error) {
     console.error("Failed to delete note:", error)
