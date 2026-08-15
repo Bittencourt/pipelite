@@ -168,7 +168,7 @@ describe("saveFieldValues — pre-image diff (FORMULA-02 / SC-4)", () => {
       Origem: ["Outbound Manual"],
     })
 
-    expect(result).toEqual({ success: true })
+    expect(result.success).toBe(true)
     expect(mockRecalc).toHaveBeenCalledTimes(1)
     expect(recalcInput().changedFields).toEqual([])
   })
@@ -357,7 +357,7 @@ describe("saveFieldValues — ordering and failure isolation", () => {
 
     const result = await saveFieldValues("deal", "d1", { Price: 200 })
 
-    expect(result).toEqual({ success: true })
+    expect(result.success).toBe(true)
     expect(errorSpy).toHaveBeenCalled()
     expect(String(errorSpy.mock.calls[0][0])).toContain("[formula-recalc]")
   })
@@ -371,6 +371,99 @@ describe("saveFieldValues — ordering and failure isolation", () => {
     expect(result.error).toContain("Origem")
     expect(harness.setFn).not.toHaveBeenCalled()
     expect(mockRecalc).toHaveBeenCalledTimes(0)
+  })
+})
+
+/* -------------------------------------------------------------------------------------- *
+ * The post-recalculation payload — CFUI-02
+ * -------------------------------------------------------------------------------------- */
+
+describe("saveFieldValues — returns the recomputed blob (CFUI-02)", () => {
+  it("resolves with exactly the customFields recalculateFormulas just computed", async () => {
+    captureUpdate()
+    const recomputed = {
+      Price: 100,
+      Margin: { formula: true, value: 40, error: null },
+    }
+    mockRecalc.mockResolvedValueOnce({ customFields: recomputed, evaluations: 1 })
+
+    const result = await saveFieldValues("deal", "d1", {
+      Price: 100,
+      Origem: ["Outbound Manual"],
+    })
+
+    // The client's `localValues` can only stop being stale if the server hands back what it
+    // just derived. `next` is pre-recalculation, so the recalculated blob is the one to return.
+    expect(result.values).toEqual(recomputed)
+    expect(result.values).toBe(recomputed)
+  })
+
+  it("preserves the { success: true } shape — `values` is additive, not a replacement", async () => {
+    captureUpdate()
+    mockRecalc.mockResolvedValueOnce({
+      customFields: { Price: 100, Margin: { formula: true, value: 40, error: null } },
+      evaluations: 1,
+    })
+
+    const result = await saveFieldValues("deal", "d1", { Price: 100 })
+
+    expect(result.success).toBe(true)
+    expect(result.error).toBeUndefined()
+  })
+
+  it("D-05: a rejecting recalculation still succeeds, with `values` falling back to the written blob", async () => {
+    const harness = captureUpdate()
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    mockRecalc.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await saveFieldValues("deal", "d1", {
+      Price: 200,
+      Origem: ["Outbound Manual"],
+    })
+
+    // A broken admin-authored formula must never block a user's edit, and must never leave the
+    // client with `undefined` to merge either — the written blob is the honest fallback.
+    expect(result.success).toBe(true)
+    expect(result.values).toBeDefined()
+    expect(result.values).toEqual(persistedBlob(harness))
+    expect(result.values).toEqual({
+      Price: 200,
+      Origem: ["Outbound Manual"],
+      Margin: MARGIN_WRAPPER,
+    })
+  })
+
+  it("D-05 fallback keeps the carried-over stored wrapper, so the client never loses the derived value", async () => {
+    captureUpdate()
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    mockRecalc.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await saveFieldValues("deal", "d1", { Price: 200 })
+
+    expect(result.values?.Margin).toEqual(MARGIN_WRAPPER)
+  })
+
+  it("a validation failure resolves with no `values` key and no write", async () => {
+    const harness = captureUpdate()
+
+    const result = await saveFieldValues("deal", "d1", { Origem: ["Nao Existe"] })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain("Origem")
+    expect(result.values).toBeUndefined()
+    expect(harness.setFn).not.toHaveBeenCalled()
+    expect(mockRecalc).toHaveBeenCalledTimes(0)
+  })
+
+  it("returning the blob does not reorder the write — update still precedes the recalculation", async () => {
+    const harness = captureUpdate()
+    mockRecalc.mockResolvedValueOnce({ customFields: { Price: 200 }, evaluations: 1 })
+
+    await saveFieldValues("deal", "d1", { Price: 200 })
+
+    expect(harness.updateWhereFn.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRecalc.mock.invocationCallOrder[0]
+    )
   })
 })
 
