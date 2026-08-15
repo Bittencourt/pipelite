@@ -342,8 +342,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 44-06-PLAN.md — Structural CFUI-01 repair: `AddFieldButton`/`RestoreFieldButton` client wrappers, plus a repo-wide gate on the whole bug class (CFUI-01, D-44-01)
-- [ ] 44-07-PLAN.md — Wire `CustomFieldsSection` to the seeded map and to the server's returned values (CFUI-02, CFUI-03)
+- [x] 44-06-PLAN.md — Structural CFUI-01 repair: `AddFieldButton`/`RestoreFieldButton` client wrappers, plus a repo-wide gate on the whole bug class (CFUI-01, D-44-01)
+- [x] 44-07-PLAN.md — Wire `CustomFieldsSection` to the seeded map and to the server's returned values (CFUI-02, CFUI-03)
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -369,7 +369,7 @@ Plans:
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
 | 43. Type Safety & Deployment Docs | 0/? | Not started | - |
-| 44. Custom Field UI Repair | 5/9 | In Progress|  |
+| 44. Custom Field UI Repair | 7/9 | In Progress|  |
 
 ## Backlog
 

@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
-status: verifying
-last_updated: "2026-08-15T16:06:07.804Z"
+status: executing
+last_updated: "2026-08-15T16:18:24.531Z"
 last_activity: 2026-08-15
 progress:
   total_phases: 13
   completed_phases: 3
   total_plans: 31
-  completed_plans: 27
+  completed_plans: 29
   percent: 23
 ---
 
@@ -24,12 +24,12 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 ## Position
 
-Phase: 44 - Custom Field UI Repair (executing — 5/9 plans)
-Plan: Wave 1 complete (44-01..44-05); Wave 2 next (44-06, 44-07)
-Status: Executing — reconciled 2026-08-15 after parallel Wave 1
+Phase: 44 - Custom Field UI Repair (executing — 7/9 plans)
+Plan: Wave 2 done (44-06 CFUI-01 structural repair, 44-07); Wave 3 next (44-08, 44-09)
+Status: Executing — CFUI-01 closed; no element crosses the RSC boundary on /admin/fields/[entityType]
 Last activity: 2026-08-15
 
-Progress: [█████████░] 87%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -50,6 +50,8 @@ Progress: [█████████░] 87%
 | Phase 44 P02 | 16min | 2 tasks | 2 files |
 | Phase 44 P04 | 17min | 2 tasks | 8 files |
 | Phase 44 P01 | 17min | 2 tasks | 6 files |
+| Phase 44 P06 | 12min | 2 tasks | 3 files |
+| Phase 44 P07 | 9min | 2 tasks | 2 files |
 
 ## Decisions
 
@@ -134,6 +136,9 @@ Progress: [█████████░] 87%
 - [Phase ?]: 44-02: the recalc result local is seeded with next BEFORE the try, so the D-05 catch block stays literally unchanged
 - [Phase 44]: 44-04: bound constants live in the client-safe formula-engine.ts and are re-exported by formula-recalc.ts, so formula-recalc.test.ts's untouched 8 MiB / 500 ms assertions guard both client and server against drift
 - [Phase ?]: 44-01: the react-server vitest project lives in a separate vitest.rsc.config.ts run by a compound test script; ssr.resolve.conditions (not resolve.conditions alone) is what applies the condition on vitest 4.0.18
+- [Phase ?]: 44-06: CFUI-01 repaired structurally — both FieldDialog trigger sites (header Add Field and archived-field Restore) moved into a 'use client' wrapper so no React element crosses the RSC boundary into Radix's asChild slot
+- [Phase ?]: 44-06: the CFUI-01 gate is 'page.tsx contains no <FieldDialog', never a header-only assertion — serializedSize accumulates across the Flight row, so the archived Restore triggers were broken too and invisible only because deal has no archived definitions
+- [Phase ?]: 44-06: a repo-wide scan now fails if any server component renders a children-forwarding asChild component (193 tsx files, 2 definers, 3 usages, all client) — the mechanism is gated, not just the one file
 
 ### Quick Tasks Completed
 
