@@ -257,6 +257,48 @@
     "noAssignee": "Sin asignado",
     "allAssignees": "Todos los asignados"
   },
+  "notes": {
+    "timeline": "Cronología",
+    "composerPlaceholder": "Escribe una nota…",
+    "addNote": "Añadir nota",
+    "adding": "Añadiendo…",
+    "empty": {
+      "heading": "Todavía no ha pasado nada",
+      "body": "Las notas, actividades y cambios de etapa de este trato aparecerán aquí. Escribe la primera nota arriba."
+    },
+    "emptyNotes": {
+      "heading": "Aún no hay notas",
+      "body": "Nadie ha escrito sobre este registro todavía. Escribe la primera nota arriba."
+    },
+    "error": {
+      "saveFailed": "Tu nota no se guardó. El texto sigue en el cuadro: revisa tu conexión e inténtalo de nuevo.",
+      "loadMoreFailed": "No se pudieron cargar entradas anteriores. Inténtalo de nuevo.",
+      "editFailed": "Tus cambios no se guardaron. Inténtalo de nuevo.",
+      "deleteFailed": "La nota no se eliminó. Inténtalo de nuevo.",
+      "notPermitted": "Solo el autor o un administrador puede modificar esta nota."
+    },
+    "edited": "editada",
+    "migrated": "Migrada",
+    "migratedTooltip": "Importada del antiguo campo de notas de este registro",
+    "unknownAuthor": "Desconocido",
+    "loadMore": "Cargar más",
+    "loadingMore": "Cargando…",
+    "editNote": "Editar nota",
+    "deleteNote": "Eliminar nota",
+    "saveEdit": "Guardar nota",
+    "cancelEdit": "Cancelar edición",
+    "entry": {
+      "stageChanged": "movió este trato de {from} a {to}",
+      "activityDue": "Vence {date}",
+      "activityCompleted": "Completada"
+    },
+    "announceAdded": "Nota añadida",
+    "deleteDialog": {
+      "title": "Eliminar nota",
+      "description": "Esto elimina la nota de la cronología del registro. No puedes deshacerlo aquí.",
+      "cancel": "Conservar nota"
+    }
+  },
   "settings": {
     "profile": {
       "title": "Configuración de Perfil",

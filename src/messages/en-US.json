@@ -257,6 +257,48 @@
     "noAssignee": "No assignee",
     "allAssignees": "All assignees"
   },
+  "notes": {
+    "timeline": "Timeline",
+    "composerPlaceholder": "Write a note…",
+    "addNote": "Add note",
+    "adding": "Adding…",
+    "empty": {
+      "heading": "Nothing has happened yet",
+      "body": "Notes, activities and stage changes for this deal will appear here. Write the first note above."
+    },
+    "emptyNotes": {
+      "heading": "No notes yet",
+      "body": "Nobody has written about this record yet. Write the first note above."
+    },
+    "error": {
+      "saveFailed": "Your note wasn't saved. The text is still in the box — check your connection and try again.",
+      "loadMoreFailed": "Couldn't load older entries. Try again.",
+      "editFailed": "Your changes weren't saved. Try again.",
+      "deleteFailed": "The note wasn't deleted. Try again.",
+      "notPermitted": "Only the author or an admin can change this note."
+    },
+    "edited": "edited",
+    "migrated": "Migrated",
+    "migratedTooltip": "Imported from this record's old notes field",
+    "unknownAuthor": "Unknown",
+    "loadMore": "Load more",
+    "loadingMore": "Loading…",
+    "editNote": "Edit note",
+    "deleteNote": "Delete note",
+    "saveEdit": "Save note",
+    "cancelEdit": "Cancel edit",
+    "entry": {
+      "stageChanged": "moved this deal from {from} to {to}",
+      "activityDue": "Due {date}",
+      "activityCompleted": "Completed"
+    },
+    "announceAdded": "Note added",
+    "deleteDialog": {
+      "title": "Delete note",
+      "description": "This removes the note from the record's timeline. You can't undo this here.",
+      "cancel": "Keep note"
+    }
+  },
   "settings": {
     "profile": {
       "title": "Profile Settings",

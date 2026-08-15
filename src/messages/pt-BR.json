@@ -257,6 +257,48 @@
     "noAssignee": "Sem responsável",
     "allAssignees": "Todos os responsáveis"
   },
+  "notes": {
+    "timeline": "Linha do tempo",
+    "composerPlaceholder": "Escreva uma nota…",
+    "addNote": "Adicionar nota",
+    "adding": "Adicionando…",
+    "empty": {
+      "heading": "Nada aconteceu ainda",
+      "body": "Notas, atividades e mudanças de etapa deste negócio aparecerão aqui. Escreva a primeira nota acima."
+    },
+    "emptyNotes": {
+      "heading": "Ainda não há notas",
+      "body": "Ninguém escreveu sobre este registro ainda. Escreva a primeira nota acima."
+    },
+    "error": {
+      "saveFailed": "Sua nota não foi salva. O texto continua na caixa — verifique sua conexão e tente novamente.",
+      "loadMoreFailed": "Não foi possível carregar entradas anteriores. Tente novamente.",
+      "editFailed": "Suas alterações não foram salvas. Tente novamente.",
+      "deleteFailed": "A nota não foi excluída. Tente novamente.",
+      "notPermitted": "Somente o autor ou um administrador pode alterar esta nota."
+    },
+    "edited": "editada",
+    "migrated": "Migrada",
+    "migratedTooltip": "Importada do antigo campo de notas deste registro",
+    "unknownAuthor": "Desconhecido",
+    "loadMore": "Carregar mais",
+    "loadingMore": "Carregando…",
+    "editNote": "Editar nota",
+    "deleteNote": "Excluir nota",
+    "saveEdit": "Salvar nota",
+    "cancelEdit": "Cancelar edição",
+    "entry": {
+      "stageChanged": "moveu este negócio de {from} para {to}",
+      "activityDue": "Vence {date}",
+      "activityCompleted": "Concluída"
+    },
+    "announceAdded": "Nota adicionada",
+    "deleteDialog": {
+      "title": "Excluir nota",
+      "description": "Isso remove a nota da linha do tempo do registro. Você não pode desfazer isso aqui.",
+      "cancel": "Manter nota"
+    }
+  },
   "settings": {
     "profile": {
       "title": "Configurações de Perfil",
