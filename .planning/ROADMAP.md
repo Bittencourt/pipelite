@@ -129,10 +129,15 @@ Plans:
 
 Plans:
 **Wave 1**
+
 - [x] 33-01-PLAN.md — Capture the BEFORE EXPLAIN plans for both named queries and the empty catalog assertion, before any index DDL exists (D-07)
+
 **Wave 2**
+
 - [x] 33-02-PLAN.md — Declare all eleven plain single-column indexes in the four Drizzle schema files (D-06)
+
 **Wave 3**
+
 - [x] 33-03-PLAN.md — Generate and gate the single index migration, apply it, then capture the AFTER plans and close SC-1..SC-4
 
 ### Phase 34: Formula Reactivity
@@ -194,21 +199,48 @@ Plans:
 **Plans**: 15 plans (9 waves)
 
 Plans:
+**Wave 1**
+
 - [ ] 35-01-PLAN.md — notes + deal_stage_history schema, relations and barrel (wave 1)
 - [ ] 35-02-PLAN.md — notes i18n namespace across three locales + locale parity gate (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 35-03-PLAN.md — migration 0013, idempotent legacy-notes data migration, SC-4 reconciliation [BLOCKING] (wave 2)
 - [ ] 35-04-PLAN.md — note mutation layer: create, edit, soft delete, parent-existence check (wave 2)
 - [ ] 35-05-PLAN.md — timeline entry union types + keyset cursor codec (wave 2)
 - [ ] 35-06-PLAN.md — deal.stage_changed subscriber persisting stage history (wave 2)
 - [ ] 35-07-PLAN.md — shared author-or-admin authorization helper (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 35-08-PLAN.md — pluggable sources + pre-limited UNION ALL timeline assembler (wave 3)
-- [ ] 35-09-PLAN.md — note server actions: add, edit, delete, load more (wave 4)
 - [ ] 35-10-PLAN.md — /api/v1 notes routes + OpenAPI and docs (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 35-09-PLAN.md — note server actions: add, edit, delete, load more (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 35-11-PLAN.md — composer, note row with inline edit, delete dialog (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 35-12-PLAN.md — activity and stage-change renderers, entry switch, empty state (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 35-13-PLAN.md — client timeline list with Load more + server card shell (wave 7)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
 - [ ] 35-14-PLAN.md — mount the timeline and delete the legacy block on four detail pages (wave 8)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
 - [ ] 35-15-PLAN.md — legacy column dormancy across nine sites + browser verification (wave 9)
+
 **UI hint**: yes
 
 ### Phase 36: Audit Log
