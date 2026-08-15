@@ -332,3 +332,32 @@ action.
 ---
 *Phase: 35-notes-record-timeline*
 *Task 3 open: blocking human browser verification*
+
+---
+
+## Checkpoint Resolution — orchestrator browser verification (2026-08-15)
+
+The executor correctly reported that it had no browser and listed eight unobserved items rather
+than inferring them. The orchestrator ran those checks with Playwright against the Docker app,
+authenticated with an Auth.js session cookie minted from the project's own `AUTH_SECRET` (no
+password read or used).
+
+**One check failed and exposed a real, shipped bug.** See `fix(35-08)`.
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | Real kanban drag → timeline entry | **NOT REPRODUCIBLE BY AUTOMATION.** Three attempts (Playwright `dragTo`, a synthetic pointer sequence, and a coordinate-targeted retry) all failed to trip @dnd-kit's pointer sensor; dnd-kit's own a11y announcement showed the drop resolving onto the dragged card rather than the target column, and the DB stage never changed. Not evidence of an app defect. Two things that WERE proven make the risk low: the subscriber is registered and firing in the standalone Docker build (`deal_stage_history` 0 → 1 via an API-driven stage change, entry rendered on the page), and `reorderDealsMutation` **does** emit `deal.stage_changed` behind `if (stageChanged)` — source-verified, so the v1.2 "reorder path missing emission" regression is NOT present. **A human should still perform one real drag** — it is a five-second check. |
+| 2 | Delete dialog: ESC closes, cancel reads "Keep note" | **PASS.** Dialog copy is `Keep note` / `Delete note` — both buttons name the outcome, no bare "Cancel". ESC closed it and the note survived (26 entries before and after). Both icon buttons expose `aria-label` ("Edit note", "Delete note"). |
+| 3 | Enter inserts newline; Ctrl/Cmd+Enter submits; empty disables Add note | **PASS.** Empty composer → Add note `disabled: true`. Enter appended `\n` and did NOT submit (entry count unchanged). Ctrl+Enter submitted. |
+| 4 | Note add is optimistic and toast-free | **PASS.** Entry count went 25 → 26 immediately with a "now" timestamp, textarea cleared, and `[data-sonner-toast]` count was **0**. Both lines of the two-line note rendered, so `whitespace-pre-wrap` holds. |
+| 5 | Load more appends, spinner, disappears when exhausted | **FAILED, then FIXED, then PASSED.** Originally the server action returned `{success:false}` on every page after the first. Root cause: the keyset predicate bound `cursor.occurredAt` as a JS `Date` into a raw `sql` fragment, and postgres.js throws `ERR_INVALID_ARG_TYPE` on that. Page one binds no cursor, so it was invisible until paging — and the mocked-`@/db` suite asserts the rendered SQL string rather than executing it, so no unit test could see it. Worse, the existing assertion **required** three `Date`s in `params`, pinning the defect in place. Fixed in `fix(35-08)`: bind `toISOString()` cast back with `::timestamp`, assertion inverted, regression test added. After the fix and a container rebuild: **20 → 25 entries, URL unchanged, a `window` marker set before the click survived it (so it appended client-side rather than navigating), and the button disappeared once exhausted.** |
+| 6 | Non-admin sees no edit/delete on another author's note | **NOT VERIFIABLE.** The database holds exactly one non-deleted user. Inserting a second identity into a database of real imported data is not worth a cosmetic check. Server-side enforcement is the actual control and is unit-tested across both actor shapes (35-07, 15 tests; 35-09's authorization matrix). |
+| 7 | Create dialog has Notes; edit dialog does not | **PASS — both halves observed.** "Create Deal" renders a Notes label and one textarea. "Edit Organization" renders labels `Name*`, `Website`, `Industry` and **zero** textareas. The end-to-end create could not be completed because the deal form requires an organization or person (a pre-existing business rule, unrelated to this phase); the write path itself is gated at source by 35-15's grep gates. |
+| 8 | Dark mode and ~320px | **320px: PASS for the timeline.** At a 305px client width, **zero** timeline elements overflow. The page does overflow (scrollWidth 416), but all nine offending elements are in the site header — search box, avatar, nav — which this phase did not touch. Pre-existing responsive debt, not a phase-35 regression. **Dark mode: NOT APPLICABLE.** The app ships no `ThemeProvider` and no theme toggle (only `sonner.tsx` references `next-themes` internally), so dark mode is unreachable. The timeline components use semantic tokens with **zero** hardcoded `dark:` utilities, so they would follow correctly if it is ever added. |
+
+### Also observed
+
+`React error #418` (hydration text mismatch) is present on record detail pages. It predates the
+timeline work in the sense that it is caused by relative timestamps ("6 minutes ago") rendering
+differently on server and client — but the timeline renders many of them, so it is worth a look.
+Not fixed here; logged as a follow-up rather than silently absorbed.
