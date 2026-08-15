@@ -191,7 +191,24 @@ Plans:
   3. After migration, every record that had `notes` text shows that text as its first timeline entry, attributed and dated
   4. Pre- and post-migration content reconciles — no record loses note text
 
-**Plans**: TBD
+**Plans**: 15 plans (9 waves)
+
+Plans:
+- [ ] 35-01-PLAN.md — notes + deal_stage_history schema, relations and barrel (wave 1)
+- [ ] 35-02-PLAN.md — notes i18n namespace across three locales + locale parity gate (wave 1)
+- [ ] 35-03-PLAN.md — migration 0013, idempotent legacy-notes data migration, SC-4 reconciliation [BLOCKING] (wave 2)
+- [ ] 35-04-PLAN.md — note mutation layer: create, edit, soft delete, parent-existence check (wave 2)
+- [ ] 35-05-PLAN.md — timeline entry union types + keyset cursor codec (wave 2)
+- [ ] 35-06-PLAN.md — deal.stage_changed subscriber persisting stage history (wave 2)
+- [ ] 35-07-PLAN.md — shared author-or-admin authorization helper (wave 2)
+- [ ] 35-08-PLAN.md — pluggable sources + pre-limited UNION ALL timeline assembler (wave 3)
+- [ ] 35-09-PLAN.md — note server actions: add, edit, delete, load more (wave 4)
+- [ ] 35-10-PLAN.md — /api/v1 notes routes + OpenAPI and docs (wave 3)
+- [ ] 35-11-PLAN.md — composer, note row with inline edit, delete dialog (wave 5)
+- [ ] 35-12-PLAN.md — activity and stage-change renderers, entry switch, empty state (wave 6)
+- [ ] 35-13-PLAN.md — client timeline list with Load more + server card shell (wave 7)
+- [ ] 35-14-PLAN.md — mount the timeline and delete the legacy block on four detail pages (wave 8)
+- [ ] 35-15-PLAN.md — legacy column dormancy across nine sites + browser verification (wave 9)
 **UI hint**: yes
 
 ### Phase 36: Audit Log
