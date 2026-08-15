@@ -11,10 +11,11 @@ vi.mock("@/db", () => ({
 import {
   flattenCustomFields,
   flattenDeal,
+  flattenOrganization,
   exportToCSV,
   exportToJSON,
 } from "./formatters"
-import { exportToPipedriveCSV } from "./pipedrive"
+import { exportToPipedriveCSV, toPipedriveFormat } from "./pipedrive"
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -41,6 +42,26 @@ function makeDeal(customFields: Record<string, unknown> | null): DealArg {
     person: null,
     owner: { id: "user-1", name: "Owner", email: "owner@example.com" },
   } as DealArg
+}
+
+type OrgArg = Parameters<typeof flattenOrganization>[0]
+
+function makeOrg(
+  id: string,
+  customFields: Record<string, unknown> | null
+): OrgArg {
+  return {
+    id,
+    name: `Org ${id}`,
+    website: null,
+    industry: null,
+    notes: null,
+    ownerId: "user-1",
+    customFields,
+    createdAt: new Date("2026-03-28T00:00:00Z"),
+    updatedAt: new Date("2026-03-28T00:00:00Z"),
+    owner: { id: "user-1", name: "Owner", email: "owner@example.com" },
+  } as OrgArg
 }
 
 const OK_WRAPPER = { formula: true, value: 1035, error: null }
@@ -158,5 +179,129 @@ describe("CSV quoting of punctuated custom field names", () => {
     // One header per flattened key — no field split by the embedded comma/newline.
     expect(headers.length).toBe(Object.keys(rows[0]).length)
     expect(parsed.data[0][`custom_${NASTY_KEY}`]).toBe("1035")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Column derivation — the measured first-row-only header defect (SC-2)
+//
+// `Papa.unparse(data, { header: true })` builds the header from the FIRST object
+// only. Measured on the live dataset: a 46,055-row organization export emitted ZERO
+// `custom_*` columns although 30,264 of those rows held custom field values, because
+// row 1 happened not to carry any. Every fixture below therefore puts row 1 WITHOUT
+// custom fields and a LATER row WITH them — the reverse ordering passes even against
+// the broken code and proves nothing.
+// ---------------------------------------------------------------------------
+
+describe("exportToCSV column derivation across all rows", () => {
+  it("emits a custom column populated only by a LATER row (organizations)", () => {
+    const rows = [
+      flattenOrganization(makeOrg("org-1", null), true),
+      flattenOrganization(makeOrg("org-2", { Margin: OK_WRAPPER }), true),
+    ]
+
+    const csv = exportToCSV(rows)
+    const parsed = Papa.parse<Record<string, string>>(csv, { header: true })
+
+    expect(parsed.errors).toEqual([])
+    expect(parsed.meta.fields).toContain("custom_Margin")
+    expect(parsed.data[1].custom_Margin).toBe("1035")
+    // Row 1 genuinely has no value — an empty cell, not a missing column.
+    expect(parsed.data[0].custom_Margin).toBe("")
+  })
+
+  it("unions custom columns contributed by different rows (deals)", () => {
+    const rows = [
+      flattenDeal(makeDeal(null), true),
+      flattenDeal(makeDeal({ Alpha: OK_WRAPPER }), true),
+      flattenDeal(makeDeal({ Zeta: ERR_WRAPPER }), true),
+    ]
+
+    const csv = exportToCSV(rows)
+    const parsed = Papa.parse<Record<string, string>>(csv, { header: true })
+
+    expect(parsed.errors).toEqual([])
+    expect(parsed.meta.fields).toContain("custom_Alpha")
+    expect(parsed.meta.fields).toContain("custom_Zeta")
+    expect(parsed.data[1].custom_Alpha).toBe("1035")
+    expect(parsed.data[2].custom_Zeta).toBe("#ERROR: Unknown field: Nope")
+    expect(parsed.data[0].custom_Alpha).toBe("")
+  })
+
+  it("keeps every native column in its current order and position", () => {
+    // The native columns exactly as flattenDeal emits them today, with no custom fields.
+    const nativeOrder = Object.keys(flattenDeal(makeDeal(null), false))
+
+    const rows = [
+      flattenDeal(makeDeal(null), true),
+      flattenDeal(makeDeal({ Margin: OK_WRAPPER }), true),
+    ]
+
+    const headers = Papa.parse<Record<string, string>>(exportToCSV(rows), {
+      header: true,
+    }).meta.fields!
+
+    // Position, not merely membership: an export's column order is a user-visible contract.
+    expect(headers.slice(0, nativeOrder.length)).toEqual(nativeOrder)
+    // Custom columns follow the natives; none is interleaved.
+    expect(headers.slice(nativeOrder.length).every((h) => h.startsWith("custom_"))).toBe(
+      true
+    )
+  })
+
+  it("orders custom columns deterministically, independent of row order", () => {
+    const a = flattenDeal(makeDeal({ Zeta: 1 }), true)
+    const b = flattenDeal(makeDeal({ Alpha: 2 }), true)
+    const c = flattenDeal(makeDeal({ Mid: 3 }), true)
+
+    const customsOf = (rows: Record<string, unknown>[]) =>
+      (
+        Papa.parse<Record<string, string>>(exportToCSV(rows), { header: true }).meta
+          .fields ?? []
+      ).filter((h) => h.startsWith("custom_"))
+
+    const forward = customsOf([a, b, c])
+    const reversed = customsOf([c, b, a])
+
+    expect(forward).toEqual(["custom_Alpha", "custom_Mid", "custom_Zeta"])
+    expect(reversed).toEqual(forward)
+  })
+
+  it("still produces an empty string for an empty dataset", () => {
+    expect(exportToCSV([])).toBe("")
+  })
+})
+
+describe("exportToPipedriveCSV column derivation across all rows", () => {
+  it("emits a custom column populated only by a LATER row", () => {
+    const rows = [
+      flattenDeal(makeDeal(null), true),
+      flattenDeal(makeDeal({ Margin: OK_WRAPPER }), true),
+    ]
+
+    const csv = exportToPipedriveCSV(rows, "deal")
+    const parsed = Papa.parse<Record<string, string>>(csv, { header: true })
+
+    expect(parsed.errors).toEqual([])
+    expect(parsed.meta.fields).toContain("custom_Margin")
+    expect(parsed.data[1].custom_Margin).toBe("1035")
+  })
+
+  it("keeps the Pipedrive native column mapping in its current order", () => {
+    const nativeOrder = Object.keys(
+      toPipedriveFormat([flattenDeal(makeDeal(null), false)], "deal")[0]
+    )
+
+    const rows = [
+      flattenDeal(makeDeal(null), true),
+      flattenDeal(makeDeal({ Margin: OK_WRAPPER }), true),
+    ]
+
+    const headers = Papa.parse<Record<string, string>>(
+      exportToPipedriveCSV(rows, "deal"),
+      { header: true }
+    ).meta.fields!
+
+    expect(headers.slice(0, nativeOrder.length)).toEqual(nativeOrder)
   })
 })
