@@ -162,6 +162,21 @@ Every downstream plan in phase 35 (03 through 15) can now call `useTranslations(
 
 No blockers.
 
+## Self-Check: PASSED
+
+All claimed artifacts verified on disk and in git:
+
+- FOUND `src/messages/locale-parity.test.ts`
+- FOUND `src/messages/en-US.json`
+- FOUND `src/messages/es-ES.json`
+- FOUND `src/messages/pt-BR.json`
+- FOUND `.planning/phases/35-notes-record-timeline/35-02-SUMMARY.md`
+- FOUND commit `f881d64` (test)
+- FOUND commit `0b4e754` (feat)
+- FOUND commit `1f506f3` (docs)
+
+Working tree clean; no untracked files left behind.
+
 ---
 *Phase: 35-notes-record-timeline*
 *Completed: 2026-08-15*
