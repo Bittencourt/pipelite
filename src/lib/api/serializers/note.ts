@@ -3,20 +3,22 @@ import type { Note } from "@/db/schema"
 /**
  * The public shape of a note on the `/api/v1` surface.
  *
- * `deletedAt` is deliberately absent from this type AND from the object literal below.
+ * Field names are snake_case, matching every other serializer on this surface (`serialize.ts`).
+ *
+ * `deleted_at` is deliberately absent from this type AND from the object literal below.
  * Serializing it — even as `null` — would turn every note response into a soft-delete
  * oracle (T-35-06). Omitting the key from the type means a future edit that adds it back
  * fails typecheck at every call site rather than silently leaking.
  */
 export interface SerializedNote {
   id: string
-  entityType: Note["entityType"]
-  entityId: string
+  entity_type: Note["entityType"]
+  entity_id: string
   content: string
-  authorId: string | null
+  author_id: string | null
   source: Note["source"]
-  createdAt: string | null
-  updatedAt: string | null
+  created_at: string | null
+  updated_at: string | null
 }
 
 /**
@@ -39,12 +41,12 @@ function toIsoString(date: Date | null | undefined): string | null {
 export function serializeNote(note: Note): SerializedNote {
   return {
     id: note.id,
-    entityType: note.entityType,
-    entityId: note.entityId,
+    entity_type: note.entityType,
+    entity_id: note.entityId,
     content: note.content,
-    authorId: note.authorId,
+    author_id: note.authorId,
     source: note.source,
-    createdAt: toIsoString(note.createdAt),
-    updatedAt: toIsoString(note.updatedAt),
+    created_at: toIsoString(note.createdAt),
+    updated_at: toIsoString(note.updatedAt),
   }
 }

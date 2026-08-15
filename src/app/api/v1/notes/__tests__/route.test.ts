@@ -247,15 +247,16 @@ describe("PATCH /api/v1/notes/:noteId — response shape", () => {
 
     expect(payload.data).toEqual({
       id: "note-1",
-      entityType: "deal",
-      entityId: "deal-1",
+      entity_type: "deal",
+      entity_id: "deal-1",
       content: "original content",
-      authorId: "user-1",
+      author_id: "user-1",
       source: "user",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
     })
     expect(payload.data).not.toHaveProperty("deletedAt")
+    expect(payload.data).not.toHaveProperty("deleted_at")
   })
 })
 

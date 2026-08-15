@@ -1010,23 +1010,23 @@ components:
         A note attached to a CRM record. There is deliberately no soft-delete field on this
         schema: soft-deleted notes are never returned by any endpoint, so exposing the
         timestamp would only reveal that a note once existed.
-      required: [id, entityType, entityId, content, source, createdAt, updatedAt]
+      required: [id, entity_type, entity_id, content, source, created_at, updated_at]
       properties:
         id:
           type: string
           description: Note ID
-        entityType:
+        entity_type:
           type: string
           enum: [organization, person, deal, activity]
           description: Type of record this note is attached to
-        entityId:
+        entity_id:
           type: string
           description: ID of the record this note is attached to
         content:
           type: string
           maxLength: 200000
           description: Note body. Internal line breaks are preserved; surrounding whitespace is trimmed.
-        authorId:
+        author_id:
           type: string
           nullable: true
           description: |
@@ -1038,13 +1038,13 @@ components:
           description: |
             'user' for a note written through Pipelite or this API, 'migration' for a note
             carried over from a legacy per-record notes field.
-        createdAt:
+        created_at:
           type: string
           format: date-time
-        updatedAt:
+        updated_at:
           type: string
           format: date-time
-          description: Equal to createdAt until the note is edited
+          description: Equal to created_at until the note is edited
 
     NoteCreate:
       type: object

@@ -32,24 +32,24 @@ All endpoints require Bearer API-key authentication and are rate limited exactly
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | string | Note ID |
-| `entityType` | string | One of `organization`, `person`, `deal`, `activity` |
-| `entityId` | string | ID of the record the note is attached to |
+| `entity_type` | string | One of `organization`, `person`, `deal`, `activity` |
+| `entity_id` | string | ID of the record the note is attached to |
 | `content` | string | Note body. Internal line breaks are preserved; surrounding whitespace is trimmed |
-| `authorId` | string \| null | User who wrote the note. `null` for a migrated note with no identifiable author |
+| `author_id` | string \| null | User who wrote the note. `null` for a migrated note with no identifiable author |
 | `source` | string | `user` for a note written through Pipelite or this API, `migration` for a note carried over from a legacy notes field |
-| `createdAt` | string | ISO 8601 timestamp |
-| `updatedAt` | string | ISO 8601 timestamp. Equal to `createdAt` until the note is edited |
+| `created_at` | string | ISO 8601 timestamp |
+| `updated_at` | string | ISO 8601 timestamp. Equal to `created_at` until the note is edited |
 
 ```json
 {
   "id": "note_abc123",
-  "entityType": "deal",
-  "entityId": "deal_xyz789",
+  "entity_type": "deal",
+  "entity_id": "deal_xyz789",
   "content": "Called the buyer — budget approved, sending the proposal Monday.",
-  "authorId": "user_123",
+  "author_id": "user_123",
   "source": "user",
-  "createdAt": "2026-02-01T10:30:00.000Z",
-  "updatedAt": "2026-02-01T10:30:00.000Z"
+  "created_at": "2026-02-01T10:30:00.000Z",
+  "updated_at": "2026-02-01T10:30:00.000Z"
 }
 ```
 
@@ -86,13 +86,13 @@ curl -H "Authorization: Bearer pk_live_xxx" \
   "data": [
     {
       "id": "note_abc123",
-      "entityType": "deal",
-      "entityId": "deal_xyz789",
+      "entity_type": "deal",
+      "entity_id": "deal_xyz789",
       "content": "Called the buyer — budget approved.",
-      "authorId": "user_123",
+      "author_id": "user_123",
       "source": "user",
-      "createdAt": "2026-02-01T10:30:00.000Z",
-      "updatedAt": "2026-02-01T10:30:00.000Z"
+      "created_at": "2026-02-01T10:30:00.000Z",
+      "updated_at": "2026-02-01T10:30:00.000Z"
     }
   ],
   "meta": { "total": 1, "offset": 0, "limit": 50 }
@@ -142,7 +142,7 @@ curl -X PATCH \
   "https://your-domain.com/api/v1/notes/note_abc123"
 ```
 
-Responds `200` with `{ "data": { ...note } }`. `updatedAt` moves ahead of `createdAt`, which is
+Responds `200` with `{ "data": { ...note } }`. `updated_at` moves ahead of `created_at`, which is
 what marks a note as edited in the Pipelite UI.
 
 ## Deleting a Note
@@ -171,7 +171,7 @@ Unlike creation, editing and deleting are restricted:
 The role is read from the Pipelite user account that owns the API key. It is **not** taken from
 the request, so sending a role in the body has no effect.
 
-A note with `authorId: null` (a migrated note whose original author could not be identified) is
+A note with `author_id: null` (a migrated note whose original author could not be identified) is
 editable by admins only.
 
 This rule is enforced on the server for both this API and the Pipelite web app — the two surfaces
