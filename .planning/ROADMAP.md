@@ -223,7 +223,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 35-11-PLAN.md — composer, note row with inline edit, delete dialog (wave 5)
+- [x] 35-11-PLAN.md — composer, note row with inline edit, delete dialog (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -409,7 +409,7 @@ Plans:
 | 32. Test Infrastructure & CI | 6/6 | Complete   | 2026-08-14 |
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
-| 35. Notes & Record Timeline | 10/15 | In Progress|  |
+| 35. Notes & Record Timeline | 11/15 | In Progress|  |
 | 36. Audit Log | 0/? | Not started | - |
 | 37. Trash & Restore | 0/? | Not started | - |
 | 38. Bulk Operations | 0/? | Not started | - |
