@@ -78,6 +78,31 @@ legacy `notes` column.
 - All new UI strings go through next-intl and land in all three locale files (`en-US.json`,
   `es-ES.json`, `pt-BR.json`).
 
+### Post-Research Addendum (decided 2026-08-15, after 35-RESEARCH.md)
+
+Research found eight surviving write/render sites for the legacy `notes` column that the
+UI-SPEC's four detail-page edits do not touch, which would have left "the column goes dormant"
+false on the busiest surfaces. Two decisions were taken:
+
+- **Create dialogs keep a Notes textarea; edit dialogs lose it.** In `deal-dialog.tsx`,
+  `organization-dialog.tsx`, `person-dialog.tsx`, and `activity-dialog.tsx`, the create path
+  keeps a Notes textarea but it now writes a **first note row**, never the legacy column. The
+  edit path drops the field entirely — notes are edited in the timeline. `deal-card.tsx` stops
+  rendering the legacy column. Net effect: the legacy column is genuinely dormant (zero readers,
+  zero writers in app code) with no regression to "jot a note while creating a record".
+- **Notes on soft-deleted records ARE migrated** (15 rows on the live DB). The SC-4 reconciliation
+  stays an exact equality with no soft-delete carve-out on either side, and Phase 37's Trash &
+  Restore will find note history intact when a record is restored.
+
+Researcher recommendations accepted without change: activity timeline entries sort on
+`created_at`; the optional `activities (deal_id, created_at DESC)` index is SKIPPED; the
+importer's continued writes to the dead column are documented in the reconciliation script
+rather than fixed here; `public/openapi.yaml` and `docs/api/` updates are an explicit task;
+notes bodies are NOT capped at 2000 characters (the live DB holds a 131,505-character activity
+note that must stay editable); the UI uses **server actions**, not client fetches to
+`/api/v1/**`, because those routes are API-key-only via `withApiAuth`; `tooltip.tsx` is not
+vendored, so the migrated-note marker uses a native `title` attribute.
+
 ### Claude's Discretion
 - Table/column naming, index selection on the new tables, component file layout, and the exact
   shape of the timeline entry union type.
