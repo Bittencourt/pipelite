@@ -153,6 +153,147 @@ describe('CFUI-01 structural repair — no element crosses the RSC boundary', ()
 })
 
 /* ------------------------------------------------------------------------- *
+ * D-44-02 single-projection gate.
+ *
+ * `available-fields-payload.rsc.test.tsx` proves the projected row SHAPE is
+ * cheaper (45028 B -> 22353 B at n=155). It cannot prove `page.tsx` actually
+ * uses that shape, nor that it builds the array once. Both matter, and the
+ * second one is the subtle half: a future edit could write
+ *
+ *   availableFields={activeFields.map(f => ({ id: f.id, name: f.name, type: f.type }))}
+ *
+ * which satisfies the narrowed type perfectly while re-serializing 155 fresh
+ * objects Flight can no longer back-reference - measured at +13653 B, i.e. the
+ * "optimisation" made the page heavier. Types cannot catch that; only the
+ * source can.
+ * ------------------------------------------------------------------------- */
+
+const FIELD_DIALOG = path.join(FIELDS_DIR, 'field-dialog.tsx')
+
+/** The keys of `AdminFieldRow` - every key this route's client code reads, and no other. */
+const ADMIN_ROW_KEYS = ['id', 'name', 'type', 'config', 'required', 'showInList'] as const
+
+/** Columns no client code on this route reads. They must not survive the projection. */
+const UNREAD_COLUMNS = ['createdAt', 'updatedAt', 'deletedAt', 'position'] as const
+
+/**
+ * Argument text of every `.map(` call in already-stripped source, using paren-depth
+ * matching that respects string and template literals so a `)` inside a string cannot
+ * close the argument list early.
+ */
+function mapCallArguments(stripped: string): string[] {
+  const args: string[] = []
+  const marker = '.map('
+  let from = 0
+
+  for (;;) {
+    const at = stripped.indexOf(marker, from)
+    if (at === -1) break
+
+    let i = at + marker.length
+    const start = i
+    let depth = 1
+    let quote: string | null = null
+
+    while (i < stripped.length && depth > 0) {
+      const ch = stripped[i]
+
+      if (quote) {
+        if (ch === '\\') {
+          i += 2
+          continue
+        }
+        if (ch === quote) quote = null
+        i += 1
+        continue
+      }
+
+      if (ch === '"' || ch === "'" || ch === '`') quote = ch
+      else if (ch === '(') depth += 1
+      else if (ch === ')') depth -= 1
+
+      i += 1
+    }
+
+    if (depth !== 0) throw new Error('unterminated .map( call in source')
+
+    args.push(stripped.slice(start, i - 1))
+    from = i
+  }
+
+  return args
+}
+
+/** The identifier passed as `prop={x}` to `<Component`, or null if it is not a bare identifier. */
+function propIdentifier(stripped: string, component: string, prop: string): string | null {
+  // `[^<>]` spans newlines, which is what multi-line JSX attribute lists need. The `\b`
+  // before the prop name is what keeps `fields=` from matching inside `availableFields=`.
+  const m = new RegExp(`<${component}\\b[^<>]*?\\b${prop}=\\{([A-Za-z_$][\\w$]*)\\}`).exec(stripped)
+  return m ? m[1] : null
+}
+
+describe('D-44-02 payload projection — page.tsx projects once and shares one array', () => {
+  it('declares availableFields as the slim {id,name,type} contract', () => {
+    const dialog = readSource(FIELD_DIALOG)
+
+    // Truth: the prop FieldDialog reads exactly three keys from cannot silently grow
+    // back into a full CustomFieldDefinition[].
+    expect(dialog).toMatch(
+      /export type AvailableField = Pick<\s*CustomFieldDefinition,\s*'id' \| 'name' \| 'type'\s*>/
+    )
+    expect(dialog).toMatch(/availableFields\??: AvailableField\[\]/)
+  })
+
+  it('builds the projected rows in exactly one .map( projection', () => {
+    const page = readSource(PAGE)
+    const projections = mapCallArguments(page).filter(arg => arg.includes('showInList'))
+
+    // Exactly one. Two would mean two separately-derived arrays, and Flight can only
+    // back-reference the array it has already written - see the file header.
+    expect(projections).toHaveLength(1)
+
+    // Non-vacuous: the one match really is the admin row projection, so a rename of
+    // `showInList` makes this gate fail loudly rather than pass over an empty set.
+    for (const key of ADMIN_ROW_KEYS) {
+      expect(projections[0]).toContain(key)
+    }
+
+    // T-44-27, gated at the source rather than only in the fixtures: no unread column
+    // may reappear in the projected object. `deletedAt` still exists in page.tsx as the
+    // archived predicate, which is exactly why this is scoped to the projection body.
+    for (const column of UNREAD_COLUMNS) {
+      expect(projections[0]).not.toContain(column)
+    }
+  })
+
+  it('passes the SAME identifier to FieldsList and to AddFieldButton', () => {
+    const page = readSource(PAGE)
+
+    const listed = propIdentifier(page, 'FieldsList', 'fields')
+    const available = propIdentifier(page, 'AddFieldButton', 'availableFields')
+
+    // A bare identifier, not an expression: `availableFields={activeFields.map(...)}` does
+    // not match, and fails here as null.
+    expect(listed).not.toBeNull()
+    expect(available).not.toBeNull()
+    expect(available).toBe(listed)
+
+    // And it is a local binding, so the two props cannot be the same *name* resolved from
+    // two different scopes.
+    expect(page).toMatch(new RegExp(`const ${listed}\\b`))
+  })
+
+  it('dropped the CustomFieldDefinition casts rather than widening them', () => {
+    const page = readSource(PAGE)
+
+    // The casts existed to force whole table rows through a prop that never wanted them.
+    // With the row type narrowed there is nothing left to assert away.
+    expect(page).not.toContain('as CustomFieldDefinition')
+    expect(page).toContain('AdminFieldRow')
+  })
+})
+
+/* ------------------------------------------------------------------------- *
  * Class-wide gate.
  *
  * The rule RESEARCH derived is broader than this one call site: a SERVER
