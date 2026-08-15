@@ -17,6 +17,13 @@ interface RouteParams {
 }
 
 /**
+ * The literal both note mutations return for a missing OR soft-deleted note. Kept as a
+ * named constant here so the two mapping sites below cannot drift from each other; the
+ * mutation layer owns the string itself.
+ */
+const NOT_FOUND = "Note not found"
+
+/**
  * Every mutating handler below runs this first.
  *
  * Why it cannot be folded into a `where` clause the way the deals route folds ownership in:
@@ -92,6 +99,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       const result = await updateNoteMutation(noteId, parsed.data.content)
 
       if (!result.success) {
+        // A concurrent soft delete between `authorizeNoteMutation` and the write is a
+        // normal outcome, not a server fault. Funnelling it into a 500 told the client to
+        // retry a request that will never succeed and filed a routine race in the error
+        // log. The sibling collection route already maps its equivalent this way.
+        if (result.error === NOT_FOUND) {
+          return Problems.notFound("Note")
+        }
         console.error("PATCH /api/v1/notes/[noteId] failed:", result.error)
         return Problems.internalError()
       }
@@ -124,6 +138,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       const result = await softDeleteNoteMutation(noteId)
 
       if (!result.success) {
+        // Same reasoning as PATCH above.
+        if (result.error === NOT_FOUND) {
+          return Problems.notFound("Note")
+        }
         console.error("DELETE /api/v1/notes/[noteId] failed:", result.error)
         return Problems.internalError()
       }

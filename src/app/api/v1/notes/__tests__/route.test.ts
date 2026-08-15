@@ -354,3 +354,36 @@ describe("error containment (T-35-10)", () => {
     expect(problem.detail).toBe("An unexpected error occurred")
   })
 })
+
+describe("lost race with a concurrent soft delete (WR-05)", () => {
+  // The note passes `authorizeNoteMutation` and is soft-deleted before the write lands, so
+  // the mutation reports "Note not found". Both handlers used to funnel EVERY
+  // `success: false` into a 500 — which tells an API client to retry a request that will
+  // never succeed, and files a routine concurrent delete as a route failure in the log.
+  it("answers PATCH with 404, not 500", async () => {
+    mockUpdateNote.mockResolvedValue({ success: false, error: "Note not found" })
+
+    const response = await PATCH(patchRequest({ content: "edited" }), params)
+
+    expect(response.status).toBe(404)
+    expect(console.error).not.toHaveBeenCalled()
+  })
+
+  it("answers DELETE with 404, not 500", async () => {
+    mockSoftDeleteNote.mockResolvedValue({ success: false, error: "Note not found" })
+
+    const response = await DELETE(deleteRequest(), params)
+
+    expect(response.status).toBe(404)
+    expect(console.error).not.toHaveBeenCalled()
+  })
+
+  it("still 500s on a genuine mutation failure", async () => {
+    mockSoftDeleteNote.mockResolvedValue({ success: false, error: "Failed to delete note" })
+
+    const response = await DELETE(deleteRequest(), params)
+
+    expect(response.status).toBe(500)
+    expect(console.error).toHaveBeenCalled()
+  })
+})
