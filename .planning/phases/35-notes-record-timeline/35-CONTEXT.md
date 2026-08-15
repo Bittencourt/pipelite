@@ -162,6 +162,22 @@ vendored, so the migrated-note marker uses a native `title` attribute.
 <deferred>
 ## Deferred Ideas
 
+- **The `Notes` formula attribute freezes at its migration-time value** (decided 2026-08-15, after
+  plan 35-14). The legacy `notes` column is now dormant — nothing writes to it — but the `Notes`
+  attribute in `src/lib/formula-recalc.ts` still reads it, so any formula referencing `Notes` keeps
+  returning whatever that column held when migration 0013 ran and never moves again. Nothing is lost
+  and nothing errors; the values simply stop updating. Deliberately NOT fixed in this phase:
+  re-pointing the attribute is an undecided semantic question (newest note? all notes concatenated?
+  a count?) and every answer silently rewrites every live `Notes` formula in every record on the next
+  recalc. It should be decided alongside dropping the legacy columns, not inside a phase that did not
+  plan for it. Note that "all notes concatenated" interacts with the formula engine's 8 MiB output
+  bound — one migrated note in the live database is 131,505 characters.
+- **`countTimeline` is called redundantly** (plan 35-13). `assembleTimeline` already returns `total`,
+  so each timeline read issues a duplicate index-only `count(*)` per applicable source. Measured at
+  0.480 ms and running concurrently with the page read. The plan's action and acceptance criteria both
+  mandated the explicit call, so it was kept rather than silently diverged from; collapsing it is a
+  deliberate follow-up.
+
 - Dropping the legacy `notes` columns once reconciliation has held for a release.
 - `note.created` CRM event + workflow trigger support.
 - Pulling related-deal activities into organization and person timelines.
