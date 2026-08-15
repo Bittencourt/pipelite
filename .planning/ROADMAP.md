@@ -317,15 +317,17 @@ Plans:
 
 **Goal**: An admin can create a custom field on any entity — Deals included — and a formula's displayed value always agrees with its stored value
 **Depends on**: Phase 34 (this repairs the UI surface over the recalculation engine Phase 34 shipped; no other phase touches these files)
-**Requirements**: CFUI-01, CFUI-02, CFUI-03
-**Source**: 2026-08-15 browser E2E pass over the completed v1.3 phases — see `34-VERIFICATION.md` § Browser E2E Amendment. Backlog 999.25, 999.26, 999.27.
+**Requirements**: CFUI-01, CFUI-02, CFUI-03, CFUI-04, CFUI-05
+**Source**: 2026-08-15 browser E2E pass over the completed v1.3 phases — see `34-VERIFICATION.md` § Browser E2E Amendment. Backlog 999.25, 999.26, 999.27. Mechanism proven in `44-RESEARCH.md`; scope locked in `44-CONTEXT.md` § Scope Decisions.
 **Success Criteria** (what must be TRUE):
 
   1. The "Add Field" trigger renders on `/admin/fields/deal` (155 definitions) and an admin can create a field there — verified in a browser against the live dataset, not only in a unit test
   2. The trigger still renders on person, organization and activity, and the formula editor's field-reference chips still work on all four
   3. After editing a formula's source field on a freshly loaded record page, the rendered formula value equals the value stored in Postgres, with no reload
   4. A formula whose sources are unset renders blank rather than `#ERROR — Unknown field: X`, on a record whose `custom_fields` is `{}`
-  5. Whatever caused the header dialog to vanish is covered by a regression test that fails if the RSC boundary is handed the full definition rows again
+  5. A **real Flight round-trip** regression gate fails if a React element is ever again passed across the RSC boundary into an `asChild` slot alongside a growable data prop — asserting on the serializer's own output, not on a mock
+  6. No React element crosses the server→client boundary at the repaired call site — the fix is structural (client `AddFieldButton` wrapper), and remains correct at any definition count
+  7. A formula on an activity resolves native activity fields (CFUI-04), and the client evaluator applies the server's QuickJS resource bounds (CFUI-05)
 
 **Plans**: TBD
 
