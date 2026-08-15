@@ -235,7 +235,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 35-14-PLAN.md — mount the timeline and delete the legacy block on four detail pages (wave 8)
+- [x] 35-14-PLAN.md — mount the timeline and delete the legacy block on four detail pages (wave 8)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
@@ -409,7 +409,7 @@ Plans:
 | 32. Test Infrastructure & CI | 6/6 | Complete   | 2026-08-14 |
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
-| 35. Notes & Record Timeline | 13/15 | In Progress|  |
+| 35. Notes & Record Timeline | 14/15 | In Progress|  |
 | 36. Audit Log | 0/? | Not started | - |
 | 37. Trash & Restore | 0/? | Not started | - |
 | 38. Bulk Operations | 0/? | Not started | - |
