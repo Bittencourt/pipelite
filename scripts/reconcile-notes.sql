@@ -8,9 +8,19 @@
 --   source = 'migration'. This file proves that twice over:
 --     Part 1 — count reconciliation:  every row must show  delta = 0
 --     Part 2 — byte reconciliation:   every row must show  mismatched = 0
+--                                     AND a `compared` explainable by the number
+--                                     of migrated notes since edited or deleted
 --   A count match alone does not prove the absence of truncation or encoding
 --   damage. Part 2 compares the stored content to the legacy column byte for
 --   byte. BOTH parts must return all zeros for SC-4 to hold.
+--
+--   READ `compared` BEFORE YOU BELIEVE `mismatched`. Part 2 is scoped to rows
+--   still in their as-migrated state (see its header), and that population only
+--   ever shrinks. Zero joined rows also yields mismatched = 0, so a `mismatched`
+--   read on its own would eventually report a confident pass over an empty
+--   sample — a regression detector that stops detecting and never says so. The
+--   `compared` column is what makes that visible: it must stay at the baseline
+--   below minus the migrated notes deliberately edited or deleted since.
 --
 -- HOW TO RUN
 --   docker compose exec -T postgres psql -U pipelite -d pipelite -f - < scripts/reconcile-notes.sql
@@ -55,12 +65,21 @@
 --   column, not a bug to fix here.
 --
 -- MEASURED BASELINE (live database, 2026-08-15, PostgreSQL 16.13)
---   deal 0/0/0 · organization 29,037/29,037/0 · person 0/0/0 · activity 46,198/46,198/0
---   Byte mismatches: 0 for all four entity types, over the 75,235 migrated rows that
---   are still in their as-migrated state — which, at the baseline, is all of them.
+--   Part 1, legacy_nonempty/migrated/delta:
+--     deal 0/0/0 · organization 29,037/29,037/0 · person 0/0/0 · activity 46,198/46,198/0
+--   Part 2, compared/mismatched:
+--     organization 29,037/0 · activity 46,198/0 · deal 0/0 · person 0/0
+--   The 75,235 migrated rows were all still in their as-migrated state when the
+--   baseline was taken, so part 2's `compared` equals part 1's `migrated` exactly.
 --   Part 2 carries the `updated_at = created_at AND deleted_at IS NULL` predicate
 --   described in its own header; it did not change any baseline number, because
 --   nothing had been edited or deleted when the baseline was taken.
+--
+--   `deal 0` and `person 0` are correct and expected, not a broken join: neither
+--   table held a non-empty legacy `notes` value at migration time (part 1 says the
+--   same). Those two branches will read 0/0 until a legacy deal or person note
+--   appears, which nothing in the application writes any more. Only the two
+--   non-zero branches carry proof, and only they can decay.
 -- =============================================================================
 
 
@@ -85,7 +104,18 @@ FROM (
 
 -- -----------------------------------------------------------------------------
 -- SC-4 part 2: BYTE-LEVEL reconciliation. A count match does not prove no
--- truncation or encoding damage — this does. Every row must show mismatched = 0.
+-- truncation or encoding damage — this does. Every row must show mismatched = 0
+-- AND a `compared` that is explainable by the number of migrated notes since
+-- edited or deleted.
+--
+-- WHY `compared` IS EMITTED AT ALL
+--   `count(*) FILTER (...)` over zero joined rows is 0, which is indistinguishable
+--   from "compared 46,198 rows and all matched". The two predicates below exist to
+--   shrink this population, so without `compared` the detector would read as a pass
+--   against an ever-smaller and eventually empty sample and give no signal that it
+--   had stopped proving anything. Compare `compared` against the MEASURED BASELINE
+--   in the file header: a drop is only acceptable if it is explained by migrated
+--   notes that were deliberately edited or soft-deleted since.
 --
 -- SCOPED TO ROWS STILL IN THEIR AS-MIGRATED STATE
 --   Part 2 proves the MIGRATION was byte-identical. It cannot also prove that
@@ -111,24 +141,28 @@ FROM (
 --   rows, not content.
 -- -----------------------------------------------------------------------------
 SELECT 'organization' AS entity_type,
+       count(*)                                                   AS compared,
        count(*) FILTER (WHERE n.content IS DISTINCT FROM o.notes) AS mismatched
   FROM organizations o
   JOIN notes n ON n.entity_type = 'organization' AND n.entity_id = o.id AND n.source = 'migration'
               AND n.updated_at = n.created_at AND n.deleted_at IS NULL
 UNION ALL
 SELECT 'activity',
+       count(*),
        count(*) FILTER (WHERE n.content IS DISTINCT FROM a.notes)
   FROM activities a
   JOIN notes n ON n.entity_type = 'activity' AND n.entity_id = a.id AND n.source = 'migration'
               AND n.updated_at = n.created_at AND n.deleted_at IS NULL
 UNION ALL
 SELECT 'deal',
+       count(*),
        count(*) FILTER (WHERE n.content IS DISTINCT FROM d.notes)
   FROM deals d
   JOIN notes n ON n.entity_type = 'deal' AND n.entity_id = d.id AND n.source = 'migration'
               AND n.updated_at = n.created_at AND n.deleted_at IS NULL
 UNION ALL
 SELECT 'person',
+       count(*),
        count(*) FILTER (WHERE n.content IS DISTINCT FROM p.notes)
   FROM people p
   JOIN notes n ON n.entity_type = 'person' AND n.entity_id = p.id AND n.source = 'migration'
