@@ -10,14 +10,15 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { reorderFieldDefinitions, deleteFieldDefinition } from '@/app/admin/fields/actions'
 import { FieldDialog } from './field-dialog'
-import type { CustomFieldDefinition, EntityType } from '@/db/schema'
+import type { AdminFieldRow } from './field-dialog'
+import type { EntityType } from '@/db/schema'
 
 interface FieldsListProps {
-  fields: CustomFieldDefinition[]
+  fields: AdminFieldRow[]
   entityType: EntityType
 }
 
-function SortableField({ field, entityType, allFields }: { field: CustomFieldDefinition; entityType: EntityType; allFields: CustomFieldDefinition[] }) {
+function SortableField({ field, entityType, allFields }: { field: AdminFieldRow; entityType: EntityType; allFields: AdminFieldRow[] }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id })
   
   const style = {

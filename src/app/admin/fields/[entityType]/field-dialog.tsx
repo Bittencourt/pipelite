@@ -38,14 +38,46 @@ const fieldSchema = z.object({
 
 type FieldFormData = z.infer<typeof fieldSchema>
 
+/**
+ * D-44-02 — every key this route's client code reads from a definition row, and no other.
+ *
+ * `createdAt`, `updatedAt`, `deletedAt` and `position` are absent on purpose: nothing in
+ * this route reads them (the server has already split active from archived, and reordering
+ * posts ids only), so shipping them across the RSC boundary is pure payload. `config`
+ * stays, because the edit form below reads select options, lookup targets and formula
+ * expressions out of it.
+ *
+ * Declared here rather than in a types module because this is the file that defines the
+ * dialog's contract. `page.tsx` imports it as `import type`, which is erased at compile
+ * time - no client reference is created by a server component importing it.
+ */
+export type AdminFieldRow = Pick<
+  CustomFieldDefinition,
+  'id' | 'name' | 'type' | 'config' | 'required' | 'showInList'
+>
+
+/**
+ * The three keys the formula editor's field chips read (see the `availableFields` block
+ * below). Narrower than `AdminFieldRow` so the prop states what it actually consumes;
+ * `AdminFieldRow` is structurally assignable to it, so callers pass the shared array
+ * directly and no second array is ever built.
+ */
+export type AvailableField = Pick<CustomFieldDefinition, 'id' | 'name' | 'type'>
+
 interface FieldDialogProps {
   entityType: EntityType
-  field?: CustomFieldDefinition
-  availableFields?: CustomFieldDefinition[]
+  field?: AdminFieldRow
+  /**
+   * Whether `field` is archived - i.e. whether this dialog restores rather than edits.
+   * Was derived from `field.deletedAt`, which `AdminFieldRow` deliberately drops; the
+   * caller knows the answer already, and passing it keeps the timestamp off the wire.
+   */
+  archived?: boolean
+  availableFields?: AvailableField[]
   children: React.ReactNode
 }
 
-export function FieldDialog({ entityType, field, availableFields, children }: FieldDialogProps) {
+export function FieldDialog({ entityType, field, archived, availableFields, children }: FieldDialogProps) {
   const [open, setOpen] = useState(false)
   const [selectedType, setSelectedType] = useState<FieldType>(field?.type || 'text')
   const [options, setOptions] = useState<string[]>(
@@ -81,8 +113,8 @@ export function FieldDialog({ entityType, field, availableFields, children }: Fi
     })
   }
 
-  const isRestore = !!field?.deletedAt
-  const isEdit = !!field && !field.deletedAt
+  const isRestore = !!field && !!archived
+  const isEdit = !!field && !archived
   
   const { register, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<FieldFormData>({
     resolver: zodResolver(fieldSchema),

@@ -32,17 +32,23 @@
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { FieldDialog } from './field-dialog'
-import type { CustomFieldDefinition, EntityType } from '@/db/schema'
+import type { AdminFieldRow, AvailableField } from './field-dialog'
+import type { EntityType } from '@/db/schema'
 
 interface AddFieldButtonProps {
   entityType: EntityType
   /**
-   * The full definition list. `FieldDialog` reads only `id`, `name` and `type` from it,
-   * but the projection is deliberately NOT applied here: measured, a slim projection
-   * still defers at n=155, so it is a payload optimisation (plan 44-08) and not the
-   * CFUI-01 repair. See D-44-01.
+   * Narrowed to the three keys `FieldDialog` actually reads (D-44-02, plan 44-08).
+   *
+   * This is a payload optimisation and NOT the CFUI-01 repair - a slim projection still
+   * defers at n=155 (44-01 assertion 3), so the repair is the structural one above and
+   * stays valid whether or not this narrowing exists. See D-44-01.
+   *
+   * `page.tsx` passes its shared `AdminFieldRow[]` here directly; the wider row is
+   * structurally assignable, so no second array is built and Flight back-references the
+   * one it already wrote.
    */
-  availableFields: CustomFieldDefinition[]
+  availableFields: AvailableField[]
   label: string
 }
 
@@ -59,7 +65,7 @@ export function AddFieldButton({ entityType, availableFields, label }: AddFieldB
 
 interface RestoreFieldButtonProps {
   entityType: EntityType
-  field: CustomFieldDefinition
+  field: AdminFieldRow
   label: string
 }
 
@@ -68,10 +74,14 @@ interface RestoreFieldButtonProps {
  * accumulates across the whole Flight row, so on a 155-definition entity the budget is
  * long gone before the serializer reaches the archived section. It is unobservable today
  * only because `deal` currently has no archived definitions.
+ *
+ * `archived` is passed explicitly because `AdminFieldRow` drops `deletedAt` (D-44-02) and
+ * the dialog used to infer restore-vs-edit mode from it. This component is only ever
+ * rendered for an archived field, so the answer is known here without shipping a timestamp.
  */
 export function RestoreFieldButton({ entityType, field, label }: RestoreFieldButtonProps) {
   return (
-    <FieldDialog field={field} entityType={entityType}>
+    <FieldDialog field={field} entityType={entityType} archived>
       <Button variant="ghost" size="sm">
         {label}
       </Button>

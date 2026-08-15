@@ -283,6 +283,23 @@ describe('D-44-02 payload projection — page.tsx projects once and shares one a
     expect(page).toMatch(new RegExp(`const ${listed}\\b`))
   })
 
+  it('derives restore-vs-edit mode from the explicit archived prop, and passes it', () => {
+    const dialog = readSource(FIELD_DIALOG)
+    const wrapper = readSource(WRAPPER)
+
+    // `AdminFieldRow` drops `deletedAt`, so the dialog can no longer infer its mode from
+    // the row. Nothing in the TYPE system guards the replacement: `archived` is optional,
+    // so dropping it from RestoreFieldButton compiles cleanly and silently turns the
+    // restore prompt into an edit form on a field that is not editable. Same class of
+    // silent failure as the dropped trigger this phase exists to fix, so it is gated.
+    expect(dialog).not.toMatch(/field\??\.deletedAt/)
+    expect(dialog).toMatch(/const isRestore = !!field && !!archived/)
+    expect(dialog).toMatch(/const isEdit = !!field && !archived/)
+
+    // The one caller that must set it. `<FieldDialog ... archived>` is the JSX shorthand.
+    expect(wrapper).toMatch(/<FieldDialog[^<>]*\barchived\b/)
+  })
+
   it('dropped the CustomFieldDefinition casts rather than widening them', () => {
     const page = readSource(PAGE)
 

@@ -3,7 +3,8 @@ import { auth } from '@/auth'
 import { getAllFieldDefinitions } from '@/app/admin/fields/actions'
 import { FieldsList } from './fields-list'
 import { AddFieldButton, RestoreFieldButton } from './add-field-button'
-import type { EntityType, CustomFieldDefinition } from '@/db/schema'
+import type { AdminFieldRow } from './field-dialog'
+import type { EntityType } from '@/db/schema'
 import { getTranslations } from 'next-intl/server'
 
 const validEntityTypes: EntityType[] = ['organization', 'person', 'deal', 'activity']
@@ -26,9 +27,26 @@ export default async function FieldSettingsPage({ params }: PageProps) {
   const t = await getTranslations('admin.customFields')
   const fields = await getAllFieldDefinitions(entityType as EntityType)
 
-  // Separate active and archived
-  const activeFields = fields.filter(f => !f.deletedAt)
-  const archivedFields = fields.filter(f => f.deletedAt)
+  // D-44-02: project ONCE into the keys the browser reads, then share the result. React
+  // Flight keeps a map of already-written objects and emits a back-reference for one it
+  // has seen, so passing this same array to both consumers costs its bytes once. Building
+  // a second, separately-derived array for `availableFields` would therefore make the page
+  // HEAVIER, not lighter - measured at n=155: 45028 B full rows, 22353 B projected and
+  // shared, 58681 B with a separate slim array.
+  const rows: AdminFieldRow[] = fields.map(f => ({
+    id: f.id,
+    name: f.name,
+    type: f.type,
+    config: f.config,
+    required: f.required,
+    showInList: f.showInList,
+  }))
+
+  // Separate active and archived. `deletedAt` is the predicate only: the split is decided
+  // here, on the server, so the timestamp itself never crosses the boundary.
+  const archivedIds = new Set(fields.filter(f => f.deletedAt).map(f => f.id))
+  const activeFields = rows.filter(row => !archivedIds.has(row.id))
+  const archivedFields = rows.filter(row => archivedIds.has(row.id))
 
   const entityLabel = entityType.charAt(0).toUpperCase() + entityType.slice(1) + 's'
 
@@ -43,7 +61,7 @@ export default async function FieldSettingsPage({ params }: PageProps) {
         </div>
         <AddFieldButton
           entityType={entityType as EntityType}
-          availableFields={activeFields as CustomFieldDefinition[]}
+          availableFields={activeFields}
           label={t('addField')}
         />
       </div>
@@ -52,7 +70,7 @@ export default async function FieldSettingsPage({ params }: PageProps) {
         <div className="space-y-4">
           <h2 className="text-lg font-medium">{t('activeFields')}</h2>
           <FieldsList
-            fields={activeFields as CustomFieldDefinition[]}
+            fields={activeFields}
             entityType={entityType as EntityType}
           />
         </div>
@@ -74,7 +92,7 @@ export default async function FieldSettingsPage({ params }: PageProps) {
                 </div>
                 <RestoreFieldButton
                   entityType={entityType as EntityType}
-                  field={field as CustomFieldDefinition}
+                  field={field}
                   label={t('restore')}
                 />
               </div>
