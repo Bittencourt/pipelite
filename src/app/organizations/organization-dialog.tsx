@@ -18,7 +18,9 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2 } from "lucide-react"
 import { createOrganization, updateOrganization } from "./actions"
+import { addNote } from "@/app/notes/actions"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 
 const organizationSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name must be 100 characters or less"),
@@ -52,6 +54,7 @@ export function OrganizationDialog({
 }: OrganizationDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
   const isEditMode = !!organization
+  const tNotes = useTranslations("notes")
 
   const {
     register,
@@ -72,11 +75,12 @@ export function OrganizationDialog({
   useEffect(() => {
     if (open) {
       if (organization) {
+        // No notes value is seeded here: the edit dialog has no Notes field, and the
+        // legacy column is dormant. Notes are written and edited in the record timeline.
         reset({
           name: organization.name,
           website: organization.website || "",
           industry: organization.industry || "",
-          notes: organization.notes || "",
         })
       } else {
         reset({
@@ -92,13 +96,38 @@ export function OrganizationDialog({
   const onSubmit = async (data: OrganizationFormData) => {
     setIsLoading(true)
     try {
-      const result = isEditMode
-        ? await updateOrganization(organization.id, data)
-        : await createOrganization(data)
+      // The legacy notes column is never part of this payload, on either path.
+      const record = {
+        name: data.name,
+        website: data.website,
+        industry: data.industry,
+      }
 
-      if (!result.success) {
-        toast.error(result.error)
-        return
+      if (isEditMode) {
+        const result = await updateOrganization(organization.id, record)
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
+      } else {
+        const result = await createOrganization(record)
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
+
+        // The record already exists. A failed note is surfaced, never rolled back.
+        const draft = (data.notes ?? "").trim()
+        if (draft) {
+          try {
+            const noteResult = await addNote("organization", result.id, draft)
+            if (!noteResult.success) {
+              toast.error(tNotes("error.saveFailed"))
+            }
+          } catch {
+            toast.error(tNotes("error.saveFailed"))
+          }
+        }
       }
 
       toast.success(isEditMode ? "Organization updated!" : "Organization created!")
@@ -171,19 +200,23 @@ export function OrganizationDialog({
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="notes">Notes</Label>
-            <Textarea
-              id="notes"
-              placeholder="Additional notes about this organization..."
-              {...register("notes")}
-              disabled={isLoading}
-              rows={4}
-            />
-            {errors.notes && (
-              <p className="text-sm text-destructive">{errors.notes.message}</p>
-            )}
-          </div>
+          {/* Create only. The text becomes the record's first timeline note, never a
+              legacy column value. Editing happens in the timeline on the detail page. */}
+          {!isEditMode && (
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                placeholder="Additional notes about this organization..."
+                {...register("notes")}
+                disabled={isLoading}
+                rows={4}
+              />
+              {errors.notes && (
+                <p className="text-sm text-destructive">{errors.notes.message}</p>
+              )}
+            </div>
+          )}
 
           <DialogFooter>
             <Button

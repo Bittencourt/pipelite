@@ -18,7 +18,9 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2 } from "lucide-react"
 import { createPerson, updatePerson } from "./actions"
+import { addNote } from "@/app/notes/actions"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 import { EntityCombobox } from "@/components/ui/entity-combobox"
 
 const personSchema = z.object({
@@ -57,6 +59,7 @@ export function PersonDialog({
 }: PersonDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
   const isEditMode = !!person
+  const tNotes = useTranslations("notes")
 
   const {
     register,
@@ -83,12 +86,13 @@ export function PersonDialog({
   useEffect(() => {
     if (open) {
       if (person) {
+        // No notes value is seeded here: the edit dialog has no Notes field, and the
+        // legacy column is dormant. Notes are written and edited in the record timeline.
         reset({
           firstName: person.firstName,
           lastName: person.lastName,
           email: person.email || "",
           phone: person.phone || "",
-          notes: person.notes || "",
           organizationId: person.organizationId || "",
         })
       } else {
@@ -107,13 +111,40 @@ export function PersonDialog({
   const onSubmit = async (data: PersonFormData) => {
     setIsLoading(true)
     try {
-      const result = isEditMode
-        ? await updatePerson(person.id, data)
-        : await createPerson(data)
+      // The legacy notes column is never part of this payload, on either path.
+      const record = {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        phone: data.phone,
+        organizationId: data.organizationId,
+      }
 
-      if (!result.success) {
-        toast.error(result.error)
-        return
+      if (isEditMode) {
+        const result = await updatePerson(person.id, record)
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
+      } else {
+        const result = await createPerson(record)
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
+
+        // The record already exists. A failed note is surfaced, never rolled back.
+        const draft = (data.notes ?? "").trim()
+        if (draft) {
+          try {
+            const noteResult = await addNote("person", result.id, draft)
+            if (!noteResult.success) {
+              toast.error(tNotes("error.saveFailed"))
+            }
+          } catch {
+            toast.error(tNotes("error.saveFailed"))
+          }
+        }
       }
 
       toast.success(isEditMode ? "Person updated!" : "Person created!")
@@ -216,19 +247,23 @@ export function PersonDialog({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="notes">Notes</Label>
-            <Textarea
-              id="notes"
-              placeholder="Additional notes about this person..."
-              {...register("notes")}
-              disabled={isLoading}
-              rows={4}
-            />
-            {errors.notes && (
-              <p className="text-sm text-destructive">{errors.notes.message}</p>
-            )}
-          </div>
+          {/* Create only. The text becomes the record's first timeline note, never a
+              legacy column value. Editing happens in the timeline on the detail page. */}
+          {!isEditMode && (
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                placeholder="Additional notes about this person..."
+                {...register("notes")}
+                disabled={isLoading}
+                rows={4}
+              />
+              {errors.notes && (
+                <p className="text-sm text-destructive">{errors.notes.message}</p>
+              )}
+            </div>
+          )}
 
           <DialogFooter>
             <Button
