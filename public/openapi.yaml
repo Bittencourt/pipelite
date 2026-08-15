@@ -1004,6 +1004,70 @@ components:
           enum: [pending]
           description: Initial run status
 
+    Note:
+      type: object
+      description: |
+        A note attached to a CRM record. There is deliberately no soft-delete field on this
+        schema: soft-deleted notes are never returned by any endpoint, so exposing the
+        timestamp would only reveal that a note once existed.
+      required: [id, entityType, entityId, content, source, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          description: Note ID
+        entityType:
+          type: string
+          enum: [organization, person, deal, activity]
+          description: Type of record this note is attached to
+        entityId:
+          type: string
+          description: ID of the record this note is attached to
+        content:
+          type: string
+          maxLength: 200000
+          description: Note body. Internal line breaks are preserved; surrounding whitespace is trimmed.
+        authorId:
+          type: string
+          nullable: true
+          description: |
+            User who wrote the note. Null for a migrated note whose source record had no owner;
+            such a note is editable by admins only.
+        source:
+          type: string
+          enum: [user, migration]
+          description: |
+            'user' for a note written through Pipelite or this API, 'migration' for a note
+            carried over from a legacy per-record notes field.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+          description: Equal to createdAt until the note is edited
+
+    NoteCreate:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 200000
+          description: |
+            Note body. The author is always the user who owns the API key and cannot be
+            supplied here.
+
+    NoteUpdate:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 200000
+          description: Replacement note body
+
   responses:
     Unauthorized:
       description: Authentication required
@@ -1227,6 +1291,98 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /organizations/{id}/notes:
+    get:
+      summary: List organization notes
+      description: |
+        Retrieve a paginated list of notes attached to an organization, newest first.
+        Soft-deleted notes are never returned.
+      operationId: listOrganizationNotes
+      tags: [Notes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Organization ID
+          schema:
+            type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: List of notes
+          headers:
+            X-Total-Count:
+              description: Total number of live notes on this record
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Note'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      summary: Create organization note
+      description: |
+        Attach a note to an organization. The author is always the user who owns the API key and
+        cannot be set from the request body.
+      operationId: createOrganizationNote
+      tags: [Notes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Organization ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteCreate'
+      responses:
+        '201':
+          description: Note created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Note'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
   /organizations/batch:
     post:
       summary: Batch create organizations
@@ -1390,6 +1546,98 @@ paths:
       responses:
         '204':
           description: Person deleted
+
+  /people/{id}/notes:
+    get:
+      summary: List person notes
+      description: |
+        Retrieve a paginated list of notes attached to a person, newest first.
+        Soft-deleted notes are never returned.
+      operationId: listPersonNotes
+      tags: [Notes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Person ID
+          schema:
+            type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: List of notes
+          headers:
+            X-Total-Count:
+              description: Total number of live notes on this record
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Note'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      summary: Create person note
+      description: |
+        Attach a note to a person. The author is always the user who owns the API key and
+        cannot be set from the request body.
+      operationId: createPersonNote
+      tags: [Notes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Person ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteCreate'
+      responses:
+        '201':
+          description: Note created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Note'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /people/batch:
     post:
@@ -1564,6 +1812,98 @@ paths:
       responses:
         '204':
           description: Deal deleted
+
+  /deals/{id}/notes:
+    get:
+      summary: List deal notes
+      description: |
+        Retrieve a paginated list of notes attached to a deal, newest first.
+        Soft-deleted notes are never returned.
+      operationId: listDealNotes
+      tags: [Notes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Deal ID
+          schema:
+            type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: List of notes
+          headers:
+            X-Total-Count:
+              description: Total number of live notes on this record
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Note'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      summary: Create deal note
+      description: |
+        Attach a note to a deal. The author is always the user who owns the API key and
+        cannot be set from the request body.
+      operationId: createDealNote
+      tags: [Notes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Deal ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteCreate'
+      responses:
+        '201':
+          description: Note created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Note'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /deals/batch:
     post:
@@ -1740,6 +2080,98 @@ paths:
           description: Activity deleted
 
   # ========== Pipelines ==========
+  /activities/{id}/notes:
+    get:
+      summary: List activity notes
+      description: |
+        Retrieve a paginated list of notes attached to an activity, newest first.
+        Soft-deleted notes are never returned.
+      operationId: listActivityNotes
+      tags: [Notes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Activity ID
+          schema:
+            type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: List of notes
+          headers:
+            X-Total-Count:
+              description: Total number of live notes on this record
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Note'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      summary: Create activity note
+      description: |
+        Attach a note to an activity. The author is always the user who owns the API key and
+        cannot be set from the request body.
+      operationId: createActivityNote
+      tags: [Notes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Activity ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteCreate'
+      responses:
+        '201':
+          description: Note created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Note'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
   /pipelines:
     get:
       summary: List pipelines
@@ -2391,3 +2823,73 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /notes/{noteId}:
+    patch:
+      summary: Update note
+      description: |
+        Edit a note's content. Permitted for the note's author, and for any admin.
+        Every other caller receives 403, and no write is attempted.
+
+        A soft-deleted note responds exactly like a note that never existed, so this
+        endpoint cannot be used to probe which note IDs are real.
+      operationId: updateNote
+      tags: [Notes]
+      parameters:
+        - name: noteId
+          in: path
+          required: true
+          description: Note ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteUpdate'
+      responses:
+        '200':
+          description: Note updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Note'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      summary: Delete note
+      description: |
+        Soft delete a note. Permitted for the note's author, and for any admin.
+        The row is retained; it simply stops being returned by every read.
+      operationId: deleteNote
+      tags: [Notes]
+      parameters:
+        - name: noteId
+          in: path
+          required: true
+          description: Note ID
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Note deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
