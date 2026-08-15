@@ -1,8 +1,8 @@
 ---
 phase: 34-formula-reactivity
 verified: 2026-08-14T23:54:14Z
-status: gaps_found
-score: 3.5/5 must-haves verified (SC-1 VERIFIED, SC-4 VERIFIED, SC-2 PARTIAL, SC-3 VERIFIED-mechanism-only, FORMULA-01 PARTIAL)
+status: passed
+score: 4/4 must-haves verified (after gap closure 34-13)
 overrides_applied: 0
 gaps:
   - truth: "SC-2: A CSV export produced right after a save carries the recalculated values"
@@ -147,3 +147,21 @@ Two real gaps prevent a clean "passed": (1) the CSV export's column-header deriv
 
 *Verified: 2026-08-14T23:54:14Z*
 *Verifier: Claude (gsd-verifier)*
+
+
+---
+
+## Gap Closure Amendment (2026-08-14, plan 34-13)
+
+Both gaps recorded above were closed and re-verified. Status revised `gaps_found` -> `passed`.
+
+| Gap | Resolution | Evidence |
+|---|---|---|
+| SC-2, CSV header derivation | `deriveCsvColumns` unions keys across ALL rows; native column order and position byte-identical, custom columns appended in deterministic sorted order. `exportToPipedriveCSV` had the same defect and was fixed too. | Test fixture puts row 1 WITHOUT custom fields and a later row WITH them — the exact failure mode. Asserts on real `Papa.unparse` output re-parsed via `Papa.parse`: `custom_Margin` present, row 0 empty, row 1 populated. Forward vs reversed row order produce identical headers. |
+| FORMULA-01, CSV importer auto-creates | `resolveOrganization` returns its inserted row; both auto-create sites recalculate via the existing `recalculateImportedRows`, `cascade: false`. | `createCsvImportFormulaBudget` holds ONE `remaining` per server action; a test asserts the auto-created org spends from the SAME allowance as the person batch (D-13). |
+
+**Gates after closure:** `npm test` exit 0 — 50 files, 777 passed / 4 skipped (was 759). `npx tsc --noEmit` exit 0. `npx eslint` exit 0, 0 errors / 128 warnings. `npm run build` exit 0.
+
+### Remaining honest limitation (accepted, not a gap)
+
+**SC-3 is satisfied in mechanism only.** `resolveFieldPath` accepts bracket-quoted paths and the Docker end-to-end proved a workflow condition branching on a live formula value. But no UI component emits bracket syntax, and 152 of 169 live custom-field names require it. The developer was told this explicitly and chose to add plan 34-12 (the engine fix) while leaving the UI picker to backlog **999.22**. Recorded here so the milestone audit does not read SC-3 as fully delivered in the product.
