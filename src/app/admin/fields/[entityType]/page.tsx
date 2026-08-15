@@ -2,9 +2,7 @@ import { notFound } from 'next/navigation'
 import { auth } from '@/auth'
 import { getAllFieldDefinitions } from '@/app/admin/fields/actions'
 import { FieldsList } from './fields-list'
-import { FieldDialog } from './field-dialog'
-import { Button } from '@/components/ui/button'
-import { Plus } from 'lucide-react'
+import { AddFieldButton, RestoreFieldButton } from './add-field-button'
 import type { EntityType, CustomFieldDefinition } from '@/db/schema'
 import { getTranslations } from 'next-intl/server'
 
@@ -43,12 +41,11 @@ export default async function FieldSettingsPage({ params }: PageProps) {
             {t('configureForEntity', { entity: entityType })}
           </p>
         </div>
-        <FieldDialog entityType={entityType as EntityType} availableFields={activeFields as CustomFieldDefinition[]}>
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            {t('addField')}
-          </Button>
-        </FieldDialog>
+        <AddFieldButton
+          entityType={entityType as EntityType}
+          availableFields={activeFields as CustomFieldDefinition[]}
+          label={t('addField')}
+        />
       </div>
 
       {activeFields.length > 0 ? (
@@ -75,9 +72,11 @@ export default async function FieldSettingsPage({ params }: PageProps) {
                   <span className="font-medium line-through">{field.name}</span>
                   <span className="text-sm text-muted-foreground ml-2">({field.type})</span>
                 </div>
-                <FieldDialog field={field as CustomFieldDefinition} entityType={entityType as EntityType}>
-                  <Button variant="ghost" size="sm">{t('restore')}</Button>
-                </FieldDialog>
+                <RestoreFieldButton
+                  entityType={entityType as EntityType}
+                  field={field as CustomFieldDefinition}
+                  label={t('restore')}
+                />
               </div>
             ))}
           </div>
