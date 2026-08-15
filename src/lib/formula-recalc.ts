@@ -55,6 +55,9 @@ import {
   evaluateFormula,
   extractDependencies,
   detectCircularDependency,
+  FORMULA_EVAL_OPTIONS,
+  FORMULA_EVAL_MEMORY_LIMIT_BYTES,
+  FORMULA_EVAL_TIMEOUT_MS,
 } from "@/lib/formula-engine"
 import { unwrapFormulaValue, sanitizeFormulaError, type FormulaWrapper } from "@/lib/formula-helpers"
 
@@ -146,23 +149,17 @@ export const NATIVE_ATTRIBUTE_COLUMNS: Readonly<Record<string, string>> = Object
 /**
  * Resource bounds passed on EVERY server-side evaluation (threat T-34-02).
  *
- * D-18 is blocking here: `evaluateFormula`'s bound is an opt-in 4th argument and is completely
- * INERT unless passed. Plan 34-01 measured the failure mode — a `while(true)` expression does
- * not merely time out, it blocks the event loop in synchronous WASM so even the test runner's
- * own timeout cannot fire, wedging the worker. One bad admin-authored formula would therefore
- * pin a Node worker unreclaimably.
+ * **Declared in `formula-engine.ts`, re-exported here** — see the justification at that
+ * definition. The move was forced by CFUI-05: this module imports `@/db`, so a client component
+ * could never import the bounds from here, which is exactly why the two browser call sites
+ * shipped unbounded while every server call site was guarded.
  *
- * 500 ms against the measured 0.876 ms in-container steady-state cost is ~570x headroom for a
- * single evaluation while still bounding a pathological expression. 8 MiB mirrors
- * `transform.ts`.
+ * The re-export is load-bearing, not tidiness. `formula-recalc.test.ts` imports both constants
+ * from `@/lib/formula-recalc` and pins them to 8 MiB / 500 ms; keeping that import working makes
+ * those existing assertions the drift alarm for the client side too (T-44-13). Do not collapse
+ * it into a direct import at the test.
  */
-export const FORMULA_EVAL_MEMORY_LIMIT_BYTES = 8 * 1024 * 1024
-export const FORMULA_EVAL_TIMEOUT_MS = 500
-
-const FORMULA_EVAL_OPTIONS = {
-  memoryLimitBytes: FORMULA_EVAL_MEMORY_LIMIT_BYTES,
-  timeoutMs: FORMULA_EVAL_TIMEOUT_MS,
-} as const
+export { FORMULA_EVAL_MEMORY_LIMIT_BYTES, FORMULA_EVAL_TIMEOUT_MS }
 
 /**
  * The coarse marker the v1 routes push into `changedFields` when they merge `custom_fields`

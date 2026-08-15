@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, Calculator } from 'lucide-react'
 import { Label } from '@/components/ui/label'
-import { evaluateFormula } from '@/lib/formula-engine'
+import { evaluateFormula, FORMULA_EVAL_OPTIONS } from '@/lib/formula-engine'
 import type { CustomFieldDefinition, FormulaConfig } from '@/db/schema'
 import { useFormatter } from 'next-intl'
 
@@ -63,7 +63,15 @@ export function FormulaField({
     const calculate = async () => {
       setIsLoading(true)
       try {
-        const result = await evaluateFormula(expression, allFieldValues, relatedEntities)
+        // The bound is inert unless passed (T-44-12). The expression is admin-authored and runs
+        // in the tab of every user who opens this record, so an unbounded `while(true)` would
+        // wedge their browser, not the author's.
+        const result = await evaluateFormula(
+          expression,
+          allFieldValues,
+          relatedEntities,
+          FORMULA_EVAL_OPTIONS
+        )
         setCalculatedValue(result.value)
         setError(result.error)
       } catch (e) {

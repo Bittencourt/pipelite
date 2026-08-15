@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { evaluateFormula } from '@/lib/formula-engine'
+import { evaluateFormula, FORMULA_EVAL_OPTIONS } from '@/lib/formula-engine'
 import { FORMULA_FUNCTIONS, FORMULA_EXAMPLES, validateFormula } from '@/lib/formula-helpers'
 import type { CustomFieldDefinition, FormulaConfig } from '@/db/schema'
 
@@ -59,7 +59,9 @@ export function FormulaEditor({ definition, existingFields, onSave, onCancel }: 
     }
     
     try {
-      const result = await evaluateFormula(expression, sampleValues)
+      // Bounded like every other call site (T-44-12): this previews an in-progress expression,
+      // so a half-written loop is if anything MORE likely here than on a saved formula.
+      const result = await evaluateFormula(expression, sampleValues, undefined, FORMULA_EVAL_OPTIONS)
       setPreviewResult(result)
     } catch (e) {
       setPreviewResult({ value: null, error: e instanceof Error ? e.message : 'Preview failed' })

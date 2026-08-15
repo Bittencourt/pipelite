@@ -61,11 +61,10 @@ interface RelatedEntities {
 /**
  * Optional resource bounds for a single evaluation.
  *
- * Omitting this argument entirely preserves the historical, unbounded code path
- * (`QuickJS.newContext()` with no explicit runtime), which is what the browser
- * live-preview callers use. Server-side callers, which execute admin-authored
- * expressions inside the shared Node process, should always pass bounds so a
- * pathological expression cannot pin a worker (threat T-34-02).
+ * Omitting this argument preserves the historical, unbounded code path
+ * (`QuickJS.newContext()` with no explicit runtime). **No caller in this repo should rely on
+ * that.** Every call site — server AND browser — passes `FORMULA_EVAL_OPTIONS`; the unbounded
+ * path is retained only so this module stays a general-purpose evaluator.
  */
 export interface EvaluateFormulaOptions {
   /** Hard cap on sandbox heap, in bytes (mirrors transform.ts's 8 MB). */
@@ -73,6 +72,35 @@ export interface EvaluateFormulaOptions {
   /** Wall-clock budget in milliseconds, enforced via a QuickJS interrupt handler. */
   timeoutMs?: number
 }
+
+/**
+ * Resource bounds passed on EVERY evaluation, server-side and in the browser (threats T-34-02,
+ * T-44-12).
+ *
+ * D-18 is blocking here: `evaluateFormula`'s bound is an opt-in 4th argument and is completely
+ * INERT unless passed. Plan 34-01 measured the failure mode — a `while(true)` expression does
+ * not merely time out, it blocks the event loop in synchronous WASM so even the test runner's
+ * own timeout cannot fire, wedging the worker. Server-side that pins a Node worker
+ * unreclaimably; in the browser it pins the tab of every user who opens the record, because the
+ * expression is admin-authored and runs for all of them.
+ *
+ * 500 ms against the measured 0.876 ms in-container steady-state cost is ~570x headroom for a
+ * single evaluation while still bounding a pathological expression. 8 MiB mirrors
+ * `transform.ts`.
+ *
+ * **These constants live HERE, not in `formula-recalc.ts`, deliberately (CFUI-05 / T-44-13):**
+ * `formula-recalc.ts` imports `@/db` and therefore cannot be imported from a client component,
+ * so hosting them there forced the browser call sites to be unbounded. This module is
+ * client-safe — keep it that way; do not add a `@/db` import. `formula-recalc.ts` re-exports
+ * both constants, so its existing 8 MiB / 500 ms assertions guard both sides against drift.
+ */
+export const FORMULA_EVAL_MEMORY_LIMIT_BYTES = 8 * 1024 * 1024
+export const FORMULA_EVAL_TIMEOUT_MS = 500
+
+export const FORMULA_EVAL_OPTIONS: EvaluateFormulaOptions = Object.freeze({
+  memoryLimitBytes: FORMULA_EVAL_MEMORY_LIMIT_BYTES,
+  timeoutMs: FORMULA_EVAL_TIMEOUT_MS,
+})
 
 /**
  * Safely dispose of a QuickJS handle
