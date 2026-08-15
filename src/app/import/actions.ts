@@ -15,7 +15,7 @@ import { eq, and, isNull, asc } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { fuzzyMatchOrganization } from "@/lib/import/fuzzy-match"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
-import { stripFormulaKeys } from "@/lib/formula-recalc"
+import { stripFormulaKeys, FORMULA_EVALUATION_BUDGET } from "@/lib/formula-recalc"
 import {
   recalculateImportedRows,
   type ImportedRow,
@@ -75,46 +75,72 @@ async function batchInsert<T extends Record<string, unknown>>(
 }
 
 /**
- * Load an entity type's custom field definitions ONCE per import flow.
+ * The evaluation allowance for ONE server action — one CSV upload — shared by the primary
+ * batch AND by every row the importer invents along the way (D-04 / D-13, threat T-34-03).
  *
- * The same read serves two purposes: the T-34-04 strip below, and the recalculation's
- * `definitionsCache` — so an import of 5,000 rows issues one definition query, not 5,000.
- */
-async function loadImportDefinitions(entityType: EntityType): Promise<{
-  definitions: CustomFieldDefinition[]
-  definitionsCache: Map<EntityType, CustomFieldDefinition[]>
-}> {
-  const definitions = await getActiveFieldDefinitions(entityType)
-  const definitionsCache = new Map<EntityType, CustomFieldDefinition[]>()
-  definitionsCache.set(entityType, definitions)
-  return { definitions, definitionsCache }
-}
-
-/**
- * Recalculate the formula fields of the rows an import just wrote, and tell the user when the
- * shared evaluation budget ran out.
+ * Each of the four exported actions below is a separate CSV upload, so one action already IS
+ * one import run; that is why the CSV importer needs a per-action closure where the Pipedrive
+ * importer needs a per-run one. What changed in plan 34-13 is that an action now recalculates
+ * more than one batch: `importPeople` may auto-create organizations and `importDeals` may
+ * auto-create both organizations and people. Handing each of those a fresh
+ * `FORMULA_EVALUATION_BUDGET` would multiply the bound by the number of call sites, and a bound
+ * that scales with the amount of work is not a bound. `remaining` is threaded forward instead
+ * and decremented by exactly what each call spent.
  *
- * Surfacing the shortfall in the existing `warnings` array matters (T-34-25): budget exhaustion
- * is otherwise a silent partial recalculation visible only in a server log.
+ * The closure also memoises the definition read per entity type, so the T-34-04 strip and the
+ * recalculation share a single query rather than issuing one each.
  */
-async function recalculateImportedRowsAndWarn(
-  entityType: EntityType,
-  inserted: ImportedRow[],
-  definitionsCache: Map<EntityType, CustomFieldDefinition[]>,
-  warnings: string[]
-): Promise<void> {
-  const summary = await recalculateImportedRows({
-    entityType,
-    rows: inserted,
-    definitionsCache,
-  })
+function createCsvImportFormulaBudget(warnings: string[]) {
+  let remaining = FORMULA_EVALUATION_BUDGET
+  const caches = new Map<EntityType, Map<EntityType, CustomFieldDefinition[]>>()
 
-  if (summary.skipped > 0) {
-    warnings.push(
-      `Formula fields were not recalculated for ${summary.skipped} of ${inserted.length} imported ` +
-        `${entityType} rows — this import exceeded the formula evaluation budget. Those rows keep ` +
-        `the values they were imported with and will recompute the next time they are saved.`
-    )
+  function cacheFor(entityType: EntityType): Map<EntityType, CustomFieldDefinition[]> {
+    const existing = caches.get(entityType)
+    if (existing) return existing
+    const created = new Map<EntityType, CustomFieldDefinition[]>()
+    caches.set(entityType, created)
+    return created
+  }
+
+  return {
+    /** An entity type's active definitions, read ONCE per action and memoised into the cache. */
+    async definitionsFor(entityType: EntityType): Promise<CustomFieldDefinition[]> {
+      const cache = cacheFor(entityType)
+      const cached = cache.get(entityType)
+      if (cached) return cached
+
+      const definitions = await getActiveFieldDefinitions(entityType)
+      cache.set(entityType, definitions)
+      return definitions
+    },
+
+    /**
+     * Recalculate one set of rows against what is LEFT of the action-wide allowance, and tell
+     * the user when it ran out.
+     *
+     * Surfacing the shortfall in the existing `warnings` array matters (T-34-25): budget
+     * exhaustion is otherwise a silent partial recalculation visible only in a server log.
+     */
+    async recalculate(entityType: EntityType, rows: ImportedRow[]): Promise<void> {
+      if (rows.length === 0) return
+
+      const summary = await recalculateImportedRows({
+        entityType,
+        rows,
+        budget: remaining,
+        definitionsCache: cacheFor(entityType),
+      })
+
+      remaining -= summary.evaluations
+
+      if (summary.skipped > 0) {
+        warnings.push(
+          `Formula fields were not recalculated for ${summary.skipped} of ${rows.length} imported ` +
+            `${entityType} rows — this import exceeded the formula evaluation budget. Those rows keep ` +
+            `the values they were imported with and will recompute the next time they are saved.`
+        )
+      }
+    },
   }
 }
 
@@ -135,13 +161,21 @@ async function getDefaultStage(): Promise<{ id: string; name: string } | null> {
   return firstStage ? { id: firstStage.id, name: firstStage.name } : null
 }
 
-/** Resolve organization by name: exact match, fuzzy match, or auto-create */
+/**
+ * Resolve organization by name: exact match, fuzzy match, or auto-create.
+ *
+ * When it auto-creates, it hands the INSERTED ROW back alongside the id. That row carries real
+ * native attributes (`name`, `notes`) a formula can read, so it needs recalculating exactly like
+ * any row the user imported — and the recalculation needs the row itself, not just its id, or it
+ * would have to re-read it (FORMULA-01, the gap 34-VERIFICATION recorded). The caller collects
+ * these and spends them from the same action-wide allowance as the primary batch.
+ */
 async function resolveOrganization(
   name: string,
   ownerId: string,
   existingOrgs: Array<{ id: string; name: string }>,
   autoCreatedOrgs: Map<string, string>
-): Promise<{ id: string; autoCreated: boolean }> {
+): Promise<{ id: string; autoCreated: boolean; row?: ImportedRow }> {
   const trimmed = name.trim()
   if (!trimmed) throw new Error("Organization name is empty")
 
@@ -173,7 +207,11 @@ async function resolveOrganization(
   // Add to existing list for fuzzy matching
   existingOrgs.push({ id: newOrg.id, name: trimmed })
 
-  return { id: newOrg.id, autoCreated: true }
+  return {
+    id: newOrg.id,
+    autoCreated: true,
+    row: newOrg as unknown as ImportedRow,
+  }
 }
 
 // ----- Import Actions -----
@@ -199,7 +237,8 @@ export async function importOrganizations(
 
   try {
     const warnings: string[] = []
-    const { definitions, definitionsCache } = await loadImportDefinitions("organization")
+    const budget = createCsvImportFormulaBudget(warnings)
+    const definitions = await budget.definitionsFor("organization")
     const now = new Date()
     const rows = data.map((item) => {
       const { name, website, industry, notes, ...rest } = item as Record<string, unknown>
@@ -219,7 +258,7 @@ export async function importOrganizations(
     })
 
     const inserted = await batchInsert(organizations, rows)
-    await recalculateImportedRowsAndWarn("organization", inserted, definitionsCache, warnings)
+    await budget.recalculate("organization", inserted)
 
     revalidatePath("/organizations")
     return {
@@ -271,9 +310,13 @@ export async function importPeople(
 
     const autoCreatedOrgs = new Map<string, string>()
     const warnings: string[] = []
-    const { definitions, definitionsCache } = await loadImportDefinitions("person")
+    const budget = createCsvImportFormulaBudget(warnings)
+    const definitions = await budget.definitionsFor("person")
     const now = new Date()
     const rows: Array<Record<string, unknown>> = []
+    // Rows this importer INVENTED. They carry real native attributes, so they need the same
+    // recalculation as the rows the user actually uploaded (FORMULA-01).
+    const autoCreatedOrgRows: ImportedRow[] = []
 
     for (const item of data) {
       let organizationId: string | null = null
@@ -287,6 +330,7 @@ export async function importPeople(
         )
         organizationId = result.id
         if (result.autoCreated) {
+          if (result.row) autoCreatedOrgRows.push(result.row)
           warnings.push(
             `Auto-created organization "${item.organizationName}" for person "${item.firstName} ${item.lastName}"`
           )
@@ -311,7 +355,11 @@ export async function importPeople(
     }
 
     const inserted = await batchInsert(people, rows)
-    await recalculateImportedRowsAndWarn("person", inserted, definitionsCache, warnings)
+    // Parents first: a child formula may reference a parent field (D-08) including a parent
+    // formula field (D-10), so the organization must hold its computed value before the people
+    // that point at it compute theirs. Both spend from the SAME allowance (D-13).
+    await budget.recalculate("organization", autoCreatedOrgRows)
+    await budget.recalculate("person", inserted)
 
     revalidatePath("/people")
     revalidatePath("/organizations")
@@ -387,9 +435,13 @@ export async function importDeals(
     const autoCreatedOrgs = new Map<string, string>()
     const autoCreatedPeople = new Map<string, string>()
     const warnings: string[] = []
-    const { definitions, definitionsCache } = await loadImportDefinitions("deal")
+    const budget = createCsvImportFormulaBudget(warnings)
+    const definitions = await budget.definitionsFor("deal")
     const now = new Date()
     const rows: Array<Record<string, unknown>> = []
+    // Rows this importer INVENTED, for the same recalculation the uploaded rows get.
+    const autoCreatedOrgRows: ImportedRow[] = []
+    const autoCreatedPersonRows: ImportedRow[] = []
 
     for (const item of data) {
       // Resolve stage
@@ -418,6 +470,7 @@ export async function importDeals(
         )
         organizationId = result.id
         if (result.autoCreated) {
+          if (result.row) autoCreatedOrgRows.push(result.row)
           warnings.push(
             `Auto-created organization "${item.organizationName}" for deal "${item.title}"`
           )
@@ -460,6 +513,9 @@ export async function importDeals(
 
             personId = newPerson.id
             autoCreatedPeople.set(email, newPerson.id)
+            // A row this importer invented, carrying real firstName/lastName/email/notes that a
+            // formula can read — recalculated below from the action-wide allowance.
+            autoCreatedPersonRows.push(newPerson as unknown as ImportedRow)
             warnings.push(
               `Auto-created person "${emailPrefix}" (${email}) for deal "${item.title}"`
             )
@@ -496,7 +552,10 @@ export async function importDeals(
     }
 
     const inserted = await batchInsert(deals, rows)
-    await recalculateImportedRowsAndWarn("deal", inserted, definitionsCache, warnings)
+    // Parents before children (D-08/D-10), all three sharing ONE decrementing allowance (D-13).
+    await budget.recalculate("organization", autoCreatedOrgRows)
+    await budget.recalculate("person", autoCreatedPersonRows)
+    await budget.recalculate("deal", inserted)
 
     revalidatePath("/deals")
     revalidatePath("/people")
@@ -559,7 +618,8 @@ export async function importActivities(
     })
 
     const warnings: string[] = []
-    const { definitions, definitionsCache } = await loadImportDefinitions("activity")
+    const budget = createCsvImportFormulaBudget(warnings)
+    const definitions = await budget.definitionsFor("activity")
     const now = new Date()
     const rows: Array<Record<string, unknown>> = []
 
@@ -617,7 +677,7 @@ export async function importActivities(
     }
 
     const inserted = await batchInsert(activities, rows)
-    await recalculateImportedRowsAndWarn("activity", inserted, definitionsCache, warnings)
+    await budget.recalculate("activity", inserted)
 
     revalidatePath("/activities")
 
