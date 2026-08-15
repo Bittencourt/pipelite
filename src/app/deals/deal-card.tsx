@@ -45,7 +45,6 @@ export interface Deal {
   organizationId: string | null
   personId: string | null
   expectedCloseDate?: Date | null
-  notes?: string | null
   organization: { id: string; name: string } | null
   person: { id: string; firstName: string; lastName: string } | null
   assignees?: { userId: string; user: { name: string | null; email: string } }[]
@@ -192,11 +191,6 @@ export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col
                 })}
               </div>
             )}
-            {deal.notes && (
-              <div className="text-xs text-muted-foreground line-clamp-2">
-                {deal.notes}
-              </div>
-            )}
             <div className="flex items-center gap-2 pt-2">
               <Link href={`/deals/${deal.id}`} className="flex-1">
                 <Button variant="outline" size="sm" className="w-full">
@@ -242,7 +236,6 @@ export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col
             title: deal.title,
             value: deal.value ? parseFloat(deal.value) : null,
             expectedCloseDate: deal.expectedCloseDate || null,
-            notes: deal.notes || null,
             stageId: deal.stageId,
             organizationId: deal.organizationId,
             personId: deal.personId,

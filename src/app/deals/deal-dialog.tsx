@@ -35,7 +35,9 @@ import {
 } from "@/components/ui/select"
 import { Loader2, Trash2 } from "lucide-react"
 import { createDeal, updateDeal, deleteDeal } from "./actions"
+import { addNote } from "@/app/notes/actions"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 import { formatCurrency } from "@/lib/currency"
 import { AssigneePicker } from "@/components/assignee-picker"
 import { EntityCombobox } from "@/components/ui/entity-combobox"
@@ -66,7 +68,6 @@ interface DealDialogProps {
     title: string
     value: number | null
     expectedCloseDate: Date | null
-    notes: string | null
     stageId: string
     ownerId?: string | null
     organizationId: string | null
@@ -92,6 +93,7 @@ export function DealDialog({
   const [isLoading, setIsLoading] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const isEditMode = mode === "edit"
+  const tNotes = useTranslations("notes")
 
   const {
     register,
@@ -142,7 +144,8 @@ export function DealDialog({
           expectedCloseDate: deal.expectedCloseDate
             ? new Date(deal.expectedCloseDate).toISOString().split("T")[0]
             : "",
-          notes: deal.notes || "",
+          // No notes value is seeded here: the edit dialog has no Notes field, and the
+          // legacy column is dormant. Notes are written and edited in the record timeline.
           assigneeIds: deal.assigneeIds ?? [],
         })
       } else {
@@ -170,6 +173,7 @@ export function DealDialog({
 
     setIsLoading(true)
     try {
+      // The legacy notes column is never part of this payload, on either path.
       const dealData = {
         title: data.title,
         value: data.value ? parseFloat(data.value) : null,
@@ -178,17 +182,34 @@ export function DealDialog({
         organizationId: data.organizationId || null,
         personId: data.personId || null,
         expectedCloseDate: data.expectedCloseDate ? new Date(data.expectedCloseDate) : null,
-        notes: data.notes || null,
         assigneeIds: data.assigneeIds ?? [],
       }
 
-      const result = isEditMode
-        ? await updateDeal(deal!.id, dealData)
-        : await createDeal(dealData)
+      if (isEditMode) {
+        const result = await updateDeal(deal!.id, dealData)
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
+      } else {
+        const result = await createDeal(dealData)
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
 
-      if (!result.success) {
-        toast.error(result.error)
-        return
+        // The record already exists. A failed note is surfaced, never rolled back.
+        const draft = (data.notes ?? "").trim()
+        if (draft) {
+          try {
+            const noteResult = await addNote("deal", result.id, draft)
+            if (!noteResult.success) {
+              toast.error(tNotes("error.saveFailed"))
+            }
+          } catch {
+            toast.error(tNotes("error.saveFailed"))
+          }
+        }
       }
 
       toast.success(isEditMode ? "Deal updated!" : "Deal created!")
@@ -360,19 +381,23 @@ export function DealDialog({
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea
-                id="notes"
-                placeholder="Additional notes about this deal..."
-                {...register("notes")}
-                disabled={isLoading}
-                rows={4}
-              />
-              {errors.notes && (
-                <p className="text-sm text-destructive">{errors.notes.message}</p>
-              )}
-            </div>
+            {/* Create only. The text becomes the record's first timeline note, never a
+                legacy column value. Editing happens in the timeline on the detail page. */}
+            {!isEditMode && (
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea
+                  id="notes"
+                  placeholder="Additional notes about this deal..."
+                  {...register("notes")}
+                  disabled={isLoading}
+                  rows={4}
+                />
+                {errors.notes && (
+                  <p className="text-sm text-destructive">{errors.notes.message}</p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Assignees</Label>

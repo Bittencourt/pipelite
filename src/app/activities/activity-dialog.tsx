@@ -35,7 +35,9 @@ import {
 } from "@/components/ui/select"
 import { Loader2, Trash2, Phone, Users, CheckSquare, Mail } from "lucide-react"
 import { createActivity, updateActivity, deleteActivity } from "./actions"
+import { addNote } from "@/app/notes/actions"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 
 const activitySchema = z.object({
   title: z.string().min(1, "Title is required").max(200, "Title must be 200 characters or less"),
@@ -107,6 +109,7 @@ export function ActivityDialog({
   const [isLoading, setIsLoading] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const isEditMode = !!activity
+  const tNotes = useTranslations("notes")
 
   const {
     register,
@@ -141,6 +144,8 @@ export function ActivityDialog({
         const dateStr = dueDate.toISOString().split("T")[0]
         const timeStr = dueDate.toTimeString().slice(0, 5)
         
+        // No notes value is seeded here: the edit dialog has no Notes field, and the
+        // legacy column is dormant. Notes are written and edited in the record timeline.
         reset({
           title: activity.title,
           typeId: activity.typeId,
@@ -148,7 +153,6 @@ export function ActivityDialog({
           dueTime: timeStr,
           dealId: activity.dealId || "",
           assigneeId: activity.assigneeId || "",
-          notes: activity.notes || "",
         })
       } else {
         reset({
@@ -170,22 +174,40 @@ export function ActivityDialog({
       const dateTimeStr = `${data.dueDate}T${data.dueTime || "09:00"}:00`
       const dueDate = new Date(dateTimeStr)
 
+      // The legacy notes column is never part of this payload, on either path.
       const activityData = {
         title: data.title,
         typeId: data.typeId,
         dealId: data.dealId || null,
         assigneeId: data.assigneeId || null,
         dueDate,
-        notes: data.notes || null,
       }
 
-      const result = isEditMode
-        ? await updateActivity(activity.id, activityData)
-        : await createActivity(activityData)
+      if (isEditMode) {
+        const result = await updateActivity(activity.id, activityData)
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
+      } else {
+        const result = await createActivity(activityData)
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
 
-      if (!result.success) {
-        toast.error(result.error)
-        return
+        // The record already exists. A failed note is surfaced, never rolled back.
+        const draft = (data.notes ?? "").trim()
+        if (draft) {
+          try {
+            const noteResult = await addNote("activity", result.id, draft)
+            if (!noteResult.success) {
+              toast.error(tNotes("error.saveFailed"))
+            }
+          } catch {
+            toast.error(tNotes("error.saveFailed"))
+          }
+        }
       }
 
       toast.success(isEditMode ? "Activity updated!" : "Activity created!")
@@ -361,19 +383,23 @@ export function ActivityDialog({
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea
-                id="notes"
-                placeholder="Additional notes about this activity..."
-                {...register("notes")}
-                disabled={isLoading}
-                rows={3}
-              />
-              {errors.notes && (
-                <p className="text-sm text-destructive">{errors.notes.message}</p>
-              )}
-            </div>
+            {/* Create only. The text becomes the record's first timeline note, never a
+                legacy column value. Editing happens in the timeline on the detail page. */}
+            {!isEditMode && (
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea
+                  id="notes"
+                  placeholder="Additional notes about this activity..."
+                  {...register("notes")}
+                  disabled={isLoading}
+                  rows={3}
+                />
+                {errors.notes && (
+                  <p className="text-sm text-destructive">{errors.notes.message}</p>
+                )}
+              </div>
+            )}
 
             <DialogFooter className={isEditMode ? "sm:justify-between" : ""}>
               {isEditMode && (
