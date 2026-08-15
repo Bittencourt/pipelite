@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: verifying
-last_updated: "2026-08-15T16:05:17.601Z"
+last_updated: "2026-08-15T16:06:07.804Z"
 last_activity: 2026-08-15
 progress:
   total_phases: 13
@@ -48,6 +48,8 @@ Progress: [█████████░] 87%
 | Phase 44 P03 | 5min | 2 tasks | 3 files |
 | Phase 44 P05 | 9min | 2 tasks | 3 files |
 | Phase 44 P02 | 16min | 2 tasks | 2 files |
+| Phase 44 P04 | 17min | 2 tasks | 8 files |
+| Phase 44 P01 | 17min | 2 tasks | 6 files |
 
 ## Decisions
 
@@ -130,6 +132,8 @@ Progress: [█████████░] 87%
 - [Phase 44]: The guard log never serializes children or prop values (T-44-18), asserted by test rather than by comment
 - [Phase ?]: 44-02: saveFieldValues returns { success, values } — values is recalculateFormulas' customFields, falling back to the written blob when it throws (D-05 preserved)
 - [Phase ?]: 44-02: the recalc result local is seeded with next BEFORE the try, so the D-05 catch block stays literally unchanged
+- [Phase 44]: 44-04: bound constants live in the client-safe formula-engine.ts and are re-exported by formula-recalc.ts, so formula-recalc.test.ts's untouched 8 MiB / 500 ms assertions guard both client and server against drift
+- [Phase ?]: 44-01: the react-server vitest project lives in a separate vitest.rsc.config.ts run by a compound test script; ssr.resolve.conditions (not resolve.conditions alone) is what applies the condition on vitest 4.0.18
 
 ### Quick Tasks Completed
 

@@ -90,8 +90,8 @@ defects in the custom-field surface; the server-side contracts they sit on top o
 - [x] **CFUI-01**: An admin can create a custom field on **every** entity type through the UI, including Deals — the "Add Field" trigger renders regardless of how many definitions the entity already has (999.25)
 - [x] **CFUI-02**: After saving a formula's source field, the displayed formula value matches the stored value without a page reload (999.26)
 - [x] **CFUI-03**: A formula whose source fields are unset renders blank, not `#ERROR — Unknown field: X` — the display evaluator seeds unset sources as `null`, matching `recalculateFormulas` D-14 behaviour (999.27)
-- [ ] **CFUI-04**: A formula on an activity can resolve native activity fields — `activities/[id]/page.tsx` passes `entityAttributes` like the other three detail pages do (found by 44-RESEARCH.md)
-- [ ] **CFUI-05**: The client-side formula evaluator applies the same QuickJS resource bounds as the server call site, so a runaway expression cannot hang the browser (Phase 34 D-18 parity; found by 44-RESEARCH.md)
+- [x] **CFUI-04**: A formula on an activity can resolve native activity fields — `activities/[id]/page.tsx` passes `entityAttributes` like the other three detail pages do (found by 44-RESEARCH.md)
+- [x] **CFUI-05**: The client-side formula evaluator applies the same QuickJS resource bounds as the server call site, so a runaway expression cannot hang the browser (Phase 34 D-18 parity; found by 44-RESEARCH.md)
 
 ## Future Requirements
 
@@ -157,8 +157,8 @@ Which phases cover which requirements. Populated during roadmap creation (2026-0
 | CFUI-01 | Phase 44 | Complete |
 | CFUI-02 | Phase 44 | Complete |
 | CFUI-03 | Phase 44 | Complete |
-| CFUI-04 | Phase 44 | Pending |
-| CFUI-05 | Phase 44 | Pending |
+| CFUI-04 | Phase 44 | Complete |
+| CFUI-05 | Phase 44 | Complete |
 | POLISH-01 | Phase 43 | Pending |
 | POLISH-02 | Phase 43 | Pending |
 
