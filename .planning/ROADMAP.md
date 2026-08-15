@@ -214,8 +214,8 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 35-08-PLAN.md — pluggable sources + pre-limited UNION ALL timeline assembler (wave 3)
-- [ ] 35-10-PLAN.md — /api/v1 notes routes + OpenAPI and docs (wave 3)
+- [x] 35-08-PLAN.md — pluggable sources + pre-limited UNION ALL timeline assembler (wave 3)
+- [x] 35-10-PLAN.md — /api/v1 notes routes + OpenAPI and docs (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -409,7 +409,7 @@ Plans:
 | 32. Test Infrastructure & CI | 6/6 | Complete   | 2026-08-14 |
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
-| 35. Notes & Record Timeline | 7/15 | In Progress|  |
+| 35. Notes & Record Timeline | 9/15 | In Progress|  |
 | 36. Audit Log | 0/? | Not started | - |
 | 37. Trash & Restore | 0/? | Not started | - |
 | 38. Bulk Operations | 0/? | Not started | - |
