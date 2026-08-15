@@ -23,7 +23,10 @@ import type { TimelineCursor } from "./types"
  *
  * SECURITY (T-35-20): `decodeCursor` has zero raise statements. A malformed, truncated or
  * attacker-crafted cursor returns `null`, which callers treat as "page 1" — a hostile
- * cursor degrades to the first page, never to a 500.
+ * cursor degrades to the first page, never to a 500. That guarantee covers the whole
+ * pipeline, not just this function: a value this module returns is bound into a timestamp
+ * cast downstream, so anything Postgres cannot represent has to be rejected HERE or the
+ * error simply moves from decode time to query time. See the range gate below (WR-11).
  */
 
 /**
@@ -36,13 +39,49 @@ const MAX_CURSOR_LENGTH = 512
 /** base64url alphabet, unpadded. Anything else is not a cursor we produced. */
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/
 
+/**
+ * Range gate on the cursor instant, in the fixed-width text form the cursor already
+ * sorts by (WR-11).
+ *
+ * `z.iso.datetime()` validates the calendar — it rejects month 13, day 32, and even
+ * 2026-02-29 in a non-leap year — but it accepts ANY syntactically valid four-digit
+ * year, including year zero. Postgres has no year zero, so a cursor of
+ * `0000-01-01T00:00:00Z` survives every check in this module and then makes
+ * `${instant}::text::timestamp` raise `date/time field value out of range` inside the
+ * timeline query. That is an attacker-steerable database error reached through a
+ * well-formed cursor, on the exact path the T-35-20 note above documents as degrading to
+ * page 1. Gating it HERE, where the rest of the cursor validation already lives, is what
+ * makes that claim true rather than nearly true.
+ *
+ * Verified against the live database: `'0000-01-01T00:00:00Z'::text::timestamp` raises;
+ * `'0001-01-01T00:00:00Z'` and `'9999-12-31T23:59:59.999999Z'` are both accepted. So
+ * Postgres's own floor is lower than this one — 1970 is chosen because nothing this
+ * application writes predates the epoch and a cursor that claims otherwise is hostile,
+ * not merely old.
+ *
+ * Comparing as strings is sound for the same reason the cursor sorts as a string at all:
+ * `to_char(..., 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')` is fixed width and zero padded. The two
+ * bounds carry a six-digit fraction so they order correctly against both the padded form
+ * this module produces and the fraction-less form `z.iso.datetime()` also admits (`'Z'`
+ * sorts after `'.'`, so `1970-01-01T00:00:00Z` is inside the range, as it must be).
+ */
+const MIN_CURSOR_INSTANT = "1970-01-01T00:00:00.000000Z"
+const MAX_CURSOR_INSTANT = "9999-12-31T23:59:59.999999Z"
+
 const cursorPayloadSchema = z.object({
   // z.iso.datetime() is regex-validated (zod 4): it refuses 'yesterday',
   // '2026-13-45T99:99:99Z' and any string carrying a SQL fragment. It accepts an
   // arbitrary-length fractional-second part, which is what lets the six-digit
   // microsecond rendering through unchanged, and it requires a literal `Z` rather than a
   // numeric offset — so the only thing `::timestamp` ever has to discard is the `Z`.
-  t: z.iso.datetime(),
+  // The refine adds the one thing its regex does not check: that the year is in a range
+  // Postgres can actually represent. See MIN_CURSOR_INSTANT above.
+  t: z.iso
+    .datetime()
+    .refine(
+      (value) => value >= MIN_CURSOR_INSTANT && value <= MAX_CURSOR_INSTANT,
+      { message: "instant outside the representable cursor range" }
+    ),
   // Bound parameter downstream, but still constrained here: non-empty so it cannot
   // silently match nothing, and capped so an oversized id cannot be smuggled through.
   i: z.string().min(1).max(128),

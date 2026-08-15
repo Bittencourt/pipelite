@@ -130,6 +130,36 @@ describe("timeline cursor codec", () => {
       expect(decodeCursor(b64url('{"t":1755261296789,"i":"x"}'))).toBeNull()
     })
 
+    it("rejects an instant outside the range Postgres can represent (WR-11)", () => {
+      // The finding, exactly: `z.iso.datetime()` validates the calendar but not the
+      // year's magnitude, so year zero used to decode cleanly and then make
+      // `${instant}::text::timestamp` raise `date/time field value out of range` inside
+      // the timeline query. Confirmed against the live database. T-35-20 promises a
+      // hostile cursor degrades to page 1, and it can only do that if this returns null.
+      expect(decodeCursor(b64url('{"t":"0000-01-01T00:00:00Z","i":"x"}'))).toBeNull()
+      expect(decodeCursor(b64url('{"t":"0000-12-31T23:59:59.999999Z","i":"x"}'))).toBeNull()
+
+      // Everything below the epoch goes the same way. Nothing this application writes
+      // predates 1970, so a cursor claiming to is hostile rather than merely old.
+      expect(decodeCursor(b64url('{"t":"0001-01-01T00:00:00Z","i":"x"}'))).toBeNull()
+      expect(decodeCursor(b64url('{"t":"1969-12-31T23:59:59.999999Z","i":"x"}'))).toBeNull()
+
+      // The boundary itself is INSIDE the range, including the fraction-less spelling
+      // `z.iso.datetime()` also admits — 'Z' sorts after '.', which is the whole reason
+      // the bound carries a six-digit fraction.
+      expect(decodeCursor(b64url('{"t":"1970-01-01T00:00:00Z","i":"x"}'))?.instant).toBe(
+        "1970-01-01T00:00:00Z"
+      )
+      expect(
+        decodeCursor(b64url('{"t":"1970-01-01T00:00:00.000000Z","i":"x"}'))?.instant
+      ).toBe("1970-01-01T00:00:00.000000Z")
+
+      // …and so is the top of it, which Postgres also accepts.
+      expect(
+        decodeCursor(b64url('{"t":"9999-12-31T23:59:59.999999Z","i":"x"}'))?.instant
+      ).toBe("9999-12-31T23:59:59.999999Z")
+    })
+
     it("rejects a SQL-injection payload in either field", () => {
       // The timestamp is refused outright: it is not a valid ISO-8601 instant.
       const injected = b64url(
