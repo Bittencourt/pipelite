@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { createFieldDefinition, updateFieldDefinition, restoreFieldDefinition } from '@/app/admin/fields/actions'
+import { warnIfInvalidTriggerChild } from './trigger-child-guard'
 import type { CustomFieldDefinition, EntityType, FieldType, FieldConfig } from '@/db/schema'
 
 const fieldTypes: { value: FieldType; label: string; needsConfig: boolean }[] = [
@@ -143,6 +144,11 @@ export function FieldDialog({ entityType, field, availableFields, children }: Fi
     setOptions(options.filter((_, i) => i !== index))
   }
   
+  // Dev-only alarm: Radix `asChild` renders nothing (silently) when the child is
+  // not a valid element. The return value is intentionally ignored - the render
+  // path must stay identical, the structural repair lives at the call site.
+  warnIfInvalidTriggerChild(children, 'FieldDialog')
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
