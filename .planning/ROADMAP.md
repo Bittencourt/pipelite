@@ -67,7 +67,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 32: Test Infrastructure & CI** - Green suite, one command to run it, and a merge gate that keeps it green (completed 2026-08-14)
 - [x] **Phase 33: Database Indexes for the CRM Core** - Index the foreign keys and hot filter columns the v1.0 tables never got (completed 2026-08-14)
 - [x] **Phase 34: Formula Reactivity** - Server-side, dependency-aware recalc so stored formula values stop going stale (completed 2026-08-14)
-- [ ] **Phase 35: Notes & Record Timeline** - Append-only attributed notes plus one chronological timeline per record
+- [x] **Phase 35: Notes & Record Timeline** - Append-only attributed notes plus one chronological timeline per record (completed 2026-08-15)
 - [ ] **Phase 36: Audit Log** - Field-level change history with actor kind, fed by crmBus, with retention
 - [ ] **Phase 37: Trash & Restore** - Make soft-deleted records visible, restorable, and eventually purged
 - [ ] **Phase 38: Bulk Operations** - Multi-select with bulk delete, owner reassignment, and scoped export
@@ -239,7 +239,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 35-15-PLAN.md — legacy column dormancy across nine sites + browser verification (wave 9)
+- [x] 35-15-PLAN.md — legacy column dormancy across nine sites + browser verification (wave 9)
 
 **UI hint**: yes
 
@@ -409,7 +409,7 @@ Plans:
 | 32. Test Infrastructure & CI | 6/6 | Complete   | 2026-08-14 |
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
-| 35. Notes & Record Timeline | 14/15 | In Progress|  |
+| 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
 | 36. Audit Log | 0/? | Not started | - |
 | 37. Trash & Restore | 0/? | Not started | - |
 | 38. Bulk Operations | 0/? | Not started | - |
