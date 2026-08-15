@@ -9,11 +9,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Users, Mail, Phone, Building2, Calendar, User, FileText } from "lucide-react"
+import { Users, Mail, Phone, Building2, Calendar, User } from "lucide-react"
 import Link from "next/link"
 import { PersonDetailClient } from "./person-detail-client"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
-import type { EntityType, CustomFieldDefinition } from "@/db/schema"
+import { RecordTimeline } from "@/components/timeline/record-timeline"
+import type { CustomFieldDefinition } from "@/db/schema"
 import { getFormatter, getTranslations } from 'next-intl/server'
 
 interface PageProps {
@@ -179,17 +180,6 @@ export default async function PersonDetailPage({ params }: PageProps) {
             </div>
           </div>
 
-          {person.notes && (
-            <div className="mt-6 pt-6 border-t">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <FileText className="h-4 w-4" />
-                  {t('notes')}
-                </div>
-                <p className="text-sm whitespace-pre-wrap">{person.notes}</p>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -203,9 +193,18 @@ export default async function PersonDetailPage({ params }: PageProps) {
           LastName: person.lastName,
           Email: person.email,
           Phone: person.phone,
+          // The legacy rendered block is gone, but this attribute STAYS. `buildClientFieldValues`
+          // seeds the live formula evaluation map from these keys, and an absent key makes the
+          // engine answer "Unknown field" and render an error cell — the CFUI-03 regression this
+          // repo already shipped and fixed once.
           Notes: person.notes,
         }}
       />
+
+      {/* The record timeline replaces the legacy read-only notes block deleted above. It is a
+          server component taking two plain string props; no React element crosses the boundary
+          into a Radix `asChild` slot (CFUI-01). */}
+      <RecordTimeline entityType="person" entityId={person.id} />
     </div>
   )
 }
