@@ -165,3 +165,48 @@ Both gaps recorded above were closed and re-verified. Status revised `gaps_found
 ### Remaining honest limitation (accepted, not a gap)
 
 **SC-3 is satisfied in mechanism only.** `resolveFieldPath` accepts bracket-quoted paths and the Docker end-to-end proved a workflow condition branching on a live formula value. But no UI component emits bracket syntax, and 152 of 169 live custom-field names require it. The developer was told this explicitly and chose to add plan 34-12 (the engine fix) while leaving the UI picker to backlog **999.22**. Recorded here so the milestone audit does not read SC-3 as fully delivered in the product.
+
+---
+
+## Browser E2E Amendment (2026-08-15)
+
+An end-to-end **browser** pass over the v1.3 completed phases (32, 33, 34) was run against a Docker
+rebuild of current master. It confirms this report's server-side conclusions and adds three UI-layer
+findings that the phase's test strategy could not have caught.
+
+### Environment defect found first
+
+The running container had been built **2026-08-14 20:29**, but the 34-13 fixes landed **22:12–22:16**.
+The deployed app was therefore missing both 34-13 code commits and the 20:45 NUL-sentinel fix. On that
+stale build the People CSV export emitted **zero** `custom_*` columns for 17,741 rows carrying custom
+data. After `docker compose up -d --build`, 8 columns. **The 34-13 fix is real and load-bearing** — but
+"gates green" did not mean "running". Re-deploy before signing off a phase whose evidence is runtime.
+
+### Confirmed in the product
+
+| Criterion | Method | Result |
+|---|---|---|
+| SC-1 | Created a number + formula field through the admin UI, saved on a person, read Postgres directly | ✓ Stored `{"formula": true, "value": 42, "error": null}` — persisted, not merely rendered |
+| SC-2 | 38,345-row People CSV export, blob captured in-page | ✓ `custom_GSD Doubled = 100`, row 1 blank for that column (the exact header-derivation failure mode), **0** `[object Object]` |
+| SC-4 | Saved an unrelated field; counted formula keys across the whole table | ✓ Wrapper preserved; exactly **1** row in `people` ever carried the keys — no fan-out |
+| Phase 33 | All 11 indexes present; kanban (3,465 deals in one stage), people, orgs, activities | ✓ Render clean |
+
+### New findings — see backlog 999.25, 999.26, 999.27
+
+1. **999.25 (BLOCKER)** — the "Add Field" button never renders on `/admin/fields/deal`, so there is no UI
+   path to create a custom field on deals at all. Isolated to the server→client RSC boundary at
+   `page.tsx:46` passing 155 full definition rows; the client→client row dialogs on the same page with the
+   same prop render fine.
+2. **999.26** — the formula's *displayed* value is one save behind on a freshly loaded page (stored value
+   always correct). SC-1's server contract holds; its "without any page load having occurred" wording does
+   not, from the user's seat.
+3. **999.27** — an unset source renders `#ERROR — Unknown field: X`, the precise outcome D-14 seeds
+   `fieldValues` to prevent. The seeding is in `recalculateFormulas` but not in the client display path.
+
+**Why the phase's tests could not see these.** Per 34-VALIDATION.md the suite is deliberately DB-free and
+mocks `@/db`; every write-path assertion stops at the mutation return value. Findings 2 and 3 are both
+cases where the server contract is satisfied and the *display* path diverges from it — a seam no test in
+this phase observes. Finding 1 is a rendering boundary with no test coverage at all. None of this
+retracts the phase's verdict: the mechanism is correct and now confirmed live.
+
+*Amended: 2026-08-15 — browser E2E pass (Claude)*

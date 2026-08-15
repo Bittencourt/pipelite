@@ -402,7 +402,55 @@ to be run with an inline `DATABASE_URL` override. Phase 33 worked around it with
 Fix: point `.env.local` at `localhost:5433`. This will bite every future phase that runs a migration
 (34, 35, 36, 37, 39, 40 all add schema). Cheap fix, high recurring cost if left.
 
-**999.24 — CSV export silently drops ALL custom-field columns** (captured 2026-08-14, Phase 34)
+**999.25 — BLOCKER: admins cannot add custom fields to Deals** (captured 2026-08-15, E2E verification of v1.3)
+The header "Add Field" button never renders on `/admin/fields/deal`. It renders correctly on
+`/admin/fields/person` (6 definitions), `/organization` (8) and `/activity` (0). Deal has **155**.
+Reproducible on a clean `docker compose up -d --build` of current master: the button is absent from the
+**server-rendered HTML**, still absent after 20s, with no console error, no server-log error, and the rest
+of the page hydrating normally (474 buttons present).
+
+Cause is strongly indicated rather than merely suspected: the row-level pencil `FieldDialog`s on the *same*
+deal page render fine while receiving the *same* 155-item `availableFields` prop — but those are
+client→client, rendered by `fields-list.tsx` (a client component). Only the header `FieldDialog` crosses the
+**server→client RSC boundary**, at `src/app/admin/fields/[entityType]/page.tsx:46`, which passes
+`availableFields={activeFields}` — 155 full `CustomFieldDefinition` rows — out of a server component.
+Person/org pass 6–8 rows across that same boundary and work.
+
+Fix: pass a slim `{id, name, type}` projection across the boundary (it is all `FieldDialog` uses the array
+for — the formula field-reference chips), or render the header trigger from a client component.
+Impact: Deals is the primary CRM entity and the entry point for Phase 34's formula fields. There is
+currently **no UI path to create any custom field on a deal**.
+
+**999.26 — Formula field display is one save behind** (captured 2026-08-15, E2E verification of v1.3)
+On a freshly loaded record detail page, editing a formula's source field updates the stored value correctly
+but leaves the **rendered** formula value stale until a manual reload. Reproduced twice on a person with
+`GSD Doubled = {{GSD Base Value}} * 2`: set base to `3`, Postgres correctly held
+`{"formula": true, "value": 6}`, the page kept showing `14` (the previous save's result); reloading showed
+`6`. Editing twice within one page session *did* refresh correctly, so it appears to be a stale-closure or
+missing-invalidation issue in the custom-fields save path rather than a recalculation bug.
+
+The server contract (FORMULA-01 / SC-1) is **not** violated — the stored value, the API GET and the CSV
+export are all correct, as verified live. But SC-1's user-facing promise is "without any page load having
+occurred", and a user watching the screen sees a stale number. Entry point: `saveCustomFields` /
+`custom-fields-section.tsx` state merge in `src/components/custom-fields/`.
+
+**999.27 — Formula fields show `#ERROR — Unknown field: X` on new records** (captured 2026-08-15, E2E verification of v1.3)
+A formula whose source field is not yet set renders a red `#ERROR` with `Unknown field: <name>` instead of
+blank. Seen immediately on a newly created person, before any custom field had a value (stored
+`custom_fields` was `{}`).
+
+This is exactly the failure mode Phase 34's **D-14** ruled out server-side — `fieldValues` is seeded with
+every definition name defaulting to `null` precisely so unset sources cannot fabricate `Unknown field`
+errors. That seeding exists in `recalculateFormulas` but not in the client display path
+(`src/components/custom-fields/formula-field.tsx`), so the two evaluators disagree on the empty case.
+Fix: seed the display evaluator the same way, so an unset source yields blank rather than an error.
+
+**999.24 — RESOLVED (Phase 34, plan 34-13) — CSV export silently drops ALL custom-field columns** (captured 2026-08-14, Phase 34)
+> Closed by `deriveCsvColumns` (`src/lib/export/csv-columns.ts`), which unions keys across all rows.
+> Verified live 2026-08-15 on a 38,345-row People CSV export: 8 `custom_*` columns present,
+> `custom_GSD Doubled = 100` carried correctly with row 1 blank for that column (the exact failure mode),
+> and zero `[object Object]` in the file. Retained here for history.
+
 `exportToCSV` calls `Papa.unparse(data, { header: true })`, and papaparse derives the header row from the
 **first object only**. Any key absent from row 1 is omitted for every row. Measured on the live data: a
 46,055-row organization export produced **zero `custom_*` columns**, even though **30,264 rows carry custom
