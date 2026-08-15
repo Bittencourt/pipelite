@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: verifying
-last_updated: "2026-08-15T15:59:11.045Z"
+last_updated: "2026-08-15T16:05:17.601Z"
 last_activity: 2026-08-15
 progress:
   total_phases: 13
   completed_phases: 3
   total_plans: 31
-  completed_plans: 24
+  completed_plans: 27
   percent: 23
 ---
 
@@ -29,7 +29,7 @@ Plan: 3 of 3 complete
 Status: Phase complete — ready for verification
 Last activity: 2026-08-15
 
-Progress: [████████░░] 77%
+Progress: [█████████░] 87%
 
 ## Performance Metrics
 
@@ -47,6 +47,7 @@ Progress: [████████░░] 77%
 | Phase 34 P13 | 13min | 2 tasks | 6 files |
 | Phase 44 P03 | 5min | 2 tasks | 3 files |
 | Phase 44 P05 | 9min | 2 tasks | 3 files |
+| Phase 44 P02 | 16min | 2 tasks | 2 files |
 
 ## Decisions
 
@@ -127,6 +128,8 @@ Progress: [████████░░] 77%
 - [Phase 44]: Radix asChild guard is dev-only (D-44-03) -- a production throw would turn a degraded page into a hard crash
 - [Phase 44]: Diagnostic guards must not also repair the render -- an in-component fallback masks the broken RSC boundary contract for the next asChild consumer
 - [Phase 44]: The guard log never serializes children or prop values (T-44-18), asserted by test rather than by comment
+- [Phase ?]: 44-02: saveFieldValues returns { success, values } — values is recalculateFormulas' customFields, falling back to the written blob when it throws (D-05 preserved)
+- [Phase ?]: 44-02: the recalc result local is seeded with next BEFORE the try, so the D-05 catch block stays literally unchanged
 
 ### Quick Tasks Completed
 

@@ -334,10 +334,10 @@ Plans:
 Plans:
 **Wave 1** *(scaffolding and independent fixes — fully parallel, zero file overlap)*
 
-- [ ] 44-01-PLAN.md — Add the react-server vitest project and the real Flight round-trip gate, plus the Radix `asChild` silent-null mechanism test (CFUI-01)
-- [ ] 44-02-PLAN.md — Return `recalculateFormulas`' recomputed blob from `saveFieldValues`, preserving D-05 and the wrapper strip (CFUI-02)
+- [x] 44-01-PLAN.md — Add the react-server vitest project and the real Flight round-trip gate, plus the Radix `asChild` silent-null mechanism test (CFUI-01)
+- [x] 44-02-PLAN.md — Return `recalculateFormulas`' recomputed blob from `saveFieldValues`, preserving D-05 and the wrapper strip (CFUI-02)
 - [x] 44-03-PLAN.md — Extract `buildClientFieldValues` and assert its parity with the server's `buildFormulaFieldValues` seeding (CFUI-03)
-- [ ] 44-04-PLAN.md — Pass `entityAttributes` from the activity page and bound both browser evaluator call sites with the server's QuickJS limits (CFUI-04, CFUI-05)
+- [x] 44-04-PLAN.md — Pass `entityAttributes` from the activity page and bound both browser evaluator call sites with the server's QuickJS limits (CFUI-04, CFUI-05)
 - [x] 44-05-PLAN.md — Dev-only loud guard when `FieldDialog` receives a non-element child (CFUI-01, D-44-03)
 
 **Wave 2** *(blocked on Wave 1)*
@@ -369,7 +369,7 @@ Plans:
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
 | 43. Type Safety & Deployment Docs | 0/? | Not started | - |
-| 44. Custom Field UI Repair | 2/9 | In Progress|  |
+| 44. Custom Field UI Repair | 5/9 | In Progress|  |
 
 ## Backlog
 
