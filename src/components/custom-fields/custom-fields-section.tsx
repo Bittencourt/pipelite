@@ -13,7 +13,7 @@ async function saveCustomFields(
   entityType: EntityType,
   entityId: string,
   values: Record<string, unknown>
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; values?: Record<string, unknown> }> {
   const response = await fetch('/api/custom-fields/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -64,7 +64,13 @@ export function CustomFieldsSection({
     try {
       const result = await saveCustomFields(entityType, entityId, newValues)
       if (result.success) {
-        onValuesChange?.(newValues)
+        // The server's blob is authoritative — it is the post-recalculation `custom_fields` that
+        // actually reached Postgres, so it REPLACES localValues rather than being merged into it.
+        // Merging is what left a stale `{formula:true,...}` wrapper behind and made the displayed
+        // formula one save behind the stored one (CFUI-02). `values` is present on every
+        // successful save (44-02), including the D-05 path where recalculation threw.
+        if (result.values) setLocalValues(result.values)
+        onValuesChange?.(result.values ?? newValues)
       } else {
         console.error('Failed to save field:', result.error)
         // Revert on error
