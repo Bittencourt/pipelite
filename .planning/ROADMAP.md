@@ -318,7 +318,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 32. Test Infrastructure & CI | 6/6 | Complete   | 2026-08-14 |
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
-| 34. Formula Reactivity | 12/12 | Complete   | 2026-08-14 |
+| 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
 | 35. Notes & Record Timeline | 0/? | Not started | - |
 | 36. Audit Log | 0/? | Not started | - |
 | 37. Trash & Restore | 0/? | Not started | - |
