@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: verifying
-last_updated: "2026-08-15T01:22:00.000Z"
+last_updated: "2026-08-15T15:57:21.055Z"
 last_activity: 2026-08-15
 progress:
-  total_phases: 12
+  total_phases: 13
   completed_phases: 3
-  total_plans: 21
-  completed_plans: 21
-  percent: 25
+  total_plans: 31
+  completed_plans: 24
+  percent: 23
 ---
 
 # Session State
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 Phase: 33 - Database Indexes for the CRM Core (complete — 3/3 plans)
 Plan: 3 of 3 complete
 Status: Phase complete — ready for verification
-Last activity: 2026-08-14
+Last activity: 2026-08-15
 
-Progress: [██████████] 100%
+Progress: [████████░░] 77%
 
 ## Performance Metrics
 
@@ -45,6 +45,7 @@ Progress: [██████████] 100%
 | Phase 33 P03 | 21min | 3 tasks | 4 files |
 | Phase 34 P11 | 70min | 3 tasks | 4 files |
 | Phase 34 P13 | 13min | 2 tasks | 6 files |
+| Phase 44 P03 | 5min | 2 tasks | 3 files |
 
 ## Decisions
 
@@ -120,6 +121,8 @@ Progress: [██████████] 100%
 - [Phase 33]: Corrected STATE.md's stale "partial index on next_run_at WHERE active=true" precedent -- that index no longer exists in the database (dropped by 0010); it is a cautionary tale, not a supporting pattern
 - [Phase ?]: Phase 34: all 17 write paths dispositioned by source inspection; D-11 proven end to end in Docker with a real formula field
 - [Phase ?]: SC-3 is mechanically delivered but only partially usable: bracket field paths work, no UI emits them, 152/169 field names require the syntax
+- [Phase 44]: buildClientFieldValues mirrors buildFormulaFieldValues in a db-free module; a parity test enforces that the two change together
+- [Phase 44]: Client natives are normalised with ?? null, matching the server's row?.[column] ?? null, so no undefined reaches the QuickJS sandbox
 
 ### Quick Tasks Completed
 
@@ -193,4 +196,4 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 Phase: 34 (Formula Reactivity) — EXECUTING
 Plan: 1 of 11
 Status: Phase complete — ready for verification
-Last activity: 2026-08-14
+Last activity: 2026-08-15
