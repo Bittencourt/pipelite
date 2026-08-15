@@ -193,11 +193,6 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
         }}
       />
 
-      {/* The record timeline replaces the legacy read-only notes block deleted above. It is a
-          server component taking two plain string props; no React element crosses the boundary
-          into a Radix `asChild` slot (CFUI-01). */}
-      <RecordTimeline entityType="organization" entityId={organization.id} />
-
       <Card className="mt-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -248,6 +243,15 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* The record timeline replaces the legacy read-only notes block deleted above. It is a
+          server component taking two plain string props; no React element crosses the boundary
+          into a Radix `asChild` slot (CFUI-01).
+
+          Unlike the other three detail pages, this one has a card after CustomFieldsSection, so
+          "immediately after custom fields" and "history sits last" are different positions here.
+          The UI-SPEC's rationale wins: history sits last, matching how the other three pages read. */}
+      <RecordTimeline entityType="organization" entityId={organization.id} />
     </div>
   )
 }
