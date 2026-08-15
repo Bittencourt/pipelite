@@ -1,5 +1,6 @@
 import Papa from "papaparse"
 import type { ExportEntityType } from "./types"
+import { deriveCsvColumns } from "./csv-columns"
 import { formatFormulaValueForText } from "@/lib/formula-helpers"
 
 // ---------------------------------------------------------------------------
@@ -136,5 +137,11 @@ export function exportToPipedriveCSV(
   entityType: ExportEntityType
 ): string {
   const pipedriveData = toPipedriveFormat(data, entityType)
-  return Papa.unparse(pipedriveData, { header: true })
+  // Same union-of-keys header derivation as the plain CSV export. `toPipedriveFormat` copies
+  // only the `custom_` keys a given row actually holds, so without this the first row decides
+  // the header for the whole file and every custom column absent from it is dropped — the
+  // measured defect described on `deriveCsvColumns` (SC-2).
+  const columns = deriveCsvColumns(pipedriveData)
+  if (columns.length === 0) return Papa.unparse(pipedriveData, { header: true })
+  return Papa.unparse(pipedriveData, { header: true, columns })
 }

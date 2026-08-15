@@ -12,7 +12,12 @@ import {
 import { eq, and, isNull, gte, lte } from "drizzle-orm"
 import type { ExportEntityType, ExportFilters, ExportOptions, ExportResult } from "./types"
 import { toPipedriveFormat, exportToPipedriveCSV } from "./pipedrive"
+import { deriveCsvColumns } from "./csv-columns"
 import { formatFormulaValueForText } from "@/lib/formula-helpers"
+
+// Re-exported so the export module has one public surface; the implementation lives in a
+// dependency-free module because `pipedrive.ts` needs it too and this file already imports that.
+export { deriveCsvColumns }
 
 // ---------------------------------------------------------------------------
 // Custom field flattening
@@ -205,10 +210,19 @@ export function flattenActivity(
 // CSV / JSON formatting
 // ---------------------------------------------------------------------------
 
+/**
+ * All four entity exports funnel through here, so this is the single place the column set is
+ * decided. `header: true` alone derived it from row 1 only — see `deriveCsvColumns` for the
+ * measurement and for why the ordering is what it is (SC-2).
+ */
 export function exportToCSV(
   data: Record<string, unknown>[]
 ): string {
-  return Papa.unparse(data, { header: true })
+  const columns = deriveCsvColumns(data)
+  // papaparse throws `Option columns is empty` on an empty array, and an empty dataset must
+  // still produce an empty string rather than an exception.
+  if (columns.length === 0) return Papa.unparse(data, { header: true })
+  return Papa.unparse(data, { header: true, columns })
 }
 
 export function exportToJSON(
