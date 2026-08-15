@@ -15,6 +15,9 @@ export async function register() {
     const { registerWorkflowTriggerSubscriber } = await import("@/lib/events/subscribers/workflow-trigger")
     registerWorkflowTriggerSubscriber()
 
+    const { registerStageHistorySubscriber } = await import("@/lib/events/subscribers/stage-history")
+    registerStageHistorySubscriber()
+
     const { startScheduleProcessor } = await import("@/lib/triggers/schedule-processor")
     startScheduleProcessor()
 
