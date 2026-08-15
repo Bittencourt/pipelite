@@ -51,6 +51,7 @@ console.log(data);
 
 - **[Authentication Guide](./authentication.md)** - How to authenticate API requests
 - **[Pagination Guide](./pagination.md)** - How to paginate through large result sets
+- **[Notes Guide](./notes.md)** - Read, write, edit and delete notes on any CRM record
 - **[Webhooks Guide](./webhooks.md)** - Set up real-time event notifications
 - **[Error Handling](./error-handling.md)** - Handle errors and rate limits
 - **[cURL Examples](./examples/curl.md)** - Command-line examples for all endpoints
@@ -72,6 +73,7 @@ For the complete, authoritative API reference, see the **[OpenAPI Specification]
 | **People** | `/people` | Manage contacts and leads |
 | **Deals** | `/deals` | Manage deals and opportunities |
 | **Activities** | `/activities` | Manage calls, meetings, tasks, emails |
+| **Notes** | `/{entity}/:id/notes`, `/notes/:noteId` | Read and write the note timeline on any record ([guide](./notes.md)) |
 | **Pipelines** | `/pipelines` | Manage sales pipelines |
 | **Stages** | `/stages` | Manage pipeline stages |
 | **Custom Fields** | `/custom-fields` | Manage custom field definitions |
