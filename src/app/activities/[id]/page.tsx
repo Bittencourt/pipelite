@@ -254,6 +254,12 @@ export default async function ActivityDetailPage({ params }: PageProps) {
         entityId={activity.id}
         definitions={customFieldDefs as CustomFieldDefinition[]}
         values={(activity.customFields as Record<string, unknown>) || {}}
+        entityAttributes={{
+          Title: activity.title,
+          Notes: activity.notes,
+          DueDate: activity.dueDate,
+          CompletedAt: activity.completedAt,
+        }}
       />
     </div>
   )
