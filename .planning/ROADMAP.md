@@ -329,7 +329,29 @@ Plans:
   6. No React element crosses the server→client boundary at the repaired call site — the fix is structural (client `AddFieldButton` wrapper), and remains correct at any definition count
   7. A formula on an activity resolves native activity fields (CFUI-04), and the client evaluator applies the server's QuickJS resource bounds (CFUI-05)
 
-**Plans**: TBD
+**Plans**: 9 plans
+
+Plans:
+**Wave 1** *(scaffolding and independent fixes — fully parallel, zero file overlap)*
+
+- [ ] 44-01-PLAN.md — Add the react-server vitest project and the real Flight round-trip gate, plus the Radix `asChild` silent-null mechanism test (CFUI-01)
+- [ ] 44-02-PLAN.md — Return `recalculateFormulas`' recomputed blob from `saveFieldValues`, preserving D-05 and the wrapper strip (CFUI-02)
+- [ ] 44-03-PLAN.md — Extract `buildClientFieldValues` and assert its parity with the server's `buildFormulaFieldValues` seeding (CFUI-03)
+- [ ] 44-04-PLAN.md — Pass `entityAttributes` from the activity page and bound both browser evaluator call sites with the server's QuickJS limits (CFUI-04, CFUI-05)
+- [ ] 44-05-PLAN.md — Dev-only loud guard when `FieldDialog` receives a non-element child (CFUI-01, D-44-03)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 44-06-PLAN.md — Structural CFUI-01 repair: `AddFieldButton`/`RestoreFieldButton` client wrappers, plus a repo-wide gate on the whole bug class (CFUI-01, D-44-01)
+- [ ] 44-07-PLAN.md — Wire `CustomFieldsSection` to the seeded map and to the server's returned values (CFUI-02, CFUI-03)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 44-08-PLAN.md — Slim `availableFields` contract and single projected row array, shipped and measured as a payload optimisation, not as the repair (CFUI-01, D-44-02)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 44-09-PLAN.md — Rebuild, run every gate, and close the four manual browser verifications against the live 155-definition dataset (CFUI-01..05)
 
 ## Progress
 
@@ -347,7 +369,7 @@ Plans:
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
 | 43. Type Safety & Deployment Docs | 0/? | Not started | - |
-| 44. Custom Field UI Repair | 0/? | Not started | - |
+| 44. Custom Field UI Repair | 0/9 | Planned | - |
 
 ## Backlog
 
