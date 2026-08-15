@@ -13,64 +13,13 @@
  * one key away from the server map, fails here rather than in a browser session.
  */
 import { describe, it, expect, vi } from "vitest"
-import { readFileSync } from "node:fs"
 
 // `formula-recalc` imports `@/db`; the module-level constant we need does not touch it.
 vi.mock("@/db", () => ({ db: {} }))
 
 import { ENTITY_NATIVE_ATTRIBUTES } from "@/lib/formula-recalc"
 import type { EntityType } from "@/db/schema"
-
-/**
- * Remove `//` and block comments while respecting string/template literals, so a page can never
- * satisfy this gate with a comment (and so a `https://` in an href is not mistaken for one).
- */
-function stripComments(source: string): string {
-  let out = ""
-  let i = 0
-  let quote: string | null = null
-
-  while (i < source.length) {
-    const ch = source[i]
-    const next = source[i + 1]
-
-    if (quote) {
-      out += ch
-      if (ch === "\\") {
-        out += next ?? ""
-        i += 2
-        continue
-      }
-      if (ch === quote) quote = null
-      i += 1
-      continue
-    }
-
-    if (ch === '"' || ch === "'" || ch === "`") {
-      quote = ch
-      out += ch
-      i += 1
-      continue
-    }
-
-    if (ch === "/" && next === "/") {
-      while (i < source.length && source[i] !== "\n") i += 1
-      continue
-    }
-
-    if (ch === "/" && next === "*") {
-      i += 2
-      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) i += 1
-      i += 2
-      continue
-    }
-
-    out += ch
-    i += 1
-  }
-
-  return out
-}
+import { readStrippedSource } from "./source-scan"
 
 /**
  * Return the body of the object literal that follows `entityAttributes={{`, or null when the prop
@@ -175,7 +124,7 @@ describe("entityAttributes parity with ENTITY_NATIVE_ATTRIBUTES (CFUI-04)", () =
   })
 
   it.each(PAGES)("%s: the detail page passes entityAttributes", (entityType, pagePath) => {
-    const source = stripComments(readFileSync(pagePath, "utf8"))
+    const source = readStrippedSource(pagePath)
     const body = extractEntityAttributesBody(source)
 
     expect(
@@ -188,7 +137,7 @@ describe("entityAttributes parity with ENTITY_NATIVE_ATTRIBUTES (CFUI-04)", () =
   it.each(PAGES)(
     "%s: entityAttributes keys match the server map exactly",
     (entityType, pagePath) => {
-      const source = stripComments(readFileSync(pagePath, "utf8"))
+      const source = readStrippedSource(pagePath)
       const body = extractEntityAttributesBody(source)
       const actual = body === null ? [] : topLevelKeys(body)
       const expected = Object.keys(ENTITY_NATIVE_ATTRIBUTES[entityType])
