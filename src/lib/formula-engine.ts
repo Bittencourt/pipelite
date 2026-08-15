@@ -89,10 +89,14 @@ export interface EvaluateFormulaOptions {
  * `transform.ts`.
  *
  * **These constants live HERE, not in `formula-recalc.ts`, deliberately (CFUI-05 / T-44-13):**
- * `formula-recalc.ts` imports `@/db` and therefore cannot be imported from a client component,
- * so hosting them there forced the browser call sites to be unbounded. This module is
- * client-safe — keep it that way; do not add a `@/db` import. `formula-recalc.ts` re-exports
- * both constants, so its existing 8 MiB / 500 ms assertions guard both sides against drift.
+ * `formula-recalc.ts` imports the server-only database client and therefore cannot be imported
+ * from a client component, so hosting them there forced the browser call sites to be unbounded.
+ * This module is client-safe — keep it that way; never import the database client here.
+ * `formula-recalc.ts` re-exports both constants, so its existing 8 MiB / 500 ms assertions guard
+ * both sides against drift.
+ *
+ * (Phrased without the literal module specifier on purpose: `client-formula-bounds.test.ts`
+ * greps this file for a database import, and prose must not pollute that signal.)
  */
 export const FORMULA_EVAL_MEMORY_LIMIT_BYTES = 8 * 1024 * 1024
 export const FORMULA_EVAL_TIMEOUT_MS = 500
