@@ -276,7 +276,31 @@ describe("buildTimelineQuery — cursor", () => {
     expect(text).not.toContain("OR '1'='1")
     expect(params).toContain(probe)
     // The timestamp side is bound too, never rendered as a literal.
-    expect(params.filter((p) => p instanceof Date)).toHaveLength(3)
+    expect(params.filter((p) => typeof p === "string" && p.startsWith("2026-"))).toHaveLength(3)
+  })
+
+  it("never binds a Date — the driver cannot serialize one in a raw fragment", () => {
+    // REGRESSION. This shipped broken and reached the browser: every page after the first
+    // threw `ERR_INVALID_ARG_TYPE — Received an instance of Date` inside postgres.js, so
+    // Load more failed with "Failed to load more history" while page one worked fine.
+    //
+    // Drizzle converts a Date automatically when the parameter is attached to a typed
+    // column, which is why the rest of the repo can pass one freely. These branches are
+    // hand-composed SQL, where nothing does that conversion.
+    //
+    // The previous version of the assertion above required `params` to contain exactly
+    // three Dates — it pinned the defect in place rather than catching it. A mocked driver
+    // cannot execute the query, but it CAN see the type of every bound value, and that is
+    // the whole bug.
+    const withCursor = render(buildTimelineQuery("deal", "d1", cursor, 20))
+    expect(withCursor.params.filter((p) => p instanceof Date)).toHaveLength(0)
+
+    const single = render(buildTimelineQuery("organization", "o1", cursor, 20))
+    expect(single.params.filter((p) => p instanceof Date)).toHaveLength(0)
+
+    // Bound as an ISO string and cast back, so the wall clock round-trips exactly.
+    expect(withCursor.params).toContain(new Date(T0).toISOString())
+    expect(withCursor.lower).toContain("::timestamp")
   })
 
   it("binds entityId as a parameter and never interpolates it into the SQL text", () => {

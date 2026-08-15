@@ -38,6 +38,32 @@ import type {
  * binding is the only control that actually closes the hole.
  */
 
+/**
+ * Bind the cursor's instant as an ISO-8601 STRING cast back to `timestamp`, never as a
+ * JS `Date`.
+ *
+ * The postgres.js driver serializes bind parameters itself and rejects a `Date` handed to
+ * a raw `sql` fragment outright:
+ *
+ *   TypeError: The "string" argument must be of type string or an instance of Buffer or
+ *   ArrayBuffer. Received an instance of Date
+ *
+ * Drizzle converts `Date` automatically when the parameter is attached to a typed column,
+ * which is why every other query in this repo can pass one. These branches are hand-composed
+ * SQL, so the conversion has to be explicit here.
+ *
+ * This failed ONLY on page two and later — page one has no cursor to bind — and the suite
+ * mocks `@/db`, asserting the rendered SQL string rather than executing it, so no unit test
+ * could observe it. `assemble.test.ts` now asserts that no bound parameter is a `Date`,
+ * which is the part of this that a mocked driver CAN see.
+ *
+ * The columns are `timestamp` (no time zone). `toISOString()` renders the same wall clock
+ * the driver read, with a `Z` that `::timestamp` discards, so the value round-trips exactly.
+ */
+function bindInstant(instant: Date): SQL {
+  return sql`${instant.toISOString()}::timestamp`
+}
+
 /** The record whose timeline is being read. */
 export interface TimelineTarget {
   entityType: EntityType
@@ -69,7 +95,7 @@ export const notesSource: TimelineSource = {
     // created_at = now(), strictly newer than any cursor, so it can neither land inside
     // an already-fetched window nor push an unfetched entry past one.
     const keyset = cursor
-      ? sql` AND (n.created_at, n.id) < (${cursor.occurredAt}, ${cursor.id})`
+      ? sql` AND (n.created_at, n.id) < (${bindInstant(cursor.occurredAt)}, ${cursor.id})`
       : sql``
 
     return sql`(
@@ -141,7 +167,7 @@ export const activitiesSource: TimelineSource = {
 
   branch({ entityId }, cursor, limit) {
     const keyset = cursor
-      ? sql` AND (a.created_at, a.id) < (${cursor.occurredAt}, ${cursor.id})`
+      ? sql` AND (a.created_at, a.id) < (${bindInstant(cursor.occurredAt)}, ${cursor.id})`
       : sql``
 
     // created_at, NOT due_date: a history feed ordered by a FUTURE due date reads wrong.
@@ -206,7 +232,7 @@ export const stageChangeSource: TimelineSource = {
 
   branch({ entityId }, cursor, limit) {
     const keyset = cursor
-      ? sql` AND (h.created_at, h.id) < (${cursor.occurredAt}, ${cursor.id})`
+      ? sql` AND (h.created_at, h.id) < (${bindInstant(cursor.occurredAt)}, ${cursor.id})`
       : sql``
 
     // No soft-delete predicate here, and that is not an omission: deal_stage_history has
