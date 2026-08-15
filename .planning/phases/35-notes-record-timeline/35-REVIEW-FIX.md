@@ -1,12 +1,234 @@
 ---
 phase: 35-notes-record-timeline
-fixed_at: 2026-08-15T23:10:00Z
+fixed_at: 2026-08-16T00:55:00Z
 review_path: .planning/phases/35-notes-record-timeline/35-REVIEW.md
-iteration: 2
+iteration: 3
 findings_in_scope: 3
 fixed: 3
 skipped: 0
 status: all_fixed
+---
+
+# Phase 35: Code Review Fix Report — iteration 3
+
+**Fixed at:** 2026-08-16T00:55:00Z
+**Source review:** `.planning/phases/35-notes-record-timeline/35-REVIEW.md` (iteration-3 section)
+**Iteration:** 3 — targeted pass outside the `--auto` loop
+
+**Summary:**
+- Findings in scope: 3 (WR-12, WR-13, WR-14)
+- Fixed: 3
+- Skipped: 0
+
+**WR-15 was explicitly out of scope** and is untouched: the `CALL_SITES` list in the gate is
+still hand-maintained, and the review's own note that it is complete today
+(seven renderers, confirmed by grep) still holds. It carries into verification as documented
+known state.
+
+## Gates
+
+| Gate | Result |
+|------|--------|
+| `npm run typecheck` | exit 0 |
+| `npm run lint` | 0 errors, 125 warnings (byte-identical pre-existing set) |
+| `npm test` (both vitest projects) | 1128 passed / 4 skipped, plus 8 rsc — was 1108 at iteration 2 |
+| `npx next build` | exit 0; all five notes routes present in `routes-manifest.json` |
+| `scripts/reconcile-notes.sql` | all 4 deltas 0, all 4 mismatched 0, `compared` 29,037 / 46,198 / 0 / 0 |
+| Database baseline after all work | 75,235 notes / 75,235 `source='migration'` / 0 `source<>'migration'` / 0 soft-deleted / `deal_stage_history` 0 rows — unchanged |
+| Environment hygiene | probe container, its image and its browser profile all removed; `pipelite`, `postgres`, `template0/1` only; no `gsd-reviewfix` branch, worktree list is just `master` |
+
+`condition-evaluator.test.ts` did not flake. **Nothing was written to the live database at any
+point in this pass** — see WR-12: the empirical work was done against a standalone probe app
+with no database at all.
+
+Work was done in an isolated git worktree on `gsd-reviewfix/35-*`, fast-forwarded onto
+`master` on completion. `npx next build` was run inside a container because turbopack rejects
+a worktree whose `node_modules` is a symlink out of the project root.
+
+## Fixed Issues
+
+### WR-12: the reset guard was armed too late — and the `revalidatePath` question, answered
+
+**Files modified:** `src/app/deals/deal-dialog.tsx`, `src/app/organizations/organization-dialog.tsx`,
+`src/app/people/person-dialog.tsx`, `src/app/activities/activity-dialog.tsx`,
+`src/app/organizations/data-table.tsx`, `src/app/people/data-table.tsx`,
+`src/app/__tests__/record-dialog-note-failure.test.ts`
+**Commit:** `d4eb706`
+
+**The review asked for the question to be settled rather than hedged. It is settled:
+`revalidatePath` inside a create server action DOES refresh the client tree, and the race
+the review described is real.** Measured, not reasoned.
+
+Method: a standalone Next 16.1.6 probe app — same `next` and `react` as this repo, run in a
+container, **no database** — reproducing the exact shape of `activity-dialog`. A server
+component rebuilds an array prop on every render (mirroring `activities/page.tsx:194`); a
+client component lists that array in an effect's dependency list and, when the effect runs,
+clears a 314-character draft (mirroring the create-mode `reset`). A button awaits a
+`createLike()` action that calls `revalidatePath` and returns, then awaits a second, slower
+action (mirroring `addNote`).
+
+```
+seeded draft: 314 chars
+57871  --- submit (createLike WITH revalidatePath, then a CLIENT-side wait)
+57871  t0 before create        draft=314 chars
+57911  t1 create returned      draft=314 chars
+57918  EFFECT RAN -> reset(draft="")  serverToken CHANGED     <- 7 ms after the create
+60411  t2 wait over            draft=0 chars
+```
+
+Seven milliseconds. The server component re-rendered (its token changed), the effect re-ran
+because it was handed a fresh array, and the draft was destroyed — all while the code was
+still in the window between "the record exists" and "we know about the note".
+
+The control, identical but with the `revalidatePath` removed:
+
+```
+22597  t0 before create        draft=314 chars
+22609  t1 create returned      draft=314 chars
+25124  t2 note FAILED          draft=314 chars      serverToken UNCHANGED
+```
+
+No re-render, no effect, draft intact. So the refresh is caused by `revalidatePath` and by
+nothing else. A third run showed the path argument is irrelevant: `revalidatePath("/somewhere-else")`
+refreshed the current tree just the same (4 ms), which is why `revalidatePath("/organizations")`
+refreshes an `/organizations?search=…&page=2` view too.
+
+**One nuance worth recording, because it explains why the browser pass in iteration 2 saw the
+draft survive.** When the second `await` is itself a server action, Next's action queue holds
+the router state update behind it — in that run the effect fired 47 ms *after* the note
+resolved, so the failure branch's late assignment happened to win:
+
+```
+79145  t1 create returned      draft=314 chars
+81686  t2 note FAILED          draft=314 chars
+81733  EFFECT RAN -> reset     serverToken CHANGED   <- after t2, not during
+```
+
+That ordering is an accident of Next's action queue, not a guarantee. The identical code with
+a plain client-side wait in that window loses the draft in 7 ms. So the review's structural
+claim is exactly right: the guard cannot be allowed to depend on which of two racing things
+happens to land first.
+
+**The fix**, in all four dialogs — the one line, moved earlier:
+
+```ts
+} else {
+  const result = await createOrganization(record)
+  if (!result.success) { toast.error(result.error); return }
+  recordId = result.id
+  // Arm the reset guard the instant the record exists, and not one await later.
+  createdRecordIdRef.current = recordId
+}
+```
+
+The failure branch's own assignment is gone, and its comment now says where the guard was
+armed and why it is not armed there. The ref's lifecycle doc-comment and the effect's
+bail-out comment were both rewritten: the effect now documents *two* refreshes it has to
+absorb (the create action's own, and the failure branch's), where before it named only one.
+Nothing else moves — `handleClose()` still clears the ref on the success path, so a completed
+create still resets.
+
+**The second half of the finding: `handleRecordSaved` on the two data tables.** The review
+framed this as a dichotomy — either the refresh is real (race live) or it is not (the list
+goes stale). The measurement resolves it the first way, so the list is **not** stale: the
+create/update action's own `revalidatePath` re-renders the current tree a few milliseconds
+after it resolves, before `handleRecordSaved` matters at all. What was wrong was the comment,
+which claimed the callback "refreshes the list" while `refresh` is an optional prop that no
+parent passes. Rather than adding a `router.refresh()` that would buy a second fetch of a tree
+the action has already sent, the comment now states the measured truth and says why the
+optional hook is kept. Both data tables, identically.
+
+**Regression gate.** The `if (!noteSaved)` containment assertion was replaced with an
+*ordering* one, which is what actually encodes the finding:
+
+```ts
+expect(armed).toBeLessThan(noteCall)   // createdRecordIdRef armed before `await addNote(`
+```
+
+Mutation-tested: moving the assignment back to the failure branch — the exact pre-fix shape —
+fails with `expected 2950 to be less than 2073`. Restored, 58/58 green.
+
+### WR-13: `blockAt` passed vacuously when its anchor disappeared
+
+**Files modified:** `src/app/__tests__/record-dialog-note-failure.test.ts`
+**Commit:** `ac5117d`
+
+`blockAt` now checks the **anchor**, not the brace, because `expect(start).toBeGreaterThan(-1)`
+never could: the brace it finds does exist. Every call site passes a label, so the failure
+names the branch that vanished.
+
+The review's own mutation, re-run both ways — deleting the whole `if (!open)` branch from
+`organization-dialog.tsx`:
+
+```
+old blockAt   38 passed  (0 failed)   <- the vacuous pass the review demonstrated
+new blockAt   37 passed, 1 FAILED
+              AssertionError: if (!open) branch not found — blockAt would silently
+              widen to the enclosing block: expected -1 to be greater than -1
+```
+
+And the symmetric case the review predicted but did not run, deleting the `if (organization)`
+branch:
+
+```
+old blockAt   38 passed  (0 failed)
+new blockAt   37 passed, 1 FAILED
+              AssertionError: if (organization) branch not found — …
+```
+
+Both mutations reverted; the file re-verified clean.
+
+### WR-14: the gate was blind to the closing idiom the CR-03 fix created
+
+**Files modified:** `src/app/__tests__/record-dialog-note-failure.test.ts`
+**Commit:** `7a7cc2d`
+
+`CLOSES_THE_DIALOG` is rebuilt from an alternation list with the reasoning attached. It went
+further than the review's suggested regex in one respect: **the argument is no longer
+constrained to a literal `false`**. The review's own probe listed
+`const next = false; setDialogOpen(next)` as MISSED, and its proposed regex still misses it.
+Matching the *call* rather than the literal closes that indirection too, and costs nothing —
+a callback that means "re-read your data" has no business touching the dialog's open state at
+any value, and all seven current handler bodies are a bare `router.refresh()` / `refresh?.()`
+/ `window.location.reload()`. The `set(?!Delete)` carve-out is preserved.
+
+Covered now: `setXOpen(...)`, `setEditingX(...)`, `setSelectedDeal(...)`,
+`handle*OpenChange(...)`, `onOpenChange(...)`, `handleClose(...)`, and the indirect form.
+
+Mutation-tested with the review's own probe case — putting `handleDialogOpenChange(false)`
+into `organizations/data-table.tsx`'s refresh callback:
+
+```
+old regex   38 passed  (0 failed)     <- blind to the idiom the fix introduced
+new regex   57 passed, 1 FAILED
+            never closes the dialog from the refresh callback
+```
+
+A **gate for the gate** was added alongside: eleven closing idioms the detector must catch
+(including the three it used to miss) and five it must leave alone (including
+`setDeleteDialogOpen(false)`). That is what makes the next blind spot fail here rather than
+be found by a reviewer. Suite went 38 → 58 assertions.
+
+## Notes for the developer
+
+**Requires human confirmation.** The WR-12 change is behavioural, and its effect is only
+visible in a browser under a failing `addNote`. The probe proves the *mechanism* (a
+`revalidatePath` refresh lands ~7 ms after the create resolves and re-runs an effect that
+depends on a rebuilt prop); it does not re-run the iteration-2 browser pass against the real
+dialogs. That pass was done at iteration 2 and passed for a reason that this change makes
+robust rather than accidental, so a re-run is a confirmation and not a discovery — but it is
+the honest thing to do before the phase closes.
+
+**Not done, deliberately:** WR-15 (out of scope by instruction) and all remaining Info
+findings — IN-02, IN-03, IN-06, IN-07, IN-08, IN-09, IN-10. IN-04 remains a recorded decision
+in 35-CONTEXT.
+
+---
+
+_Fixed: 2026-08-16T00:55:00Z_
+_Fixer: Claude (gsd-code-fixer)_
+_Iteration: 3_
+
 ---
 
 # Phase 35: Code Review Fix Report — iteration 2

@@ -1,8 +1,8 @@
 ---
 phase: 35-notes-record-timeline
 reviewed: 2026-08-15T21:40:00Z
-re_reviewed: 2026-08-15T22:50:00Z
-iteration: 2
+re_reviewed: 2026-08-15T23:55:00Z
+iteration: 3
 depth: standard
 files_reviewed: 38
 files_reviewed_list:
@@ -49,8 +49,12 @@ files_reviewed_list:
   - src/app/deals/kanban-board.tsx
   - src/app/deals/deal-card.tsx
   - src/app/organizations/data-table.tsx
+  - src/app/organizations/[id]/organization-detail-client.tsx
   - src/app/people/data-table.tsx
+  - src/app/people/[id]/person-detail-client.tsx
   - src/app/activities/activities-client.tsx
+  - src/app/activities/page.tsx
+  - src/app/__tests__/record-dialog-note-failure.test.ts
   - src/app/deals/[id]/page.tsx
   - src/app/organizations/[id]/page.tsx
   - src/app/people/[id]/page.tsx
@@ -63,24 +67,406 @@ files_reviewed_list:
   - src/messages/locale-parity.test.ts
 findings:
   critical: 3
-  warning: 11
-  info: 7
-  total: 21
+  warning: 15
+  info: 10
+  total: 28
 findings_open:
-  critical: 1
-  warning: 2
-  info: 5
-  total: 8
-resolved: 13
+  critical: 0
+  warning: 4
+  info: 7
+  total: 11
+resolved: 16
 status: issues_found
 ---
 
 # Phase 35: Code Review Report
 
-**Reviewed:** 2026-08-15T21:40:00Z (iteration 1) · re-reviewed 2026-08-15T22:50:00Z (iteration 2)
+**Reviewed:** 2026-08-15T21:40:00Z (iteration 1) · re-reviewed 22:50:00Z (iteration 2) · 23:55:00Z (iteration 3, final)
 **Depth:** standard
 **Files Reviewed:** 38 source files (+ 3 locale files, 2 SQL artifacts)
-**Status:** issues_found — 1 Critical and 2 Warnings remain open
+**Status:** issues_found — **0 Critical open.** 4 Warnings and 7 Info remain, carried into phase verification as known state.
+
+---
+
+# Re-Review — iteration 3 (final, fix verification)
+
+Three fix commits (`0a653c2`, `cdbf85a`, `2cd2cf8`, range `1f6789f..HEAD`) were verified against
+the iteration-2 findings. **All three iteration-2 findings are genuinely closed.** No Critical
+issue remains open in Phase 35.
+
+The CR-03 fix, however, is broader than the finding asked for (an `onSuccess` → `onRecordSaved`
+rename across seven call sites plus a lifecycle ref), and that extra blast radius brought four
+new Warnings with it — one about the fix's own coverage, three about the regression gate that is
+supposed to hold the fix in place. None of them re-opens CR-03 as observed, but the guard is
+narrower than the report claims and the gate is weaker than the report claims.
+
+## Disposition
+
+| ID | Fix commit | Verdict |
+|----|-----------|---------|
+| CR-03 | `0a653c2` | **RESOLVED** — the dialog stays open on all four surfaces; see the mechanism trace below, and **WR-12** for the window the guard does not cover |
+| WR-10 | `cdbf85a` | **RESOLVED** — verified against the live database |
+| WR-11 | `2cd2cf8` | **RESOLVED** — verified against zod and against live Postgres, both ends |
+
+## Gates re-run independently
+
+| Gate | Result |
+|------|--------|
+| `npx tsc --noEmit` (host) | exit 0 |
+| `npx eslint` on all 14 changed source files | 0 errors, 1 warning (`isPending` unused in `activities-client.tsx` — pre-existing, present at `1f6789f`) |
+| `npx vitest run` (full suite) | 66 files, 1108 passed / 4 skipped — matches the fixer's count |
+| `scripts/reconcile-notes.sql` | part 1 all four deltas 0; part 2 `compared` 29,037 / 46,198 / 0 / 0 with `mismatched` 0 everywhere — exactly the recorded baseline |
+| DB baseline after all probes | 75,235 notes / 75,235 `source='migration'` / 0 `source<>'migration'` / 0 soft-deleted / `deal_stage_history` 0 rows — unchanged |
+| Environment hygiene | `pipelite`, `postgres`, `template0/1` only — no `pipelite_cr03`; no stray container, image, or `gsd-reviewfix` branch; worktree list is just `master`; working tree clean |
+
+`condition-evaluator.test.ts` did not flake. Nothing was written to the database — the only live
+probes were `SELECT` casts and one `BEGIN … ROLLBACK`.
+
+## CR-03 — what I checked, independent of the fixer's browser claim
+
+**1. The draft survives, on all four dialogs, by a mechanism visible in the source.**
+
+The failure branch is byte-identical in all four files (`deal-dialog.tsx:270-281`,
+`organization-dialog.tsx:188-198`, `person-dialog.tsx:205-215`, `activity-dialog.tsx:271-282`):
+it sets the ref, toasts, calls `onRecordSaved()`, and `return`s. It never calls `handleClose()`
+and never calls `reset()`. `handleClose` is now the only path to `onOpenChange(false)`, and I
+confirmed by grep that no call site closes from the refresh callback:
+
+```
+kanban-board.tsx      handleDealSaved      -> router.refresh()
+deal-card.tsx         (inline)             -> window.location.reload()
+organizations/…       handleRecordSaved    -> refresh?.()
+organizations/[id]/…  handleRecordSaved    -> router.refresh()
+people/…              handleRecordSaved    -> refresh?.()
+people/[id]/…         handleRecordSaved    -> router.refresh()
+activities-client.tsx handleRecordSaved    -> startTransition(router.refresh())
+```
+
+So `open` stays true, the component is not unmounted (the create-mode `DealDialog` at
+`kanban-board.tsx:435` and the dialogs at `data-table.tsx:217` / `activities-client.tsx:205` are
+all unconditionally mounted; the only conditionally-mounted one, `kanban-board.tsx:412`, is
+edit-mode and has no notes field), and react-hook-form keeps the registered textarea's value.
+That is a real mechanism, not a claim.
+
+**2. The ref-not-state reasoning holds, and the three-branch guard is correct.**
+
+As state, `createdPendingNoteId` would have had to be an effect dependency of the reset-on-open
+effect — or become a stale closure — and setting it would have re-run the effect and reset the
+form. The ref avoids that. Verified.
+
+The three branches are correct on all four files:
+- `!open` → clears the ref and returns. Reopening therefore always starts clean.
+- edit target present → clears the ref *before* seeding the record's values, so a create's
+  half-finished id cannot be inherited by an edit.
+- otherwise → `if (createdRecordIdRef.current) return` sits **before** the create-mode `reset`,
+  so a pending create survives a parent re-render.
+
+And the read is genuinely confined to the create path: `if (isEditMode)` short-circuits above
+`let recordId = createdRecordIdRef.current` in all four `onSubmit`s, so a retry updates the
+already-created record and cannot create a second one. I traced the state machine for reopen,
+cancel-then-recreate, edit-after-failed-create, and parent-flips-`open`-directly; none of them
+leaks the id.
+
+**3. The `activity-dialog` array-prop case is handled — for the refresh the *failure* fires.**
+`activity-dialog.tsx:216` depends on `activityTypes`, and `activities/page.tsx:194` hands it a
+freshly built array on every server render, so the identity does change on every
+`router.refresh()`. The guard at `:206` absorbs that. It does **not** absorb the refresh that
+`createActivity` itself fires — see **WR-12**, the one real gap in this fix.
+
+**4. The behaviour diff the fixer disclosed is correct and functionally harmless.** I traced
+every read of the four pieces of state that moved into `onOpenChange`:
+
+```
+selectedDeal      kanban-board.tsx:412,418-426   — gates and feeds the edit DealDialog, nothing else
+editingActivity   activities-client.tsx:208      — feeds ActivityDialog, nothing else
+editingOrg        organizations/data-table.tsx:220 — feeds OrganizationDialog, nothing else
+editingPerson     people/data-table.tsx:220      — feeds PersonDialog, nothing else
+```
+
+No detail panel, no table row, no delete dialog reads them. Clearing them on cancel cannot
+break anything; the only observable consequence is a close-animation flicker, filed as **IN-08**.
+
+**5. No call site still passes `onSuccess`.** `grep -rn onSuccess src/` finds it only on
+`api-key-dialog`, `pipeline-dialog`, `stage-dialog` and `delete-stage-dialog` — none of which is
+one of the four record dialogs and none of which has a note path. The rename is complete.
+
+**6. The gate file is real, but weaker than the fix report says.** Its assertions are not
+string-shaped tautologies — `not.toMatch(/handleClose|reset\(/)`, `toMatch(/onRecordSaved\(\)/)`,
+the guard-before-reset index comparison and the `if (recordId) { const result = await update`
+regex are all substantive, and I confirmed that deleting the `if (!noteSaved)` branch outright
+fails the suite (the anchor vanishes and the `onRecordSaved` assertion fires). But three of its
+detectors under-cover in ways I demonstrated rather than suspected: **WR-13**, **WR-14**,
+**WR-15**.
+
+## WR-10 and WR-11 — spot-checked
+
+**WR-10.** `compared` is present on all four branches of part 2, the header now carries a
+"READ `compared` BEFORE YOU BELIEVE `mismatched`" paragraph naming the vacuity failure mode, and
+the MEASURED BASELINE records both parts separately. Run against the live database just now:
+
+```
+ entity_type  | compared | mismatched
+--------------+----------+------------
+ organization |    29037 |          0
+ activity     |    46198 |          0
+ deal         |        0 |          0
+ person       |        0 |          0
+```
+
+Matches the recorded baseline exactly, and part 1's four deltas are still 0.
+
+**WR-11.** Verified against live Postgres:
+
+```
+'0000-01-01T00:00:00Z'::text::timestamp        ERROR: date/time field value out of range
+'0001-01-01T00:00:00Z'::text::timestamp        0001-01-01 00:00:00
+'1970-01-01T00:00:00Z'::text::timestamp        1970-01-01 00:00:00
+'9999-12-31T23:59:59.999999Z'::text::timestamp 9999-12-31 23:59:59.999999
+```
+
+and against the real `decodeCursor` with a battery wider than the checked-in test:
+
+```
+reject  0000-01-01T00:00:00Z            reject  1969-12-31T23:59:59.999999Z
+reject  0000-12-31T23:59:59.999999Z     ACCEPT  1970-01-01T00:00:00Z
+reject  0001-01-01T00:00:00Z            ACCEPT  1970-01-01T00:00:00.000000Z
+ACCEPT  1970-01-01T00:00:00.0Z          ACCEPT  1970-01-01T00:00:00.000Z
+ACCEPT  9999-12-31T23:59:59.999999Z     ACCEPT  2026-08-15T21:33:08.478005Z
+reject  2026-08-15t21:33:08Z            reject  2026-08-15T21:33:08z
+reject  2026-08-15T21:33:08+00:00       reject  2026-08-15T21:33:08
+reject  2026-02-29T00:00:00Z            ACCEPT  2024-02-29T00:00:00Z
+reject  1970-01-01T00:00:00.000000Z'; DROP TABLE notes;--
+```
+
+The short-fraction forms (`.0Z`, `.000Z`) land inside the range as the comment predicts, because
+`'Z'` sorts after `'0'`. The one leak I found is benign: a >6-digit fraction at the ceiling
+(`9999-12-31T23:59:59.9999999Z`) compares below `MAX_CURSOR_INSTANT` and is accepted, and
+Postgres rounds it to `10000-01-01 00:00:00` **without raising** (confirmed) — year 10000 is
+inside Postgres's timestamp range, so no error escapes. Not filed.
+
+---
+
+## Warnings (iteration 3)
+
+### WR-12: the reset guard covers the refresh the *failure* fires, not the one the *create* fires
+
+**File:** `src/app/activities/activity-dialog.tsx:201-215` (the exposed instance);
+same shape in `deal-dialog.tsx:193-209`, `organization-dialog.tsx:127-138`,
+`person-dialog.tsx:140-153`
+**Related:** `src/app/activities/actions.ts:43`, `src/app/activities/page.tsx:194`
+
+**Issue:** `createdRecordIdRef.current` is set **only inside the note-failure branch**, i.e.
+after `addNote` has already settled. But every create action calls `revalidatePath` before it
+returns — `createActivity` at `activities/actions.ts:43`, `createOrganization` at
+`organizations/actions.ts:42`, and the deal/person equivalents. That revalidation is dispatched
+to the client router while `await addNote(...)` is still in flight, which is a full server-action
+round trip. During that window the ref is still `null`, so the effect's bail-out guard is not
+armed.
+
+For three of the four dialogs this is harmless: their effect dependency lists are
+`[open, deal, defaultStageId, reset]`, `[open, organization, reset]` and `[open, person, reset]`,
+and none of those identities changes on a refresh (`organization`/`person`/`deal` are `null` in
+create mode). `activity-dialog` is the exception, and it is the exception the fix report itself
+identified: its deps are `[open, activity, activityTypes, reset]`, and `activities/page.tsx:194`
+builds `activityTypes` fresh on every server render. If the router commits that re-render before
+`addNote` resolves, the effect re-runs, falls through the unarmed guard, and executes
+`reset({ title: "", …, notes: "" })` — destroying the draft *before* the failure branch that is
+supposed to protect it ever runs, and clearing the title too.
+
+I could not settle whether it manifests without writing to the live database, which the review
+brief forbids, and the fixer's browser pass reports the opposite (314 chars and the title
+intact). So this is filed as a Warning, not a Blocker. What is *not* in doubt is the structural
+claim: the guard, as written, cannot cover that window, and the report's framing — "that last
+guard is load-bearing … the refresh fired by the failure branch would have re-run the effect and
+wiped the textarea anyway" — accounts for only one of the two refreshes on that path.
+
+Note that exactly one of the following must be true, and both are worth knowing:
+
+- `revalidatePath` inside the create action **does** refresh the client tree → the race above is
+  live on `/activities`, and this is a Blocker.
+- It **does not** → then `handleRecordSaved` on `/organizations` and `/people` (which calls only
+  `refresh?.()`, and `refresh` is never passed by any parent — `grep -rn 'refresh=' src/app/organizations src/app/people` returns nothing) is a no-op, so the list behind the still-open
+  dialog goes stale, contradicting its own comment "This callback refreshes the list". The
+  sibling `handleDeleteConfirm` at `data-table.tsx:75-76` calls `refresh?.()` **and**
+  `router.refresh()`, which is what makes the asymmetry visible.
+
+**Fix:** arm the guard as soon as the record exists, not only when the note fails. One line,
+moved earlier, and it closes the window on all four dialogs regardless of which branch of the
+above is true:
+
+```ts
+} else {
+  const result = await createOrganization(record)
+  if (!result.success) { toast.error(result.error); return }
+  recordId = result.id
+  // Arm the reset guard the moment the record exists. Anything after this point —
+  // including the refresh `revalidatePath` fires from inside the action above — must
+  // not be able to reset the form out from under the draft (T-35-31).
+  createdRecordIdRef.current = recordId
+}
+```
+
+The failure branch's own assignment then becomes redundant and can go. Nothing else changes:
+`handleClose()` on the success path still clears the ref, so a completed create still resets.
+
+While there, either give `handleRecordSaved` on the two data tables a `router.refresh()` to match
+its comment and its delete-path sibling, or delete the comment's claim.
+
+---
+
+### WR-13: the CR-03 regression gate passes vacuously when its anchor disappears
+
+**File:** `src/app/__tests__/record-dialog-note-failure.test.ts:48-60`, used at `:161` and `:165`
+
+**Issue:** `blockAt(source, from)` does `source.indexOf("{", from)`. When the caller's anchor is
+missing, `indexOf` returns `-1`, and `indexOf("{", -1)` is treated as `indexOf("{", 0)` — so
+`blockAt` silently returns the **enclosing** block instead of failing. The
+`expect(start).toBeGreaterThan(-1)` on line 50 cannot catch this: `start` is the index of a brace
+that does exist, not of the missing anchor.
+
+That makes the "clears the id on close, on open going false, and on an edit target" test
+(`:156-172`) self-defeating for two of its three assertions. I demonstrated it rather than
+inferring it — deleting the whole `if (!open) { … }` branch from `organization-dialog.tsx`:
+
+```
+anchor present after mutation?  -1
+closedBranch is the whole effect?  true
+assertion 'closedBranch contains clear' -> PASSES (vacuously!)
+```
+
+The extracted "branch" becomes the entire effect, which still contains
+`createdRecordIdRef.current = null` from the *edit* branch, so the assertion is satisfied by a
+different line than the one it is testing. The same holds symmetrically for the
+`if (${target})` anchor at `:165`. The fixer's mutation test happened to pick the two mutations
+this hole does not cover (re-adding `setCreateDialogOpen(false)`, deleting the guard line), so it
+did not surface.
+
+This is the same failure mode as WR-10, one file over: a detector that stops detecting and does
+not say so.
+
+**Fix:** make a missing anchor an error rather than a silent widening.
+
+```ts
+function blockAt(source: string, from: number): string {
+  // A missing anchor must fail loudly: indexOf("{", -1) silently returns the enclosing
+  // block, which would satisfy assertions with a line from a different branch (WR-13).
+  expect(from, "anchor not found").toBeGreaterThan(-1)
+  const start = source.indexOf("{", from)
+  ...
+}
+```
+
+Then re-run the two mutations above and confirm both now fail.
+
+---
+
+### WR-14: `CLOSES_THE_DIALOG` misses the closing form these call sites now actually use
+
+**File:** `src/app/__tests__/record-dialog-note-failure.test.ts:87-88`
+
+**Issue:** The regex only catches a literal `setXOpen(false)` / `setEditingX(null)` /
+`setSelectedDeal(null)`. But the fix has just given three of the seven call sites a *named*
+close handler — `handleDialogOpenChange` in `organizations/data-table.tsx:88`,
+`people/data-table.tsx:88` and `activities-client.tsx:79` — and that is now the most natural way
+a future developer would close a dialog at those sites. Probed against the real regex:
+
+```
+CAUGHT  "setCreateDialogOpen(false)"       <- the mutation the fixer tested
+CAUGHT  "setDialogOpen(false)"
+CAUGHT  "setEditingOrg(null)"
+MISSED  "handleDialogOpenChange(false)"    <- the idiom this fix just introduced
+MISSED  "onOpenChange(false)"
+MISSED  "const next = false; setDialogOpen(next)"
+```
+
+So the gate is strongest against the shape the fix removed and blind to the shape the fix
+created. `setDeleteDialogOpen(false)` is correctly excluded, so the negative-lookahead half is
+sound.
+
+**Fix:** add the handler and prop forms to the alternation, keeping the Delete carve-out:
+
+```ts
+const CLOSES_THE_DIALOG =
+  /\bset(?!Delete)\w*(?:Dialog)?Open\s*\(\s*false\s*\)|\bsetEditing\w*\s*\(\s*null\s*\)|\bsetSelectedDeal\s*\(\s*null\s*\)|\b(?:handle\w*OpenChange|onOpenChange)\s*\(\s*false\s*\)/
+```
+
+---
+
+### WR-15: the gate's `CALL_SITES` list is hand-maintained, so a new call site is ungated by default
+
+**File:** `src/app/__tests__/record-dialog-note-failure.test.ts:99-107`
+
+**Issue:** The seven files are hard-coded, with a comment asking the next developer to add theirs.
+Nothing verifies the list is complete, so the contract the rename exists to enforce ("this
+callback must never close the dialog") is enforced by the compiler only for the *prop name* — a
+brand-new file that renders `<PersonDialog onRecordSaved={() => setOpen(false)} />` type-checks
+and is never visited by this suite. I confirmed the list is complete **today**
+(`grep -rn "DealDialog\|OrganizationDialog\|PersonDialog\|ActivityDialog" src/ --include=*.tsx`
+finds exactly those seven renderers), so this is a durability defect, not a live hole.
+
+**Fix:** derive the list instead of declaring it, and assert the derived set is non-empty and a
+superset of the seven:
+
+```ts
+import { globSync } from "node:fs"   // or fast-glob, already transitively present
+
+const CALL_SITES = globSync("src/app/**/*.tsx")
+  .filter((f) => /<(?:Deal|Organization|Person|Activity)Dialog\b/.test(read(f)))
+expect(CALL_SITES.length).toBeGreaterThanOrEqual(7)
+```
+
+---
+
+## Info (iteration 3)
+
+### IN-08: cancelling an edit dialog now flips its title and grows a Notes field mid-close
+
+**File:** `src/app/organizations/data-table.tsx:88-91`, `src/app/people/data-table.tsx:88-91`,
+`src/app/activities/activities-client.tsx:79-82`, `src/app/deals/kanban-board.tsx:263-266`
+**Issue:** Moving `setEditingOrg(null)` (and its three twins) into `onOpenChange` is correct —
+I verified no other consumer reads that state — but it now fires on **cancel**, while Radix is
+still running the dialog's exit animation. The dialog is unconditionally mounted on three of the
+four surfaces, so for those ~150 ms `isEditMode` flips false: the title changes from
+"Edit Organization" to "Add Organization" and the create-only Notes textarea appears. On
+`kanban-board.tsx:412` the effect is the opposite — `{selectedDeal && …}` unmounts the dialog
+instantly, so the exit animation is skipped on cancel where it previously played. Both were
+already true of the *save* path before this change; the change extends them to cancel.
+**Fix:** if it looks wrong in practice, defer the selection clear —
+`if (!next) setTimeout(() => setEditingOrg(null), 200)` is the cheap version; keying the dialog
+on the record id and letting it unmount cleanly is the better one.
+
+### IN-09: `handleRecordSaved` and `handleRefresh` are byte-identical
+
+**File:** `src/app/activities/activities-client.tsx:84-88` and `:90-94`
+**Issue:** Both are `() => startTransition(() => router.refresh())`. Two names for one behaviour
+invites them to drift into two behaviours.
+**Fix:** keep one and pass it to both consumers, or keep both and have one call the other.
+
+### IN-10: the retry submits an UPDATE while the button and the toast still say "create"
+
+**File:** `src/app/deals/deal-dialog.tsx:284,506`, and the three equivalents
+**Issue:** After a failed first note the dialog stays in create mode by design, but a second
+submit runs `updateOrganization(recordId, …)` while the button reads "Create Organization" and
+success reports "Organization created!". Accurate from the user's point of view (the record was
+created by this dialog session), so this is a note rather than a defect.
+**Fix:** none required; if it is ever confusing, branch the button label on
+`createdRecordIdRef.current`.
+
+---
+
+## Still open from earlier iterations
+
+`IN-02` (blank unknown-author avatar), `IN-03` (client keys by `id` while the assembler keys by
+`kind:id`), `IN-06` (`buildTimelineQuery` emits invalid SQL for an empty source list),
+`IN-07` (three verbatim copy-paste blocks) — all unchanged and acknowledged out of scope by the
+fixer. `IN-04` (2,000-character cap in the create dialogs) remains a recorded decision in
+35-CONTEXT and is not re-reported as a defect.
+
+---
+
+_Re-reviewed: 2026-08-15T23:55:00Z_
+_Reviewer: Claude (gsd-code-reviewer)_
+_Depth: standard · iteration 3 (final)_
 
 ---
 
