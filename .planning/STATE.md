@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: verifying
-last_updated: "2026-08-15T15:57:21.055Z"
+last_updated: "2026-08-15T15:59:11.045Z"
 last_activity: 2026-08-15
 progress:
   total_phases: 13
@@ -46,6 +46,7 @@ Progress: [████████░░] 77%
 | Phase 34 P11 | 70min | 3 tasks | 4 files |
 | Phase 34 P13 | 13min | 2 tasks | 6 files |
 | Phase 44 P03 | 5min | 2 tasks | 3 files |
+| Phase 44 P05 | 9min | 2 tasks | 3 files |
 
 ## Decisions
 
@@ -123,6 +124,9 @@ Progress: [████████░░] 77%
 - [Phase ?]: SC-3 is mechanically delivered but only partially usable: bracket field paths work, no UI emits them, 152/169 field names require the syntax
 - [Phase 44]: buildClientFieldValues mirrors buildFormulaFieldValues in a db-free module; a parity test enforces that the two change together
 - [Phase 44]: Client natives are normalised with ?? null, matching the server's row?.[column] ?? null, so no undefined reaches the QuickJS sandbox
+- [Phase 44]: Radix asChild guard is dev-only (D-44-03) -- a production throw would turn a degraded page into a hard crash
+- [Phase 44]: Diagnostic guards must not also repair the render -- an in-component fallback masks the broken RSC boundary contract for the next asChild consumer
+- [Phase 44]: The guard log never serializes children or prop values (T-44-18), asserted by test rather than by comment
 
 ### Quick Tasks Completed
 
