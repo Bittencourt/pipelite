@@ -22,6 +22,8 @@ import { workflows } from "./workflows"
 import { workflowRuns } from "./workflows"
 import { workflowRunSteps } from "./workflows"
 import { httpTemplates } from "./http-templates"
+import { notes } from "./notes"
+import { dealStageHistory } from "./deal-stage-history"
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   notificationPreferences: one(notificationPreferences, {
@@ -226,6 +228,35 @@ export const workflowRunStepsRelations = relations(workflowRunSteps, ({ one }) =
 export const httpTemplatesRelations = relations(httpTemplates, ({ one }) => ({
   createdByUser: one(users, {
     fields: [httpTemplates.createdBy],
+    references: [users.id],
+  }),
+}))
+
+// There is deliberately NO `entity` relation here: notes.entityId is polymorphic and
+// points at four different tables, so no Drizzle relation is expressible for it. Do not
+// attempt one — resolve the parent in the query layer instead.
+export const notesRelations = relations(notes, ({ one }) => ({
+  author: one(users, {
+    fields: [notes.authorId],
+    references: [users.id],
+  }),
+}))
+
+export const dealStageHistoryRelations = relations(dealStageHistory, ({ one }) => ({
+  deal: one(deals, {
+    fields: [dealStageHistory.dealId],
+    references: [deals.id],
+  }),
+  fromStage: one(stages, {
+    fields: [dealStageHistory.fromStageId],
+    references: [stages.id],
+  }),
+  toStage: one(stages, {
+    fields: [dealStageHistory.toStageId],
+    references: [stages.id],
+  }),
+  changedByUser: one(users, {
+    fields: [dealStageHistory.changedBy],
     references: [users.id],
   }),
 }))
