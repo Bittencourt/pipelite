@@ -115,3 +115,28 @@ describe("FieldDialog wiring", () => {
     expect(source).toMatch(/warnIfInvalidTriggerChild\(\s*children\s*,/)
   })
 })
+
+// RESEARCH Pitfall 2: an in-component fallback (conditional `asChild`, or rendering
+// a substitute trigger) makes the button reappear while leaving the RSC boundary
+// contract broken - so the next `asChild` consumer repeats the bug, invisibly.
+// The guard is the alarm; the structural repair belongs at the call site (44-06).
+// This block locks the render path so a future well-meaning change cannot mask it.
+describe("FieldDialog render path is unchanged by the guard", () => {
+  const source = stripComments(FIELD_DIALOG_SOURCE)
+
+  it("keeps the unconditional <DialogTrigger asChild>", () => {
+    expect(source).toContain("<DialogTrigger asChild>{children}</DialogTrigger>")
+  })
+
+  it("has no conditional asChild expression", () => {
+    expect(source).not.toMatch(/asChild=\{/)
+  })
+
+  it("renders exactly one DialogTrigger, with no fallback trigger", () => {
+    expect(source.match(/<DialogTrigger\b/g)).toHaveLength(1)
+  })
+
+  it("does not branch on element validity inside the component", () => {
+    expect(source).not.toMatch(/\bisValidElement\b/)
+  })
+})
