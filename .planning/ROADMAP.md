@@ -201,8 +201,8 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 35-01-PLAN.md — notes + deal_stage_history schema, relations and barrel (wave 1)
-- [ ] 35-02-PLAN.md — notes i18n namespace across three locales + locale parity gate (wave 1)
+- [x] 35-01-PLAN.md — notes + deal_stage_history schema, relations and barrel (wave 1)
+- [x] 35-02-PLAN.md — notes i18n namespace across three locales + locale parity gate (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -409,7 +409,7 @@ Plans:
 | 32. Test Infrastructure & CI | 6/6 | Complete   | 2026-08-14 |
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
-| 35. Notes & Record Timeline | 0/? | Not started | - |
+| 35. Notes & Record Timeline | 2/15 | In Progress|  |
 | 36. Audit Log | 0/? | Not started | - |
 | 37. Trash & Restore | 0/? | Not started | - |
 | 38. Bulk Operations | 0/? | Not started | - |
