@@ -24,9 +24,9 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 ## Position
 
-Phase: 44 - Custom Field UI Repair (executing — 8/9 plans)
-Plan: Wave 3 in progress (44-08 done); 44-09 next
-Status: Executing — 44-08 shipped the D-44-02 payload projection (45028 B → 22353 B, −50.4%) as an optimisation only; CFUI-01 remains fixed structurally by 44-06 and all nine of its gates are green
+Phase: 44 - Custom Field UI Repair (complete — 9/9 plans)
+Plan: 9 of 9 complete
+Status: Phase complete — browser-verified end to end on a fresh Docker build; all 7 success criteria met, test data cleaned to baseline (155/8/6)
 Last activity: 2026-08-15
 
 Progress: [██████████] 97%

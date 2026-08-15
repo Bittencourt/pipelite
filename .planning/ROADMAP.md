@@ -76,7 +76,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [ ] **Phase 41: Workflow Operator Affordances** - Replay, dry-run, failure alerting, and the single-instance constraint documented
 - [ ] **Phase 42: Observability** - Structured logging, opt-in error tracking, and a health endpoint that sees the processors
 - [ ] **Phase 43: Type Safety & Deployment Docs** - Clear the 14 type suppressions and document backup/restore
-- [ ] **Phase 44: Custom Field UI Repair** - Restore the ability to add custom fields to Deals, and make the formula display agree with the stored value ⚠️ **contains a blocker — work before Phase 35**
+- [x] **Phase 44: Custom Field UI Repair** - Restore the ability to add custom fields to Deals, and make the formula display agree with the stored value (completed 2026-08-15)
 
 ## Phase Details
 
@@ -369,7 +369,7 @@ Plans:
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
 | 43. Type Safety & Deployment Docs | 0/? | Not started | - |
-| 44. Custom Field UI Repair | 8/9 | In Progress|  |
+| 44. Custom Field UI Repair | 9/9 | Complete   | 2026-08-15 |
 
 ## Backlog
 
@@ -443,6 +443,18 @@ port**, since Postgres publishes on **5433**. So the documented migrate command 
 to be run with an inline `DATABASE_URL` override. Phase 33 worked around it without editing a tracked file.
 Fix: point `.env.local` at `localhost:5433`. This will bite every future phase that runs a migration
 (34, 35, 36, 37, 39, 40 all add schema). Cheap fix, high recurring cost if left.
+
+**999.28 — `condition-evaluator` linearity gate is contention-flaky** (captured 2026-08-15, Phase 44)
+`src/lib/execution/condition-evaluator.test.ts` › "resolveFieldPath — parsing is linear, not backtracking"
+(Phase 34 **T-34-20**) asserts a **wall-clock ratio**, so it misfires whenever the machine is loaded. It
+failed twice during Phase 44's parallel waves — once reported as `25.5 < 10` — while passing 70/70 in
+isolation and in every serial run.
+
+Not introduced by Phase 44 and deliberately not fixed there (editing a Phase 34 test from inside another
+phase hides the signal). But a timing-ratio assertion is a false-failure generator in any parallel
+execution, and a suite that cries wolf is how the three defects this phase repaired stayed invisible in the
+first place. Fix: assert on operation **counts** or algorithmic shape rather than elapsed time, or mark it
+serial-only.
 
 **999.25, 999.26, 999.27 — PROMOTED to Phase 44 (2026-08-15)** (captured 2026-08-15, E2E verification of v1.3)
 Three custom-field UI defects found by the browser end-to-end pass over the completed v1.3 phases:
