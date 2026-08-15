@@ -92,6 +92,13 @@
       "when": 1786722221685,
       "tag": "0012_typical_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786820500162,
+      "tag": "0013_parched_redwing",
+      "breakpoints": true
     }
   ]
 }
