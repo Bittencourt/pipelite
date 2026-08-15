@@ -39,6 +39,7 @@ export const REQUIRED_NOTE_KEYS: string[] = [
   "notes.error.editFailed",
   "notes.error.deleteFailed",
   "notes.error.notPermitted",
+  "notes.error.recordCreatedNoteFailed",
   "notes.edited",
   "notes.migrated",
   "notes.migratedTooltip",

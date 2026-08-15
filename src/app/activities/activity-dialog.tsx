@@ -111,6 +111,19 @@ export function ActivityDialog({
   const isEditMode = !!activity
   const tNotes = useTranslations("notes")
 
+  /**
+   * THE TYPED TEXT IS SACRED (T-35-31), AND THE RECORD MUST NOT BE CREATED TWICE.
+   *
+   * The create path writes the record first and its first note second. When the record
+   * lands and the note does not, this holds the id of the record that already exists. Its
+   * presence turns the next submit into an UPDATE of that record rather than a second
+   * CREATE, which is what lets the dialog stay open — and staying open is the only thing
+   * that keeps the user's typed note, which may be an arbitrarily long paste, recoverable.
+   * `notes.error.saveFailed` promises the text is still in the box; closing the dialog and
+   * resetting the form on that path broke that promise while claiming success.
+   */
+  const [createdPendingNoteId, setCreatedPendingNoteId] = useState<string | null>(null)
+
   const {
     register,
     handleSubmit,
@@ -138,6 +151,9 @@ export function ActivityDialog({
   // Reset form when dialog opens or activity changes
   useEffect(() => {
     if (open) {
+      // A fresh open is a fresh create: never carry a previous session's half-finished
+      // record forward into it.
+      setCreatedPendingNoteId(null)
       if (activity) {
         // Format date for input
         const dueDate = new Date(activity.dueDate)
@@ -190,22 +206,45 @@ export function ActivityDialog({
           return
         }
       } else {
-        const result = await createActivity(activityData)
-        if (!result.success) {
-          toast.error(result.error)
-          return
+        // A retry after a failed note updates the record that already exists instead of
+        // creating a second one, so any field the user changed while the dialog stayed
+        // open is still saved.
+        let recordId = createdPendingNoteId
+        if (recordId) {
+          const result = await updateActivity(recordId, activityData)
+          if (!result.success) {
+            toast.error(result.error)
+            return
+          }
+        } else {
+          const result = await createActivity(activityData)
+          if (!result.success) {
+            toast.error(result.error)
+            return
+          }
+          recordId = result.id
         }
 
         // The record already exists. A failed note is surfaced, never rolled back.
         const draft = (data.notes ?? "").trim()
         if (draft) {
+          let noteSaved = false
           try {
-            const noteResult = await addNote("activity", result.id, draft)
-            if (!noteResult.success) {
-              toast.error(tNotes("error.saveFailed"))
-            }
+            const noteResult = await addNote("activity", recordId, draft)
+            noteSaved = noteResult.success
           } catch {
-            toast.error(tNotes("error.saveFailed"))
+            noteSaved = false
+          }
+
+          if (!noteSaved) {
+            // Do NOT close, do NOT reset, and do NOT claim success: the note is the one
+            // thing that did not happen, and the draft is the thing being protected.
+            // `onSuccess` still runs because the record itself did land, so the list
+            // behind the dialog must not go stale.
+            setCreatedPendingNoteId(recordId)
+            toast.error(tNotes("error.recordCreatedNoteFailed"))
+            onSuccess?.()
+            return
           }
         }
       }
@@ -243,6 +282,7 @@ export function ActivityDialog({
 
   const handleClose = () => {
     reset()
+    setCreatedPendingNoteId(null)
     onOpenChange(false)
   }
 

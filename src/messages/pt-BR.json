@@ -275,7 +275,8 @@
       "loadMoreFailed": "Não foi possível carregar entradas anteriores. Tente novamente.",
       "editFailed": "Suas alterações não foram salvas. Tente novamente.",
       "deleteFailed": "A nota não foi excluída. Tente novamente.",
-      "notPermitted": "Somente o autor ou um administrador pode alterar esta nota."
+      "notPermitted": "Somente o autor ou um administrador pode alterar esta nota.",
+      "recordCreatedNoteFailed": "O registro foi salvo, mas sua nota não. O texto continua na caixa — tente novamente."
     },
     "edited": "editada",
     "migrated": "Migrada",
