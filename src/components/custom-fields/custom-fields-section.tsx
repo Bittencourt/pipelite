@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { FieldRenderer } from './field-renderer'
+import { buildClientFieldValues } from '@/lib/client-field-values'
 import type { CustomFieldDefinition, EntityType } from '@/db/schema'
 
 // Server action for saving custom field values
@@ -46,11 +47,15 @@ export function CustomFieldsSection({
   const [isOpen, setIsOpen] = useState(true)
   const [localValues, setLocalValues] = useState(values)
   
-  // Merge custom field values with entity attributes for formula evaluation
-  const allFieldValues = useMemo(() => ({
-    ...entityAttributes,
-    ...localValues,
-  }), [entityAttributes, localValues])
+  // Build the map formulas are evaluated over, in the SAME order the server does (CFUI-03):
+  // natives, then a `null` for every active definition, then the stored values unwrapped.
+  // A raw `{...entityAttributes, ...localValues}` spread omits the null seed, so an unset source
+  // is an ABSENT key and the engine answers `Unknown field: X` — the `#ERROR` users were seeing.
+  // `buildClientFieldValues` is asserted key-for-key against the server's buildFormulaFieldValues.
+  const allFieldValues = useMemo(
+    () => buildClientFieldValues({ definitions, entityAttributes, values: localValues }),
+    [definitions, entityAttributes, localValues]
+  )
   
   const handleSave = useCallback(async (fieldName: string, value: unknown) => {
     const newValues = { ...localValues, [fieldName]: value }
