@@ -876,9 +876,17 @@ first and every new package gated behind a `checkpoint:human-verify` task.
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All four were answered by the user on 2026-08-15 after this research was written.
+> Decisions are locked in `44-CONTEXT.md` § Scope Decisions (D-44-01..04). Kept here for the audit trail.
 
 1. **Should the slim projection ship anyway, as an optimisation?**
+   — **RESOLVED: yes, as a separate task.** See `44-CONTEXT.md` D-44-02, implemented by plan 44-08.
+   Note the planner subsequently found this question's stated premise to be wrong: `page.tsx` passes the
+   same array reference to both consumers and Flight back-references it, so a *separate* slim array would
+   be a net payload **increase**, and `config` reaches the browser regardless (the edit dialog reads it).
+   44-08 therefore projects **once** into a shared row type and gates on measurement.
    - Known: it does **not** fix CFUI-01 (R11), but it removes ~78 KB from every admin fields page load
      and stops shipping `config` JSONB and `deletedAt` to the browser.
    - Unclear: whether the planner wants optimisation scope in a repair phase.
@@ -886,6 +894,7 @@ first and every new package gated behind a `checkpoint:human-verify` task.
      proving the button renders *independently* of it.
 
 2. **Should `FieldDialog` throw loudly on a non-element child?**
+   — **RESOLVED: dev-only guard.** See `44-CONTEXT.md` D-44-03, implemented by plan 44-05.
    - Known: today it renders `null` in silence — that silence is why this cost a browser E2E pass.
    - Unclear: whether a dev-only `console.error` or a hard throw is preferred in this codebase.
    - Recommendation: a dev-only guard (`process.env.NODE_ENV !== 'production'`) so production users
@@ -893,6 +902,8 @@ first and every new package gated behind a `checkpoint:human-verify` task.
 
 3. **Does the second vitest project (for `react-server`) belong in `vitest.config.ts` `projects:` or a
    separate config file?**
+   — **RESOLVED: implementation detail, no scope impact.** Plan 44-01 takes the `projects:` form and
+   carries a spelled-out `vitest.rsc.config.ts` fallback; both branches satisfy the base-config exclude.
    - Known: both work. The base config's `include` matches `*.test.tsx`, so the RSC files must be
      excluded there either way.
    - Recommendation: a `projects:` array in the single `vitest.config.ts`, so `npm test` runs both
@@ -900,6 +911,8 @@ first and every new package gated behind a `checkpoint:human-verify` task.
 
 4. **The two adjacent latent divergences (activities `entityAttributes`, client-side QuickJS resource
    bounds) — in or out?**
+   — **RESOLVED: both IN scope.** See `44-CONTEXT.md` D-44-04; promoted to requirements CFUI-04 and
+   CFUI-05, implemented by plan 44-04.
    - Both are the same class of defect as CFUI-03 and both are cheap.
    - Recommendation: surface to the user in `/gsd:discuss-phase`; do not decide unilaterally.
 
