@@ -206,11 +206,11 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 35-03-PLAN.md — migration 0013, idempotent legacy-notes data migration, SC-4 reconciliation [BLOCKING] (wave 2)
-- [ ] 35-04-PLAN.md — note mutation layer: create, edit, soft delete, parent-existence check (wave 2)
-- [ ] 35-05-PLAN.md — timeline entry union types + keyset cursor codec (wave 2)
-- [ ] 35-06-PLAN.md — deal.stage_changed subscriber persisting stage history (wave 2)
-- [ ] 35-07-PLAN.md — shared author-or-admin authorization helper (wave 2)
+- [x] 35-03-PLAN.md — migration 0013, idempotent legacy-notes data migration, SC-4 reconciliation [BLOCKING] (wave 2)
+- [x] 35-04-PLAN.md — note mutation layer: create, edit, soft delete, parent-existence check (wave 2)
+- [x] 35-05-PLAN.md — timeline entry union types + keyset cursor codec (wave 2)
+- [x] 35-06-PLAN.md — deal.stage_changed subscriber persisting stage history (wave 2)
+- [x] 35-07-PLAN.md — shared author-or-admin authorization helper (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -409,7 +409,7 @@ Plans:
 | 32. Test Infrastructure & CI | 6/6 | Complete   | 2026-08-14 |
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
-| 35. Notes & Record Timeline | 2/15 | In Progress|  |
+| 35. Notes & Record Timeline | 7/15 | In Progress|  |
 | 36. Audit Log | 0/? | Not started | - |
 | 37. Trash & Restore | 0/? | Not started | - |
 | 38. Bulk Operations | 0/? | Not started | - |
