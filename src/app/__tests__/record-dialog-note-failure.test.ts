@@ -44,10 +44,21 @@ const read = (relative: string) => readFileSync(join(root, relative), "utf-8")
  * balanced. Naive about braces inside strings, which is fine: none of the extracted
  * blocks contain a brace in a string literal, and a change that introduced one would
  * fail loudly here rather than pass quietly.
+ *
+ * `from` is almost always an `indexOf` result, and a MISSING anchor is the dangerous
+ * case (WR-13): `indexOf("{", -1)` is treated as `indexOf("{", 0)`, so a caller whose
+ * anchor has been deleted would silently receive the ENCLOSING block instead of the
+ * branch it asked for — and its assertion could then be satisfied by a line belonging to
+ * a different branch entirely. That is a detector that stops detecting without saying so,
+ * which is worse here than anywhere else in the file: this suite is the regression gate
+ * for the CR-03 blocker. So the anchor is checked, not the brace: `start > -1` cannot
+ * catch it, because the brace it finds does exist.
  */
-function blockAt(source: string, from: number): string {
+function blockAt(source: string, from: number, anchor = "anchor"): string {
+  expect(from, `${anchor} not found — blockAt would silently widen to the enclosing block`)
+    .toBeGreaterThan(-1)
   const start = source.indexOf("{", from)
-  expect(start).toBeGreaterThan(-1)
+  expect(start, `no block opens after ${anchor}`).toBeGreaterThan(-1)
   let depth = 0
   for (let i = start; i < source.length; i++) {
     if (source[i] === "{") depth++
@@ -68,13 +79,14 @@ function recordSavedHandlerBodies(source: string): string[] {
     const expression = match[1].trim()
     if (expression.startsWith("(")) {
       // Inline arrow: `onRecordSaved={() => { ... }}`
-      bodies.push(blockAt(source, match.index + "onRecordSaved={".length))
+      bodies.push(
+        blockAt(source, match.index + "onRecordSaved={".length, "inline onRecordSaved arrow"),
+      )
       continue
     }
     // Named handler: find its declaration and take its body.
     const declaration = source.indexOf(`const ${expression} = `)
-    expect(declaration, `no declaration for ${expression}`).toBeGreaterThan(-1)
-    bodies.push(blockAt(source, declaration))
+    bodies.push(blockAt(source, declaration, `declaration of ${expression}`))
   }
   return bodies
 }
@@ -111,7 +123,7 @@ describe("CR-03: a failed first note keeps the dialog open and the draft alive",
     const source = read(file)
 
     it("keeps the dialog open on the note-failure branch: no handleClose, refresh, return", () => {
-      const branch = blockAt(source, source.indexOf("if (!noteSaved)"))
+      const branch = blockAt(source, source.indexOf("if (!noteSaved)"), "if (!noteSaved)")
 
       // The whole point: the dialog is not closed and the form is not reset, so the
       // typed note is still in the textarea when the user retries.
@@ -123,7 +135,7 @@ describe("CR-03: a failed first note keeps the dialog open and the draft alive",
     })
 
     it("remembers the created record so a retry updates instead of creating a second one", () => {
-      const branch = blockAt(source, source.indexOf("if (!noteSaved)"))
+      const branch = blockAt(source, source.indexOf("if (!noteSaved)"), "if (!noteSaved)")
       expect(branch).toContain("createdRecordIdRef.current = recordId")
 
       // The create branch seeds its id from the ref, and an existing id takes the
@@ -143,7 +155,7 @@ describe("CR-03: a failed first note keeps the dialog open and the draft alive",
     })
 
     it("bails out of the reset-on-open effect while a create is pending", () => {
-      const effect = blockAt(source, source.indexOf("useEffect(() =>"))
+      const effect = blockAt(source, source.indexOf("useEffect(() =>"), "reset-on-open effect")
       expect(effect).toContain("if (createdRecordIdRef.current) return")
 
       // The guard has to come before the create-mode reset, or it guards nothing.
@@ -154,19 +166,19 @@ describe("CR-03: a failed first note keeps the dialog open and the draft alive",
     })
 
     it("clears the id on close, on open going false, and on an edit target", () => {
-      const effect = blockAt(source, source.indexOf("useEffect(() =>"))
+      const effect = blockAt(source, source.indexOf("useEffect(() =>"), "reset-on-open effect")
 
       // `open` going false by any route — including a parent flipping it directly
       // rather than going through handleClose.
-      const closedBranch = blockAt(effect, effect.indexOf("if (!open)"))
+      const closedBranch = blockAt(effect, effect.indexOf("if (!open)"), "if (!open) branch")
       expect(closedBranch).toContain("createdRecordIdRef.current = null")
 
       // Pointed at an edit target: a create's half-finished id must not carry over.
-      const editBranch = blockAt(effect, effect.indexOf(`if (${target})`))
+      const editBranch = blockAt(effect, effect.indexOf(`if (${target})`), `if (${target}) branch`)
       expect(editBranch).toContain("createdRecordIdRef.current = null")
 
       // And the dialog's own close path.
-      const close = blockAt(source, source.indexOf("const handleClose"))
+      const close = blockAt(source, source.indexOf("const handleClose"), "handleClose")
       expect(close).toContain("createdRecordIdRef.current = null")
       expect(close).toContain("onOpenChange(false)")
     })
