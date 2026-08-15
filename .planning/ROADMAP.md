@@ -5,7 +5,7 @@
 - ✅ **v1.0 MVP** -- Phases 1-16 (shipped 2026-03-14)
 - ✅ **v1.1 Reliability & Operations** -- Phases 17-20, 23 (shipped 2026-03-26)
 - ✅ **v1.2 Workflows** -- Phases 24-31 (shipped 2026-03-28)
-- 🚧 **v1.3 Foundation & CRM Depth** -- Phases 32-43 (in progress)
+- 🚧 **v1.3 Foundation & CRM Depth** -- Phases 32-44 (in progress)
 
 ## Phases
 
@@ -62,7 +62,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 
 </details>
 
-### v1.3 Foundation & CRM Depth (Phases 32-43)
+### v1.3 Foundation & CRM Depth (Phases 32-44)
 
 - [x] **Phase 32: Test Infrastructure & CI** - Green suite, one command to run it, and a merge gate that keeps it green (completed 2026-08-14)
 - [x] **Phase 33: Database Indexes for the CRM Core** - Index the foreign keys and hot filter columns the v1.0 tables never got (completed 2026-08-14)
@@ -76,6 +76,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [ ] **Phase 41: Workflow Operator Affordances** - Replay, dry-run, failure alerting, and the single-instance constraint documented
 - [ ] **Phase 42: Observability** - Structured logging, opt-in error tracking, and a health endpoint that sees the processors
 - [ ] **Phase 43: Type Safety & Deployment Docs** - Clear the 14 type suppressions and document backup/restore
+- [ ] **Phase 44: Custom Field UI Repair** - Restore the ability to add custom fields to Deals, and make the formula display agree with the stored value ⚠️ **contains a blocker — work before Phase 35**
 
 ## Phase Details
 
@@ -312,6 +313,22 @@ Plans:
 
 **Plans**: TBD
 
+### Phase 44: Custom Field UI Repair
+
+**Goal**: An admin can create a custom field on any entity — Deals included — and a formula's displayed value always agrees with its stored value
+**Depends on**: Phase 34 (this repairs the UI surface over the recalculation engine Phase 34 shipped; no other phase touches these files)
+**Requirements**: CFUI-01, CFUI-02, CFUI-03
+**Source**: 2026-08-15 browser E2E pass over the completed v1.3 phases — see `34-VERIFICATION.md` § Browser E2E Amendment. Backlog 999.25, 999.26, 999.27.
+**Success Criteria** (what must be TRUE):
+
+  1. The "Add Field" trigger renders on `/admin/fields/deal` (155 definitions) and an admin can create a field there — verified in a browser against the live dataset, not only in a unit test
+  2. The trigger still renders on person, organization and activity, and the formula editor's field-reference chips still work on all four
+  3. After editing a formula's source field on a freshly loaded record page, the rendered formula value equals the value stored in Postgres, with no reload
+  4. A formula whose sources are unset renders blank rather than `#ERROR — Unknown field: X`, on a record whose `custom_fields` is `{}`
+  5. Whatever caused the header dialog to vanish is covered by a regression test that fails if the RSC boundary is handed the full definition rows again
+
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -328,6 +345,7 @@ Plans:
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
 | 43. Type Safety & Deployment Docs | 0/? | Not started | - |
+| 44. Custom Field UI Repair | 0/? | Not started | - |
 
 ## Backlog
 
@@ -402,48 +420,12 @@ to be run with an inline `DATABASE_URL` override. Phase 33 worked around it with
 Fix: point `.env.local` at `localhost:5433`. This will bite every future phase that runs a migration
 (34, 35, 36, 37, 39, 40 all add schema). Cheap fix, high recurring cost if left.
 
-**999.25 — BLOCKER: admins cannot add custom fields to Deals** (captured 2026-08-15, E2E verification of v1.3)
-The header "Add Field" button never renders on `/admin/fields/deal`. It renders correctly on
-`/admin/fields/person` (6 definitions), `/organization` (8) and `/activity` (0). Deal has **155**.
-Reproducible on a clean `docker compose up -d --build` of current master: the button is absent from the
-**server-rendered HTML**, still absent after 20s, with no console error, no server-log error, and the rest
-of the page hydrating normally (474 buttons present).
-
-Cause is strongly indicated rather than merely suspected: the row-level pencil `FieldDialog`s on the *same*
-deal page render fine while receiving the *same* 155-item `availableFields` prop — but those are
-client→client, rendered by `fields-list.tsx` (a client component). Only the header `FieldDialog` crosses the
-**server→client RSC boundary**, at `src/app/admin/fields/[entityType]/page.tsx:46`, which passes
-`availableFields={activeFields}` — 155 full `CustomFieldDefinition` rows — out of a server component.
-Person/org pass 6–8 rows across that same boundary and work.
-
-Fix: pass a slim `{id, name, type}` projection across the boundary (it is all `FieldDialog` uses the array
-for — the formula field-reference chips), or render the header trigger from a client component.
-Impact: Deals is the primary CRM entity and the entry point for Phase 34's formula fields. There is
-currently **no UI path to create any custom field on a deal**.
-
-**999.26 — Formula field display is one save behind** (captured 2026-08-15, E2E verification of v1.3)
-On a freshly loaded record detail page, editing a formula's source field updates the stored value correctly
-but leaves the **rendered** formula value stale until a manual reload. Reproduced twice on a person with
-`GSD Doubled = {{GSD Base Value}} * 2`: set base to `3`, Postgres correctly held
-`{"formula": true, "value": 6}`, the page kept showing `14` (the previous save's result); reloading showed
-`6`. Editing twice within one page session *did* refresh correctly, so it appears to be a stale-closure or
-missing-invalidation issue in the custom-fields save path rather than a recalculation bug.
-
-The server contract (FORMULA-01 / SC-1) is **not** violated — the stored value, the API GET and the CSV
-export are all correct, as verified live. But SC-1's user-facing promise is "without any page load having
-occurred", and a user watching the screen sees a stale number. Entry point: `saveCustomFields` /
-`custom-fields-section.tsx` state merge in `src/components/custom-fields/`.
-
-**999.27 — Formula fields show `#ERROR — Unknown field: X` on new records** (captured 2026-08-15, E2E verification of v1.3)
-A formula whose source field is not yet set renders a red `#ERROR` with `Unknown field: <name>` instead of
-blank. Seen immediately on a newly created person, before any custom field had a value (stored
-`custom_fields` was `{}`).
-
-This is exactly the failure mode Phase 34's **D-14** ruled out server-side — `fieldValues` is seeded with
-every definition name defaulting to `null` precisely so unset sources cannot fabricate `Unknown field`
-errors. That seeding exists in `recalculateFormulas` but not in the client display path
-(`src/components/custom-fields/formula-field.tsx`), so the two evaluators disagree on the empty case.
-Fix: seed the display evaluator the same way, so an unset source yields blank rather than an error.
+**999.25, 999.26, 999.27 — PROMOTED to Phase 44 (2026-08-15)** (captured 2026-08-15, E2E verification of v1.3)
+Three custom-field UI defects found by the browser end-to-end pass over the completed v1.3 phases:
+999.25 (BLOCKER — no UI path to add a custom field to Deals), 999.26 (formula display one save behind),
+999.27 (`#ERROR — Unknown field` on unset sources). Promoted together as **Phase 44: Custom Field UI
+Repair** → requirements CFUI-01/02/03. Full diagnosis, reproduction steps and the
+already-proven-working baseline live in `.planning/phases/44-custom-field-ui-repair/44-CONTEXT.md`.
 
 **999.24 — RESOLVED (Phase 34, plan 34-13) — CSV export silently drops ALL custom-field columns** (captured 2026-08-14, Phase 34)
 > Closed by `deriveCsvColumns` (`src/lib/export/csv-columns.ts`), which unions keys across all rows.
@@ -524,4 +506,4 @@ The evidence captured with each backlog item is preserved in the v1.3 requiremen
 (`.planning/REQUIREMENTS.md`) — each category there names its originating backlog item.
 
 ---
-*Roadmap updated: 2026-08-13 -- v1.3 roadmapped as Phases 32-43, all 12 backlog items promoted*
+*Roadmap updated: 2026-08-15 -- Phase 44 added from the browser E2E pass (999.25-999.27 promoted); v1.3 is now Phases 32-44*

@@ -82,6 +82,15 @@ the motivating evidence stays one hop away.
 - [ ] **POLISH-01**: The codebase has zero `@ts-expect-error` suppressions — a shared typed `TableMeta` interface replaces all 14 in `admin/pipelines/columns.tsx`, `organizations/columns.tsx`, and `people/columns.tsx`
 - [ ] **POLISH-02**: Operator can follow documented backup and restore procedures for a self-hosted deployment
 
+### Custom Field UI Repair (999.25, 999.26, 999.27)
+
+Found by the 2026-08-15 browser E2E pass over the completed v1.3 phases. All three are UI-layer
+defects in the custom-field surface; the server-side contracts they sit on top of are correct.
+
+- [ ] **CFUI-01**: An admin can create a custom field on **every** entity type through the UI, including Deals — the "Add Field" trigger renders regardless of how many definitions the entity already has (999.25)
+- [ ] **CFUI-02**: After saving a formula's source field, the displayed formula value matches the stored value without a page reload (999.26)
+- [ ] **CFUI-03**: A formula whose source fields are unset renders blank, not `#ERROR — Unknown field: X` — the display evaluator seeds unset sources as `null`, matching `recalculateFormulas` D-14 behaviour (999.27)
+
 ## Future Requirements
 
 Deferred beyond v1.3. Tracked but not in the current roadmap.
@@ -143,6 +152,9 @@ Which phases cover which requirements. Populated during roadmap creation (2026-0
 | OBS-01 | Phase 42 | Pending |
 | OBS-02 | Phase 42 | Pending |
 | OBS-03 | Phase 42 | Pending |
+| CFUI-01 | Phase 44 | Pending |
+| CFUI-02 | Phase 44 | Pending |
+| CFUI-03 | Phase 44 | Pending |
 | POLISH-01 | Phase 43 | Pending |
 | POLISH-02 | Phase 43 | Pending |
 
