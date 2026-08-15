@@ -36,6 +36,7 @@ import {
   updateNoteMutation,
 } from "@/lib/mutations/notes"
 import { isAuthorOrAdmin, type NoteActor } from "@/lib/notes/authorize"
+import { NOTE_ERROR, toNoteErrorCode } from "@/lib/notes/errors"
 import { assembleTimeline } from "@/lib/timeline/assemble"
 import { notesSource } from "@/lib/timeline/sources"
 import type { NoteTimelineEntry, TimelinePage } from "@/lib/timeline/types"
@@ -54,15 +55,18 @@ type PageResult =
 
 // ---- Constants ----
 
-const NOT_AUTHENTICATED = "Not authenticated"
-const NOT_AUTHORIZED = "Not authorized"
-
 /**
- * A missing note and a soft-deleted note MUST return this same string. `findNoteById`
- * returns null for both by contract, so the two are indistinguishable to the client and
- * neither is an existence oracle (T-35-10).
+ * The failure vocabulary is `NOTE_ERROR` in @/lib/notes/errors — stable CODES, not English
+ * prose, so a fully localized UI can branch on the reason and render the right translated
+ * message. See that module for why.
+ *
+ * A missing note and a soft-deleted note MUST return the same code. `findNoteById` returns
+ * null for both by contract, so the two are indistinguishable to the client and neither is
+ * an existence oracle (T-35-10).
  */
-const NOT_FOUND = "Note not found"
+const NOT_AUTHENTICATED = NOTE_ERROR.notAuthenticated
+const NOT_AUTHORIZED = NOTE_ERROR.notAuthorized
+const NOT_FOUND = NOTE_ERROR.notFound
 
 /** The record detail route each entity type lives under. */
 const ROUTE_SEGMENTS: Record<EntityType, string> = {
@@ -137,7 +141,7 @@ export async function addNote(
     })
 
     if (!result.success) {
-      return { success: false, error: result.error }
+      return { success: false, error: toNoteErrorCode(result.error) }
     }
 
     revalidatePath(detailPath(entityType, entityId))
@@ -145,7 +149,7 @@ export async function addNote(
     return { success: true, note: await toTimelineEntry(result.note) }
   } catch (error) {
     console.error("addNote failed:", error)
-    return { success: false, error: "Failed to add note" }
+    return { success: false, error: NOTE_ERROR.failed }
   }
 }
 
@@ -171,7 +175,7 @@ export async function editNote(noteId: string, content: string): Promise<NoteRes
     const result = await updateNoteMutation(noteId, content)
 
     if (!result.success) {
-      return { success: false, error: result.error }
+      return { success: false, error: toNoteErrorCode(result.error) }
     }
 
     // Revalidate the note's OWN record, not one the caller named.
@@ -180,7 +184,7 @@ export async function editNote(noteId: string, content: string): Promise<NoteRes
     return { success: true, note: await toTimelineEntry(result.note) }
   } catch (error) {
     console.error("editNote failed:", error)
-    return { success: false, error: "Failed to edit note" }
+    return { success: false, error: NOTE_ERROR.failed }
   }
 }
 
@@ -206,7 +210,7 @@ export async function deleteNote(noteId: string): Promise<VoidResult> {
     const result = await softDeleteNoteMutation(noteId)
 
     if (!result.success) {
-      return { success: false, error: result.error }
+      return { success: false, error: toNoteErrorCode(result.error) }
     }
 
     revalidatePath(detailPath(note.entityType, note.entityId))
@@ -214,7 +218,7 @@ export async function deleteNote(noteId: string): Promise<VoidResult> {
     return { success: true }
   } catch (error) {
     console.error("deleteNote failed:", error)
-    return { success: false, error: "Failed to delete note" }
+    return { success: false, error: NOTE_ERROR.failed }
   }
 }
 
@@ -242,6 +246,6 @@ export async function loadMoreTimeline(
     return { success: true, page }
   } catch (error) {
     console.error("loadMoreTimeline failed:", error)
-    return { success: false, error: "Failed to load more history" }
+    return { success: false, error: NOTE_ERROR.failed }
   }
 }

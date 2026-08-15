@@ -62,6 +62,7 @@ import {
   softDeleteNoteMutation,
   updateNoteMutation,
 } from "@/lib/mutations/notes"
+import { NOTE_ERROR } from "@/lib/notes/errors"
 import { assembleTimeline } from "@/lib/timeline/assemble"
 import { notesSource } from "@/lib/timeline/sources"
 
@@ -315,6 +316,38 @@ describe("authorization", () => {
     const result = await editNote("n1", "edited")
 
     expect(result.success).toBe(true)
+  })
+
+  it("reports a refusal as a distinguishable code, not as generic prose (WR-06)", async () => {
+    // `notes.error.notPermitted` shipped in all three locales, was asserted by the parity
+    // gate, and was rendered by nothing: the actions returned the untranslated literal
+    // "Not authorized" and both call sites discarded it and showed "Try again." So a user
+    // who may not touch the note was told to retry an operation that will never succeed,
+    // forever. The UI can only tell the two apart if the reason survives the boundary.
+    mockAuth.mockResolvedValue(sessionFor("u2", "member"))
+    mockFindNote.mockResolvedValue(noteRow({ authorId: "u1" }))
+
+    const edited = await editNote("n1", "edited")
+    const deleted = await deleteNote("n1")
+
+    expect(edited.success).toBe(false)
+    expect(deleted.success).toBe(false)
+    if (edited.success || deleted.success) return
+    expect(edited.error).toBe(NOTE_ERROR.notAuthorized)
+    expect(deleted.error).toBe(NOTE_ERROR.notAuthorized)
+    // …and distinguishable from every other refusal, which is the whole point.
+    expect(edited.error).not.toBe(NOTE_ERROR.notFound)
+    expect(edited.error).not.toBe(NOTE_ERROR.failed)
+  })
+
+  it("does not leak which refusal happened to an unauthenticated caller", async () => {
+    mockAuth.mockResolvedValue(null)
+
+    const result = await editNote("n1", "edited")
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error).toBe(NOTE_ERROR.notAuthenticated)
   })
 
   it("the author may delete their own note", async () => {

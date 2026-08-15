@@ -28,6 +28,7 @@ import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import { editNote } from "@/app/notes/actions"
+import { NOTE_ERROR } from "@/lib/notes/errors"
 import { DeleteNoteDialog } from "@/components/timeline/delete-note-dialog"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -129,7 +130,15 @@ export function NoteEntry({ entry, canManage, onUpdated, onDeleted }: NoteEntryP
         setOptimisticContent(previous === entry.content ? null : previous)
         setDraft(previous)
         setIsEditing(true)
-        toast.error(t("error.editFailed"))
+        // "Try again" is the wrong advice for a refusal that will never change its mind.
+        // `canManage` above is cosmetic (see the module comment), so this branch is
+        // reachable: a stale client still painting Edit on a colleague's note, or an admin
+        // demoted mid-session.
+        toast.error(
+          result.error === NOTE_ERROR.notAuthorized
+            ? t("error.notPermitted")
+            : t("error.editFailed")
+        )
       } catch {
         // A thrown action and a `success: false` action are the same event to the user.
         setOptimisticContent(previous === entry.content ? null : previous)

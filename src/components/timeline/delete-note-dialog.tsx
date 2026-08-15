@@ -36,6 +36,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { deleteNote } from "@/app/notes/actions"
+import { NOTE_ERROR } from "@/lib/notes/errors"
 
 interface DeleteNoteDialogProps {
   open: boolean
@@ -67,7 +68,15 @@ export function DeleteNoteDialog({
           return
         }
 
-        toast.error(t("error.deleteFailed"))
+        // "Try again" is the wrong advice for a refusal that will never change its mind.
+        // The Delete button is painted from a cosmetic `canManage`, so this branch is
+        // reachable: a stale client still showing it on a colleague's note, or an admin
+        // demoted mid-session.
+        toast.error(
+          result.error === NOTE_ERROR.notAuthorized
+            ? t("error.notPermitted")
+            : t("error.deleteFailed")
+        )
       } catch {
         // A thrown action and a `success: false` action are the same event to the user.
         toast.error(t("error.deleteFailed"))
