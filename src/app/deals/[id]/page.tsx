@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, DollarSign, Building2, Users, Calendar, FileText, Pencil } from "lucide-react"
+import { ArrowLeft, DollarSign, Building2, Users, Calendar } from "lucide-react"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
+import { RecordTimeline } from "@/components/timeline/record-timeline"
 import type { CustomFieldDefinition } from "@/db/schema"
 import { getFormatter, getLocale, getTranslations } from 'next-intl/server'
 import { formatCurrency } from '@/lib/currency'
@@ -234,18 +235,6 @@ export default async function DealDetailPage({ params }: PageProps) {
               </div>
             </div>
           </div>
-
-          {deal.notes && (
-            <div className="mt-6 pt-6 border-t">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <FileText className="h-4 w-4" />
-                  {t('notes')}
-                </div>
-                <p className="text-sm whitespace-pre-wrap">{deal.notes}</p>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -257,10 +246,19 @@ export default async function DealDetailPage({ params }: PageProps) {
         entityAttributes={{
           Value: deal.value ? parseFloat(deal.value) : null,
           Title: deal.title,
+          // The legacy rendered block is gone, but this attribute STAYS. `buildClientFieldValues`
+          // seeds the live formula evaluation map from these keys, and an absent key makes the
+          // engine answer "Unknown field" and render an error cell — the CFUI-03 regression this
+          // repo already shipped and fixed once.
           Notes: deal.notes,
           ExpectedCloseDate: deal.expectedCloseDate,
         }}
       />
+
+      {/* The record timeline replaces the legacy read-only notes block deleted above. It is a
+          server component taking two plain string props; no React element crosses the boundary
+          into a Radix `asChild` slot (CFUI-01). */}
+      <RecordTimeline entityType="deal" entityId={deal.id} />
     </div>
   )
 }
