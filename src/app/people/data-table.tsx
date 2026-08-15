@@ -81,15 +81,23 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
     }
   }
 
-  // Closing is the dialog's decision, taken through onOpenChange. This callback refreshes
-  // the list and nothing else: a create whose record landed but whose note did not stays
-  // open on purpose so the typed note survives (T-35-31), and closing it from here is
-  // exactly what defeated that.
+  // Closing is the dialog's decision, taken through onOpenChange. A create whose record
+  // landed but whose note did not stays open on purpose so the typed note survives
+  // (T-35-31), and closing it from the refresh callback below is exactly what defeated
+  // that.
   const handleDialogOpenChange = (next: boolean) => {
     setDialogOpen(next)
     if (!next) setEditingPerson(null)
   }
 
+  // Refresh only — never close. It is deliberately near-empty, and that is not an
+  // oversight or a stale list. `refresh` is an optional prop and no parent passes one on
+  // this surface, so the body runs nothing; what keeps the table current is the server
+  // action itself. Measured for WR-12 against Next 16.1.6: an action that calls
+  // `revalidatePath` at all re-renders the CURRENT client tree a few milliseconds after
+  // the action resolves, whichever path it names, and createPerson / updatePerson both
+  // call it. A `router.refresh()` here would buy a second fetch of a tree the action has
+  // already sent. The optional hook is kept for a parent that wants to react to a save.
   const handleRecordSaved = () => {
     refresh?.()
   }

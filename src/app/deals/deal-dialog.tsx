@@ -119,7 +119,9 @@ export function DealDialog({
    * effect and `reset()` away the very draft it exists to protect.
    *
    * Lifecycle — a create must never silently become an update of an unrelated record:
-   *   set    only on the note-failure branch of a create, to the id just created
+   *   set    on the create branch, the moment the record exists — before the note is
+ *          even attempted, because the create action's own `revalidatePath` refresh
+ *          reaches the client tree within milliseconds and has to find it armed (WR-12)
    *   read   only on the create branch of `onSubmit`
    *   clear  on close (handleClose), on `open` going false by any other route, on a fresh
    *          open, and whenever the dialog is pointed at an edit target
@@ -190,10 +192,14 @@ export function DealDialog({
       return
     }
 
-    // A create whose record landed but whose note did not: the dialog is deliberately
-    // still open and the textarea still holds the draft. The refresh that failure fired
-    // re-renders the parent, and a changed prop identity must not reset the form out from
-    // under the user (T-35-31). Cleared on close, so the next open still starts clean.
+    // A create whose record already landed: the dialog is deliberately still open and
+    // the textarea still holds the draft. TWO refreshes re-render the parent while it is.
+    // The first is fired by the create action itself — `revalidatePath` runs before the
+    // action returns, and the resulting server render reaches the client tree within
+    // milliseconds of the `await`, i.e. while the note round trip is still in flight
+    // (measured, WR-12). The second is the one the failure branch fires afterwards. A
+    // changed prop identity from either must not wipe the form out from under the user
+    // (T-35-31). Cleared on close, so the next open still starts clean.
     if (createdRecordIdRef.current) return
 
     reset({
@@ -254,6 +260,15 @@ export function DealDialog({
             return
           }
           recordId = result.id
+          // Arm the reset guard the instant the record exists, and not one await later.
+          // `createDeal` calls `revalidatePath` before it returns, and that refresh
+          // lands on the client a few milliseconds after this await resolves — well
+          // inside the `addNote` round trip below. Every effect whose dependency list
+          // holds a freshly built prop re-runs then; `activity-dialog` depends on the
+          // `activityTypes` array that its page rebuilds on every server render. An
+          // unarmed guard at that moment resets the form and destroys the draft this
+          // whole path exists to protect (T-35-31, WR-12).
+          createdRecordIdRef.current = recordId
         }
 
         // The record already exists. A failed note is surfaced, never rolled back.
@@ -273,7 +288,10 @@ export function DealDialog({
             // `onRecordSaved` still runs because the record itself did land, so the board
             // behind the dialog must not go stale — and it is contractually forbidden
             // from closing this dialog, which is what makes the draft survive.
-            createdRecordIdRef.current = recordId
+            //
+            // The guard is NOT armed here. It was armed the moment the record existed,
+            // on the create branch above, because the refresh that action fires does not
+            // wait for this branch to be reached (WR-12).
             toast.error(tNotes("error.recordCreatedNoteFailed"))
             onRecordSaved()
             return

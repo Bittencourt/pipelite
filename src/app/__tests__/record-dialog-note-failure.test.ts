@@ -156,10 +156,26 @@ describe("CR-03: a failed first note keeps the dialog open and the draft alive",
       expect(branch).toContain("return")
     })
 
-    it("remembers the created record so a retry updates instead of creating a second one", () => {
-      const branch = blockAt(source, source.indexOf("if (!noteSaved)"), "if (!noteSaved)")
-      expect(branch).toContain("createdRecordIdRef.current = recordId")
+    it("arms the reset guard the moment the record exists, before the note round trip", () => {
+      const submit = source.slice(source.indexOf("const onSubmit"))
+      const armed = submit.indexOf("createdRecordIdRef.current = recordId")
+      const noteCall = submit.indexOf("await addNote(")
 
+      expect(armed, "the reset guard is never armed").toBeGreaterThan(-1)
+      expect(noteCall, "no addNote call on the create path").toBeGreaterThan(-1)
+
+      // WR-12, and the whole reason this assertion is an ordering rather than a
+      // containment: the create action calls `revalidatePath` before it returns, and that
+      // refresh reaches the client tree within milliseconds of the create's `await`
+      // resolving — measured at ~7 ms against Next 16.1.6, i.e. squarely inside the
+      // `addNote` round trip. Arming the guard only once the note has already failed
+      // leaves that window uncovered, and a dialog whose effect depends on a prop the
+      // server rebuilds every render (activity-dialog and its `activityTypes`) has its
+      // form wiped in it.
+      expect(armed).toBeLessThan(noteCall)
+    })
+
+    it("remembers the created record so a retry updates instead of creating a second one", () => {
       // The create branch seeds its id from the ref, and an existing id takes the
       // update path. Without this a second submit creates a duplicate record.
       const submit = source.slice(source.indexOf("const onSubmit"))
