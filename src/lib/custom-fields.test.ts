@@ -299,6 +299,69 @@ describe("saveFieldValues — client-posted formula keys are discarded (T-34-04)
 })
 
 /* -------------------------------------------------------------------------------------- *
+ * The wrapper round-trip — T-34-04 / RESEARCH Pitfall 3
+ * -------------------------------------------------------------------------------------- */
+
+describe("saveFieldValues — client-held wrappers are stripped on the way back in (T-34-04 / Pitfall 3)", () => {
+  // Once the client merges the server's `values` into `localValues` (plan 44-07), its NEXT save
+  // posts full `{formula:true,…}` wrapper OBJECTS back, not the scalars the block above covers.
+  // The correct expectation is that wrappers ARE present in the POST and are stripped
+  // server-side — asserting the client never sends them would be wrong by design.
+  const POSTED_WRAPPER = { formula: true, value: 999999, error: null }
+
+  it("a posted formula WRAPPER never overwrites the stored one", async () => {
+    const harness = captureUpdate()
+
+    await saveFieldValues("deal", "d1", {
+      Price: 100,
+      Origem: ["Outbound Manual"],
+      Margin: { ...POSTED_WRAPPER },
+    })
+
+    expect(persistedBlob(harness).Margin).toEqual(MARGIN_WRAPPER)
+    expect((persistedBlob(harness).Margin as { value: number }).value).toBe(60)
+  })
+
+  it("strips the wrapper with the posted values and the loaded definitions, before the write", async () => {
+    const harness = captureUpdate()
+
+    const values = { Price: 100, Margin: { ...POSTED_WRAPPER } }
+    await saveFieldValues("deal", "d1", values)
+
+    expect(mockStrip).toHaveBeenCalledWith(values, DEFINITIONS)
+    expect(mockStrip.mock.invocationCallOrder[0]).toBeLessThan(
+      harness.setFn.mock.invocationCallOrder[0]
+    )
+  })
+
+  it("a non-formula key posted alongside the wrapper is written normally — stripping does not over-reach", async () => {
+    const harness = captureUpdate()
+
+    await saveFieldValues("deal", "d1", {
+      Price: 250,
+      Origem: ["Inbound"],
+      Margin: { ...POSTED_WRAPPER },
+    })
+
+    expect(persistedBlob(harness).Price).toBe(250)
+    expect(persistedBlob(harness).Origem).toEqual(["Inbound"])
+  })
+
+  it("posting a wrapper cannot force a recalculation", async () => {
+    captureUpdate()
+
+    await saveFieldValues("deal", "d1", {
+      Price: 100,
+      Origem: ["Outbound Manual"],
+      Margin: { ...POSTED_WRAPPER },
+    })
+
+    expect(recalcInput().changedFields).not.toContain("Margin")
+    expect(recalcInput().changedFields).toEqual([])
+  })
+})
+
+/* -------------------------------------------------------------------------------------- *
  * Carry-over — D-06 / T-34-20
  * -------------------------------------------------------------------------------------- */
 
