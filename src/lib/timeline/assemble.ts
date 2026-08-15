@@ -144,8 +144,12 @@ export async function assembleTimeline(params: {
 
   const entries = positions
     .map((position) => byKey.get(entryKey(position.kind, position.id)))
-    // A row soft-deleted between the union and the hydration read is dropped rather than
-    // rendered as a hole.
+    // Drops any position the hydration read did NOT return. That is what turns the
+    // hydrate-side `deleted_at IS NULL` predicate (T-35-06, sources.ts) into a visible
+    // behaviour: a row soft-deleted between the union and the hydration read comes back
+    // from neither, so it is omitted rather than rendered as a hole. This filter is not
+    // itself the soft-delete control — remove the predicate in `hydrate` and the row is
+    // returned and rendered, with nothing here to catch it.
     .filter((entry): entry is TimelineEntry => entry !== undefined)
 
   const oldest = positions[positions.length - 1]

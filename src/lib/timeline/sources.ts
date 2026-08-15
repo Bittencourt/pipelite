@@ -1,4 +1,4 @@
-import { eq, inArray, sql, type SQL } from "drizzle-orm"
+import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 
 import { db } from "@/db"
@@ -77,7 +77,16 @@ export interface TimelineSource {
   branch(target: TimelineTarget, cursor: TimelineCursor | null, limit: number): SQL
   /** count(*) for the header badge. */
   countBranch(target: TimelineTarget): SQL
-  /** Two-step hydration: one batched typed read of the display columns for the given ids. */
+  /**
+   * Two-step hydration: one batched typed read of the display columns for the given ids.
+   *
+   * A hydrate read is a READ PATH in its own right, not a private continuation of
+   * `branch`. It is called directly from outside the assembler (the note server action
+   * rehydrates a freshly written row through it), so it carries the soft-delete predicate
+   * itself rather than inheriting one from the union — `notes_live_idx` is partial on that
+   * predicate but an index encodes a filter, it does not enforce one (T-35-06). Returning
+   * fewer rows than ids is therefore normal and the assembler drops the difference.
+   */
   hydrate(ids: string[]): Promise<TimelineEntry[]>
 }
 
@@ -135,7 +144,11 @@ export const notesSource: TimelineSource = {
       })
       .from(notes)
       .leftJoin(users, eq(notes.authorId, users.id))
-      .where(inArray(notes.id, ids))
+      // T-35-06. Not redundant with the union's predicate: the union and this read are two
+      // separate statements, so a note soft-deleted between them would otherwise be
+      // hydrated and rendered. This is also the only predicate protecting the direct
+      // callers of `notesSource.hydrate` outside the assembler.
+      .where(and(inArray(notes.id, ids), isNull(notes.deletedAt)))
 
     return rows.map(
       (row): NoteTimelineEntry => ({
@@ -205,7 +218,8 @@ export const activitiesSource: TimelineSource = {
       })
       .from(activities)
       .leftJoin(activityTypes, eq(activities.typeId, activityTypes.id))
-      .where(inArray(activities.id, ids))
+      // Same control as the notes hydration above (T-35-06).
+      .where(and(inArray(activities.id, ids), isNull(activities.deletedAt)))
 
     return rows.map(
       (row): ActivityTimelineEntry => ({

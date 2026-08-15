@@ -133,18 +133,30 @@ function stubExecute(unionRows: RawRow[], perSourceCount = 7) {
 const fromCalls: unknown[] = []
 
 /**
+ * Every hydration `.where(...)` argument, paired with the table it was issued against.
+ * A mocked driver cannot APPLY a predicate, but it can see that one was passed — which is
+ * the whole of CR-01.
+ */
+const whereCalls: { table: unknown; where: unknown }[] = []
+
+/**
  * A chainable `db.select()` stub. Every builder method returns the same object, and the
  * object is thenable, so it survives any join shape the sources choose.
  */
 function stubSelect(rowsForTable: (table: unknown) => unknown[]) {
   mockDb.select.mockImplementation(() => {
     let rows: unknown[] = []
+    let table: unknown = null
     const chain: Record<string, unknown> = {}
     for (const method of ["from", "leftJoin", "innerJoin", "where", "orderBy", "limit"]) {
       chain[method] = vi.fn((arg: unknown) => {
         if (method === "from") {
+          table = arg
           fromCalls.push(arg)
           rows = rowsForTable(arg)
+        }
+        if (method === "where") {
+          whereCalls.push({ table, where: arg })
         }
         return chain
       })
@@ -152,6 +164,13 @@ function stubSelect(rowsForTable: (table: unknown) => unknown[]) {
     chain.then = (resolve: (value: unknown) => unknown) => resolve(rows)
     return chain
   })
+}
+
+/** The rendered SQL text of every hydration `where` issued against `table`. */
+function hydrationWhereText(table: unknown): string[] {
+  return whereCalls
+    .filter((call) => call.table === table)
+    .map((call) => dialect.sqlToQuery(call.where as SQL).sql.toLowerCase())
 }
 
 /** Every `db.execute` call that is NOT one of the header counts. */
@@ -171,6 +190,7 @@ function stubNotesHydration(rows: RawRow[]) {
 beforeEach(() => {
   vi.clearAllMocks()
   fromCalls.length = 0
+  whereCalls.length = 0
 })
 
 // ===========================================================================
@@ -377,6 +397,7 @@ describe("assembleTimeline — hasMore", () => {
     for (const n of [20, 3, 0]) {
       vi.clearAllMocks()
       fromCalls.length = 0
+      whereCalls.length = 0
       const rows = noteRawRows(n)
       stubExecute(rows)
       stubNotesHydration(rows)
@@ -524,6 +545,40 @@ describe("assembleTimeline — hydration", () => {
       toStageColor: "green",
     })
     expect(note.occurredAt.getTime()).toBe(t(0).getTime())
+  })
+
+  it("carries deleted_at IS NULL on the notes hydration read, not just on the union", async () => {
+    // CR-01 REGRESSION. The union and the hydration read are two SEPARATE statements, so
+    // the union's predicate does not cover the second one: a note soft-deleted between them
+    // was hydrated and rendered. `notesSource.hydrate` is also called directly from outside
+    // the assembler (src/app/notes/actions.ts), where there is no union in front of it at
+    // all — an unscoped read-notes-by-id with no soft-delete filter. T-35-06 requires the
+    // predicate on EVERY read path explicitly; `notes_live_idx` is partial on it but an
+    // index encodes a filter, it does not enforce one.
+    const rows = noteRawRows(3)
+    stubExecute(rows)
+    stubNotesHydration(rows)
+
+    await assembleTimeline({ entityType: "organization", entityId: "o1" })
+
+    const wheres = hydrationWhereText(notes)
+    expect(wheres).toHaveLength(1)
+    expect(wheres[0]).toContain('"deleted_at" is null')
+    expect(wheres[0]).toContain('"id" in (')
+  })
+
+  it("carries deleted_at IS NULL on the activities hydration read", async () => {
+    // CR-01 REGRESSION, activities half.
+    const t = (i: number) => new Date(T0 - i * 60_000)
+    const rows: RawRow[] = [{ kind: "activity", id: "a1", occurred_at: t(0) }]
+    stubExecute(rows)
+    stubSelect((table) => (table === activities ? [activityHydrationRow("a1", t(0))] : []))
+
+    await assembleTimeline({ entityType: "deal", entityId: "d1" })
+
+    const wheres = hydrationWhereText(activities)
+    expect(wheres).toHaveLength(1)
+    expect(wheres[0]).toContain('"deleted_at" is null')
   })
 
   it("drops a union row whose hydration returned nothing rather than emitting a hole", async () => {
