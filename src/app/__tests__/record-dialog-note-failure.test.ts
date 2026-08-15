@@ -92,12 +92,34 @@ function recordSavedHandlerBodies(source: string): string[] {
 }
 
 /**
- * Anything that would close the dialog or drop the record it is pointed at. Deliberately
- * broad: `setDeleteDialogOpen(false)` belongs to a *different* dialog and is filtered out
- * by name, everything else that flips an "open" state to false is a violation.
+ * Anything that would close the dialog or drop the record it is pointed at.
+ *
+ * The first version of this gate matched only the literal `setXOpen(false)` /
+ * `setEditingX(null)` / `setSelectedDeal(null)` — the shapes the CR-03 fix REMOVED — and
+ * was blind to the shape that same fix INTRODUCED (WR-14). Three of the seven call sites
+ * now own a named `handleDialogOpenChange`, which is the most natural way a future
+ * developer would close a dialog there, and `handleDialogOpenChange(false)` sailed
+ * straight through. So the alternation now also covers the named handler and the prop it
+ * is wired to.
+ *
+ * The argument is deliberately unconstrained. `setDialogOpen(next)` closes exactly as
+ * effectively as `setDialogOpen(false)`, and a callback that means "re-read your data"
+ * has no business touching the dialog's open state at any value — so matching the call
+ * rather than the literal `false` closes the indirection hole too. All seven current
+ * handler bodies are a bare `router.refresh()` / `refresh?.()` / `window.location.reload()`,
+ * so there is nothing legitimate for this to catch.
+ *
+ * `setDeleteDialogOpen(...)` belongs to a *different* dialog and stays carved out by name.
  */
-const CLOSES_THE_DIALOG =
-  /\bset(?!Delete)\w*(?:Dialog)?Open\s*\(\s*false\s*\)|\bsetEditing\w*\s*\(\s*null\s*\)|\bsetSelectedDeal\s*\(\s*null\s*\)/
+const CLOSES_THE_DIALOG = new RegExp(
+  [
+    String.raw`\bset(?!Delete)\w*Open\s*\(`,
+    String.raw`\bsetEditing\w*\s*\(`,
+    String.raw`\bsetSelectedDeal\s*\(`,
+    String.raw`\b(?:handle|on)\w*OpenChange\s*\(`,
+    String.raw`\bhandleClose\s*\(`,
+  ].join("|"),
+)
 
 const DIALOGS = [
   { entity: "deal", file: "src/app/deals/deal-dialog.tsx", target: "deal" },
@@ -209,6 +231,41 @@ describe("CR-03: a failed first note keeps the dialog open and the draft alive",
       // The rename is the enforcement: a call site still passing the old prop is a type
       // error. This catches the JSX being copied back in without the type catching it.
       expect(source).not.toMatch(/<(?:Deal|Organization|Person|Activity)Dialog\b[^>]*\bonSuccess=/)
+    })
+  })
+
+  // A gate for the gate. The detector above is only worth its assertions if it actually
+  // recognises how these files close a dialog, and it silently stopped doing so once the
+  // CR-03 fix introduced a named close handler (WR-14). Pin the vocabulary so the next
+  // idiom has to be added here deliberately rather than discovered by a reviewer.
+  describe("CLOSES_THE_DIALOG recognises how these files actually close a dialog", () => {
+    it.each([
+      "setCreateDialogOpen(false)",
+      "setDialogOpen(false)",
+      "setOpen(false)",
+      "setEditingOrg(null)",
+      "setEditingActivity(null)",
+      "setSelectedDeal(null)",
+      // Introduced by the CR-03 fix itself, and missed by the first version of this regex.
+      "handleDialogOpenChange(false)",
+      "handleOpenChange(false)",
+      "onOpenChange(false)",
+      "handleClose()",
+      // Indirection: the literal `false` never appears next to the setter.
+      "const next = false; setDialogOpen(next)",
+    ])("catches %s", (line) => {
+      expect(line).toMatch(CLOSES_THE_DIALOG)
+    })
+
+    it.each([
+      // A different dialog entirely — the carve-out that keeps this usable.
+      "setDeleteDialogOpen(false)",
+      "router.refresh()",
+      "refresh?.()",
+      "startTransition(() => router.refresh())",
+      "window.location.reload()",
+    ])("leaves %s alone", (line) => {
+      expect(line).not.toMatch(CLOSES_THE_DIALOG)
     })
   })
 })
