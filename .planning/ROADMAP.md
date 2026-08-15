@@ -347,7 +347,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 44-08-PLAN.md — Slim `availableFields` contract and single projected row array, shipped and measured as a payload optimisation, not as the repair (CFUI-01, D-44-02)
+- [x] 44-08-PLAN.md — Slim `availableFields` contract and single projected row array, shipped and measured as a payload optimisation, not as the repair (CFUI-01, D-44-02)
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -369,7 +369,7 @@ Plans:
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
 | 43. Type Safety & Deployment Docs | 0/? | Not started | - |
-| 44. Custom Field UI Repair | 7/9 | In Progress|  |
+| 44. Custom Field UI Repair | 8/9 | In Progress|  |
 
 ## Backlog
 

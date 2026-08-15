@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-15T16:18:45.570Z"
+last_updated: "2026-08-15T16:33:57.228Z"
 last_activity: 2026-08-15
 progress:
   total_phases: 13
   completed_phases: 3
   total_plans: 31
-  completed_plans: 29
+  completed_plans: 30
   percent: 23
 ---
 
@@ -24,12 +24,12 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 ## Position
 
-Phase: 44 - Custom Field UI Repair (executing — 7/9 plans)
-Plan: Wave 2 done (44-06 CFUI-01 structural repair, 44-07); Wave 3 next (44-08, 44-09)
-Status: Executing — Wave 2 closed CFUI-01 (RSC boundary), CFUI-02 (server-authoritative save) and CFUI-03 (seeded client field map)
+Phase: 44 - Custom Field UI Repair (executing — 8/9 plans)
+Plan: Wave 3 in progress (44-08 done); 44-09 next
+Status: Executing — 44-08 shipped the D-44-02 payload projection (45028 B → 22353 B, −50.4%) as an optimisation only; CFUI-01 remains fixed structurally by 44-06 and all nine of its gates are green
 Last activity: 2026-08-15
 
-Progress: [█████████░] 94%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ Progress: [█████████░] 94%
 | Phase 44 P01 | 17min | 2 tasks | 6 files |
 | Phase 44 P06 | 12min | 2 tasks | 3 files |
 | Phase 44 P07 | 9min | 2 tasks | 2 files |
+| Phase 44 P08 | 15min | 2 tasks | 6 files |
 
 ## Decisions
 
@@ -141,6 +142,7 @@ Progress: [█████████░] 94%
 - [Phase ?]: 44-06: a repo-wide scan now fails if any server component renders a children-forwarding asChild component (193 tsx files, 2 definers, 3 usages, all client) — the mechanism is gated, not just the one file
 - [Phase 44]: The server's recomputed custom_fields blob REPLACES localValues after a save rather than being merged key-by-key — Merging only the edited key is what left stale formula wrappers in place, making the displayed formula one save behind the stored one (CFUI-02)
 - [Phase 44]: Client-component wiring is gated by comment-stripped source reads, not by rendering the component — Rendering a 'use client' component needs jsdom plus a testing library, which phase 44 must not install; the behaviour is unit-tested in the pure helper modules and the source gate proves the component calls them
+- [Phase 44]: 44-08: project admin field rows once and share one array (45028 B -> 22353 B, -50.4%) — React Flight back-references an already-written array, so a separate slim availableFields array measured 58681 B - a net increase. Payload optimisation only; CFUI-01 stays fixed structurally by 44-06.
 
 ### Quick Tasks Completed
 
