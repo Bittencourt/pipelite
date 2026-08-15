@@ -231,7 +231,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 35-13-PLAN.md — client timeline list with Load more + server card shell (wave 7)
+- [x] 35-13-PLAN.md — client timeline list with Load more + server card shell (wave 7)
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
@@ -409,7 +409,7 @@ Plans:
 | 32. Test Infrastructure & CI | 6/6 | Complete   | 2026-08-14 |
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
-| 35. Notes & Record Timeline | 12/15 | In Progress|  |
+| 35. Notes & Record Timeline | 13/15 | In Progress|  |
 | 36. Audit Log | 0/? | Not started | - |
 | 37. Trash & Restore | 0/? | Not started | - |
 | 38. Bulk Operations | 0/? | Not started | - |
