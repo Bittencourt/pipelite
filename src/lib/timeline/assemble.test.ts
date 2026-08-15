@@ -154,6 +154,13 @@ function stubSelect(rowsForTable: (table: unknown) => unknown[]) {
   })
 }
 
+/** Every `db.execute` call that is NOT one of the header counts. */
+function unionCalls(): SQL[] {
+  return (mockDb.execute.mock.calls as unknown[][])
+    .map((call) => call[0] as SQL)
+    .filter((query) => !render(query).lower.includes("count("))
+}
+
 /** The common case: a page of notes only. */
 function stubNotesHydration(rows: RawRow[]) {
   stubSelect((table) =>
@@ -391,11 +398,9 @@ describe("assembleTimeline — hasMore", () => {
 
     await assembleTimeline({ entityType: "organization", entityId: "o1" })
 
-    const unionCalls = mockDb.execute.mock.calls.filter(
-      ([q]: [SQL]) => !render(q).lower.includes("count(")
-    )
-    expect(unionCalls).toHaveLength(1)
-    expect(render(unionCalls[0][0]).params.filter((p) => p === 21)).toHaveLength(2)
+    const calls = unionCalls()
+    expect(calls).toHaveLength(1)
+    expect(render(calls[0]).params.filter((p) => p === 21)).toHaveLength(2)
   })
 
   it("degrades a malformed cursor to page 1 instead of throwing", async () => {
@@ -410,10 +415,8 @@ describe("assembleTimeline — hasMore", () => {
     })
 
     expect(page.entries).toHaveLength(3)
-    const unionCall = mockDb.execute.mock.calls.find(
-      ([q]: [SQL]) => !render(q).lower.includes("count(")
-    )!
-    expect(countOf(render(unionCall[0]).lower, ") < (")).toBe(0)
+    const [unionCall] = unionCalls()
+    expect(countOf(render(unionCall).lower, ") < (")).toBe(0)
   })
 })
 
