@@ -276,7 +276,8 @@
       "editFailed": "Tus cambios no se guardaron. Inténtalo de nuevo.",
       "deleteFailed": "La nota no se eliminó. Inténtalo de nuevo.",
       "notPermitted": "Solo el autor o un administrador puede modificar esta nota.",
-      "recordCreatedNoteFailed": "El registro se guardó, pero tu nota no. El texto sigue en el cuadro: inténtalo de nuevo."
+      "recordCreatedNoteFailed": "El registro se guardó, pero tu nota no. El texto sigue en el cuadro: inténtalo de nuevo.",
+      "timelineUnavailable": "No se pudo cargar la cronología. Actualiza la página para intentarlo de nuevo."
     },
     "edited": "editada",
     "migrated": "Migrada",

@@ -276,7 +276,8 @@
       "editFailed": "Suas alterações não foram salvas. Tente novamente.",
       "deleteFailed": "A nota não foi excluída. Tente novamente.",
       "notPermitted": "Somente o autor ou um administrador pode alterar esta nota.",
-      "recordCreatedNoteFailed": "O registro foi salvo, mas sua nota não. O texto continua na caixa — tente novamente."
+      "recordCreatedNoteFailed": "O registro foi salvo, mas sua nota não. O texto continua na caixa — tente novamente.",
+      "timelineUnavailable": "Não foi possível carregar a linha do tempo. Atualize a página para tentar novamente."
     },
     "edited": "editada",
     "migrated": "Migrada",

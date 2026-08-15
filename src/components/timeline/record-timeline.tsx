@@ -7,7 +7,8 @@
  * first paint (35-UI-SPEC "First paint is server-rendered"). Only Load more and the note
  * mutations are client round-trips.
  *
- * THE ONLY THINGS THIS MODULE MAY RENDER ARE CARD PRIMITIVES AND `TimelineList` (T-35-30)
+ * THE ONLY THINGS THIS MODULE MAY RENDER ARE CARD PRIMITIVES, PLAIN DOM ELEMENTS AND
+ * `TimelineList` (T-35-30)
  * The Phase 44 / CFUI-01 class-wide gate walks every non-test .tsx under src/ and fails if
  * a NON-client module renders a component that forwards its children into a Radix
  * `asChild` slot — because `SlotClone` silently discards whatever Flight hands it, and the
@@ -25,7 +26,7 @@ import { TimelineList } from "@/components/timeline/timeline-list"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { EntityType } from "@/db/schema"
 import { assembleTimeline, countTimeline } from "@/lib/timeline/assemble"
-import { TIMELINE_PAGE_SIZE } from "@/lib/timeline/types"
+import { TIMELINE_PAGE_SIZE, type TimelinePage } from "@/lib/timeline/types"
 
 interface RecordTimelineProps {
   entityType: EntityType
@@ -47,10 +48,40 @@ export async function RecordTimeline({ entityType, entityId }: RecordTimelinePro
   // the header does not depend on the assembler's page shape. It is one index-only
   // `count(*)` per applicable source (0.480 ms measured in 35-08), issued concurrently
   // with the page read.
-  const [page, total] = await Promise.all([
-    assembleTimeline({ entityType, entityId, limit: TIMELINE_PAGE_SIZE }),
-    countTimeline(entityType, entityId),
-  ])
+  //
+  // GUARDED FOR THE SAME REASON THE SESSION CHECK ABOVE IS.
+  // These four-to-five queries can throw — a connection blip, a statement timeout, or
+  // `assertEntityType` — and an unguarded throw inside an RSC render takes the ENTIRE
+  // record detail page down over one optional section. There is no error.tsx or
+  // global-error.tsx anywhere under src/app/, so the user would get Next.js's default
+  // full-page error rather than a degraded record page. Before this phase the notes block
+  // was a column already present in the page's own query and could not fail
+  // independently; now it can, so it degrades to an inline message instead.
+  let page: TimelinePage
+  let total: number
+  try {
+    ;[page, total] = await Promise.all([
+      assembleTimeline({ entityType, entityId, limit: TIMELINE_PAGE_SIZE }),
+      countTimeline(entityType, entityId),
+    ])
+  } catch (error) {
+    // Logged in full server-side; the client is told only that the section failed.
+    console.error("RecordTimeline read failed:", error)
+    return (
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-base leading-tight font-semibold">
+            {t("timeline")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-sm leading-normal">
+            {t("error.timelineUnavailable")}
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card className="mt-6">

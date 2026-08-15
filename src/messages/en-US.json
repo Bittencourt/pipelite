@@ -276,7 +276,8 @@
       "editFailed": "Your changes weren't saved. Try again.",
       "deleteFailed": "The note wasn't deleted. Try again.",
       "notPermitted": "Only the author or an admin can change this note.",
-      "recordCreatedNoteFailed": "The record was saved, but your note wasn't. The text is still in the box — try again."
+      "recordCreatedNoteFailed": "The record was saved, but your note wasn't. The text is still in the box — try again.",
+      "timelineUnavailable": "The timeline couldn't be loaded. Refresh the page to try again."
     },
     "edited": "edited",
     "migrated": "Migrated",
