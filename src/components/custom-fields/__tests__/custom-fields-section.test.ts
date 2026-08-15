@@ -158,3 +158,100 @@ describe("the evaluation map is built by the shared helper (CFUI-03)", () => {
     expect(stripped).toMatch(/\.\.\.\s*entityAttributes/)
   })
 })
+
+describe("the server's recomputed values are authoritative after a save (CFUI-02)", () => {
+  /**
+   * `localValues` is `useState(values)`, which permanently shadows the `values` prop — a fresh RSC
+   * payload can never reach it. Before this change the only thing ever merged in was the key the
+   * user typed, so the `{formula:true,...}` wrapper the component held stayed the one from page
+   * load: the displayed formula was literally one save behind. Plan 44-02 made `saveFieldValues`
+   * resolve with the post-recalculation blob; these gates pin that the component takes it.
+   *
+   * Note for reviewers: after this, `localValues` holds wrapper objects and the NEXT save POSTs
+   * them back. That is expected and safe — `stripFormulaKeys` runs server-side before every write
+   * (T-34-04) and carries the stored wrapper over (D-06), with explicit coverage in
+   * `custom-fields.test.ts`. No client-side filtering is added here on purpose; the server is the
+   * single enforcement point, and a gate asserting the client never sends formula keys would be
+   * asserting the opposite of the real contract.
+   */
+  const setLocalValuesArguments = () =>
+    callArguments(sectionSource(), "setLocalValues").map((args) => args.trim())
+
+  it("types the fetch wrapper's response with the optional values key", () => {
+    // The route already does NextResponse.json(result); only the client-side type was too narrow,
+    // so `result.values` would not even compile.
+    expect(sectionSource()).toMatch(
+      /Promise<\{[^}]*\bvalues\?:\s*Record<\s*string\s*,\s*unknown\s*>[^}]*\}>/
+    )
+  })
+
+  it("replaces localValues with the blob the server just computed", () => {
+    const args = setLocalValuesArguments()
+
+    expect(
+      args.filter((a) => /^result\.values$/.test(a)),
+      "the server's values must REPLACE localValues, not be merged key-by-key into it — merging " +
+        "is what leaves a stale formula wrapper in place"
+    ).toHaveLength(1)
+  })
+
+  it("sets the server's values only after the request resolves", () => {
+    const source = sectionSource()
+    const request = source.search(/await\s+saveCustomFields\s*\(/)
+    const authoritative = source.search(/setLocalValues\s*\(\s*result\.values\s*\)/)
+
+    expect(request, "no awaited saveCustomFields call").toBeGreaterThan(-1)
+    expect(authoritative).toBeGreaterThan(request)
+  })
+
+  it("keeps the optimistic update before the request", () => {
+    const source = sectionSource()
+    const optimistic = source.search(/setLocalValues\s*\(\s*newValues\s*\)/)
+    const request = source.search(/await\s+saveCustomFields\s*\(/)
+
+    expect(optimistic, "the optimistic setLocalValues(newValues) is gone — typing would lag")
+      .toBeGreaterThan(-1)
+    expect(optimistic).toBeLessThan(request)
+    expect(setLocalValuesArguments().filter((a) => /^newValues$/.test(a))).toHaveLength(1)
+  })
+
+  it("notifies onValuesChange with the server's values, falling back to the optimistic blob", () => {
+    const calls = callArguments(sectionSource(), "onValuesChange?.")
+
+    expect(calls, "onValuesChange must still fire on success").toHaveLength(1)
+    expect(
+      calls[0].trim(),
+      "the parent must be told what the server stored, not what the client guessed"
+    ).toMatch(/^result\.values\s*\?\?\s*newValues$/)
+  })
+
+  it("still reverts to the values prop on both failure paths", () => {
+    // Unchanged recovery behaviour: `result.success === false` and a thrown fetch.
+    const source = sectionSource()
+
+    expect(
+      setLocalValuesArguments().filter((a) => /^values$/.test(a)),
+      "both revert-to-prop paths must survive"
+    ).toHaveLength(2)
+    expect(source.match(/console\.error\(\s*['"]Failed to save field:['"]/g) ?? []).toHaveLength(2)
+    expect(source, "the thrown-fetch recovery path is gone").toMatch(/catch\s*\(/)
+  })
+
+  it("makes exactly four setLocalValues calls", () => {
+    // optimistic + authoritative + two reverts. A fifth means an extra state write nobody
+    // reasoned about; a third means one of the four above was dropped.
+    expect(setLocalValuesArguments()).toEqual(["newValues", "result.values", "values", "values"])
+  })
+
+  it("does not count a commented-out merge as wiring", () => {
+    const decoy = `
+      // if (result.values) setLocalValues(result.values)
+      /* onValuesChange?.(result.values ?? newValues) */
+      if (result.success) { onValuesChange?.(newValues) }
+    `
+    const stripped = stripComments(decoy)
+
+    expect(callArguments(stripped, "setLocalValues")).toEqual([])
+    expect(callArguments(stripped, "onValuesChange?.")).toEqual(["newValues"])
+  })
+})
