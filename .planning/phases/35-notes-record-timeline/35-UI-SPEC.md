@@ -46,13 +46,12 @@ Declared values (all multiples of 4):
 | Token | Value | Usage in this phase |
 |-------|-------|---------------------|
 | xs | 4px | `gap-1` — icon-to-label gaps inside badges and meta rows |
-| sm | 8px | `gap-2` / `space-y-2` — author↔timestamp gap, composer button row, entry meta line |
-| — | 12px | `gap-3` — timeline icon rail → entry content column |
+| sm | 8px | `gap-2` / `space-y-2` — author↔timestamp gap, composer button row, entry meta line, timeline icon rail → entry content column |
 | md | 16px | `space-y-4` — vertical gap between timeline entries; composer → first entry |
 | lg | 24px | `px-6` / `py-6` — Card padding (inherited from the `Card` primitive); `mt-6` between the details card, `CustomFieldsSection`, and the timeline card |
 | xl | 32px | Timeline icon-rail column width (`w-8`) and avatar size (`size-8`) |
 | 2xl | 48px | Not used in this phase |
-| 3xl | 64px | Not used in this phase |
+| 3xl | 64px | `min-h-16` — composer textarea minimum height |
 
 **Exceptions:**
 
@@ -61,8 +60,10 @@ Declared values (all multiples of 4):
    precedent in `src/app/activities/activity-list.tsx`, the surface is a desktop-first CRM, the actions
    are **always visible** (never hover-only reveal, which would make them unreachable on touch), and every
    primary flow in this phase (composer textarea, Add note, Load more) uses a ≥36px target.
-2. **Textarea minimum height 80px** (`min-h-20`) for the composer — a multiple of 4, listed here because
-   it is not one of the seven scale tokens.
+
+No other exception. Every other value in this phase is one of the seven declared tokens — including the
+composer textarea, which uses `min-h-16` (64px, the `3xl` token) rather than an off-scale height, and the
+timeline rail gap, which uses `gap-2` (8px, the `sm` token).
 
 ---
 
@@ -142,6 +143,10 @@ locale files: `src/messages/en-US.json`, `src/messages/es-ES.json`, `src/message
 (locked in `35-CONTEXT.md` § API, Permissions & Surfaces). Server components use `getTranslations`;
 client components use `useTranslations`.
 
+**30 new `notes.*` keys** are declared across the two tables below — 27 in the inventory and 3 in the
+destructive-confirmation block. Every one of them is new; this phase reuses **no** generic string from
+the `common` namespace, because every CTA here is qualified by the noun it acts on.
+
 > Note for the planner: the locale files live at **`src/messages/`**, not `messages/`.
 
 | Element | Copy (en-US) | Key |
@@ -167,8 +172,8 @@ client components use `useTranslations`.
 | Pagination in flight | Loading… | `notes.loadingMore` |
 | Edit action (aria-label + menu item) | Edit note | `notes.editNote` |
 | Delete action (aria-label + menu item) | Delete note | `notes.deleteNote` |
-| Save edit | Save | `common.save` (exists) |
-| Cancel edit | Cancel | `common.cancel` (exists) |
+| Save an inline edit | Save note | `notes.saveEdit` |
+| Cancel an inline edit | Cancel edit | `notes.cancelEdit` |
 | Stage change entry | moved this deal from {from} to {to} | `notes.entry.stageChanged` |
 | Activity entry — open | Due {date} | `notes.entry.activityDue` |
 | Activity entry — done | Completed | `notes.entry.activityCompleted` |
@@ -181,15 +186,18 @@ client components use `useTranslations`.
 | Trigger | Icon-only `Trash2`, `variant="ghost"`, `aria-label` = `notes.deleteNote` |
 | Dialog title | Delete note |
 | Dialog description | This removes the note from the record's timeline. You can't undo this here. |
-| Cancel | Cancel (`common.cancel`) |
+| Cancel | Keep note (`notes.deleteDialog.cancel`) |
 | Confirm | Delete note (`bg-destructive text-destructive-foreground hover:bg-destructive/90`, with `Loader2` spinner while in flight) |
-| Keys | `notes.deleteDialog.title`, `notes.deleteDialog.description` |
+| Keys | `notes.deleteDialog.title`, `notes.deleteDialog.description`, `notes.deleteDialog.cancel` |
 
 The description deliberately does **not** promise restoration: notes are soft-deleted via `deletedAt`,
 but trash/restore is Phase 37 and no restore surface exists yet. Copy must not write a cheque the
 product cannot cash.
 
 **Copy rules for this phase:**
+- **No generic CTA labels.** Every button names the object it acts on — "Add note", "Save note",
+  "Cancel edit", "Delete note", "Keep note". A bare "Save", "Cancel", "Confirm", "OK" or "Submit" is
+  forbidden in this surface, including in the confirmation dialog.
 - No exclamation marks. No "Oops". No "Something went wrong" as a standalone error — every error names
   the failed action and the next step.
 - Every error message states what happened **and** what the user does next.
@@ -212,10 +220,10 @@ Record data stays contiguous; history sits last. Not a sidebar, not a tab
 Card
 ├── CardHeader          Timeline  (16/600)   ({count} in 14px muted, matching CustomFieldsSection)
 ├── CardContent
-│   ├── NoteComposer    Textarea (min-h-20) + right-aligned "Add note" button row (gap-2, mt-2)
+│   ├── NoteComposer    Textarea (min-h-16) + right-aligned "Add note" button row (gap-2, mt-2)
 │   ├── separator       border-t, mt-4 pt-4
 │   ├── <ol>            entries, newest first, space-y-4
-│   │   └── <li>        [32px icon rail] [gap-3] [entry content column, flex-1 min-w-0]
+│   │   └── <li>        [32px icon rail] [gap-2] [entry content column, flex-1 min-w-0]
 │   └── Load more       full-width, variant="outline", size="sm", mt-4 — rendered only when more exist
 ```
 
@@ -226,6 +234,12 @@ Card
 | Rail (`w-8`, shrink-0) | Note → `Avatar size-8` with author initials (`getInitials` precedent). Activity → `size-8` rounded-full `bg-muted` holding the lucide type icon at `h-4 w-4 text-muted-foreground`. Stage change → same `bg-muted` circle holding `ArrowRight`. |
 | Content (`flex-1 min-w-0`) | Line 1 (`flex flex-wrap items-center gap-2`): actor name (Label 14/600) · entry predicate · `<time>` (Meta 12/400 muted) · `edited` · `Migrated` badge. Line 2: the body — note text (`whitespace-pre-wrap break-words`), or the activity subject link, or the from/to stage badges. |
 | Actions (shrink-0) | Notes authored by the current user or viewed by an admin: `Edit` + `Delete` at `size="icon-sm"`. All other entry kinds: nothing. |
+
+**Primary visual anchor:** the composer's filled **Add note** button and the newest (topmost) entry are
+the primary visual anchors of the timeline card — the Add note button is the only `--primary`-filled
+element in the card, and the newest entry sits directly beneath the composer at the top of the list, so
+the eye lands on "write something" and "what happened most recently" in that order. Every other element
+(Load more, Edit, Delete, timestamps, rail icons) is deliberately subordinate: outline, ghost, or muted.
 
 **Vertical connector:** a 1px `bg-border` line behind the rail, from the center of each icon to the next
 one, omitted after the last loaded entry. Purely decorative — `aria-hidden="true"`.
@@ -266,9 +280,9 @@ anyone else)
 
 | Trigger | Behavior |
 |---------|----------|
-| Edit | The note body swaps in place for a `Textarea` pre-filled with the current text, plus Save/Cancel at `size="sm"`. Not a dialog — an inline swap keeps the surrounding timeline readable. |
-| Cancel edit | Reverts to the rendered body; no confirmation (nothing is lost that the user did not just type) |
-| Save edit | Optimistic update; on success the `edited` marker appears (`updatedAt > createdAt`); on failure the previous text is restored and `toast.error(notes.error.editFailed)` fires |
+| Edit | The note body swaps in place for a `Textarea` pre-filled with the current text, plus **Save note** / **Cancel edit** at `size="sm"`. Not a dialog — an inline swap keeps the surrounding timeline readable. |
+| Cancel edit (`notes.cancelEdit` — "Cancel edit") | Reverts to the rendered body; no confirmation (nothing is lost that the user did not just type) |
+| Save note (`notes.saveEdit` — "Save note") | Optimistic update; on success the `edited` marker appears (`updatedAt > createdAt`); on failure the previous text is restored and `toast.error(notes.error.editFailed)` fires |
 | Delete | Opens `AlertDialog` (focus-trapped, ESC-dismissable). Confirm removes the entry from the list; failure restores it and fires `toast.error(notes.error.deleteFailed)` |
 
 **Pagination** — 20 entries per page, newest first, Load more extends the list
