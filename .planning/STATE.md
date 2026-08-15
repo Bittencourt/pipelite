@@ -24,9 +24,9 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 ## Position
 
-Phase: 33 - Database Indexes for the CRM Core (complete — 3/3 plans)
-Plan: 3 of 3 complete
-Status: Phase complete — ready for verification
+Phase: 44 - Custom Field UI Repair (executing — 5/9 plans)
+Plan: Wave 1 complete (44-01..44-05); Wave 2 next (44-06, 44-07)
+Status: Executing — reconciled 2026-08-15 after parallel Wave 1
 Last activity: 2026-08-15
 
 Progress: [█████████░] 87%
