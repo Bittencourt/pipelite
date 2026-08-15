@@ -1,0 +1,157 @@
+import { describe, it, expect } from "vitest"
+
+import { encodeCursor, decodeCursor } from "./cursor"
+
+/** base64url-encode an arbitrary string the way a caller (or an attacker) would. */
+function b64url(raw: string): string {
+  return Buffer.from(raw, "utf8").toString("base64url")
+}
+
+/**
+ * Every input that must be refused. Each is exercised individually below AND
+ * collectively by the "never throws" test — a hostile cursor degrades to page 1,
+ * never to a 500 (T-35-20).
+ */
+const HOSTILE_INPUTS: string[] = [
+  "not a cursor!!",
+  "%%%",
+  "\u0000",
+  " ",
+  "../../etc/passwd",
+  b64url("just some plain text"),
+  b64url("{"),
+  b64url("42"),
+  b64url("null"),
+  b64url('["t","i"]'),
+  b64url('{"t":"2026-08-15T12:34:56.789Z"}'),
+  b64url('{"i":"abc-123"}'),
+  b64url('{"t":"yesterday","i":"x"}'),
+  b64url('{"t":"2026-13-45T99:99:99Z","i":"x"}'),
+  b64url('{"t":"2026-01-01T00:00:00.000Z\' OR 1=1--","i":"x\' OR \'1\'=\'1"}'),
+  b64url(`{"t":"2026-08-15T12:34:56.789Z","i":"${"a".repeat(200)}"}`),
+  b64url(`{"t":"2026-08-15T12:34:56.789Z","i":"${"a".repeat(500_000)}"}`),
+  "A".repeat(1_000_000),
+]
+
+describe("timeline cursor codec", () => {
+  describe("round trip", () => {
+    it("round-trips a cursor exactly", () => {
+      const occurredAt = new Date("2026-08-15T12:34:56.789Z")
+      const decoded = decodeCursor(encodeCursor({ occurredAt, id: "abc-123" }))
+
+      expect(decoded).not.toBeNull()
+      // Millisecond precision must survive: it is the sort key.
+      expect(decoded!.occurredAt.getTime()).toBe(occurredAt.getTime())
+      expect(decoded!.id).toBe("abc-123")
+    })
+
+    it("round-trips a cursor whose timestamp has a zero millisecond component", () => {
+      const occurredAt = new Date("2026-01-01T00:00:00.000Z")
+      const decoded = decodeCursor(encodeCursor({ occurredAt, id: "z" }))
+
+      expect(decoded!.occurredAt.getTime()).toBe(occurredAt.getTime())
+      expect(decoded!.id).toBe("z")
+    })
+
+    it("produces a URL-safe opaque string", () => {
+      const encoded = encodeCursor({
+        occurredAt: new Date("2026-08-15T12:34:56.789Z"),
+        id: "abc-123",
+      })
+
+      // base64url alphabet only: no '+', no '/', no '=' padding.
+      expect(encoded).toMatch(/^[A-Za-z0-9_-]+$/)
+      expect(encoded).not.toContain("+")
+      expect(encoded).not.toContain("/")
+      expect(encoded).not.toContain("=")
+
+      // Opaque: neither the row id nor the timestamp is readable in the wire value.
+      expect(encoded).not.toContain("abc-123")
+      expect(encoded).not.toContain("2026-08-15T12:34:56.789Z")
+      expect(encoded).not.toContain("2026-08-15")
+    })
+  })
+
+  describe("absent input", () => {
+    it("returns null for null, undefined and empty string", () => {
+      expect(decodeCursor(null)).toBeNull()
+      expect(decodeCursor(undefined)).toBeNull()
+      expect(decodeCursor("")).toBeNull()
+    })
+  })
+
+  describe("cursor rejection", () => {
+    it("rejects a non-base64url string", () => {
+      expect(decodeCursor("not a cursor!!")).toBeNull()
+      expect(decodeCursor("%%%")).toBeNull()
+    })
+
+    it("rejects valid base64url that is not JSON", () => {
+      expect(decodeCursor(b64url("just some plain text"))).toBeNull()
+      expect(decodeCursor(b64url("{"))).toBeNull()
+    })
+
+    it("rejects valid JSON that is not an object", () => {
+      expect(decodeCursor(b64url("42"))).toBeNull()
+      expect(decodeCursor(b64url("null"))).toBeNull()
+      expect(decodeCursor(b64url('["t","i"]'))).toBeNull()
+    })
+
+    it("rejects JSON missing the id field", () => {
+      expect(decodeCursor(b64url('{"t":"2026-08-15T12:34:56.789Z"}'))).toBeNull()
+      expect(decodeCursor(b64url('{"t":"2026-08-15T12:34:56.789Z","i":""}'))).toBeNull()
+    })
+
+    it("rejects JSON missing the occurredAt field", () => {
+      expect(decodeCursor(b64url('{"i":"abc-123"}'))).toBeNull()
+    })
+
+    it("rejects a non-timestamp occurredAt", () => {
+      expect(decodeCursor(b64url('{"t":"yesterday","i":"x"}'))).toBeNull()
+      expect(decodeCursor(b64url('{"t":"2026-13-45T99:99:99Z","i":"x"}'))).toBeNull()
+      expect(decodeCursor(b64url('{"t":1755261296789,"i":"x"}'))).toBeNull()
+    })
+
+    it("rejects a SQL-injection payload in either field", () => {
+      // The timestamp is refused outright: it is not a valid ISO-8601 instant.
+      const injected = b64url(
+        '{"t":"2026-01-01T00:00:00.000Z\' OR 1=1--","i":"x\' OR \'1\'=\'1"}'
+      )
+      expect(decodeCursor(injected)).toBeNull()
+
+      // `id` is a bound parameter downstream (plan 35-08 never interpolates it), but it
+      // is still constrained: non-empty and length-bounded, so a megabyte-long id
+      // cannot be smuggled through the codec.
+      const oversizedId = b64url(
+        `{"t":"2026-08-15T12:34:56.789Z","i":"${"a".repeat(200)}"}`
+      )
+      expect(decodeCursor(oversizedId)).toBeNull()
+    })
+
+    it("rejects an oversized cursor before decoding it", () => {
+      expect(decodeCursor("A".repeat(1_000_000))).toBeNull()
+      expect(
+        decodeCursor(
+          b64url(`{"t":"2026-08-15T12:34:56.789Z","i":"${"a".repeat(500_000)}"}`)
+        )
+      ).toBeNull()
+    })
+
+    it("returns null (never undefined) on every rejection path", () => {
+      for (const input of HOSTILE_INPUTS) {
+        expect(decodeCursor(input)).toBe(null)
+      }
+    })
+  })
+
+  describe("failure mode", () => {
+    it("never throws on hostile input", () => {
+      for (const input of HOSTILE_INPUTS) {
+        expect(() => decodeCursor(input)).not.toThrow()
+      }
+      expect(() => decodeCursor(null)).not.toThrow()
+      expect(() => decodeCursor(undefined)).not.toThrow()
+      expect(() => decodeCursor("")).not.toThrow()
+    })
+  })
+})
