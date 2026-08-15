@@ -17,12 +17,28 @@ export const TIMELINE_PAGE_SIZE = 20
 export type TimelineEntryKind = 'note' | 'activity' | 'stage_change'
 
 /**
- * The keyset paging position: the (occurredAt, id) pair of the OLDEST entry already
- * returned. `id` breaks ties when two entries share a millisecond. Never sent to the
- * browser in this shape — see `encodeCursor` in ./cursor.
+ * The keyset paging position: the (instant, id) pair of the OLDEST entry already
+ * returned. `id` breaks ties when two entries carry the BIT-IDENTICAL instant. Never sent
+ * to the browser in this shape — see `encodeCursor` in ./cursor.
+ *
+ * `instant` IS A STRING AND MUST NEVER BECOME A `Date`.
+ * The three `created_at` columns are `timestamp` and default to `now()`, which yields
+ * MICROSECONDS (`2026-08-15 21:33:08.478940`). A JS `Date` holds milliseconds, so putting
+ * one anywhere on this round trip truncates `.478940` to `.478`. The truncated bound is
+ * strictly LESS than the cursor row's real instant, so `(created_at, id) < (bound, id)`
+ * never reaches the `id` tiebreaker and every entry inside that millisecond is excluded
+ * from the next page — permanently, because the same cursor is what the next "Load more"
+ * sends. Postgres renders this value with `to_char` and Postgres parses it back with
+ * `::timestamp`; no JS date parsing sits in between, which is also what keeps the bound
+ * independent of the Node process's `TZ`.
+ *
+ * Format: `YYYY-MM-DDTHH:MM:SS.ffffffZ`. Fixed width, so it sorts lexicographically
+ * exactly as the timestamp it renders. The trailing `Z` is an ISO-8601 shape marker that
+ * `::timestamp` discards — these columns carry no time zone and this value is a wall
+ * clock, not an instant in UTC.
  */
 export interface TimelineCursor {
-  occurredAt: Date
+  instant: string
   id: string
 }
 

@@ -9,6 +9,13 @@ import type { TimelineCursor } from "./types"
  * Short keys keep the blob small; the encoding keeps it URL-safe and unpadded so it
  * can ride in a query string or a server-action argument untouched.
  *
+ * `t` IS CARRIED AS TEXT AND IS NEVER PARSED INTO A `Date` HERE.
+ * Postgres renders it with `to_char` at microsecond precision and Postgres parses it back
+ * with `::timestamp`; this module only moves the bytes. Introducing a `new Date(t)` on
+ * this path would truncate microseconds to milliseconds, which lowers the keyset bound
+ * below the cursor row's real instant and permanently hides every entry inside that
+ * millisecond from paging — see the `TimelineCursor` doc comment in ./types.
+ *
  * SECURITY (T-35-02): the value returned by `decodeCursor` becomes a SQL BIND
  * parameter in the timeline assembler (plan 35-08). The pipeline is
  * decode -> zod safeParse -> bind. Nothing decoded here may ever be interpolated
@@ -31,7 +38,10 @@ const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/
 
 const cursorPayloadSchema = z.object({
   // z.iso.datetime() is regex-validated (zod 4): it refuses 'yesterday',
-  // '2026-13-45T99:99:99Z' and any string carrying a SQL fragment.
+  // '2026-13-45T99:99:99Z' and any string carrying a SQL fragment. It accepts an
+  // arbitrary-length fractional-second part, which is what lets the six-digit
+  // microsecond rendering through unchanged, and it requires a literal `Z` rather than a
+  // numeric offset — so the only thing `::timestamp` ever has to discard is the `Z`.
   t: z.iso.datetime(),
   // Bound parameter downstream, but still constrained here: non-empty so it cannot
   // silently match nothing, and capped so an oversized id cannot be smuggled through.
@@ -41,12 +51,14 @@ const cursorPayloadSchema = z.object({
 /**
  * Encode a keyset position into an opaque, URL-safe string.
  *
- * `toISOString()` always emits millisecond precision, which is what preserves the
- * ordering guarantee: two entries in the same second must still sort deterministically.
+ * The instant goes on the wire exactly as Postgres rendered it — microseconds included —
+ * because that full precision is what preserves the ordering guarantee: `id` only breaks
+ * ties between BIT-IDENTICAL instants, so a bound rounded off anywhere short of the
+ * column's precision skips rows instead of tie-breaking them.
  */
 export function encodeCursor(cursor: TimelineCursor): string {
   const json = JSON.stringify({
-    t: cursor.occurredAt.toISOString(),
+    t: cursor.instant,
     i: cursor.id,
   })
 
@@ -82,9 +94,9 @@ export function decodeCursor(
   const result = cursorPayloadSchema.safeParse(parsed)
   if (!result.success) return null
 
-  const occurredAt = new Date(result.data.t)
-  // Belt-and-braces: a string zod accepted must still produce a real instant.
-  if (Number.isNaN(occurredAt.getTime())) return null
-
-  return { occurredAt, id: result.data.i }
+  // Handed back verbatim. There is deliberately no `new Date(result.data.t)` sanity parse
+  // here: a `Date` cannot represent the value's precision, so constructing one would
+  // either have to be discarded immediately or would silently become the truncated bound
+  // this module exists to avoid. The zod schema above is the validation.
+  return { instant: result.data.t, id: result.data.i }
 }

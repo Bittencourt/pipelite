@@ -39,29 +39,75 @@ import type {
  */
 
 /**
- * Bind the cursor's instant as an ISO-8601 STRING cast back to `timestamp`, never as a
- * JS `Date`.
+ * THE KEYSET INSTANT NEVER TOUCHES A JS `Date`, IN EITHER DIRECTION.
  *
- * The postgres.js driver serializes bind parameters itself and rejects a `Date` handed to
- * a raw `sql` fragment outright:
+ * Outbound, each branch renders its `created_at` with
+ * `to_char(..., 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')` as `occurred_at_key`, and that TEXT is
+ * what the assembler puts in the cursor. Inbound, the cursor's text is bound and cast
+ * straight back with `::timestamp`. Two reasons, both of which have already bitten this
+ * module:
  *
- *   TypeError: The "string" argument must be of type string or an instance of Buffer or
- *   ArrayBuffer. Received an instance of Date
+ *   1. PRECISION. These columns default to `now()`, which yields microseconds
+ *      (`21:33:08.478940` on the live database). A `Date` is millisecond-only, so a
+ *      `Date` on this path emits `...478Z` — a bound strictly LESS than the cursor row's
+ *      real instant, which makes the `(created_at, id)` comparison skip the `id`
+ *      tiebreaker and silently drop every entry inside that millisecond from every
+ *      subsequent page. On an audit surface, omitting history is the worst failure
+ *      available.
+ *   2. THE DRIVER. postgres.js serializes bind parameters itself and rejects a `Date`
+ *      handed to a raw `sql` fragment outright — `TypeError: The "string" argument must
+ *      be of type string ... Received an instance of Date`. Drizzle converts a `Date`
+ *      automatically only when the parameter is attached to a typed column; these
+ *      branches are hand-composed SQL, so nothing does that conversion. That shipped
+ *      broken once: page one worked and every "Load more" threw.
  *
- * Drizzle converts `Date` automatically when the parameter is attached to a typed column,
- * which is why every other query in this repo can pass one. These branches are hand-composed
- * SQL, so the conversion has to be explicit here.
+ * It also removes a `TZ` dependency. postgres.js parses OID 1114 with `new Date(x)`,
+ * which V8 reads as LOCAL time, so a `Date`-based bound skewed by the process offset —
+ * three hours under `TZ=America/Sao_Paulo`, which for positive offsets skips history
+ * outright. `to_char` and `::timestamp` are both evaluated by Postgres against a column
+ * that carries no time zone, so the wall clock is the wall clock regardless of `TZ`.
  *
- * This failed ONLY on page two and later — page one has no cursor to bind — and the suite
- * mocks `@/db`, asserting the rendered SQL string rather than executing it, so no unit test
- * could observe it. `assemble.test.ts` now asserts that no bound parameter is a `Date`,
- * which is the part of this that a mocked driver CAN see.
+ * The format string below is the ONE literal in this module that is not a `${}` bind, and
+ * it is not a value: it is a compile-time constant that no request input can reach, it is
+ * written exactly once here rather than at each of the three branches, and keeping it out
+ * of the parameter list leaves `to_char`'s overload resolution unambiguous. `.US` always
+ * emits six digits, so the rendering is fixed-width and therefore sorts lexicographically
+ * exactly like the timestamp it renders.
  *
- * The columns are `timestamp` (no time zone). `toISOString()` renders the same wall clock
- * the driver read, with a `Z` that `::timestamp` discards, so the value round-trips exactly.
+ * The suite mocks `@/db` and asserts the rendered SQL and its bound parameters, which is
+ * precisely the part of all of this a mocked driver CAN see: no bound value is a `Date`,
+ * and a microsecond instant survives encode -> decode -> bind byte for byte.
+ *
+ * @param column the branch's `created_at` reference, e.g. sql`n.created_at`.
  */
-function bindInstant(instant: Date): SQL {
-  return sql`${instant.toISOString()}::timestamp`
+function instantKey(column: SQL): SQL {
+  return sql`to_char(${column}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS occurred_at_key`
+}
+
+/**
+ * The cursor's own text instant, cast back to the column's type for the comparison.
+ *
+ * THE `::text` IN THE MIDDLE IS LOAD-BEARING. DO NOT "SIMPLIFY" IT TO `::timestamp`.
+ *
+ * A bare `$1::timestamp` lets Postgres resolve the otherwise-unspecified parameter's type
+ * to `timestamp`, and postgres.js then serializes the value for that OID with
+ * `(x instanceof Date ? x : new Date(x)).toISOString()`
+ * (node_modules/postgres/src/types.js, `types.date.serialize`) — so the driver builds a JS
+ * `Date` out of our string and truncates the microseconds right back off, on the wire,
+ * after this module has done everything correctly. Measured against the live database:
+ *
+ *   SELECT $1::text            -> 2026-08-15T21:33:08.478005Z   (intact)
+ *   SELECT $1::timestamp::text -> 2026-08-15 21:33:08.478       (driver truncated it)
+ *   SELECT $1::text::timestamp -> 2026-08-15 21:33:08.478005    (intact)
+ *
+ * `::text` pins the parameter to OID 25, whose serializer is `'' + x`, and the
+ * text -> timestamp cast then happens server-side where full precision survives. The
+ * comparison still reads as a plain constant to the planner, so `notes_live_idx` is used
+ * exactly as before (verified with EXPLAIN: the row comparison is pushed down to an
+ * `Index Cond` on `created_at`).
+ */
+function bindInstant(instant: string): SQL {
+  return sql`${instant}::text::timestamp`
 }
 
 /** The record whose timeline is being read. */
@@ -73,7 +119,14 @@ export interface TimelineTarget {
 export interface TimelineSource {
   kind: TimelineEntryKind
   appliesTo(entityType: EntityType): boolean
-  /** ONE pre-limited SELECT emitting exactly (kind, id, occurred_at). Never NULL-padded. */
+  /**
+   * ONE pre-limited SELECT emitting exactly
+   * (kind, id, occurred_at, occurred_at_key). Never NULL-padded.
+   *
+   * `occurred_at` is the timestamp the union sorts on; `occurred_at_key` is the SAME
+   * instant rendered as full-precision text and is the only thing the cursor carries —
+   * see `instantKey` above for why the two are not interchangeable.
+   */
   branch(target: TimelineTarget, cursor: TimelineCursor | null, limit: number): SQL
   /** count(*) for the header badge. */
   countBranch(target: TimelineTarget): SQL
@@ -104,11 +157,12 @@ export const notesSource: TimelineSource = {
     // created_at = now(), strictly newer than any cursor, so it can neither land inside
     // an already-fetched window nor push an unfetched entry past one.
     const keyset = cursor
-      ? sql` AND (n.created_at, n.id) < (${bindInstant(cursor.occurredAt)}, ${cursor.id})`
+      ? sql` AND (n.created_at, n.id) < (${bindInstant(cursor.instant)}, ${cursor.id})`
       : sql``
 
     return sql`(
-      SELECT 'note' AS kind, n.id, n.created_at AS occurred_at
+      SELECT 'note' AS kind, n.id, n.created_at AS occurred_at,
+             ${instantKey(sql`n.created_at`)}
       FROM ${notes} n
       WHERE n.entity_type = ${entityType}
         AND n.entity_id = ${entityId}
@@ -180,13 +234,14 @@ export const activitiesSource: TimelineSource = {
 
   branch({ entityId }, cursor, limit) {
     const keyset = cursor
-      ? sql` AND (a.created_at, a.id) < (${bindInstant(cursor.occurredAt)}, ${cursor.id})`
+      ? sql` AND (a.created_at, a.id) < (${bindInstant(cursor.instant)}, ${cursor.id})`
       : sql``
 
     // created_at, NOT due_date: a history feed ordered by a FUTURE due date reads wrong.
     // created_at is the honest "when it happened".
     return sql`(
-      SELECT 'activity' AS kind, a.id, a.created_at AS occurred_at
+      SELECT 'activity' AS kind, a.id, a.created_at AS occurred_at,
+             ${instantKey(sql`a.created_at`)}
       FROM ${activities} a
       WHERE a.deal_id = ${entityId}
         AND a.deleted_at IS NULL${keyset}
@@ -246,13 +301,14 @@ export const stageChangeSource: TimelineSource = {
 
   branch({ entityId }, cursor, limit) {
     const keyset = cursor
-      ? sql` AND (h.created_at, h.id) < (${bindInstant(cursor.occurredAt)}, ${cursor.id})`
+      ? sql` AND (h.created_at, h.id) < (${bindInstant(cursor.instant)}, ${cursor.id})`
       : sql``
 
     // No soft-delete predicate here, and that is not an omission: deal_stage_history has
     // no deleted_at column because history rows are immutable append-only facts.
     return sql`(
-      SELECT 'stage_change' AS kind, h.id, h.created_at AS occurred_at
+      SELECT 'stage_change' AS kind, h.id, h.created_at AS occurred_at,
+             ${instantKey(sql`h.created_at`)}
       FROM ${dealStageHistory} h
       WHERE h.deal_id = ${entityId}${keyset}
       ORDER BY h.created_at DESC, h.id DESC

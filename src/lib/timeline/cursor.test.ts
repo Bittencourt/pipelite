@@ -36,26 +36,44 @@ const HOSTILE_INPUTS: string[] = [
 describe("timeline cursor codec", () => {
   describe("round trip", () => {
     it("round-trips a cursor exactly", () => {
-      const occurredAt = new Date("2026-08-15T12:34:56.789Z")
-      const decoded = decodeCursor(encodeCursor({ occurredAt, id: "abc-123" }))
+      const instant = "2026-08-15T12:34:56.789Z"
+      const decoded = decodeCursor(encodeCursor({ instant, id: "abc-123" }))
 
       expect(decoded).not.toBeNull()
-      // Millisecond precision must survive: it is the sort key.
-      expect(decoded!.occurredAt.getTime()).toBe(occurredAt.getTime())
+      expect(decoded!.instant).toBe(instant)
       expect(decoded!.id).toBe("abc-123")
     })
 
-    it("round-trips a cursor whose timestamp has a zero millisecond component", () => {
-      const occurredAt = new Date("2026-01-01T00:00:00.000Z")
-      const decoded = decodeCursor(encodeCursor({ occurredAt, id: "z" }))
+    it("round-trips a MICROSECOND instant byte for byte", () => {
+      // WR-02 REGRESSION. `created_at` defaults to now(), which yields microseconds
+      // (`2026-08-15 21:33:08.478940` on the live database). The previous codec stored a
+      // JS `Date`, which is millisecond-only, so `.478940` left here as `.478` — a bound
+      // strictly BELOW the cursor row's real instant. `(created_at, id) < (bound, id)`
+      // then never reaches the `id` tiebreaker and every entry inside that millisecond
+      // becomes permanently unreachable by paging, with `hasMore` still true.
+      //
+      // Any reintroduction of `new Date(...)` on this path fails right here: the six-digit
+      // fractional part cannot survive one.
+      const instant = "2026-08-15T21:33:08.478940Z"
+      const decoded = decodeCursor(encodeCursor({ instant, id: "note-19" }))
 
-      expect(decoded!.occurredAt.getTime()).toBe(occurredAt.getTime())
+      expect(decoded).not.toBeNull()
+      expect(decoded!.instant).toBe(instant)
+      expect(decoded!.instant).toContain(".478940")
+      expect(decoded!.instant).not.toBe("2026-08-15T21:33:08.478Z")
+    })
+
+    it("round-trips a cursor whose timestamp has a zero sub-second component", () => {
+      const instant = "2026-01-01T00:00:00.000000Z"
+      const decoded = decodeCursor(encodeCursor({ instant, id: "z" }))
+
+      expect(decoded!.instant).toBe(instant)
       expect(decoded!.id).toBe("z")
     })
 
     it("produces a URL-safe opaque string", () => {
       const encoded = encodeCursor({
-        occurredAt: new Date("2026-08-15T12:34:56.789Z"),
+        instant: "2026-08-15T12:34:56.789Z",
         id: "abc-123",
       })
 
@@ -102,11 +120,11 @@ describe("timeline cursor codec", () => {
       expect(decodeCursor(b64url('{"t":"2026-08-15T12:34:56.789Z","i":""}'))).toBeNull()
     })
 
-    it("rejects JSON missing the occurredAt field", () => {
+    it("rejects JSON missing the instant field", () => {
       expect(decodeCursor(b64url('{"i":"abc-123"}'))).toBeNull()
     })
 
-    it("rejects a non-timestamp occurredAt", () => {
+    it("rejects a non-timestamp instant", () => {
       expect(decodeCursor(b64url('{"t":"yesterday","i":"x"}'))).toBeNull()
       expect(decodeCursor(b64url('{"t":"2026-13-45T99:99:99Z","i":"x"}'))).toBeNull()
       expect(decodeCursor(b64url('{"t":1755261296789,"i":"x"}'))).toBeNull()

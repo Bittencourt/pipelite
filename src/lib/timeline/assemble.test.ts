@@ -31,7 +31,7 @@ import { activities, dealStageHistory, notes } from "@/db/schema"
 import type { EntityType } from "@/db/schema/custom-fields"
 
 import { assembleTimeline, buildTimelineQuery, countTimeline } from "./assemble"
-import { decodeCursor } from "./cursor"
+import { decodeCursor, encodeCursor } from "./cursor"
 import { TIMELINE_PAGE_SIZE } from "./types"
 
 const mockDb = db as unknown as {
@@ -60,18 +60,40 @@ const NON_DEAL_ENTITIES: EntityType[] = ["organization", "person", "activity"]
 interface RawRow {
   kind: string
   id: string
+  /** What the driver hands back for the `timestamp` column: millisecond-only. */
   occurred_at: Date
+  /** What `to_char` hands back: the same instant at the column's own precision. */
+  occurred_at_key: string
 }
 
 const T0 = Date.UTC(2026, 7, 15, 12, 0, 0)
 
+/**
+ * The `to_char(..., 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')` rendering of a wall clock, with an
+ * optional sub-millisecond remainder that a JS `Date` cannot hold. Postgres always emits
+ * six fractional digits.
+ */
+function instantKey(at: Date, microsecondRemainder = 0): string {
+  const micros = String(microsecondRemainder).padStart(3, "0")
+  return at.toISOString().replace(/Z$/, `${micros}Z`)
+}
+
+/** One union row, with its text key derived from its timestamp. */
+function raw(kind: string, id: string, at: Date, microsecondRemainder = 0): RawRow {
+  return { kind, id, occurred_at: at, occurred_at_key: instantKey(at, microsecondRemainder) }
+}
+
 /** Newest first, one minute apart — the order the union itself returns. */
 function noteRawRows(n: number): RawRow[] {
-  return Array.from({ length: n }, (_, i) => ({
-    kind: "note",
-    id: `note-${i}`,
-    occurred_at: new Date(T0 - i * 60_000),
-  }))
+  return Array.from({ length: n }, (_, i) => {
+    const at = new Date(T0 - i * 60_000)
+    return {
+      kind: "note",
+      id: `note-${i}`,
+      occurred_at: at,
+      occurred_at_key: instantKey(at),
+    }
+  })
 }
 
 function noteHydrationRow(id: string, occurredAt: Date) {
@@ -219,14 +241,27 @@ describe("buildTimelineQuery — branch composition", () => {
     }
   })
 
-  it("selects only kind, id and occurred_at from every branch", () => {
+  it("selects only kind, id, occurred_at and its text key from every branch", () => {
     const { lower } = render(buildTimelineQuery("deal", "d1", null, 20))
 
     // Two-step hydration keeps the union rows narrow. NULL-padding three different
     // column sets into one wide union row is the anti-pattern being prevented.
+    // `occurred_at_key` is not a fourth display column: it is the SAME instant as
+    // `occurred_at`, rendered at the column's own precision for the cursor (WR-02).
     expect(lower).not.toContain("content")
     expect(lower).not.toContain("title")
     expect(lower).toContain("occurred_at")
+    expect(countOf(lower, "occurred_at_key")).toBe(4) // three branches + the outer select
+  })
+
+  it("renders the cursor key with to_char at microsecond precision on every branch", () => {
+    // WR-02. `.US` is six fractional digits, always — fixed width, so the text sorts
+    // exactly as the timestamp does. `.MS` (milliseconds) would reintroduce the defect.
+    const { lower, text } = render(buildTimelineQuery("deal", "d1", null, 20))
+
+    expect(countOf(lower, "to_char(")).toBe(3)
+    expect(countOf(text, 'HH24:MI:SS.US"Z"')).toBe(3)
+    expect(lower).not.toContain(".ms")
   })
 
   it("filters soft-deleted rows out of the notes and activities branches", () => {
@@ -270,7 +305,9 @@ describe("buildTimelineQuery — pre-limit", () => {
 // ===========================================================================
 
 describe("buildTimelineQuery — cursor", () => {
-  const cursor = { occurredAt: new Date(T0), id: "note-19" }
+  /** Microseconds on purpose: that is what `now()` writes into these columns. */
+  const MICROSECOND_INSTANT = "2026-08-15T12:00:00.478940Z"
+  const cursor = { instant: MICROSECOND_INSTANT, id: "note-19" }
 
   it("omits the row comparison when the cursor is null", () => {
     const { lower } = render(buildTimelineQuery("deal", "d1", null, 20))
@@ -290,7 +327,7 @@ describe("buildTimelineQuery — cursor", () => {
     // a validated value textually reopens the hole regardless.
     const probe = "x' OR '1'='1"
     const { text, params } = render(
-      buildTimelineQuery("deal", "d1", { occurredAt: new Date(T0), id: probe }, 20)
+      buildTimelineQuery("deal", "d1", { instant: MICROSECOND_INSTANT, id: probe }, 20)
     )
 
     expect(text).not.toContain("OR '1'='1")
@@ -318,9 +355,54 @@ describe("buildTimelineQuery — cursor", () => {
     const single = render(buildTimelineQuery("organization", "o1", cursor, 20))
     expect(single.params.filter((p) => p instanceof Date)).toHaveLength(0)
 
-    // Bound as an ISO string and cast back, so the wall clock round-trips exactly.
-    expect(withCursor.params).toContain(new Date(T0).toISOString())
+    // Bound as text and cast back, so the wall clock round-trips exactly.
+    expect(withCursor.params).toContain(MICROSECOND_INSTANT)
     expect(withCursor.lower).toContain("::timestamp")
+  })
+
+  it("binds the cursor instant at MICROSECOND precision on every branch", () => {
+    // WR-02 REGRESSION. `bindInstant` used to take a JS `Date` and call `toISOString()`,
+    // which is millisecond-only, so a cursor sitting at `.478940` was bound as `.478` —
+    // strictly BELOW the cursor row's real instant. `(created_at, id) < (bound, id)` then
+    // never reaches the `id` tiebreaker, and every entry in `[.478000, .478940)` is
+    // excluded from this page and from every later one, `hasMore` notwithstanding.
+    //
+    // The cursor is decoded from the wire here rather than constructed inline, so this
+    // covers the whole path the browser actually exercises: assembler -> encodeCursor ->
+    // wire -> decodeCursor -> bound parameter.
+    const decoded = decodeCursor(
+      encodeCursor({ instant: MICROSECOND_INSTANT, id: "note-19" })
+    )
+    expect(decoded).not.toBeNull()
+
+    const deal = render(buildTimelineQuery("deal", "d1", decoded, 20))
+
+    expect(deal.params.filter((p) => p === MICROSECOND_INSTANT)).toHaveLength(3)
+    expect(deal.params.filter((p) => p === "2026-08-15T12:00:00.478Z")).toHaveLength(0)
+    // …and the sub-millisecond remainder is still there in the statement's parameters.
+    expect(
+      deal.params.filter((p) => typeof p === "string" && p.endsWith("940Z"))
+    ).toHaveLength(3)
+
+    const org = render(buildTimelineQuery("organization", "o1", decoded, 20))
+    expect(org.params.filter((p) => p === MICROSECOND_INSTANT)).toHaveLength(1)
+  })
+
+  it("casts the bound instant through ::text before ::timestamp", () => {
+    // WR-02, second half, and the one that cannot be reasoned about from this file alone.
+    // A bare `$n::timestamp` lets Postgres resolve the parameter's type to `timestamp`,
+    // and postgres.js then re-serializes the value for that OID with
+    // `new Date(x).toISOString()` — so the DRIVER truncates the microseconds back off on
+    // the wire, after everything above has kept them. Measured live:
+    //   SELECT $1::text            -> 2026-08-15T21:33:08.478005Z
+    //   SELECT $1::timestamp::text -> 2026-08-15 21:33:08.478      <- truncated
+    //   SELECT $1::text::timestamp -> 2026-08-15 21:33:08.478005
+    // `::text` pins the parameter to OID 25, whose serializer is `'' + x`.
+    const { lower } = render(buildTimelineQuery("deal", "d1", cursor, 20))
+
+    expect(countOf(lower, "::text::timestamp")).toBe(3)
+    // No branch may bind the instant straight to a timestamp.
+    expect(countOf(lower, "::timestamp")).toBe(countOf(lower, "::text::timestamp"))
   })
 
   it("binds entityId as a parameter and never interpolates it into the SQL text", () => {
@@ -417,12 +499,36 @@ describe("assembleTimeline — hasMore", () => {
     const page = await assembleTimeline({ entityType: "organization", entityId: "o1" })
     const decoded = decodeCursor(page.nextCursor)
     const oldestKept = page.entries[page.entries.length - 1]
+    const oldestKeptRow = rows[TIMELINE_PAGE_SIZE - 1]
 
     expect(decoded).not.toBeNull()
     expect(decoded!.id).toBe(oldestKept.id)
-    expect(decoded!.occurredAt.getTime()).toBe(oldestKept.occurredAt.getTime())
+    expect(decoded!.instant).toBe(oldestKeptRow.occurred_at_key)
     // Not the discarded 21st row.
     expect(decoded!.id).not.toBe("note-20")
+  })
+
+  it("builds nextCursor from occurred_at_key, not from the driver's millisecond Date", async () => {
+    // WR-02 REGRESSION, assembler half. postgres.js parses OID 1114 into a JS `Date`, so
+    // `row.occurred_at` has already lost the sub-millisecond remainder by the time this
+    // module sees it. The cursor must come from the text key the statement emitted
+    // alongside it — reconstructing it from `occurred_at` truncates and the next page
+    // silently skips rows.
+    const rows = noteRawRows(21).map((row, i) =>
+      // A distinct sub-millisecond remainder per row: invisible in `occurred_at`.
+      raw(row.kind, row.id, row.occurred_at, 940 - i)
+    )
+    stubExecute(rows)
+    stubNotesHydration(rows)
+
+    const page = await assembleTimeline({ entityType: "organization", entityId: "o1" })
+    const decoded = decodeCursor(page.nextCursor)
+    const oldestKeptRow = rows[TIMELINE_PAGE_SIZE - 1]
+
+    expect(decoded!.instant).toBe(oldestKeptRow.occurred_at_key)
+    expect(decoded!.instant).toContain(String(940 - (TIMELINE_PAGE_SIZE - 1)))
+    // The truncated form the driver's Date would have produced.
+    expect(decoded!.instant).not.toBe(oldestKeptRow.occurred_at.toISOString())
   })
 
   it("returns nextCursor null when hasMore is false", async () => {
@@ -485,10 +591,10 @@ describe("assembleTimeline — hydration", () => {
   it("preserves the union's ordering after hydration", async () => {
     const t = (i: number) => new Date(T0 - i * 60_000)
     const rows: RawRow[] = [
-      { kind: "note", id: "n1", occurred_at: t(0) },
-      { kind: "stage_change", id: "s1", occurred_at: t(1) },
-      { kind: "activity", id: "a1", occurred_at: t(2) },
-      { kind: "note", id: "n2", occurred_at: t(3) },
+      raw("note", "n1", t(0)),
+      raw("stage_change", "s1", t(1)),
+      raw("activity", "a1", t(2)),
+      raw("note", "n2", t(3)),
     ]
     stubExecute(rows)
     // Hydration is a batched per-kind read; it returns blocks, and deliberately not in
@@ -516,9 +622,9 @@ describe("assembleTimeline — hydration", () => {
   it("maps each kind onto its own entry shape", async () => {
     const t = (i: number) => new Date(T0 - i * 60_000)
     const rows: RawRow[] = [
-      { kind: "note", id: "n1", occurred_at: t(0) },
-      { kind: "activity", id: "a1", occurred_at: t(1) },
-      { kind: "stage_change", id: "s1", occurred_at: t(2) },
+      raw("note", "n1", t(0)),
+      raw("activity", "a1", t(1)),
+      raw("stage_change", "s1", t(2)),
     ]
     stubExecute(rows)
     stubSelect((table) => {
@@ -570,7 +676,7 @@ describe("assembleTimeline — hydration", () => {
   it("carries deleted_at IS NULL on the activities hydration read", async () => {
     // CR-01 REGRESSION, activities half.
     const t = (i: number) => new Date(T0 - i * 60_000)
-    const rows: RawRow[] = [{ kind: "activity", id: "a1", occurred_at: t(0) }]
+    const rows: RawRow[] = [raw("activity", "a1", t(0))]
     stubExecute(rows)
     stubSelect((table) => (table === activities ? [activityHydrationRow("a1", t(0))] : []))
 

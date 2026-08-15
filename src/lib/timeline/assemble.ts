@@ -44,11 +44,6 @@ function applicableSources(entityType: EntityType): TimelineSource[] {
   return TIMELINE_SOURCES.filter((source) => source.appliesTo(entityType))
 }
 
-/** Raw union rows arrive snake_case and untyped from `db.execute`. */
-function toDate(value: unknown): Date {
-  return value instanceof Date ? value : new Date(String(value))
-}
-
 /** ids are UUIDs, but keying the hydration map by kind too makes a collision impossible. */
 function entryKey(kind: string, id: string): string {
   return `${kind}:${id}`
@@ -81,7 +76,11 @@ export function buildTimelineQuery(
   const body =
     branches.length === 1 ? branches[0] : sql.join(branches, sql` UNION ALL `)
 
-  return sql`SELECT kind, id, occurred_at FROM (${body}) AS t
+  // `occurred_at_key` is carried through the outer SELECT unchanged and is NOT sorted on:
+  // the sort belongs to the typed timestamp, the key exists only so the cursor can leave
+  // this statement at the column's own precision instead of through a JS `Date` (see
+  // `instantKey` in ./sources).
+  return sql`SELECT kind, id, occurred_at, occurred_at_key FROM (${body}) AS t
     ORDER BY "occurred_at" DESC, "id" DESC
     LIMIT ${fetchLimit}`
 }
@@ -119,7 +118,9 @@ export async function assembleTimeline(params: {
   const positions = kept.map((row) => ({
     kind: String(row.kind),
     id: String(row.id),
-    occurredAt: toDate(row.occurred_at),
+    // The full-precision text instant, straight from the statement. Never re-derived from
+    // `row.occurred_at`, which the driver has already turned into a millisecond `Date`.
+    instant: typeof row.occurred_at_key === "string" ? row.occurred_at_key : "",
   }))
 
   const idsByKind = new Map<string, string[]>()
@@ -157,9 +158,12 @@ export async function assembleTimeline(params: {
   return {
     entries,
     hasMore,
+    // No key means no cursor. Emitting one built from a missing instant would produce a
+    // value `decodeCursor` rejects, which silently restarts paging at page 1 — a stuck
+    // "Load more" is a better failure than a repeating one.
     nextCursor:
-      hasMore && oldest
-        ? encodeCursor({ occurredAt: oldest.occurredAt, id: oldest.id })
+      hasMore && oldest && oldest.instant
+        ? encodeCursor({ instant: oldest.instant, id: oldest.id })
         : null,
     total,
   }
