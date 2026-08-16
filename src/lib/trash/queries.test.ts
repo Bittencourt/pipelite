@@ -25,7 +25,14 @@ import type { SQL } from "drizzle-orm"
 vi.mock("@/db", () => ({ db: { execute: vi.fn(), select: vi.fn() } }))
 
 import { db } from "@/db"
-import { resolveDeletedBy, findTrashedRecord } from "./queries"
+import {
+  resolveDeletedBy,
+  findTrashedRecord,
+  countTrashed,
+  listTrashed,
+  TRASH_PAGE_SIZE,
+  type TrashViewer,
+} from "./queries"
 
 const mockExecute = (db as unknown as { execute: ReturnType<typeof vi.fn> }).execute
 const mockSelect = (db as unknown as { select: ReturnType<typeof vi.fn> }).select
@@ -122,6 +129,30 @@ function renderedWhere(index = 0): { sql: string; params: unknown[] } {
 function errorLines(): string[] {
   const spy = console.error as unknown as ReturnType<typeof vi.fn>
   return spy.mock.calls.map((call: unknown[]) => call.map(String).join(" "))
+}
+
+const MEMBER: TrashViewer = { userId: "u1", role: "member" }
+const ADMIN: TrashViewer = { userId: "u2", role: "admin" }
+
+/** The four count queries, in tab order. */
+function counts(deals: number, people: number, organizations: number, activities: number) {
+  return [[{ value: deals }], [{ value: people }], [{ value: organizations }], [{ value: activities }]]
+}
+
+const DELETED_AT = new Date("2026-08-10T09:00:00.000Z")
+
+function dealRow(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    name: `Deal ${id}`,
+    deletedAt: DELETED_AT,
+    organizationName: "Acme Inc",
+    organizationTrashed: false,
+    personFirstName: "Ada",
+    personLastName: "Lovelace",
+    personTrashed: false,
+    ...overrides,
+  }
 }
 
 /** An `audit_log` row as the raw statement's aliases hand it back. */
@@ -328,5 +359,251 @@ describe("findTrashedRecord", () => {
       ownerId: "u1",
       name: "Ada Lovelace",
     })
+  })
+})
+
+describe("countTrashed", () => {
+  it("scopes ALL FOUR counts to the viewer's own records for a non-admin", async () => {
+    queueSelects(...counts(3, 2, 1, 0))
+
+    await countTrashed(MEMBER)
+
+    expect(selectCalls).toHaveLength(4)
+
+    for (let index = 0; index < 4; index += 1) {
+      const { sql, params } = renderedWhere(index)
+
+      // Both halves in ONE where clause. A post-filter would still have counted rows this
+      // viewer may not see, which is the exact defect T-37-02 describes.
+      expect(sql).toContain("is not null")
+      expect(sql).toContain("owner_id")
+      expect(params).toContain("u1")
+    }
+  })
+
+  it("drops the owner predicate for an admin, on all four tabs", async () => {
+    queueSelects(...counts(3, 2, 1, 0))
+
+    await countTrashed(ADMIN)
+
+    for (let index = 0; index < 4; index += 1) {
+      const { sql, params } = renderedWhere(index)
+
+      expect(sql).toContain("is not null")
+      expect(sql).not.toContain("owner_id")
+      expect(params).not.toContain("u2")
+    }
+  })
+
+  it("returns one count per tab, keyed by the tab the URL uses", async () => {
+    queueSelects(...counts(3, 2, 1, 0))
+
+    expect(await countTrashed(ADMIN)).toEqual({
+      deals: 3,
+      people: 2,
+      organizations: 1,
+      activities: 0,
+    })
+  })
+
+  it("returns null rather than a record of zeros when a count rejects", async () => {
+    queueSelects([{ value: 3 }], new Error("connection reset"), [{ value: 1 }], [{ value: 0 }])
+
+    // Zeros would be a WRONG number rendered confidently; null lets the tabs omit the count.
+    expect(await countTrashed(MEMBER)).toBeNull()
+    expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
+  })
+})
+
+describe("listTrashed", () => {
+  it("filters to trashed rows, newest deletion first, scoped to the viewer", async () => {
+    queueSelects([dealRow("d1")])
+
+    await listTrashed("deals", 1, MEMBER)
+
+    const { sql, params } = renderedWhere()
+
+    expect(sql).toContain("is not null")
+    expect(sql).not.toMatch(/(^| )is null/)
+    expect(sql).toContain("owner_id")
+    expect(params).toContain("u1")
+
+    expect(render(selectCalls[0].orderBy[0] as SQL).sql).toContain("deleted_at desc")
+  })
+
+  it("drops the owner predicate for an admin", async () => {
+    queueSelects([dealRow("d1")])
+
+    await listTrashed("deals", 1, ADMIN)
+
+    const { sql } = renderedWhere()
+
+    expect(sql).toContain("is not null")
+    expect(sql).not.toContain("owner_id")
+  })
+
+  it("asks for ONE row past the page so it can report hasMore without a second count", async () => {
+    const page = 2
+    const rows = Array.from({ length: TRASH_PAGE_SIZE * page + 1 }, (_, i) => dealRow(`d${i}`))
+    queueSelects(rows)
+
+    const result = await listTrashed("deals", page, MEMBER)
+
+    expect(selectCalls[0].limit).toBe(TRASH_PAGE_SIZE * page + 1)
+    if (!result.ok) throw new Error("expected ok")
+    // The probe row is sliced off — it exists to answer the question, not to be rendered.
+    expect(result.rows).toHaveLength(TRASH_PAGE_SIZE * page)
+    expect(result.hasMore).toBe(true)
+  })
+
+  it("reports hasMore false and keeps every row when the probe row does not come back", async () => {
+    queueSelects([dealRow("d1"), dealRow("d2")])
+
+    const result = await listTrashed("deals", 1, MEMBER)
+
+    if (!result.ok) throw new Error("expected ok")
+    expect(result.rows).toHaveLength(2)
+    expect(result.hasMore).toBe(false)
+  })
+
+  it("flags a deal whose organization AND person are both in trash, naming both", async () => {
+    queueSelects([dealRow("d1", { organizationTrashed: true, personTrashed: true })])
+
+    const result = await listTrashed("deals", 1, MEMBER)
+
+    if (!result.ok) throw new Error("expected ok")
+    // The `title` on the badge names the parents so the user can see WHICH linked records.
+    expect(result.rows[0].linkedParents).toEqual(["Acme Inc", "Ada Lovelace"])
+  })
+
+  it("leaves linkedParents empty when the parents are live", async () => {
+    queueSelects([dealRow("d1")])
+
+    const result = await listTrashed("deals", 1, MEMBER)
+
+    if (!result.ok) throw new Error("expected ok")
+    expect(result.rows[0].linkedParents).toEqual([])
+  })
+
+  it("never produces a linked parent on the Organizations tab", async () => {
+    queueSelects([
+      { id: "o1", name: "Acme Inc", deletedAt: DELETED_AT, website: "acme.test" },
+      { id: "o2", name: "Globex", deletedAt: DELETED_AT, website: null },
+    ])
+
+    const result = await listTrashed("organizations", 1, MEMBER)
+
+    if (!result.ok) throw new Error("expected ok")
+    // `TRASH_PARENTS.organization` is empty by construction, so the badge cannot render here.
+    expect(result.rows.every((row) => row.linkedParents.length === 0)).toBe(true)
+    // And no parent join was even issued.
+    expect(selectCalls[0].joins).toHaveLength(0)
+  })
+
+  it("resolves the whole page's deleted-by in EXACTLY ONE query", async () => {
+    const rows = Array.from({ length: TRASH_PAGE_SIZE }, (_, i) => dealRow(`d${i}`))
+    queueSelects(rows)
+    mockExecute.mockResolvedValue([])
+
+    await listTrashed("deals", 1, MEMBER)
+
+    expect(mockExecute).toHaveBeenCalledTimes(1)
+  })
+
+  it("presents a row with no audit row as notRecorded, not as an unknown user", async () => {
+    queueSelects([dealRow("d1")])
+    mockExecute.mockResolvedValue([])
+
+    const result = await listTrashed("deals", 1, MEMBER)
+
+    if (!result.ok) throw new Error("expected ok")
+    // The presenter runs for real here — the wiring is what is under test, not a mock of it.
+    expect(result.rows[0].deletedBy).toEqual({ kind: "notRecorded" })
+  })
+
+  it("presents the resolved actor for a row that does have an audit row", async () => {
+    queueSelects([dealRow("d1")])
+    mockExecute.mockResolvedValue([auditRow("d1")])
+
+    const result = await listTrashed("deals", 1, MEMBER)
+
+    if (!result.ok) throw new Error("expected ok")
+    expect(result.rows[0].deletedBy).toEqual({
+      kind: "user",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+    })
+  })
+
+  it("uses the organization name as the deals tab's secondary column", async () => {
+    queueSelects([dealRow("d1")])
+
+    const result = await listTrashed("deals", 1, MEMBER)
+
+    if (!result.ok) throw new Error("expected ok")
+    expect(result.rows[0].name).toBe("Deal d1")
+    expect(result.rows[0].secondary).toBe("Acme Inc")
+  })
+
+  it("uses the email as the people tab's secondary column, and the full name as the record", async () => {
+    queueSelects([
+      {
+        id: "p1",
+        firstName: "Ada",
+        lastName: "Lovelace",
+        email: "ada@example.com",
+        deletedAt: DELETED_AT,
+        organizationName: "Acme Inc",
+        organizationTrashed: true,
+      },
+    ])
+
+    const result = await listTrashed("people", 1, MEMBER)
+
+    if (!result.ok) throw new Error("expected ok")
+    expect(result.rows[0].name).toBe("Ada Lovelace")
+    expect(result.rows[0].secondary).toBe("ada@example.com")
+    expect(result.rows[0].linkedParents).toEqual(["Acme Inc"])
+  })
+
+  it("uses the website as the organizations tab's secondary column", async () => {
+    queueSelects([{ id: "o1", name: "Acme Inc", deletedAt: DELETED_AT, website: "acme.test" }])
+
+    const result = await listTrashed("organizations", 1, MEMBER)
+
+    if (!result.ok) throw new Error("expected ok")
+    expect(result.rows[0].secondary).toBe("acme.test")
+  })
+
+  it("uses the due date as the activities tab's secondary column, serialised for the client", async () => {
+    const dueDate = new Date("2026-09-01T00:00:00.000Z")
+    queueSelects([
+      {
+        id: "a1",
+        name: "Follow up",
+        dueDate,
+        deletedAt: DELETED_AT,
+        dealTitle: "Acme renewal",
+        dealTrashed: true,
+      },
+    ])
+
+    const result = await listTrashed("activities", 1, MEMBER)
+
+    if (!result.ok) throw new Error("expected ok")
+    // A string, not a Date: the row type is uniform across tabs and nothing crosses the
+    // server/client boundary as a Date.
+    expect(result.rows[0].secondary).toBe(dueDate.toISOString())
+    expect(result.rows[0].linkedParents).toEqual(["Acme renewal"])
+  })
+
+  it("returns ok:false when the query rejects, so the page can tell empty from broken", async () => {
+    queueSelects(new Error("connection reset"))
+
+    const result = await listTrashed("deals", 1, MEMBER)
+
+    // An empty success would render "Trash is empty" over a broken query, which is a lie.
+    expect(result.ok).toBe(false)
+    expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
   })
 })
