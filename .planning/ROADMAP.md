@@ -279,15 +279,15 @@ Plans:
 
 - [x] 36-11-PLAN.md — the `crmBus` audit capture subscriber + instrumentation registration (AUDIT-01, AUDIT-02)
 - [x] 36-12-PLAN.md — `import` actor at five importer entry points + one summary row per run (AUDIT-01, AUDIT-03)
-- [ ] 36-13-PLAN.md — `audit-entry.tsx`, the dispatcher branch and the timeline union join (AUDIT-01, AUDIT-03)
-- [ ] 36-14-PLAN.md — `/admin/audit` retention control, sidebar entry, dashboard tile (AUDIT-04)
+- [x] 36-13-PLAN.md — `audit-entry.tsx`, the dispatcher branch and the timeline union join (AUDIT-01, AUDIT-03)
+- [x] 36-14-PLAN.md — `/admin/audit` retention control, sidebar entry, dashboard tile (AUDIT-04)
 - [x] 36-15-PLAN.md — read-only admin-only `GET /api/v1/audit` (AUDIT-03)
-- [ ] 36-16-PLAN.md — workflow run → records-changed section (AUDIT-03)
+- [x] 36-16-PLAN.md — workflow run → records-changed section (AUDIT-03)
 
 **Wave 4** *(blocked on Wave 3)*
 
 - [ ] 36-17-PLAN.md — `auditSource`, the assembler kind scope, and the eight `assemble.test.ts` assertions (AUDIT-03)
-- [ ] 36-18-PLAN.md — capped `ctid` retention pruner + instrumentation registration (AUDIT-04)
+- [x] 36-18-PLAN.md — capped `ctid` retention pruner + instrumentation registration (AUDIT-04)
 
 **Wave 5** *(blocked on Wave 4)*
 
@@ -450,7 +450,7 @@ Plans:
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
-| 36. Audit Log | 13/20 | In Progress|  |
+| 36. Audit Log | 17/20 | In Progress|  |
 | 37. Trash & Restore | 0/? | Not started | - |
 | 38. Bulk Operations | 0/? | Not started | - |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
