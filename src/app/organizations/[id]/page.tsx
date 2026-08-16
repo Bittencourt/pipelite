@@ -14,12 +14,14 @@ import { Badge } from "@/components/ui/badge"
 import { ExternalLink, Calendar, User, Globe, Building2, Users, Mail } from "lucide-react"
 import { OrganizationDetailClient } from "./organization-detail-client"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
-import { RecordTimeline } from "@/components/timeline/record-timeline"
+import { RecordTimeline, readAuditScope } from "@/components/timeline/record-timeline"
 import type { CustomFieldDefinition } from "@/db/schema"
 import { getFormatter, getTranslations } from 'next-intl/server'
 
 interface PageProps {
   params: Promise<{ id: string }>
+  /** The timeline's audit scope arrives here as `?changes=1`. Async, per Next 16. */
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }
 
 async function getOrganization(id: string) {
@@ -73,8 +75,12 @@ async function getLinkedPeople(organizationId: string) {
     .orderBy(desc(people.createdAt))
 }
 
-export default async function OrganizationDetailPage({ params }: PageProps) {
+export default async function OrganizationDetailPage({
+  params,
+  searchParams,
+}: PageProps) {
   const { id } = await params
+  const search = await searchParams
   const format = await getFormatter()
   const t = await getTranslations('organizations')
   
@@ -251,7 +257,11 @@ export default async function OrganizationDetailPage({ params }: PageProps) {
           Unlike the other three detail pages, this one has a card after CustomFieldsSection, so
           "immediately after custom fields" and "history sits last" are different positions here.
           The UI-SPEC's rationale wins: history sits last, matching how the other three pages read. */}
-      <RecordTimeline entityType="organization" entityId={organization.id} />
+      <RecordTimeline
+        entityType="organization"
+        entityId={organization.id}
+        includeAudit={readAuditScope(search)}
+      />
     </div>
   )
 }

@@ -13,12 +13,14 @@ import { Users, Mail, Phone, Building2, Calendar, User } from "lucide-react"
 import Link from "next/link"
 import { PersonDetailClient } from "./person-detail-client"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
-import { RecordTimeline } from "@/components/timeline/record-timeline"
+import { RecordTimeline, readAuditScope } from "@/components/timeline/record-timeline"
 import type { CustomFieldDefinition } from "@/db/schema"
 import { getFormatter, getTranslations } from 'next-intl/server'
 
 interface PageProps {
   params: Promise<{ id: string }>
+  /** The timeline's audit scope arrives here as `?changes=1`. Async, per Next 16. */
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }
 
 async function getPerson(id: string) {
@@ -66,8 +68,9 @@ async function getCustomFieldDefinitions() {
     .orderBy(customFieldDefinitions.position)
 }
 
-export default async function PersonDetailPage({ params }: PageProps) {
+export default async function PersonDetailPage({ params, searchParams }: PageProps) {
   const { id } = await params
+  const search = await searchParams
   const format = await getFormatter()
   const t = await getTranslations('people')
   
@@ -202,9 +205,13 @@ export default async function PersonDetailPage({ params }: PageProps) {
       />
 
       {/* The record timeline replaces the legacy read-only notes block deleted above. It is a
-          server component taking two plain string props; no React element crosses the boundary
-          into a Radix `asChild` slot (CFUI-01). */}
-      <RecordTimeline entityType="person" entityId={person.id} />
+          server component taking plain string, boolean props; no React element crosses the
+          boundary into a Radix `asChild` slot (CFUI-01). */}
+      <RecordTimeline
+        entityType="person"
+        entityId={person.id}
+        includeAudit={readAuditScope(search)}
+      />
     </div>
   )
 }

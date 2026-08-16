@@ -15,12 +15,14 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Calendar, CheckCircle2, Clock, Users, DollarSign } from "lucide-react"
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section"
-import { RecordTimeline } from "@/components/timeline/record-timeline"
+import { RecordTimeline, readAuditScope } from "@/components/timeline/record-timeline"
 import type { CustomFieldDefinition } from "@/db/schema"
 import { getFormatter, getTimeZone, getTranslations } from 'next-intl/server'
 
 interface PageProps {
   params: Promise<{ id: string }>
+  /** The timeline's audit scope arrives here as `?changes=1`. Async, per Next 16. */
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }
 
 async function getActivity(id: string) {
@@ -88,13 +90,17 @@ const typeColors: Record<string, string> = {
   orange: 'bg-orange-100 text-orange-800',
 }
 
-export default async function ActivityDetailPage({ params }: PageProps) {
+export default async function ActivityDetailPage({
+  params,
+  searchParams,
+}: PageProps) {
   const session = await auth()
   if (!session?.user?.id) {
     redirect("/login")
   }
 
   const { id } = await params
+  const search = await searchParams
   const format = await getFormatter()
   const timeZone = await getTimeZone()
   const t = await getTranslations('activities')
@@ -257,9 +263,13 @@ export default async function ActivityDetailPage({ params }: PageProps) {
       />
 
       {/* The record timeline replaces the legacy read-only notes block deleted above. It is a
-          server component taking two plain string props; no React element crosses the boundary
-          into a Radix `asChild` slot (CFUI-01). */}
-      <RecordTimeline entityType="activity" entityId={activity.id} />
+          server component taking plain string, boolean props; no React element crosses the
+          boundary into a Radix `asChild` slot (CFUI-01). */}
+      <RecordTimeline
+        entityType="activity"
+        entityId={activity.id}
+        includeAudit={readAuditScope(search)}
+      />
     </div>
   )
 }
