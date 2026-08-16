@@ -81,19 +81,28 @@ describe("audit actor context", () => {
     it("keeps two concurrent scopes from observing each other's actor", async () => {
       const observed: Array<string | null | undefined> = []
 
+      // A suspends on this until B has observed. Ordering is enforced by the handoff
+      // rather than by racing two setTimeout durations — a wall-clock race reorders
+      // under parallel suite load and would fail on the scheduler, not on the actor.
+      let releaseA: () => void = () => {}
+      const aMayObserve = new Promise<void>((resolve) => {
+        releaseA = resolve
+      })
+
       // Started WITHOUT awaiting, so both scopes are open at the same time and their
-      // continuations interleave on different timers. Mirrors the RESEARCH probe's
-      // concurrent-A / concurrent-B rows, which measured zero cross-contamination.
+      // continuations interleave. Mirrors the RESEARCH probe's concurrent-A /
+      // concurrent-B rows, which measured zero cross-contamination.
       const scopes = [
         runWithActor({ kind: "user", userId: "concurrent-A" }, async () => {
-          await new Promise((r) => setTimeout(r, 5))
+          await aMayObserve
           observed.push(getCurrentActor()?.userId)
           expect(getCurrentActor()?.userId).toBe("concurrent-A")
         }),
         runWithActor({ kind: "user", userId: "concurrent-B" }, async () => {
-          await new Promise((r) => setTimeout(r, 1))
+          await Promise.resolve()
           observed.push(getCurrentActor()?.userId)
           expect(getCurrentActor()?.userId).toBe("concurrent-B")
+          releaseA()
         }),
       ]
 
@@ -102,8 +111,8 @@ describe("audit actor context", () => {
       expect(observed).toHaveLength(2)
       expect(observed).toContain("concurrent-A")
       expect(observed).toContain("concurrent-B")
-      // B's timer is shorter, so it must have resolved first — proving the two
-      // continuations really did interleave rather than run one after the other.
+      // B ran to completion while A sat suspended inside its own open scope, and A
+      // still saw concurrent-A on resume — the two really did interleave.
       expect(observed[0]).toBe("concurrent-B")
       expect(getCurrentActor()).toBeUndefined()
     })
