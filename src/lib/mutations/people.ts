@@ -125,18 +125,30 @@ async function recalcCustomFieldsForEmit(
 
 // ---- Helpers ----
 
+/**
+ * `previous` is the row exactly as it stood BEFORE this write, taken from the unprojected
+ * existence-check `findFirst` every mutation below already runs — so it costs no extra query.
+ * A subscriber fires after the write has landed and cannot recover a former value for itself;
+ * carrying it on the payload is the only way before-values can exist at all.
+ *
+ * Creates pass nothing: a create has no before-state, and the optional parameter says so.
+ * Deletes MUST pass it — `data` is literally `{ id }` there, so `previous` is the sole source
+ * of state for the tombstone.
+ */
 function buildEventPayload(
   entityId: string,
   action: "created" | "updated" | "deleted",
   data: Record<string, unknown>,
   userId: string,
-  changedFields: string[] | null = null
+  changedFields: string[] | null = null,
+  previous?: Record<string, unknown>
 ): CrmEventPayload {
   return {
     entity: "person",
     entityId,
     action,
     data,
+    previous,
     changedFields,
     userId,
     timestamp: new Date().toISOString(),
@@ -323,6 +335,8 @@ export async function updatePersonMutation(
       { ...updatedPerson, customFields } as unknown as Record<string, unknown>,
       userId,
       changedFields.length > 0 ? changedFields : null,
+      // The pre-write row, from the existence check at the top of this function.
+      person as unknown as Record<string, unknown>,
     ))
 
     return { success: true }
@@ -353,12 +367,15 @@ export async function deletePersonMutation(
 
     // No recalculation here: a soft delete is not a save. (A deleted person's children keeping
     // a stale derived value is a known limitation recorded for plan 34-11.)
-    // Emit CRM event
+    // Emit CRM event. `data` is `{ id }` here, so `previous` is the ONLY state a subscriber can
+    // build a tombstone from — omitting it would silently produce an audit row with no detail.
     crmBus.emit("person.deleted", buildEventPayload(
       id,
       "deleted",
       { id },
       userId,
+      null,
+      person as unknown as Record<string, unknown>,
     ))
 
     return { success: true }

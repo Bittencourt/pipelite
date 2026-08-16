@@ -48,18 +48,30 @@ interface CreateDealInput {
 
 // ---- Helpers ----
 
+/**
+ * `previous` is the row exactly as it stood BEFORE this write, taken from the unprojected
+ * existence-check `findFirst` every mutation below already runs — so it costs no extra query.
+ * A subscriber fires after the write has landed and cannot recover a former value for itself;
+ * carrying it on the payload is the only way before-values can exist at all.
+ *
+ * Creates pass nothing: a create has no before-state, and the optional parameter says so.
+ * Deletes MUST pass it — `data` is literally `{ id }` there, so `previous` is the sole source
+ * of state for the tombstone.
+ */
 function buildEventPayload(
   entityId: string,
   action: "created" | "updated" | "deleted",
   data: Record<string, unknown>,
   userId: string,
-  changedFields: string[] | null = null
+  changedFields: string[] | null = null,
+  previous?: Record<string, unknown>
 ): CrmEventPayload {
   return {
     entity: "deal",
     entityId,
     action,
     data,
+    previous,
     changedFields,
     userId,
     timestamp: new Date().toISOString(),
@@ -401,6 +413,9 @@ export async function updateDealMutation(
       ...updatedDeal,
       customFields: recalculatedCustomFields,
     } as unknown as Record<string, unknown>
+    // The row as it stood before the update above, from the existence-check read at the top of
+    // this function. Unprojected, so it is the whole row, and already in memory.
+    const previousDeal = deal as unknown as Record<string, unknown>
 
     // Emit deal.updated event
     crmBus.emit("deal.updated", buildEventPayload(
@@ -409,6 +424,7 @@ export async function updateDealMutation(
       eventData,
       userId,
       changedFields.length > 0 ? changedFields : null,
+      previousDeal,
     ))
 
     // Emit deal.stage_changed if stage changed
@@ -420,6 +436,7 @@ export async function updateDealMutation(
           eventData,
           userId,
           changedFields,
+          previousDeal,
         ),
         entity: "deal",
         oldStageId,
@@ -460,12 +477,15 @@ export async function deleteDealMutation(
       .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where(eq(deals.id, id))
 
-    // Emit CRM event
+    // Emit CRM event. `data` is `{ id }` here, so `previous` is the ONLY state a subscriber can
+    // build a tombstone from — omitting it would silently produce an audit row with no detail.
     crmBus.emit("deal.deleted", buildEventPayload(
       id,
       "deleted",
       { id },
       userId,
+      null,
+      deal as unknown as Record<string, unknown>,
     ))
 
     return { success: true }
@@ -535,6 +555,9 @@ export async function updateDealStageMutation(
       ...rowAfterUpdate,
       customFields: recalculatedCustomFields,
     } as unknown as Record<string, unknown>
+    // `deal` is the pre-write row; `rowAfterUpdate` is that row with the new stage and position
+    // spread over it, so `deal` itself is untouched and is the correct before-value.
+    const previousDeal = deal as unknown as Record<string, unknown>
 
     // Emit deal.updated
     crmBus.emit("deal.updated", buildEventPayload(
@@ -543,6 +566,7 @@ export async function updateDealStageMutation(
       eventData,
       userId,
       ["stageId"],
+      previousDeal,
     ))
 
     // Emit deal.stage_changed
@@ -553,6 +577,7 @@ export async function updateDealStageMutation(
         eventData,
         userId,
         ["stageId"],
+        previousDeal,
       ),
       entity: "deal",
       oldStageId,
@@ -660,6 +685,8 @@ export async function reorderDealsMutation(
         ...rowAfterUpdate,
         customFields: recalculatedCustomFields,
       } as unknown as Record<string, unknown>
+      // Pre-write row, from the existence check at the top of the try block.
+      const previousDeal = deal as unknown as Record<string, unknown>
 
       crmBus.emit("deal.updated", buildEventPayload(
         dealId,
@@ -667,6 +694,7 @@ export async function reorderDealsMutation(
         updatedData,
         userId,
         ["stageId"],
+        previousDeal,
       ))
 
       const stagePayload: DealStageChangedPayload = {
@@ -676,6 +704,7 @@ export async function reorderDealsMutation(
           updatedData,
           userId,
           ["stageId"],
+          previousDeal,
         ),
         entity: "deal",
         oldStageId: deal.stageId,
