@@ -42,8 +42,12 @@ import type { NoteTimelineEntry } from "@/lib/timeline/types"
  * copy is tolerable; a fourth copy that BEHAVES differently is not, so this is byte-for-byte
  * the deal-card.tsx logic. Its signature requires an email, which is exactly why the
  * unknown-author branch below never calls it rather than passing an empty string.
+ *
+ * EXPORTED IN 36-13 so `audit-entry.tsx` — whose `user` rail is the same avatar this one
+ * draws — imports it instead of becoming the fifth copy. The count stops here. A later
+ * caller should import this symbol or lift it into a shared module; it must not paste it.
  */
-function getInitials(name: string | null, email: string): string {
+export function getInitials(name: string | null, email: string): string {
   if (name) {
     const parts = name.trim().split(/\s+/)
     if (parts.length >= 2) {
