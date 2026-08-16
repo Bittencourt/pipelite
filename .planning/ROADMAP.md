@@ -268,20 +268,20 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 36-05-PLAN.md — `api_key` and `workflow_run` actor boundaries; first `withApiAuth` test (AUDIT-02)
-- [ ] 36-06-PLAN.md — `user` actor at 15 server actions; `saveFieldValues` gains a real emit (AUDIT-01, AUDIT-02)
-- [ ] 36-07-PLAN.md — `previous` enrichment across the mutation layer and the three inline v1 routes (AUDIT-01)
-- [ ] 36-08-PLAN.md — fail-closed retention settings read/write + audit stats (AUDIT-04)
-- [ ] 36-09-PLAN.md — workflow-run linked-records reader (AUDIT-03)
-- [ ] 36-10-PLAN.md — pure audit value presentation + additive timeline types (AUDIT-01, AUDIT-03)
+- [x] 36-05-PLAN.md — `api_key` and `workflow_run` actor boundaries; first `withApiAuth` test (AUDIT-02)
+- [x] 36-06-PLAN.md — `user` actor at 15 server actions; `saveFieldValues` gains a real emit (AUDIT-01, AUDIT-02)
+- [x] 36-07-PLAN.md — `previous` enrichment across the mutation layer and the three inline v1 routes (AUDIT-01)
+- [x] 36-08-PLAN.md — fail-closed retention settings read/write + audit stats (AUDIT-04)
+- [x] 36-09-PLAN.md — workflow-run linked-records reader (AUDIT-03)
+- [x] 36-10-PLAN.md — pure audit value presentation + additive timeline types (AUDIT-01, AUDIT-03)
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 36-11-PLAN.md — the `crmBus` audit capture subscriber + instrumentation registration (AUDIT-01, AUDIT-02)
-- [ ] 36-12-PLAN.md — `import` actor at five importer entry points + one summary row per run (AUDIT-01, AUDIT-03)
+- [x] 36-11-PLAN.md — the `crmBus` audit capture subscriber + instrumentation registration (AUDIT-01, AUDIT-02)
+- [x] 36-12-PLAN.md — `import` actor at five importer entry points + one summary row per run (AUDIT-01, AUDIT-03)
 - [ ] 36-13-PLAN.md — `audit-entry.tsx`, the dispatcher branch and the timeline union join (AUDIT-01, AUDIT-03)
 - [ ] 36-14-PLAN.md — `/admin/audit` retention control, sidebar entry, dashboard tile (AUDIT-04)
-- [ ] 36-15-PLAN.md — read-only admin-only `GET /api/v1/audit` (AUDIT-03)
+- [x] 36-15-PLAN.md — read-only admin-only `GET /api/v1/audit` (AUDIT-03)
 - [ ] 36-16-PLAN.md — workflow run → records-changed section (AUDIT-03)
 
 **Wave 4** *(blocked on Wave 3)*
@@ -450,7 +450,7 @@ Plans:
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
-| 36. Audit Log | 4/20 | In Progress|  |
+| 36. Audit Log | 13/20 | In Progress|  |
 | 37. Trash & Restore | 0/? | Not started | - |
 | 38. Bulk Operations | 0/? | Not started | - |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
