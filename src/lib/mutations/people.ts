@@ -113,7 +113,8 @@ async function recalcCustomFieldsForEmit(
       row,
       definitionsCache: cache,
     })
-    return recalced.customFields
+    // `null` = recalculation could not describe the entity, not "no custom fields".
+    return recalced.customFields ?? ((row.customFields ?? {}) as Record<string, unknown>)
   } catch (error) {
     console.error(
       "[formula-recalc] person recalculation failed; emitting the pre-recalc blob:",

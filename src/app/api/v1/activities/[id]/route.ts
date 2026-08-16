@@ -238,7 +238,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         row: updatedActivity as unknown as Record<string, unknown>,
         definitionsCache,
       })
-      recalculatedCustomFields = recalced.customFields
+      // `null` = recalculation could not describe the entity, not "no custom fields".
+      recalculatedCustomFields = recalced.customFields ?? recalculatedCustomFields
     } catch (error) {
       console.error("[formula-recalc] activity recalculation failed:", error)
     }

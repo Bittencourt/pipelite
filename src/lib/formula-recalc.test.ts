@@ -688,6 +688,43 @@ describe("recalculateFormulas — persistence and return shape", () => {
     expect(evalSpy).toHaveBeenCalledTimes(0)
   })
 
+  it("returns null — not {} — when nothing is in scope and no row was supplied", async () => {
+    mockGetDefs.mockResolvedValue([PRICE, COST, MARGIN])
+
+    const result = await recalculateFormulas({
+      entityType: "deal",
+      entityId: "d1",
+      changedFields: ["notes"],
+    })
+
+    // The zero-read guarantee above means this call CANNOT describe the entity's blob. It must
+    // say so rather than fabricate `{}`, which is indistinguishable from "this entity genuinely
+    // has no custom fields".
+    //
+    // Returning `{}` here is what silently broke Phase 36: `saveFieldValues` omits `row` by
+    // design, folded the result straight into its emitted payload, and so emitted an empty
+    // `customFields`. The audit diff then saw no change, wrote no row for ANY custom-field
+    // edit, and sent the same empty blob to every webhook, workflow trigger, and to the client
+    // (which replaces its local values wholesale).
+    expect(result.customFields).toBeNull()
+    expect(mockDb.select).toHaveBeenCalledTimes(0)
+  })
+
+  it("still describes the entity when nothing is in scope but a row WAS supplied", async () => {
+    mockGetDefs.mockResolvedValue([PRICE, COST, MARGIN])
+
+    const result = await recalculateFormulas({
+      entityType: "deal",
+      entityId: "d1",
+      changedFields: ["notes"],
+      row: dealRow({ Price: 100, Cost: 40 }),
+    })
+
+    // The ten callers that pass `row` are unaffected by the null above — they never see it.
+    expect(result.customFields).toEqual({ Price: 100, Cost: 40 })
+    expect(mockDb.select).toHaveBeenCalledTimes(0)
+  })
+
   it("memoises definitions through the supplied cache across invocations", async () => {
     mockGetDefs.mockResolvedValue([PRICE, COST, MARGIN])
     const definitionsCache = new Map()

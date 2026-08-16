@@ -83,7 +83,9 @@ async function recalcCustomFields(
 ): Promise<Record<string, unknown>> {
   try {
     const { customFields } = await recalculateFormulas(input)
-    return customFields
+    // `null` means the recalculation could not describe the entity (nothing in scope and no
+    // row supplied), NOT that the entity has no custom fields. Fall back to the blob we wrote.
+    return customFields ?? fallback
   } catch (error) {
     console.error("[formula-recalc] deal recalculation failed:", error)
     return fallback

@@ -602,7 +602,7 @@ interface EvaluationBudget {
 
 export interface RecalculateFormulasResult {
   /** The merged blob, so the caller can emit a post-recalc payload (D-17). */
-  customFields: Record<string, unknown>
+  customFields: Record<string, unknown> | null
   /** Evaluations actually performed. Plan 34-04 spends this against the cascade budget. */
   evaluations: number
 }
@@ -661,7 +661,9 @@ async function recalculateOneEntity(
 
   // SC-4: nothing references what changed. No row read, no evaluation, no write.
   if (inScope.length === 0) {
-    const existing = (input.row?.customFields ?? {}) as Record<string, unknown>
+    const existing = input.row
+      ? ((input.row.customFields ?? {}) as Record<string, unknown>)
+      : null
     return { customFields: existing, evaluations: 0, computedNames: [], row: input.row ?? null }
   }
 
@@ -959,7 +961,9 @@ export async function recalculateFormulas(
 
   const cascaded = await cascadeToChildren({
     input,
-    parentCustomFields: parent.customFields,
+    // A null parent blob means the SC-4 no-op path ran with no row, so nothing was recomputed
+    // and `recomputedFormulaNames` is empty — the cascade returns 0 before reading this.
+    parentCustomFields: parent.customFields ?? {},
     parentRow: parent.row,
     recomputedFormulaNames: parent.computedNames,
     definitionsCache,
