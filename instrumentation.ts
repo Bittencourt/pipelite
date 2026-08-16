@@ -18,6 +18,9 @@ export async function register() {
     const { registerStageHistorySubscriber } = await import("@/lib/events/subscribers/stage-history")
     registerStageHistorySubscriber()
 
+    const { registerAuditSubscriber } = await import("@/lib/events/subscribers/audit")
+    registerAuditSubscriber()
+
     const { startScheduleProcessor } = await import("@/lib/triggers/schedule-processor")
     startScheduleProcessor()
 
