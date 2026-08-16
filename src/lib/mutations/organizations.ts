@@ -1,15 +1,18 @@
 import { db } from "@/db"
-import { organizations } from "@/db/schema"
+import { organizations, auditLog } from "@/db/schema"
 import type { EntityType, CustomFieldDefinition } from "@/db/schema"
-import { eq, and, isNull } from "drizzle-orm"
+import { eq, and, isNull, isNotNull } from "drizzle-orm"
 import { z } from "zod"
 import { crmBus } from "@/lib/events"
 import type { CrmEventPayload } from "@/lib/events"
+import { getCurrentActor } from "@/lib/audit/actor-context"
+import type { AuditActor } from "@/lib/audit/actor-context"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import {
   recalculateFormulas,
   stripFormulaKeys,
   ENTITY_NATIVE_ATTRIBUTES,
+  CHANGED_FIELDS_CUSTOM_SENTINEL,
 } from "@/lib/formula-recalc"
 
 // ---- Zod Schemas ----
@@ -139,6 +142,26 @@ async function recalcCustomFieldsForEmit(
  * Deletes MUST pass it — `data` is literally `{ id }` there, so `previous` is the sole source
  * of state for the tombstone.
  */
+/**
+ * The four actor columns of an `audit_log` row, from an actor captured SYNCHRONOUSLY at the
+ * calling function's entry.
+ *
+ * Restore and purge write their audit row directly rather than through the bus subscriber,
+ * because CONTEXT.md locks that no `organization.restored` / `organization.purged` event type
+ * exists. That makes this file responsible for the rule
+ * `src/lib/events/subscribers/audit.ts:78-83` states: NEVER borrow a user id from a payload —
+ * that field describes the record being written, not the identity that wrote it. Absence of an
+ * actor is recorded honestly as `system`.
+ */
+function auditActorColumns(actor: AuditActor | undefined) {
+  return {
+    actorKind: actor?.kind ?? "system",
+    actorUserId: actor?.userId ?? null,
+    workflowRunId: actor?.workflowRunId ?? null,
+    importSessionId: actor?.importSessionId ?? null,
+  }
+}
+
 function buildEventPayload(
   entityId: string,
   action: "created" | "updated" | "deleted",
@@ -344,5 +367,83 @@ export async function deleteOrganizationMutation(
   } catch (error) {
     console.error("Failed to delete organization:", error)
     return { success: false, error: "Failed to delete organization" }
+  }
+}
+
+/**
+ * Bring a trashed organization back to live state (TRASH-02).
+ *
+ * Three deliberate divergences from the delete this mirrors:
+ *
+ *  1. The existence predicate INVERTS to `isNotNull(deletedAt)`. A live record is not restorable.
+ *  2. A miss returns the discriminated code `"NOT_IN_TRASH"`, never prose. The UI has two
+ *     different strings for "already purged / already restored" and "restore failed"; telling a
+ *     user to retry a record that no longer exists makes them retry forever.
+ *  3. Nothing is emitted on the bus. No `organization.restored` event type is introduced
+ *     (CONTEXT.md), and emitting `organization.created` would be a lie to every subscriber.
+ *     Because there is no event, the audit row is written directly here, not by the subscriber.
+ *
+ * Restore DOES recalculate where the delete deliberately skips it — the delete's skip is what
+ * leaves the stale derived values recorded for plan 34-11, and restore is the repair point.
+ */
+export async function restoreOrganizationMutation(
+  id: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  // Captured synchronously at entry, before any promise exists — the reason is documented at
+  // src/lib/events/subscribers/audit.ts:48-56.
+  const actor = getCurrentActor()
+
+  const organization = await db.query.organizations.findFirst({
+    where: and(eq(organizations.id, id), isNotNull(organizations.deletedAt)),
+  })
+
+  if (!organization) {
+    return { success: false, error: "NOT_IN_TRASH" }
+  }
+
+  try {
+    await db
+      .update(organizations)
+      .set({ deletedAt: null, updatedAt: new Date() })
+      .where(eq(organizations.id, id))
+
+    // This is the widest and most consequential recalculation in the phase. The cascade walks
+    // organization→deal and organization→person (`CASCADE_CHILD_RELATIONS`), which is exactly
+    // the direction that repairs dot-reference formulas on the children a trashed organization
+    // left holding stale values. It works ONLY after the parent is live: `cascadeToChildren`
+    // filters `isNull(relation.deletedAt)`, so the walk must follow the update, never precede it.
+    //
+    // `changedFields` MUST be broad — an empty list, or `['deletedAt']`, evaluates zero formulas
+    // silently, because `deletedAt` is not a referenceable attribute for any entity type and
+    // `scopeFormulasToChangedFields` is the SC-4 gate.
+    try {
+      await recalculateFormulas({
+        entityType: ENTITY,
+        entityId: id,
+        changedFields: [CHANGED_FIELDS_CUSTOM_SENTINEL, ...NATIVE_COLUMNS],
+      })
+    } catch (error) {
+      // D-05: formula machinery never blocks a user's write, and the restore has already landed.
+      console.error("[formula-recalc] organization restore recalculation failed:", error)
+    }
+
+    // A lost audit row must not roll back a restore the user can already see, so this failure is
+    // logged rather than propagated.
+    try {
+      await db.insert(auditLog).values({
+        entityType: ENTITY,
+        entityId: id,
+        action: "updated",
+        changes: { deletedAt: { from: organization.deletedAt, to: null } },
+        ...auditActorColumns(actor),
+      })
+    } catch (error) {
+      console.error("[audit] failed to record organization restore:", error)
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error("Failed to restore organization:", error)
+    return { success: false, error: "Failed to restore organization" }
   }
 }
