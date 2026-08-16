@@ -6,6 +6,7 @@ import { activities, activityTypes } from "@/db/schema"
 import { eq, and, isNull, asc, or, ilike } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import { runWithActor } from "@/lib/audit/actor-context"
 import {
   createActivityMutation,
   updateActivityMutation,
@@ -31,10 +32,15 @@ export async function createActivity(
     return { success: false, error: "Not authenticated" }
   }
 
-  const result = await createActivityMutation({
-    ...data,
-    userId: session.user.id,
-  })
+  // The actor scope opens AFTER the session check above, never before it, so an
+  // unauthenticated call establishes no actor at all (T-36-02). `userId` is
+  // `session.user.id` and nothing else — never a form field, never a search param.
+  const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
+    createActivityMutation({
+      ...data,
+      userId: session.user.id,
+    })
+  )
 
   if (!result.success) {
     return result
@@ -79,7 +85,9 @@ export async function updateActivity(
     return { success: false, error: "Not authorized" }
   }
 
-  const result = await updateActivityMutation(id, data, session.user.id)
+  const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
+    updateActivityMutation(id, data, session.user.id)
+  )
 
   if (!result.success) {
     return result
@@ -124,7 +132,9 @@ export async function deleteActivity(
     return { success: false, error: "Not authorized" }
   }
 
-  const result = await deleteActivityMutation(id, session.user.id)
+  const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
+    deleteActivityMutation(id, session.user.id)
+  )
 
   if (!result.success) {
     return result
@@ -168,7 +178,9 @@ export async function toggleActivityCompletion(
     return { success: false, error: "Not authorized" }
   }
 
-  const result = await toggleActivityCompletionMutation(id, session.user.id)
+  const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
+    toggleActivityCompletionMutation(id, session.user.id)
+  )
 
   if (!result.success) {
     return result

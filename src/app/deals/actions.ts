@@ -6,6 +6,7 @@ import { deals, stages, users, notificationPreferences } from "@/db/schema"
 import { and, eq, isNull } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import { runWithActor } from "@/lib/audit/actor-context"
 import { sendDealAssignedEmail } from "@/lib/email/send"
 import {
   createDealMutation,
@@ -29,11 +30,16 @@ export async function createDeal(
     return { success: false, error: "Not authenticated" }
   }
 
-  const result = await createDealMutation({
-    ...data,
-    userId: session.user.id,
-    assigneeIds: data.assigneeIds ?? [],
-  })
+  // The actor scope opens AFTER the session check above, never before it, so an
+  // unauthenticated call establishes no actor at all (T-36-02). `userId` is
+  // `session.user.id` and nothing else — never a form field, never a search param.
+  const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
+    createDealMutation({
+      ...data,
+      userId: session.user.id,
+      assigneeIds: data.assigneeIds ?? [],
+    })
+  )
 
   if (!result.success) {
     return result
@@ -78,7 +84,9 @@ export async function updateDeal(
     return { success: false, error: "Not authorized" }
   }
 
-  const result = await updateDealMutation(id, data, session.user.id)
+  const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
+    updateDealMutation(id, data, session.user.id)
+  )
 
   if (!result.success) {
     return result
@@ -148,7 +156,9 @@ export async function deleteDeal(
     return { success: false, error: "Not authorized" }
   }
 
-  const result = await deleteDealMutation(id, session.user.id)
+  const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
+    deleteDealMutation(id, session.user.id)
+  )
 
   if (result.success) {
     revalidatePath("/deals")
@@ -182,7 +192,9 @@ export async function updateDealStage(
     return { success: false, error: "Not authorized" }
   }
 
-  const result = await updateDealStageMutation(id, stageId, session.user.id)
+  const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
+    updateDealStageMutation(id, stageId, session.user.id)
+  )
 
   if (result.success) {
     revalidatePath("/deals")
@@ -217,7 +229,9 @@ export async function reorderDeals(
     return { success: false, error: "Not authorized" }
   }
 
-  const result = await reorderDealsMutation(dealId, targetStageId, targetIndex, session.user.id)
+  const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
+    reorderDealsMutation(dealId, targetStageId, targetIndex, session.user.id)
+  )
 
   if (result.success) {
     revalidatePath("/deals")
