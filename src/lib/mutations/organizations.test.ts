@@ -18,6 +18,13 @@ vi.mock("@/lib/events", () => ({
   },
 }))
 
+// Restore and purge write their `audit_log` row directly (there is no restore/purge bus event
+// for the subscriber to hang off), so the actor must be drivable from a test. The real module
+// reads an AsyncLocalStorage store that no test establishes.
+vi.mock("@/lib/audit/actor-context", () => ({
+  getCurrentActor: vi.fn(() => undefined),
+}))
+
 // The mocked recalculation result every call resolves with, so a test can tell a POST-recalc
 // payload from the pre-recalc row's blob. `vi.hoisted` because vi.mock factories are hoisted
 // above every other statement in the file.
@@ -46,18 +53,22 @@ vi.mock("@/lib/formula-recalc", async (importOriginal) => {
   }
 })
 
+import { PgDialect } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import { crmBus } from "@/lib/events"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import { getCurrentActor } from "@/lib/audit/actor-context"
 import {
   recalculateFormulas,
   stripFormulaKeys,
   ENTITY_NATIVE_ATTRIBUTES,
+  CHANGED_FIELDS_CUSTOM_SENTINEL,
 } from "@/lib/formula-recalc"
 import {
   createOrganizationMutation,
   updateOrganizationMutation,
   deleteOrganizationMutation,
+  restoreOrganizationMutation,
 } from "./organizations"
 
 const mockDb = db as unknown as {
@@ -69,6 +80,12 @@ const mockDb = db as unknown as {
 }
 
 const mockEmit = crmBus.emit as ReturnType<typeof vi.fn>
+const mockGetCurrentActor = vi.mocked(getCurrentActor)
+
+/** Renders a drizzle predicate to SQL so a test can tell `isNotNull` from `isNull`. */
+const pgDialect = new PgDialect()
+const renderSql = (predicate: unknown) =>
+  pgDialect.sqlToQuery(predicate as Parameters<PgDialect["sqlToQuery"]>[0]).sql
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -512,6 +529,197 @@ describe("formula recalculation (D-01/D-17)", () => {
 
       expect(mockRecalc).toHaveBeenCalledTimes(0)
     })
+  })
+})
+
+describe("restoreOrganizationMutation", () => {
+  const mockRecalc = vi.mocked(recalculateFormulas)
+
+  const DELETED_AT = new Date("2026-08-01T10:00:00.000Z")
+
+  const trashedOrg = {
+    id: "org1",
+    name: "Acme Corp",
+    website: "https://acme.com",
+    industry: "Tech",
+    notes: null,
+    ownerId: "u1",
+    defaultCurrency: "USD",
+    customFields: {} as Record<string, unknown>,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: DELETED_AT,
+  }
+
+  /** The restore `UPDATE`; `where` is the awaited terminal, so it carries the call order. */
+  function stubUpdate() {
+    const whereFn = vi.fn().mockResolvedValue(undefined)
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    return { setFn, whereFn }
+  }
+
+  /** Restore writes its audit row directly — there is no bus event to hang a subscriber off. */
+  function stubAuditInsert() {
+    const valuesFn = vi.fn().mockResolvedValue(undefined)
+    mockDb.insert.mockReturnValue({ values: valuesFn })
+    return valuesFn
+  }
+
+  const auditRow = (valuesFn: ReturnType<typeof vi.fn>) =>
+    valuesFn.mock.calls[0][0] as Record<string, unknown>
+
+  beforeEach(() => {
+    mockGetCurrentActor.mockReturnValue(undefined)
+  })
+
+  it("clears deletedAt and touches nothing else", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+    const { setFn } = stubUpdate()
+    stubAuditInsert()
+
+    const result = await restoreOrganizationMutation("org1")
+
+    expect(result).toEqual({ success: true })
+    expect(mockDb.update).toHaveBeenCalledTimes(1)
+    const setArg = setFn.mock.calls[0][0] as Record<string, unknown>
+    expect(Object.keys(setArg).sort()).toEqual(["deletedAt", "updatedAt"])
+    expect(setArg.deletedAt).toBeNull()
+    expect(setArg.updatedAt).toBeInstanceOf(Date)
+  })
+
+  it("looks the record up with isNotNull(deletedAt), not isNull", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+    stubUpdate()
+    stubAuditInsert()
+
+    await restoreOrganizationMutation("org1")
+
+    const where = mockDb.query.organizations.findFirst.mock.calls[0][0].where
+    expect(renderSql(where)).toContain("is not null")
+    expect(renderSql(where)).not.toMatch(/is null/)
+  })
+
+  it("returns NOT_IN_TRASH and issues no update for a live or missing record", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(null)
+
+    const result = await restoreOrganizationMutation("org-live")
+
+    expect(result).toEqual({ success: false, error: "NOT_IN_TRASH" })
+    expect(mockDb.update).not.toHaveBeenCalled()
+  })
+
+  it("recalculates with the custom sentinel plus every organization native attribute (Pitfall 1)", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+    stubUpdate()
+    stubAuditInsert()
+
+    await restoreOrganizationMutation("org1")
+
+    expect(mockRecalc).toHaveBeenCalledTimes(1)
+    const input = mockRecalc.mock.calls[0][0]
+    expect(input.entityType).toBe("organization")
+    expect(input.entityId).toBe("org1")
+    // `[]` or `['deletedAt']` would evaluate ZERO formulas silently: `deletedAt` is not a
+    // referenceable attribute for any entity type. Compared against the real constant.
+    expect(input.changedFields).toContain(CHANGED_FIELDS_CUSTOM_SENTINEL)
+    for (const column of Object.values(ENTITY_NATIVE_ATTRIBUTES.organization)) {
+      expect(input.changedFields).toContain(column)
+    }
+  })
+
+  it("leaves the cascade enabled — this is the direction that repairs child dot-refs", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+    stubUpdate()
+    stubAuditInsert()
+
+    await restoreOrganizationMutation("org1")
+
+    expect(mockRecalc.mock.calls[0][0].cascade).not.toBe(false)
+  })
+
+  it("recalculates AFTER the update, so children re-enter the cascade", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+    const { whereFn } = stubUpdate()
+    stubAuditInsert()
+
+    await restoreOrganizationMutation("org1")
+
+    // `cascadeToChildren` filters `isNull(relation.deletedAt)` on the CHILD, but a parent that
+    // is still trashed cannot be walked from at all — the recalculation must follow the write.
+    expect(whereFn.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRecalc.mock.invocationCallOrder[0]
+    )
+  })
+
+  it("emits nothing on the CRM bus — no restore event type exists", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+    stubUpdate()
+    stubAuditInsert()
+
+    await restoreOrganizationMutation("org1")
+
+    expect(mockEmit).not.toHaveBeenCalled()
+  })
+
+  it("writes exactly one audit row recording deletedAt from the stored timestamp to null", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+    stubUpdate()
+    const valuesFn = stubAuditInsert()
+
+    await restoreOrganizationMutation("org1")
+
+    expect(mockDb.insert).toHaveBeenCalledTimes(1)
+    expect(auditRow(valuesFn)).toEqual({
+      entityType: "organization",
+      entityId: "org1",
+      action: "updated",
+      changes: { deletedAt: { from: DELETED_AT, to: null } },
+      actorKind: "system",
+      actorUserId: null,
+      workflowRunId: null,
+      importSessionId: null,
+    })
+  })
+
+  it("records the established actor rather than defaulting to system", async () => {
+    mockGetCurrentActor.mockReturnValue({ kind: "workflow_run", userId: null, workflowRunId: "r1" })
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+    stubUpdate()
+    const valuesFn = stubAuditInsert()
+
+    await restoreOrganizationMutation("org1")
+
+    expect(auditRow(valuesFn).actorKind).toBe("workflow_run")
+    expect(auditRow(valuesFn).workflowRunId).toBe("r1")
+  })
+
+  it("still restores when the audit insert fails", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+    stubUpdate()
+    mockDb.insert.mockReturnValue({ values: vi.fn().mockRejectedValue(new Error("audit down")) })
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await restoreOrganizationMutation("org1")
+
+    expect(result).toEqual({ success: true })
+    expect(errorSpy).toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+
+  it("returns a failure and logs when the update throws", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+    const whereFn = vi.fn().mockRejectedValue(new Error("boom"))
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await restoreOrganizationMutation("org1")
+
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).not.toBe("NOT_IN_TRASH")
+    expect(errorSpy).toHaveBeenCalled()
+    errorSpy.mockRestore()
   })
 })
 
