@@ -25,9 +25,11 @@ import type { SQL } from "drizzle-orm"
 vi.mock("@/db", () => ({ db: { execute: vi.fn(), select: vi.fn() } }))
 
 import { db } from "@/db"
+import { activities, deals, organizations, people } from "@/db/schema"
 import {
   resolveDeletedBy,
   findTrashedRecord,
+  findTrashedParents,
   countTrashed,
   listTrashed,
   TRASH_PAGE_SIZE,
@@ -359,6 +361,141 @@ describe("findTrashedRecord", () => {
       ownerId: "u1",
       name: "Ada Lovelace",
     })
+  })
+})
+
+describe("findTrashedParents", () => {
+  /** The parent foreign keys of a deal, as the child lookup projects them. */
+  function dealParents(organizationId: string | null, personId: string | null) {
+    return [{ organizationId, personId }]
+  }
+
+  const TRASHED_ORG = [{ id: "o1", ownerId: "u9", name: "Acme Inc" }]
+  const TRASHED_PERSON = [{ id: "p1", ownerId: "u7", firstName: "Ada", lastName: "Lovelace" }]
+
+  it("returns every trashed parent of a deal, outermost first", async () => {
+    queueSelects(dealParents("o1", "p1"), TRASHED_ORG, TRASHED_PERSON)
+
+    const parents = await findTrashedParents("deal", "d1")
+
+    // The ORDER is the restore order: an organization is restored before the person that hangs
+    // off it, and both before the deal. `TRASH_PARENTS.deal` declares that sequence.
+    expect(parents).toEqual([
+      { entityType: "organization", id: "o1", name: "Acme Inc", ownerId: "u9" },
+      { entityType: "person", id: "p1", name: "Ada Lovelace", ownerId: "u7" },
+    ])
+  })
+
+  it("carries each parent's own owner, because the caller re-checks authorization per parent", async () => {
+    queueSelects(dealParents("o1", "p1"), TRASHED_ORG, TRASHED_PERSON)
+
+    const parents = await findTrashedParents("deal", "d1")
+
+    // Two different owners, neither of them the caller's: a linked restore must be able to skip
+    // the parent it may not touch rather than restoring it on the child's authority (T-37-02).
+    expect(parents.map((parent) => parent.ownerId)).toEqual(["u9", "u7"])
+  })
+
+  it("returns only the parent that is actually in trash", async () => {
+    queueSelects(dealParents("o1", "p1"), TRASHED_ORG, [])
+
+    const parents = await findTrashedParents("deal", "d1")
+
+    expect(parents).toHaveLength(1)
+    expect(parents[0].entityType).toBe("organization")
+  })
+
+  it("returns an empty array when both parents are live", async () => {
+    queueSelects(dealParents("o1", "p1"), [], [])
+
+    expect(await findTrashedParents("deal", "d1")).toEqual([])
+  })
+
+  it("filters every parent lookup on deleted_at IS NOT NULL — a live parent needs no restoring", async () => {
+    queueSelects(dealParents("o1", "p1"), TRASHED_ORG, TRASHED_PERSON)
+
+    await findTrashedParents("deal", "d1")
+
+    // Both parent lookups, not just the first: a restore that reached a LIVE record would clear
+    // a `deleted_at` that was never set and write an audit row for a restore that never happened.
+    for (const index of [1, 2]) {
+      expect(renderedWhere(index).sql).toContain("is not null")
+    }
+  })
+
+  it("does NOT filter the child row on deleted_at — the child may be trashed or live", async () => {
+    queueSelects(dealParents("o1", null), TRASHED_ORG)
+
+    await findTrashedParents("deal", "d1")
+
+    // The child's own trashed-ness is the caller's guard to make (`findTrashedRecord`), not this
+    // function's. Repeating it here would make the badge on a live record's page impossible.
+    expect(renderedWhere(0).sql).not.toContain("is not null")
+    expect(renderedWhere(0).params).toContain("d1")
+  })
+
+  it("looks up exactly the tables TRASH_PARENTS names for a deal, in that order", async () => {
+    queueSelects(dealParents("o1", "p1"), TRASHED_ORG, TRASHED_PERSON)
+
+    await findTrashedParents("deal", "d1")
+
+    // The parent SET comes from the map, never from a second list typed out in this function.
+    expect(selectCalls[0].from).toBe(deals)
+    expect(selectCalls[1].from).toBe(organizations)
+    expect(selectCalls[2].from).toBe(people)
+    expect(selectCalls).toHaveLength(3)
+  })
+
+  it("issues no parent lookup at all when the foreign keys are null", async () => {
+    queueSelects(dealParents(null, null))
+
+    expect(await findTrashedParents("deal", "d1")).toEqual([])
+    // A deal with no organization and no person has nothing to look up; two round trips that
+    // can only return nothing are two round trips too many.
+    expect(selectCalls).toHaveLength(1)
+  })
+
+  it("returns an empty array when the child row does not exist", async () => {
+    queueSelects([])
+
+    expect(await findTrashedParents("deal", "d1")).toEqual([])
+    expect(selectCalls).toHaveLength(1)
+  })
+
+  it("returns at most one organization for a person", async () => {
+    queueSelects([{ organizationId: "o1" }], TRASHED_ORG)
+
+    expect(await findTrashedParents("person", "p1")).toEqual([
+      { entityType: "organization", id: "o1", name: "Acme Inc", ownerId: "u9" },
+    ])
+    expect(selectCalls[0].from).toBe(people)
+    expect(selectCalls[1].from).toBe(organizations)
+  })
+
+  it("returns at most one deal for an activity", async () => {
+    queueSelects([{ dealId: "d1" }], [{ id: "d1", ownerId: "u9", name: "Acme renewal" }])
+
+    expect(await findTrashedParents("activity", "a1")).toEqual([
+      { entityType: "deal", id: "d1", name: "Acme renewal", ownerId: "u9" },
+    ])
+    expect(selectCalls[0].from).toBe(activities)
+    expect(selectCalls[1].from).toBe(deals)
+  })
+
+  it("issues NO QUERY AT ALL for an organization — it has no parents to have", async () => {
+    const parents = await findTrashedParents("organization", "o1")
+
+    // `TRASH_PARENTS.organization` is empty, so there is nothing to read. Reading the row anyway
+    // to discover that would make the emptiness of that list a comment rather than a control.
+    expect(parents).toEqual([])
+    expect(mockSelect).not.toHaveBeenCalled()
+  })
+
+  it("returns an empty array and logs when the child lookup rejects", async () => {
+    queueSelects(new Error("connection reset"))
+
+    expect(await findTrashedParents("deal", "d1")).toEqual([])
+    expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
   })
 })
 
