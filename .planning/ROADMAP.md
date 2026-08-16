@@ -342,7 +342,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 37-14-PLAN.md — /trash server page and the controlled tab bar
+- [x] 37-14-PLAN.md — /trash server page and the controlled tab bar
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -485,7 +485,7 @@ Plans:
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
-| 37. Trash & Restore | 13/15 | In Progress|  |
+| 37. Trash & Restore | 14/15 | In Progress|  |
 | 38. Bulk Operations | 0/? | Not started | - |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
