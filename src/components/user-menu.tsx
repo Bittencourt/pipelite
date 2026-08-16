@@ -1,7 +1,7 @@
 "use client"
 
 import { signOut } from "next-auth/react"
-import { LogOut, User, Key } from "lucide-react"
+import { LogOut, User, Key, Trash2 } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import {
@@ -59,6 +59,18 @@ export function UserMenu({ user }: UserMenuProps) {
           <a href="/settings/api-keys" className="flex items-center">
             <Key className="mr-2 h-4 w-4" />
             <span>{t("apiKeys")}</span>
+          </a>
+        </DropdownMenuItem>
+        {/*
+          Not role-gated: trash is owner-scoped, not admin-only — only purge is admin-only,
+          and /trash scopes its own query. A nav item is never the gate. The icon deliberately
+          carries no destructive colour: sign-out stays the only red thing in this menu,
+          because a route to a recovery page is not a danger.
+        */}
+        <DropdownMenuItem asChild>
+          <a href="/trash" className="flex items-center">
+            <Trash2 className="mr-2 h-4 w-4" />
+            <span>{t("trash")}</span>
           </a>
         </DropdownMenuItem>
         {user.role === "admin" && (

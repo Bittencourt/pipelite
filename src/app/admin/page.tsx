@@ -4,7 +4,7 @@ import { users } from "@/db/schema/users"
 import { eq, count, and, isNull } from "drizzle-orm"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, UserCheck, Layers, SlidersHorizontal, Database, Key, ScrollText } from "lucide-react"
+import { Users, UserCheck, Layers, SlidersHorizontal, Database, Key, ScrollText, Trash2 } from "lucide-react"
 import { getTranslations } from 'next-intl/server'
 
 export default async function AdminDashboard() {
@@ -209,6 +209,24 @@ export default async function AdminDashboard() {
                 </div>
                 <CardDescription>
                   {t('auditLogDescription')}
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+          {/*
+            Reads admin.dashboard.trash / admin.dashboard.trashDescription. Translated for the
+            same reason the audit tile above is, even though the admin sidebar's sibling entry
+            is an English literal — that asymmetry is the established convention, explained above.
+          */}
+          <Link href="/admin/trash">
+            <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">{t('trash')}</CardTitle>
+                  <Trash2 className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <CardDescription>
+                  {t('trashDescription')}
                 </CardDescription>
               </CardHeader>
             </Card>

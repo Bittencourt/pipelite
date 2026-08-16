@@ -41,8 +41,8 @@ export function DeleteDialog({
             <DialogTitle>Delete Person</DialogTitle>
           </div>
           <DialogDescription className="pt-4">
-            Are you sure you want to delete &quot;{personName}&quot;? This action
-            cannot be undone.
+            Are you sure you want to delete &quot;{personName}&quot;? You can
+            restore it from Trash.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

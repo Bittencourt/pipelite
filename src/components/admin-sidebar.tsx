@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Users, Home, Layers, SlidersHorizontal, Database, Key, Radio, ScrollText } from "lucide-react"
+import { Users, Home, Layers, SlidersHorizontal, Database, Key, Radio, ScrollText, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
@@ -40,6 +40,13 @@ const sidebarItems = [
     title: "Audit Log",
     href: "/admin/audit",
     icon: ScrollText,
+  },
+  // Placed immediately after Audit Log: the two are the app's data-lifecycle settings and
+  // belong together. The English literal follows the justification above, which is not restated.
+  {
+    title: "Trash",
+    href: "/admin/trash",
+    icon: Trash2,
   },
   {
     title: "Export Data",

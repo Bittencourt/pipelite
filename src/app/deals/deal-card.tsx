@@ -255,7 +255,7 @@ export function DealCard({ deal, onEdit, isOverlay, isSelected, "data-kanban-col
           <AlertDialogHeader>
             <AlertDialogTitle>{t('deleteDeal')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete &quot;{deal.title}&quot;? This action cannot be undone.
+              Are you sure you want to delete &quot;{deal.title}&quot;? You can restore it from Trash.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
