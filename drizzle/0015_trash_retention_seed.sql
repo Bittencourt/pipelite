@@ -1,0 +1,43 @@
+-- ============================================================================
+-- DATA-ONLY MIGRATION. This file contains no schema statements whatsoever: it
+-- was produced with `drizzle-kit generate --custom` precisely because Phase 37
+-- changes nothing about the shape of the database. `app_settings` already
+-- exists (0014) and all four `*_deleted_at_idx` btrees already exist (0012).
+--
+-- 1. WHY IT EXISTS. 37-CONTEXT locks a 30-day trash retention: long enough that
+--    a deletion someone regrets on Monday is still recoverable next month,
+--    short enough that trash is a buffer rather than a second copy of the
+--    database. Without this seed, readTrashRetentionDays() returns null on a
+--    fresh install, the trash pruner purges nothing, and trash grows without
+--    bound until an admin proactively discovers /admin/trash and types a
+--    number. SC-4 would then be silently unmet on every deployment nobody is
+--    watching.
+--
+-- 2. WHY IT IS DATA AND NOT A CODE FALLBACK. src/lib/trash/settings.ts forbids
+--    a code-level default on purpose: a fallback there would mean a corrupted,
+--    tampered or deliberately cleared settings row silently RESUMES permanently
+--    destroying records on a month-long window, which is the wrong failure
+--    direction for the one surface that stands between a soft delete and an
+--    irreversible one (T-37-05). A seeded row plus fail-closed parsing gives
+--    BOTH properties — a sane out-of-box policy AND a read path that keeps data
+--    whenever it cannot be sure. The two are complementary and neither
+--    substitutes for the other. Do not "simplify" either away.
+--
+-- 3. WHY HAND-EDITING THIS FILE DOES NOT VIOLATE PHASE 33 D-06. D-06 forbids
+--    hand-written INDEX schema statements in migration SQL, because
+--    `drizzle-kit generate` owns the schema and silently dropped a hand-written
+--    index in this repo once (0009 to 0010). `generate` does not manage data
+--    rows at all, never emits or re-emits an INSERT, and applied migrations are
+--    append-only — so this statement cannot be clobbered by a later `generate`.
+--    The distinction is schema versus data, and it is the same carve-out 0014
+--    used for the audit retention seed. Do not generalise it: no index
+--    definition is ever hand-written here. (These comments deliberately avoid
+--    spelling the schema-statement keywords, so the `grep -c` gates that count
+--    real statements in this file stay exact.)
+--
+-- 4. WHY THE CONFLICT CLAUSE DOES NOTHING RATHER THAN UPSERTING. The seed must
+--    be idempotent and must NEVER overwrite a value an admin has chosen. On
+--    this project's live database the migration runs once, but a replayed or
+--    re-applied migration must be a no-op against an operator's setting.
+-- ============================================================================
+INSERT INTO "app_settings" ("key", "value") VALUES ('trash.retention_days', '30'::jsonb) ON CONFLICT ("key") DO NOTHING;
