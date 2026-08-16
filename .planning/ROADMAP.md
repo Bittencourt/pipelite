@@ -68,7 +68,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 33: Database Indexes for the CRM Core** - Index the foreign keys and hot filter columns the v1.0 tables never got (completed 2026-08-14)
 - [x] **Phase 34: Formula Reactivity** - Server-side, dependency-aware recalc so stored formula values stop going stale (completed 2026-08-14)
 - [x] **Phase 35: Notes & Record Timeline** - Append-only attributed notes plus one chronological timeline per record (completed 2026-08-15)
-- [ ] **Phase 36: Audit Log** - Field-level change history with actor kind, fed by crmBus, with retention
+- [x] **Phase 36: Audit Log** - Field-level change history with actor kind, fed by crmBus, with retention (completed 2026-08-16)
 - [ ] **Phase 37: Trash & Restore** - Make soft-deleted records visible, restorable, and eventually purged
 - [ ] **Phase 38: Bulk Operations** - Multi-select with bulk delete, owner reassignment, and scoped export
 - [ ] **Phase 39: Duplicate Detection & Merge** - Warn on likely duplicates and merge without orphaning children
@@ -295,7 +295,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5)*
 
-- [ ] 36-20-PLAN.md — SC-5 source gate, psql evidence, and the blocking browser verification (AUDIT-01..04)
+- [x] 36-20-PLAN.md — SC-5 source gate, psql evidence, and the blocking browser verification (AUDIT-01..04)
 
 **UI hint**: yes
 
@@ -450,7 +450,7 @@ Plans:
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
-| 36. Audit Log | 19/20 | In Progress|  |
+| 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
 | 37. Trash & Restore | 0/? | Not started | - |
 | 38. Bulk Operations | 0/? | Not started | - |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
