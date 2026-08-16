@@ -529,7 +529,7 @@ export function ActivityDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Activity</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this activity? This action cannot be undone.
+              Are you sure you want to delete this activity? You can restore it from Trash.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
