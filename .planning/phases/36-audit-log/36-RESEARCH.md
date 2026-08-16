@@ -1135,12 +1135,29 @@ attribution is the highest-value spoofing target in the phase.
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-These four must be answered before planning. **Two of them decide whether ROADMAP success criteria
-are achievable at all.**
+These four had to be answered before planning; two of them decided whether ROADMAP success criteria
+were achievable at all. **All four were answered by `36-CONTEXT.md` § Post-Research Addendum
+(decided 2026-08-16) and are implemented in the phase plan set.** The original analysis is kept
+below unedited, because the reasoning is what justifies the answers. Each question now opens with
+its resolution.
 
-### 1. Does `saveFieldValues` get an event, so custom-field edits are audited? — **BLOCKING**
+| # | Question | Resolution | Implemented by |
+|---|----------|-----------|----------------|
+| 1 | `saveFieldValues` emit | **YES** — recommendation accepted; the webhook/workflow fan-out is an accepted, user-approved behaviour change | `36-06` Task 2; observed in `36-20` browser step 5 |
+| 2 | `import` actor kind | **Option 2** — one summary audit row per import session, written by the importer. SC-3 met at session granularity; SC-5 holds for the mutation modules but not the importers | `36-12`; stated in `36-20` phase statements 1-2 |
+| 3 | Run linked-records scope | **Match the page's existing session-only auth**, and say so rather than silently tightening it | `36-09` (T-36-04), `36-16` (T-36-04) |
+| 4 | Timeline audit visibility | **Keep the timeline open** to any user who can already see the record — confirmed, not assumed. Density is handled by a filter toggle, OFF by default, not by an access gate | `36-17` (T-36-04), `36-19` (the toggle) |
+
+### 1. Does `saveFieldValues` get an event, so custom-field edits are audited? — **RESOLVED: YES**
+
+> **Resolution.** The recommendation below was accepted (36-CONTEXT § Post-Research Addendum, first
+> bullet). Implemented in `36-06` Task 2, which also requires rewriting the stale "deliberately emits
+> NO crmBus event" comment at `src/lib/custom-fields.ts:189-193`. The accepted side effect —
+> custom-field-only saves now firing webhooks and workflow triggers for the first time — is planned
+> explicitly, carries threat id T-36-16, and must have an OBSERVED outcome recorded from `36-20`
+> browser step 5 rather than an assumed one.
 
 - **What we know:** `src/lib/custom-fields.ts:238` writes `custom_fields` + `updatedAt` directly and
   emits nothing. It is what `POST /api/custom-fields/save` calls, which is what the record detail
@@ -1155,7 +1172,15 @@ are achievable at all.**
   behaviour change users will notice. **This is the single most consequential decision in the phase.**
   If the answer is no, AUDIT-01's "every" must be narrowed in writing.
 
-### 2. How is the `import` actor kind ever populated? — **BLOCKING (ROADMAP SC-3)**
+### 2. How is the `import` actor kind ever populated? — **RESOLVED: option 2**
+
+> **Resolution.** Option 2 (one summary audit row per import session, written by the importer) was
+> accepted. Implemented in `36-12`, across all five entry points — four in
+> `src/app/import/actions.ts` and one in `src/lib/import/pipedrive-api-import-actions.ts`; the
+> "singular importer" in the analysis below is corrected by 36-PATTERNS. Two consequences are stated
+> plainly in `36-12` and again in `36-20`'s phase statements: SC-3 is satisfied at SESSION
+> granularity, not per-record; and SC-5 holds for the four CRM mutation modules but NOT for the
+> importers. Option 1 was rejected on the measured cost recorded below.
 
 - **What we know:** both importers bulk-insert with no events
   (`src/app/import/actions.ts:71`, `src/lib/import/pipedrive-api-import-actions.ts:92,1006`).
@@ -1176,7 +1201,13 @@ are achievable at all.**
 - **Recommendation:** **option 2.** It is the only one that satisfies SC-3 without a fan-out that
   would make the feature dangerous.
 
-### 3. Is the workflow-run linked-records list scoped to the run's own workflow?
+### 3. Is the workflow-run linked-records list scoped to the run's own workflow? — **RESOLVED: no**
+
+> **Resolution.** Recommendation accepted (36-CONTEXT § Post-Research Addendum, recommendation 3):
+> match the run detail page's existing session-only auth and declare it rather than silently
+> tightening it. Carried as an explicit `accept` disposition — threat T-36-04 — in both `36-09` (the
+> reader) and `36-16` (the page section), each of which grep-asserts that no new ownership check was
+> added.
 
 - **What we know:** the run detail page (`workflows/[id]/runs/[runId]/page.tsx:18-21`) requires only
   a session — no ownership check — and STATE.md records "Workflows not owner-scoped; all
@@ -1187,7 +1218,15 @@ are achievable at all.**
 - **Recommendation:** match the existing page's auth (session only), and note it. Do not silently
   tighten it here — that would be an undeclared behaviour change in a phase that is not about auth.
 
-### 4. Should the record timeline's audit entries be visible to every authenticated user?
+### 4. Should the record timeline's audit entries be visible to every authenticated user? — **RESOLVED: yes**
+
+> **Resolution.** Recommendation accepted (36-CONTEXT § Post-Research Addendum, recommendation 4),
+> and 36-UI-SPEC § Assumptions Flagged item 1 records it as CONFIRMED rather than assumed: gating
+> them would change the `TimelineSource` interface, and the record itself is already visible to that
+> user. Carried as `accept` (T-36-04) in `36-17`. The density problem this question gestures at was
+> instead solved by a product control, not an access control — the filter toggle in `36-19`, audit
+> entries OFF by default, which 36-UI-SPEC § Density adopts after retracting its earlier no-filter
+> position.
 
 - **What we know:** `loadMoreTimeline` (`notes/actions.ts:238-242`) and `RecordTimeline`
   (`record-timeline.tsx:43`) check only for a session. The CONTEXT locks admin-only for the **REST**
