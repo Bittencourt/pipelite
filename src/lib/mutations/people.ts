@@ -139,6 +139,26 @@ async function recalcCustomFieldsForEmit(
  * Deletes MUST pass it — `data` is literally `{ id }` there, so `previous` is the sole source
  * of state for the tombstone.
  */
+function buildEventPayload(
+  entityId: string,
+  action: "created" | "updated" | "deleted",
+  data: Record<string, unknown>,
+  userId: string,
+  changedFields: string[] | null = null,
+  previous?: Record<string, unknown>
+): CrmEventPayload {
+  return {
+    entity: "person",
+    entityId,
+    action,
+    data,
+    previous,
+    changedFields,
+    userId,
+    timestamp: new Date().toISOString(),
+  }
+}
+
 /**
  * The four actor columns of an `audit_log` row, from an actor captured SYNCHRONOUSLY at the
  * calling function's entry.
@@ -166,26 +186,6 @@ function auditActorColumns(actor: AuditActor | undefined) {
  * `lib/timeline/types.ts`) and consumed by two exhaustive `Record<AuditAction, …>` maps.
  */
 const PURGE_MARKER = { __purge: { from: null, to: true } } as const
-
-function buildEventPayload(
-  entityId: string,
-  action: "created" | "updated" | "deleted",
-  data: Record<string, unknown>,
-  userId: string,
-  changedFields: string[] | null = null,
-  previous?: Record<string, unknown>
-): CrmEventPayload {
-  return {
-    entity: "person",
-    entityId,
-    action,
-    data,
-    previous,
-    changedFields,
-    userId,
-    timestamp: new Date().toISOString(),
-  }
-}
 
 // ---- Mutations ----
 
