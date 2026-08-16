@@ -315,20 +315,37 @@ Plans:
 **UI hint**: yes
 
 Plans:
+**Wave 1**
+
 - [ ] 37-01-PLAN.md — trash.retention_days settings module + seeded data-only migration
 - [ ] 37-02-PLAN.md — Pure trash vocabulary: closed ?type= parsers + the deleted-by presenter
 - [ ] 37-03-PLAN.md — 61 i18n keys across three locales + REQUIRED_TRASH_KEYS parity contract
 - [ ] 37-04-PLAN.md — Deal and activity restore + purge mutations (ordered transactional teardown)
 - [ ] 37-05-PLAN.md — Person and organization restore + purge mutations (two-child detach)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 37-06-PLAN.md — Restore/purge dispatch map over the four entity types
 - [ ] 37-07-PLAN.md — Trash read layer: owner-scoped counts and rows, batched deleted-by
 - [ ] 37-08-PLAN.md — /admin/trash retention page, form and admin-gated save action
 - [ ] 37-09-PLAN.md — Nav entries for /trash and /admin/trash + six delete-dialog copy corrections
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 37-10-PLAN.md — restoreRecord, restoreWithLinked and purgeRecord server actions
 - [ ] 37-11-PLAN.md — Daily trash retention pruner + instrumentation registration + Docker log gate
 - [ ] 37-12-PLAN.md — REST /api/v1/trash listing, restore and admin-gated purge
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 37-13-PLAN.md — trash-columns and trash-table client components + source-wiring gate
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 37-14-PLAN.md — /trash server page and the controlled tab bar
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 37-15-PLAN.md — scripts/trash-checks.sql, full phase gates and cross-surface UAT
 
 ### Phase 38: Bulk Operations
