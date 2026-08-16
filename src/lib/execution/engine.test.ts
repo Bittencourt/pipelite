@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { ExecutionContext, WorkflowNode, ConditionNode, DelayNode, SplitNode } from "./types"
+// Neither AsyncLocalStorage module is mocked below: the actor cases at the bottom of this
+// file assert that a real store survives the engine's real awaits, which a stub could not show.
+import { getCurrentActor, type AuditActor } from "@/lib/audit/actor-context"
+import { getCurrentExecutionDepth } from "./recursion"
 
 // Mock the DB module
 const mockDb = {
@@ -124,8 +128,8 @@ let updatedRuns: Array<Record<string, unknown>> = []
 let updatedSteps: Array<Record<string, unknown>> = []
 
 function setupDbMocks(
-  workflow: { id: string; nodes: WorkflowNode[] },
-  run: { id: string; workflowId: string; status: string; context: ExecutionContext | null; currentNodeId: string | null; triggerData: Record<string, unknown> | null }
+  workflow: { id: string; nodes: WorkflowNode[]; createdBy?: string },
+  run: { id: string; workflowId: string; status: string; context: ExecutionContext | null; currentNodeId: string | null; triggerData: Record<string, unknown> | null; depth?: number }
 ) {
   insertedSteps = []
   updatedRuns = []
@@ -718,5 +722,148 @@ describe("executeRun", () => {
     // a misleading "No handler registered" error
     expect(failUpdate!.error).toContain("Nested condition nodes inside a condition/split branch are not supported")
     expect(failUpdate!.currentNodeId).toBe("nested-1")
+  })
+})
+
+/**
+ * AUDIT-02: the workflow_run actor scope (T-36-13).
+ *
+ * These read the actor from inside `executeAction`, which is where a real CRM action runs.
+ * That is deliberate: asserting the engine calls a wrapper would prove nothing about whether
+ * a mutation four awaits deep can still see the actor, and that mutation is the only consumer
+ * that matters. The engine's `actions` module is stubbed, so the observation point is the same
+ * boundary the real crm.ts handlers sit behind.
+ *
+ * Every name here contains "actor" so `-t "actor"` selects the set.
+ */
+describe("executeRun actor scope", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    insertedSteps = []
+    updatedRuns = []
+    updatedSteps = []
+  })
+
+  /**
+   * Run a single-action workflow and return what the action observed.
+   * `mockImplementationOnce` shadows the module-level stub for this one call only, so the
+   * rest of the suite keeps the default action behaviour.
+   */
+  async function observeFromAction(
+    workflow: { id: string; nodes: WorkflowNode[]; createdBy?: string },
+    run: {
+      id: string
+      workflowId: string
+      status: string
+      context: ExecutionContext | null
+      currentNodeId: string | null
+      triggerData: Record<string, unknown> | null
+      depth?: number
+    }
+  ): Promise<{ actor: AuditActor | undefined; depth: number }> {
+    setupDbMocks(workflow, run)
+
+    let actor: AuditActor | undefined
+    let depth = -1
+
+    const { executeAction } = await import("./actions")
+    vi.mocked(executeAction).mockImplementationOnce(async () => {
+      // Await first: a synchronous read at action entry would pass even if the scope
+      // did not survive the engine's own awaits, which is the property under test.
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      actor = getCurrentActor()
+      depth = getCurrentExecutionDepth()
+      return { output: { type: "crm", status: "executed" } }
+    })
+
+    const { executeRun } = await import("./engine")
+    await executeRun(run.id)
+
+    return { actor, depth }
+  }
+
+  function singleActionWorkflow(id: string, createdBy: string) {
+    return { id, createdBy, nodes: [makeActionNode("n1", null)] }
+  }
+
+  function pendingRun(
+    id: string,
+    workflowId: string,
+    extra: Partial<{ depth: number; triggerData: Record<string, unknown> }> = {}
+  ) {
+    return {
+      id,
+      workflowId,
+      status: "running",
+      context: null as ExecutionContext | null,
+      currentNodeId: null as string | null,
+      triggerData: { trigger_type: "manual", data: {} } as Record<string, unknown> | null,
+      ...extra,
+    }
+  }
+
+  it("gives a CRM action inside the run a workflow_run actor carrying the run id", async () => {
+    const { actor } = await observeFromAction(
+      singleActionWorkflow("wf-actor-1", "author-1"),
+      pendingRun("run-actor-1", "wf-actor-1")
+    )
+
+    expect(actor).toEqual({
+      kind: "workflow_run",
+      userId: "author-1",
+      workflowRunId: "run-actor-1",
+    })
+  })
+
+  it("attributes the actor to the workflow author, never to the triggering user", async () => {
+    const { actor } = await observeFromAction(
+      singleActionWorkflow("wf-actor-2", "author-2"),
+      pendingRun("run-actor-2", "wf-actor-2", {
+        triggerData: {
+          trigger_type: "crm_event",
+          // The human who moved the deal that fired this workflow. An audit row for a
+          // write the automation made must not carry their name.
+          userId: "triggering-user",
+          data: { event: "deal.updated", userId: "triggering-user" },
+        },
+      })
+    )
+
+    expect(actor?.userId).toBe("author-2")
+    expect(actor?.userId).not.toBe("triggering-user")
+    // The whole point of a distinct kind: a reader can tell the two apart at a glance.
+    expect(actor?.kind).toBe("workflow_run")
+  })
+
+  it("leaves the recursion depth store intact alongside the actor store", async () => {
+    const { actor, depth } = await observeFromAction(
+      singleActionWorkflow("wf-actor-3", "author-3"),
+      pendingRun("run-actor-3", "wf-actor-3", { depth: 2 })
+    )
+
+    // Nesting must not cost the depth: crm.ts reads it to compute depth + 1, and losing
+    // it would silently defeat MAX_RECURSION_DEPTH.
+    expect(depth).toBe(2)
+    expect(actor?.workflowRunId).toBe("run-actor-3")
+  })
+
+  it("defaults the depth to 0 under the actor scope when the run has none", async () => {
+    const { actor, depth } = await observeFromAction(
+      singleActionWorkflow("wf-actor-4", "author-4"),
+      pendingRun("run-actor-4", "wf-actor-4")
+    )
+
+    expect(depth).toBe(0)
+    expect(actor?.kind).toBe("workflow_run")
+  })
+
+  it("establishes no actor once the run has finished", async () => {
+    await observeFromAction(
+      singleActionWorkflow("wf-actor-5", "author-5"),
+      pendingRun("run-actor-5", "wf-actor-5")
+    )
+
+    expect(getCurrentActor()).toBeUndefined()
+    expect(getCurrentExecutionDepth()).toBe(0)
   })
 })

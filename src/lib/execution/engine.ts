@@ -5,6 +5,7 @@ import { evaluateCondition } from "./condition-evaluator"
 import { resolveDelay } from "./delay-resolver"
 import { executeAction } from "./actions"
 import { runWithExecutionDepth } from "./recursion"
+import { runWithActor } from "@/lib/audit/actor-context"
 import type {
   WorkflowNode,
   ActionNode,
@@ -105,8 +106,25 @@ export async function executeRun(runId: string): Promise<void> {
   // Execute the whole graph inside the run's stored recursion depth, so CRM
   // actions that fire other workflows create runs at depth + 1 instead of
   // restarting at 0 (which would defeat MAX_RECURSION_DEPTH).
+  //
+  // Nested inside it: the actor scope every write made by this run is attributed
+  // to. This is the ONLY place a workflow-kind actor is created, and it is the
+  // reason src/lib/execution/actions/crm.ts needs no wrap of its own -- its three
+  // runWithExecutionDepth(depth + 1, ...) calls already run nested inside this
+  // scope and inherit it. Do NOT add a second wrap there; a run's identity comes
+  // from the executor's own ids, never from anything a node config can influence.
+  //
+  // The user attributed is the workflow's AUTHOR, not whoever triggered the run:
+  // an automated write is a fact about the automation, and borrowing the
+  // triggering user's name would put an unverified human identity on it.
+  //
+  // The two AsyncLocalStorage stores are independent, so nesting one inside the
+  // other leaves both readable throughout the body.
   return runWithExecutionDepth(run.depth ?? 0, () =>
-    executeRunGraph(runId, run, workflow)
+    runWithActor(
+      { kind: "workflow_run", userId: workflow.createdBy, workflowRunId: runId },
+      () => executeRunGraph(runId, run, workflow)
+    )
   ) as Promise<void>
 }
 
