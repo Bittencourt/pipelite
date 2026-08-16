@@ -41,12 +41,24 @@ vi.mock("@/lib/custom-fields", () => ({
   getActiveFieldDefinitions: vi.fn(async () => []),
 }))
 
+// Restore and purge write their audit row directly rather than through the bus subscriber, so
+// the actor has to be drivable from a test. The real module is an AsyncLocalStorage singleton;
+// mocking the reader is how the "no actor established" branch becomes reachable.
+vi.mock("@/lib/audit/actor-context", () => ({
+  getCurrentActor: vi.fn(() => undefined),
+}))
+
 import { db } from "@/db"
 import { crmBus } from "@/lib/events"
+import { getCurrentActor } from "@/lib/audit/actor-context"
+import { auditLog } from "@/db/schema"
+import { PgDialect } from "drizzle-orm/pg-core"
+import type { SQL } from "drizzle-orm"
 import {
   recalculateFormulas,
   stripFormulaKeys,
   ENTITY_NATIVE_ATTRIBUTES,
+  CHANGED_FIELDS_CUSTOM_SENTINEL,
   type RecalculateFormulasInput,
 } from "@/lib/formula-recalc"
 import {
@@ -55,6 +67,7 @@ import {
   deleteDealMutation,
   updateDealStageMutation,
   reorderDealsMutation,
+  restoreDealMutation,
 } from "./deals"
 
 const mockDb = db as unknown as {
@@ -73,12 +86,24 @@ const mockDb = db as unknown as {
 const mockEmit = crmBus.emit as ReturnType<typeof vi.fn>
 const mockRecalc = recalculateFormulas as unknown as ReturnType<typeof vi.fn>
 const mockStrip = stripFormulaKeys as unknown as ReturnType<typeof vi.fn>
+const mockGetCurrentActor = getCurrentActor as unknown as ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   vi.clearAllMocks()
   mockRecalc.mockResolvedValue({ customFields: {}, evaluations: 0 })
   mockStrip.mockImplementation((values: Record<string, unknown>) => values)
+  mockGetCurrentActor.mockReturnValue(undefined)
 })
+
+/**
+ * Render a Drizzle `where` back to SQL text.
+ *
+ * The restore/purge existence check INVERTS the delete's predicate, and `isNull` vs `isNotNull`
+ * is a one-character difference with opposite meaning — an assertion on the rendered predicate is
+ * the only way to catch it, because both compile and both return a row-or-undefined.
+ */
+const renderPredicate = (where: unknown): string =>
+  new PgDialect().sqlToQuery(where as SQL).sql
 
 describe("createDealMutation", () => {
   it("creates deal, emits deal.created, returns success with id", async () => {
@@ -733,5 +758,191 @@ describe("reorderDealsMutation", () => {
 
     expect(result).toEqual({ success: true })
     expect(mockEmit).not.toHaveBeenCalled()
+  })
+})
+
+/* ------------------------------------------------------------------------------------------ *
+ * Restore (TRASH-02)
+ * ------------------------------------------------------------------------------------------ */
+
+describe("restoreDealMutation", () => {
+  const TRASHED_AT = new Date("2026-08-01T10:00:00Z")
+
+  const trashedDeal = {
+    id: "d1",
+    title: "Trashed Deal",
+    stageId: "s1",
+    value: "100",
+    organizationId: "o1",
+    personId: null,
+    ownerId: "u1",
+    position: "10000",
+    expectedCloseDate: null,
+    notes: null,
+    customFields: {} as Record<string, unknown>,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: TRASHED_AT,
+  }
+
+  /** `db.update(deals).set(...).where(...)` with no `.returning()` — restore needs no row back. */
+  function stubUpdate() {
+    const whereFn = vi.fn().mockResolvedValue(undefined)
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    return { setFn, whereFn }
+  }
+
+  /** `db.insert(auditLog).values(...)` — awaited directly, so `values` must resolve. */
+  function stubAuditInsert() {
+    const valuesFn = vi.fn().mockResolvedValue(undefined)
+    mockDb.insert.mockReturnValue({ values: valuesFn })
+    return valuesFn
+  }
+
+  it("issues exactly one update whose set is { deletedAt: null, updatedAt }", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    const { setFn } = stubUpdate()
+    stubAuditInsert()
+
+    const result = await restoreDealMutation("d1")
+
+    expect(result).toEqual({ success: true })
+    expect(mockDb.update).toHaveBeenCalledTimes(1)
+    const setArg = setFn.mock.calls[0][0] as Record<string, unknown>
+    expect(Object.keys(setArg).sort()).toEqual(["deletedAt", "updatedAt"])
+    expect(setArg.deletedAt).toBeNull()
+    expect(setArg.updatedAt).toBeInstanceOf(Date)
+  })
+
+  it("checks existence with isNotNull(deletedAt), not isNull", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    stubUpdate()
+    stubAuditInsert()
+
+    await restoreDealMutation("d1")
+
+    const where = mockDb.query.deals.findFirst.mock.calls[0][0].where
+    const rendered = renderPredicate(where)
+    expect(rendered).toContain("is not null")
+    // Guard against `is null` sneaking back in: `is not null` contains no bare `is null`.
+    expect(rendered).not.toMatch(/is null/)
+  })
+
+  it("returns NOT_IN_TRASH and issues no update for a live or missing deal", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(undefined)
+
+    const result = await restoreDealMutation("d1")
+
+    expect(result).toEqual({ success: false, error: "NOT_IN_TRASH" })
+    expect(mockDb.update).not.toHaveBeenCalled()
+    expect(mockDb.insert).not.toHaveBeenCalled()
+    expect(mockRecalc).not.toHaveBeenCalled()
+  })
+
+  it("recalculates with a changedFields carrying the custom sentinel and every native attribute", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    stubUpdate()
+    stubAuditInsert()
+
+    await restoreDealMutation("d1")
+
+    expect(mockRecalc).toHaveBeenCalledTimes(1)
+    const input = mockRecalc.mock.calls[0][0] as RecalculateFormulasInput
+    expect(input.entityType).toBe("deal")
+    expect(input.entityId).toBe("d1")
+    // Pitfall 1: an empty list, or ['deletedAt'], evaluates ZERO formulas in silence, because
+    // `deletedAt` is not a referenceable attribute for any entity type. Sourced from the real
+    // import so a change to the vocabulary breaks this test rather than drifting past it.
+    expect(input.changedFields).toContain(CHANGED_FIELDS_CUSTOM_SENTINEL)
+    for (const column of Object.values(ENTITY_NATIVE_ATTRIBUTES.deal)) {
+      expect(input.changedFields).toContain(column)
+    }
+  })
+
+  it("recalculates AFTER the update, never before", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    const { setFn } = stubUpdate()
+    stubAuditInsert()
+
+    await restoreDealMutation("d1")
+
+    // cascadeToChildren filters isNull(relation.deletedAt), so children only re-enter the
+    // cascade once the parent row is live again.
+    expect(setFn.mock.invocationCallOrder[0]).toBeLessThan(mockRecalc.mock.invocationCallOrder[0])
+  })
+
+  it("emits nothing on crmBus", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    stubUpdate()
+    stubAuditInsert()
+
+    await restoreDealMutation("d1")
+
+    expect(mockEmit).not.toHaveBeenCalled()
+  })
+
+  it("writes one audit row with the deletedAt diff and a system actor when none is established", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    stubUpdate()
+    const valuesFn = stubAuditInsert()
+
+    await restoreDealMutation("d1")
+
+    expect(mockDb.insert).toHaveBeenCalledTimes(1)
+    expect(mockDb.insert).toHaveBeenCalledWith(auditLog)
+    expect(valuesFn.mock.calls[0][0]).toEqual({
+      entityType: "deal",
+      entityId: "d1",
+      action: "updated",
+      changes: { deletedAt: { from: TRASHED_AT, to: null } },
+      actorKind: "system",
+      actorUserId: null,
+      workflowRunId: null,
+      importSessionId: null,
+    })
+  })
+
+  it("takes the actor from getCurrentActor, never from the record", async () => {
+    mockGetCurrentActor.mockReturnValue({ kind: "user", userId: "actor-9" })
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    stubUpdate()
+    const valuesFn = stubAuditInsert()
+
+    await restoreDealMutation("d1")
+
+    const row = valuesFn.mock.calls[0][0] as Record<string, unknown>
+    expect(row.actorKind).toBe("user")
+    // "u1" is the deal's OWNER — the record, not the identity that restored it.
+    expect(row.actorUserId).toBe("actor-9")
+  })
+
+  it("returns a prose failure and logs when the update throws", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    const whereFn = vi.fn().mockRejectedValue(new Error("db down"))
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await restoreDealMutation("d1")
+
+    expect(result).toEqual({ success: false, error: "Failed to restore deal" })
+    expect(spy).toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
+  it("still succeeds when the audit insert fails, and logs it", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    stubUpdate()
+    mockDb.insert.mockReturnValue({ values: vi.fn().mockRejectedValue(new Error("audit down")) })
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await restoreDealMutation("d1")
+
+    // The restore is the user-visible contract; a lost audit row is logged, not swallowed,
+    // and never rolls back a write the user can already see.
+    expect(result).toEqual({ success: true })
+    expect(spy).toHaveBeenCalled()
+    spy.mockRestore()
   })
 })
