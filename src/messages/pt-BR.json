@@ -301,6 +301,111 @@
       "cancel": "Manter nota"
     }
   },
+  "audit": {
+    "actorKind": {
+      "workflowRun": "Fluxo de trabalho",
+      "apiKey": "Chave de API",
+      "import": "Importação",
+      "system": "Sistema"
+    },
+    "entry": {
+      "created": {
+        "organization": "criou esta empresa",
+        "person": "criou esta pessoa",
+        "deal": "criou este negócio",
+        "activity": "criou esta atividade"
+      },
+      "updated": {
+        "organization": "atualizou esta empresa",
+        "person": "atualizou esta pessoa",
+        "deal": "atualizou este negócio",
+        "activity": "atualizou esta atividade"
+      },
+      "deleted": {
+        "organization": "excluiu esta empresa",
+        "person": "excluiu esta pessoa",
+        "deal": "excluiu este negócio",
+        "activity": "excluiu esta atividade"
+      },
+      "noVisibleChanges": "Nenhum detalhe de campo foi registrado."
+    },
+    "value": {
+      "empty": "vazio",
+      "unavailable": "não está mais disponível",
+      "yes": "Sim",
+      "no": "Não",
+      "files": "{count, plural, one {# arquivo} other {# arquivos}}",
+      "changedTo": "alterado para"
+    },
+    "showMoreFields": "Mostrar {count, plural, one {mais # campo} other {mais # campos}}",
+    "showFewerFields": "Mostrar menos campos",
+    "unknownActor": "Usuário desconhecido",
+    "field": {
+      "title": "Título",
+      "name": "Nome",
+      "firstName": "Nome",
+      "lastName": "Sobrenome",
+      "email": "E-mail",
+      "phone": "Telefone",
+      "website": "Website",
+      "industry": "Indústria",
+      "defaultCurrency": "Moeda padrão",
+      "value": "Valor",
+      "stage": "Etapa",
+      "expectedCloseDate": "Data prevista de fechamento",
+      "organization": "Empresa",
+      "person": "Contato",
+      "deal": "Negócio",
+      "owner": "Proprietário",
+      "assignee": "Responsável",
+      "type": "Tipo",
+      "dueDate": "Data de vencimento",
+      "completedAt": "Concluída"
+    },
+    "filter": {
+      "label": "Mostrar alterações de campo",
+      "announceShown": "Alterações de campo exibidas",
+      "announceHidden": "Alterações de campo ocultas",
+      "emptyHidden": {
+        "heading": "Ainda não há notas, atividades ou mudanças de etapa",
+        "body": "{count, plural, one {# alteração de campo está oculta} other {# alterações de campo estão ocultas}} neste registro. Ative Mostrar alterações de campo para vê-las."
+      }
+    },
+    "run": {
+      "heading": "Registros alterados",
+      "empty": "Esta execução não alterou nenhum registro.",
+      "unavailable": "Não foi possível carregar a lista de registros alterados.",
+      "untitledRecord": "Registro sem título",
+      "action": {
+        "created": "Criado",
+        "updated": "Atualizado",
+        "deleted": "Excluído"
+      },
+      "fieldCount": "{count, plural, one {# campo} other {# campos}}"
+    },
+    "retention": {
+      "title": "Registro de auditoria",
+      "description": "Por quanto tempo o histórico de alterações de um registro é mantido antes de ser excluído permanentemente.",
+      "windowTitle": "Período de retenção",
+      "windowLabel": "Dias de histórico a manter",
+      "windowHelp": "Digite um número inteiro de dias entre 1 e 3650. As entradas mais antigas são excluídas automaticamente uma vez por dia.",
+      "notSet": "Não definido — as entradas nunca são removidas.",
+      "save": "Salvar período de retenção",
+      "saving": "Salvando…",
+      "saved": "Período de retenção salvo.",
+      "saveFailed": "O período de retenção não foi salvo. Verifique sua conexão e tente novamente.",
+      "costTitle": "O que este período custa",
+      "entriesLabel": "Entradas de auditoria armazenadas",
+      "oldestLabel": "Entrada mais antiga",
+      "oldestNone": "Ainda não há entradas",
+      "shortenDialog": {
+        "title": "Encurtar o período de retenção?",
+        "description": "As entradas com mais de {days} dias serão excluídas permanentemente na próxima vez que a limpeza for executada. Isso não pode ser desfeito.",
+        "cancel": "Manter o período atual",
+        "confirm": "Encurtar período de retenção"
+      }
+    }
+  },
   "settings": {
     "profile": {
       "title": "Configurações de Perfil",
@@ -374,7 +479,9 @@
       "exportData": "Exportar Dados",
       "exportDescription": "Exportar empresas, pessoas, negócios e atividades",
       "pipedriveImport": "Importar do Pipedrive",
-      "pipedriveImportDescription": "Importar dados diretamente do Pipedrive usando API"
+      "pipedriveImportDescription": "Importar dados diretamente do Pipedrive usando API",
+      "auditLog": "Registro de auditoria",
+      "auditLogDescription": "Revise a retenção do histórico de alterações e veja o que ela custa"
     },
     "users": {
       "title": "Usuários",
