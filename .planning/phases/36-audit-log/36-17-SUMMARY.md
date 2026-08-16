@@ -200,6 +200,10 @@ None — no external service configuration, no migration, no package added.
 - **`loadMoreTimeline` (`src/app/notes/actions.ts:244`) still calls `assembleTimeline` with no scope**, so page 2 is currently always audit-off. 36-19 owns this; until then a cursor is only ever minted and replayed in one scope, so the cursor trap is not reachable.
 - **`TimelinePage.total` is unchanged** (`number`, the scoped total). `auditTotal` is deliberately not on the page shape — it comes from `countTimeline`, which the card header already calls separately.
 
+## Self-Check: PASSED
+
+All five modified files exist on disk; all three commits (`184b200`, `36def5c`, `e53e75d`) are present in `git log`.
+
 ---
 *Phase: 36-audit-log*
 *Completed: 2026-08-16*
