@@ -1,15 +1,17 @@
 import { db } from "@/db"
-import { activities, activityTypes, deals } from "@/db/schema"
+import { activities, activityTypes, deals, notes, auditLog } from "@/db/schema"
 import type { CustomFieldDefinition, EntityType } from "@/db/schema"
-import { eq, and, isNull } from "drizzle-orm"
+import { eq, and, isNull, isNotNull } from "drizzle-orm"
 import { z } from "zod"
 import { crmBus } from "@/lib/events"
 import type { CrmEventPayload } from "@/lib/events"
+import { getCurrentActor } from "@/lib/audit/actor-context"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import {
   recalculateFormulas,
   stripFormulaKeys,
   ENTITY_NATIVE_ATTRIBUTES,
+  CHANGED_FIELDS_CUSTOM_SENTINEL,
   type RecalculateFormulasInput,
 } from "@/lib/formula-recalc"
 
@@ -357,6 +359,151 @@ export async function deleteActivityMutation(
   } catch (error) {
     console.error("Failed to delete activity:", error)
     return { success: false, error: "Failed to delete activity" }
+  }
+}
+
+/**
+ * The recalculation scope a restore must pass (TRASH-02).
+ *
+ * `scopeFormulasToChangedFields` admits a formula only when one of its refs matches an entry
+ * here. `deletedAt` is not a referenceable attribute for ANY entity type, so `[]` or
+ * `['deletedAt']` would select nothing and the restore would silently repair nothing — the
+ * failure mode is a green test and stale values in production (RESEARCH Pitfall 1).
+ */
+const ACTIVITY_RESTORE_CHANGED_FIELDS = [
+  CHANGED_FIELDS_CUSTOM_SENTINEL,
+  ...ACTIVITY_NATIVE_COLUMNS,
+]
+
+/**
+ * Bring a trashed activity back to live state (TRASH-02).
+ *
+ * The mirror of `deleteActivityMutation` above, with three deliberate divergences — the
+ * inverted `isNotNull` existence predicate, the discriminated `"NOT_IN_TRASH"` code, and no
+ * `crmBus.emit` (so the audit row is written here rather than by the bus subscriber). See
+ * `restoreDealMutation` in ./deals.ts for the full reasoning; the two are intentionally
+ * identical in shape.
+ */
+export async function restoreActivityMutation(
+  id: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  // Read the actor SYNCHRONOUSLY at function entry, before any promise exists
+  // (src/lib/events/subscribers/audit.ts:48-56).
+  const actor = getCurrentActor()
+
+  const activity = await db.query.activities.findFirst({
+    where: and(eq(activities.id, id), isNotNull(activities.deletedAt)),
+  })
+
+  if (!activity) {
+    return { success: false, error: "NOT_IN_TRASH" }
+  }
+
+  const trashedAt = activity.deletedAt
+
+  try {
+    await db
+      .update(activities)
+      .set({ deletedAt: null, updatedAt: new Date() })
+      .where(eq(activities.id, id))
+
+    // After the update, never before: `cascadeToChildren` filters `isNull(relation.deletedAt)`.
+    try {
+      await recalculateFormulas({
+        entityType: "activity",
+        entityId: id,
+        changedFields: ACTIVITY_RESTORE_CHANGED_FIELDS,
+      })
+    } catch (error) {
+      // D-05: a broken admin-authored formula must never block a user's write.
+      console.error("[formula-recalc] activity restore recalculation failed:", error)
+    }
+  } catch (error) {
+    console.error("Failed to restore activity:", error)
+    return { success: false, error: "Failed to restore activity" }
+  }
+
+  // Outside the try above: the restore has landed, so a lost audit row is logged rather than
+  // turned into a false failure.
+  try {
+    await db.insert(auditLog).values({
+      entityType: "activity",
+      entityId: id,
+      action: "updated",
+      changes: { deletedAt: { from: trashedAt, to: null } },
+      // NEVER a user id taken from the record — that describes the activity, not the identity
+      // that restored it. Absence is recorded honestly as `system`.
+      actorKind: actor?.kind ?? "system",
+      actorUserId: actor?.userId ?? null,
+      workflowRunId: actor?.workflowRunId ?? null,
+      importSessionId: actor?.importSessionId ?? null,
+    })
+  } catch (error) {
+    console.error("[audit] failed to record activity restore:", error)
+  }
+
+  return { success: true }
+}
+
+/**
+ * Permanently destroy a trashed activity (TRASH-03).
+ *
+ * `activities` is a true LEAF — no table carries a foreign key into it, empirically confirmed
+ * by a rolled-back `DELETE` probe — so the teardown is just notes, then the row, then the audit
+ * row. It detaches nothing and always reports `detached: 0`; the count is on the return type so
+ * the dispatch in this phase can treat all four entity types uniformly.
+ *
+ * `notes` still has to be deleted explicitly: it is polymorphic with NO foreign key
+ * (src/db/schema/notes.ts:16-20), so nothing in the database enforces it and the rows would
+ * dangle forever. See `purgeDealMutation` in ./deals.ts for the full teardown reasoning.
+ */
+export async function purgeActivityMutation(
+  id: string,
+): Promise<{ success: true; detached: number } | { success: false; error: string }> {
+  // Read the actor SYNCHRONOUSLY at function entry, before the transaction promise exists.
+  const actor = getCurrentActor()
+
+  const activity = await db.query.activities.findFirst({
+    where: and(eq(activities.id, id), isNotNull(activities.deletedAt)),
+  })
+
+  if (!activity) {
+    return { success: false, error: "NOT_IN_TRASH" }
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      // 1. Notes: polymorphic, no foreign key, so this must be explicit.
+      await tx
+        .delete(notes)
+        .where(and(eq(notes.entityType, "activity"), eq(notes.entityId, id)))
+
+      // 2. The row itself. The `isNotNull` guard rides on the DELETE so a guessed id for a
+      //    LIVE activity cannot be purged even if every upstream check were bypassed
+      //    (T-37-15).
+      await tx
+        .delete(activities)
+        .where(and(eq(activities.id, id), isNotNull(activities.deletedAt)))
+
+      // 3. The purge's own audit row, INSIDE the transaction, so a rollback cannot leave a
+      //    record of a purge that did not happen (T-37-07). `action: "deleted"` plus a marker
+      //    rather than a fourth AuditAction literal — see `purgeDealMutation` for why.
+      await tx.insert(auditLog).values({
+        entityType: "activity",
+        entityId: id,
+        action: "deleted",
+        changes: { __purge: { from: null, to: true } },
+        actorKind: actor?.kind ?? "system",
+        actorUserId: actor?.userId ?? null,
+        workflowRunId: actor?.workflowRunId ?? null,
+        importSessionId: actor?.importSessionId ?? null,
+      })
+    })
+
+    return { success: true, detached: 0 }
+  } catch (error) {
+    console.error("Failed to purge activity:", error)
+    return { success: false, error: "Failed to purge activity" }
   }
 }
 

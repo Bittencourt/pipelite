@@ -1,15 +1,27 @@
 import { db } from "@/db"
-import { deals, stages, organizations, people, dealAssignees } from "@/db/schema"
+import {
+  deals,
+  stages,
+  organizations,
+  people,
+  dealAssignees,
+  dealStageHistory,
+  activities,
+  notes,
+  auditLog,
+} from "@/db/schema"
 import type { CustomFieldDefinition, EntityType } from "@/db/schema"
-import { eq, and, isNull, desc, sql } from "drizzle-orm"
+import { eq, and, isNull, isNotNull, desc, sql } from "drizzle-orm"
 import { z } from "zod"
 import { crmBus } from "@/lib/events"
 import type { CrmEventPayload, DealStageChangedPayload } from "@/lib/events"
+import { getCurrentActor } from "@/lib/audit/actor-context"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import {
   recalculateFormulas,
   stripFormulaKeys,
   ENTITY_NATIVE_ATTRIBUTES,
+  CHANGED_FIELDS_CUSTOM_SENTINEL,
   type RecalculateFormulasInput,
 } from "@/lib/formula-recalc"
 
@@ -494,6 +506,222 @@ export async function deleteDealMutation(
   } catch (error) {
     console.error("Failed to delete deal:", error)
     return { success: false, error: "Failed to delete deal" }
+  }
+}
+
+/**
+ * The recalculation scope a restore must pass (TRASH-02).
+ *
+ * `scopeFormulasToChangedFields` admits a formula only when one of its refs matches an entry
+ * here. `deletedAt` is not a referenceable attribute for ANY entity type, so `[]` or
+ * `['deletedAt']` would select nothing and the restore would silently repair nothing — the
+ * failure mode is a green test and stale values in production (RESEARCH Pitfall 1).
+ *
+ * A restore is the one write where over-scoping is correct: the row has been out of the
+ * cascade for as long as it sat in the trash, so every formula over it is suspect.
+ */
+const DEAL_RESTORE_CHANGED_FIELDS = [
+  CHANGED_FIELDS_CUSTOM_SENTINEL,
+  ...DEAL_NATIVE_COLUMNS,
+]
+
+/**
+ * Bring a trashed deal back to live state (TRASH-02).
+ *
+ * The mirror of `deleteDealMutation` above, with three deliberate divergences:
+ *
+ *   1. The existence predicate INVERTS to `isNotNull(deletedAt)` — a restore targets a row that
+ *      IS in the trash, and `isNull` here would happily "restore" a live record.
+ *   2. A miss returns the discriminated code `"NOT_IN_TRASH"` rather than prose. The trash UI
+ *      switches on it to say "already purged" instead of "try again"; a user told to retry about
+ *      a record that no longer exists will retry forever (RESEARCH Pitfall 7).
+ *   3. Nothing is emitted on the CRM bus. 37-CONTEXT locks that no `{entity}.restored` event
+ *      type is introduced, and re-emitting `deal.created` would be a lie to every webhook and
+ *      workflow subscriber. Because there is no event, there is no audit subscriber to write
+ *      the row, so this function writes it directly.
+ */
+export async function restoreDealMutation(
+  id: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  // READ THE ACTOR SYNCHRONOUSLY, HERE, AT FUNCTION ENTRY, before any promise exists.
+  // src/lib/events/subscribers/audit.ts:48-56 documents why: reading it later happens to work
+  // under today's ALS continuation semantics, but capturing first is unconditionally correct.
+  const actor = getCurrentActor()
+
+  const deal = await db.query.deals.findFirst({
+    where: and(eq(deals.id, id), isNotNull(deals.deletedAt)),
+  })
+
+  if (!deal) {
+    return { success: false, error: "NOT_IN_TRASH" }
+  }
+
+  const trashedAt = deal.deletedAt
+
+  try {
+    await db
+      .update(deals)
+      .set({ deletedAt: null, updatedAt: new Date() })
+      .where(eq(deals.id, id))
+
+    // The delete deliberately skips recalculation (see the comment at `deleteDealMutation`
+    // above, and plan 34-11). Restore is the repair point, and it must run AFTER the update:
+    // `cascadeToChildren` filters `isNull(relation.deletedAt)`, so this deal's children only
+    // re-enter the cascade once the deal itself is live again.
+    try {
+      await recalculateFormulas({
+        entityType: "deal",
+        entityId: id,
+        changedFields: DEAL_RESTORE_CHANGED_FIELDS,
+      })
+    } catch (error) {
+      // D-05: a broken admin-authored formula must never block a user's write. Reporting
+      // "Failed to restore deal" here would be a lie — the row is already live.
+      console.error("[formula-recalc] deal restore recalculation failed:", error)
+    }
+  } catch (error) {
+    console.error("Failed to restore deal:", error)
+    return { success: false, error: "Failed to restore deal" }
+  }
+
+  // Its own try/catch, deliberately outside the one above: the restore has landed and the user
+  // can already see it, so a lost audit row is logged rather than turned into a false failure.
+  try {
+    await db.insert(auditLog).values({
+      entityType: "deal",
+      entityId: id,
+      action: "updated",
+      // `deletedAt` is already a recognised field name for the diff presenter, so the timeline
+      // renders this with no new code and no fourth `AuditAction` literal.
+      changes: { deletedAt: { from: trashedAt, to: null } },
+      // NEVER a user id taken from the record. That field describes the deal, not the identity
+      // that restored it. Absence of an actor is recorded honestly as `system`.
+      actorKind: actor?.kind ?? "system",
+      actorUserId: actor?.userId ?? null,
+      workflowRunId: actor?.workflowRunId ?? null,
+      importSessionId: actor?.importSessionId ?? null,
+    })
+  } catch (error) {
+    console.error("[audit] failed to record deal restore:", error)
+  }
+
+  return { success: true }
+}
+
+/**
+ * Permanently destroy a trashed deal (TRASH-03).
+ *
+ * This is an ORDERED TEARDOWN inside one transaction, not a `DELETE`. Every foreign key
+ * pointing at `deals` is `ON DELETE NO ACTION`, and 54.6% of deals have at least one activity,
+ * so a bare delete raises SQLSTATE 23503 for the majority of real records — in the pruner that
+ * would kill the tick (T-37-16). Refusing to purge a parent that has children was considered
+ * and rejected in 37-CONTEXT § Purge Cascade: it fails SC-4 for most of the data.
+ *
+ * The children are handled by DISPOSITION, not uniformly:
+ *
+ *   - `notes` are deleted. Polymorphic with no foreign key, so nothing enforces them and the
+ *     rows would dangle forever; 37-CONTEXT locks that a purge takes the record and its notes.
+ *   - `deal_assignees` and `deal_stage_history` are deleted. Neither row has any independent
+ *     identity — they mean nothing without the deal. Note that stage history is not the audit
+ *     log; the audit log is what keeps the evidence, and it is untouched here.
+ *   - `activities` are DETACHED, never deleted. An activity is an independent trashable entity
+ *     with its own owner and its own trash tab, so destroying one would remove a record the
+ *     purging admin never selected. `activities.deal_id` is already nullable, so this needs no
+ *     schema change.
+ *
+ * ORPHAN STATE, STATED PLAINLY: the detach is the one operation in this phase that mutates a
+ * LIVE row the caller did not select. The mitigation is the per-child audit row below, so an
+ * unlinked activity can be traced back to the deal that was purged out from under it.
+ */
+export async function purgeDealMutation(
+  id: string,
+): Promise<{ success: true; detached: number } | { success: false; error: string }> {
+  // Read the actor SYNCHRONOUSLY at function entry, before the transaction promise exists
+  // (src/lib/events/subscribers/audit.ts:48-56).
+  const actor = getCurrentActor()
+
+  const deal = await db.query.deals.findFirst({
+    where: and(eq(deals.id, id), isNotNull(deals.deletedAt)),
+  })
+
+  if (!deal) {
+    return { success: false, error: "NOT_IN_TRASH" }
+  }
+
+  const auditActor = {
+    actorKind: actor?.kind ?? "system",
+    actorUserId: actor?.userId ?? null,
+    workflowRunId: actor?.workflowRunId ?? null,
+    importSessionId: actor?.importSessionId ?? null,
+  } as const
+
+  try {
+    let detached = 0
+
+    await db.transaction(async (tx) => {
+      // 1. Notes: polymorphic, no foreign key, so this must be explicit.
+      await tx
+        .delete(notes)
+        .where(and(eq(notes.entityType, "deal"), eq(notes.entityId, id)))
+
+      // 2. Pure children with no independent identity.
+      await tx.delete(dealAssignees).where(eq(dealAssignees.dealId, id))
+      await tx.delete(dealStageHistory).where(eq(dealStageHistory.dealId, id))
+
+      // 3. Independent entities that merely reference this deal — detach, never delete.
+      const detachedActivities = await tx
+        .update(activities)
+        .set({ dealId: null, updatedAt: new Date() })
+        .where(eq(activities.dealId, id))
+        .returning({ id: activities.id })
+      detached = detachedActivities.length
+
+      // 4. One audit row per detached child (T-37-10). `dealId` is already in
+      //    AUDIT_FIELD_LABELS, so the activity's timeline renders this with no new code.
+      //    Skipped entirely when nothing was detached: `insert([])` is not a no-op.
+      if (detachedActivities.length > 0) {
+        await tx.insert(auditLog).values(
+          detachedActivities.map((activity) => ({
+            entityType: "activity" as const,
+            entityId: activity.id,
+            action: "updated" as const,
+            changes: { dealId: { from: id, to: null } },
+            ...auditActor,
+          }))
+        )
+      }
+
+      // 5. Now, and only now, the row itself. The `isNotNull` guard rides on the DELETE so a
+      //    guessed id for a LIVE deal cannot be purged even if every upstream check were
+      //    bypassed (T-37-15).
+      await tx.delete(deals).where(and(eq(deals.id, id), isNotNull(deals.deletedAt)))
+
+      // 6. The purge's own audit row, INSIDE the transaction, so a rollback cannot leave a
+      //    record of a purge that did not happen (T-37-07).
+      //
+      //    `action: "deleted"` plus a marker in `changes`, rather than a fourth AuditAction
+      //    literal. A fourth literal would cascade across two duplicate type declarations and
+      //    two exhaustive `Record<AuditAction, ...>` maps (RESEARCH Pitfall 6), and 37-CONTEXT
+      //    grants this discretion explicitly. `buildAuditFieldChanges` returns `[]` for
+      //    `action === "deleted"`, so the marker never renders in a timeline — which is fine,
+      //    because a purged record's timeline is unreachable, and is a reason to prefer it.
+      //
+      //    The record's PRE-EXISTING audit rows are untouched: `audit_log.entity_id` has no
+      //    foreign key by design (src/db/schema/audit-log.ts:40-45), and that is exactly what
+      //    preserves the evidence the purge dialog promises to keep.
+      await tx.insert(auditLog).values({
+        entityType: "deal",
+        entityId: id,
+        action: "deleted",
+        changes: { __purge: { from: null, to: true } },
+        ...auditActor,
+      })
+    })
+
+    return { success: true, detached }
+  } catch (error) {
+    console.error("Failed to purge deal:", error)
+    return { success: false, error: "Failed to purge deal" }
   }
 }
 
