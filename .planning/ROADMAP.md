@@ -291,7 +291,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 36-19-PLAN.md — the audit filter toggle, the cursor trap and the hidden-history empty state (AUDIT-03)
+- [x] 36-19-PLAN.md — the audit filter toggle, the cursor trap and the hidden-history empty state (AUDIT-03)
 
 **Wave 6** *(blocked on Wave 5)*
 
@@ -450,7 +450,7 @@ Plans:
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
-| 36. Audit Log | 18/20 | In Progress|  |
+| 36. Audit Log | 19/20 | In Progress|  |
 | 37. Trash & Restore | 0/? | Not started | - |
 | 38. Bulk Operations | 0/? | Not started | - |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
