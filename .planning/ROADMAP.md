@@ -317,11 +317,11 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 37-01-PLAN.md — trash.retention_days settings module + seeded data-only migration
-- [ ] 37-02-PLAN.md — Pure trash vocabulary: closed ?type= parsers + the deleted-by presenter
-- [ ] 37-03-PLAN.md — 61 i18n keys across three locales + REQUIRED_TRASH_KEYS parity contract
-- [ ] 37-04-PLAN.md — Deal and activity restore + purge mutations (ordered transactional teardown)
-- [ ] 37-05-PLAN.md — Person and organization restore + purge mutations (two-child detach)
+- [x] 37-01-PLAN.md — trash.retention_days settings module + seeded data-only migration
+- [x] 37-02-PLAN.md — Pure trash vocabulary: closed ?type= parsers + the deleted-by presenter
+- [x] 37-03-PLAN.md — 61 i18n keys across three locales + REQUIRED_TRASH_KEYS parity contract
+- [x] 37-04-PLAN.md — Deal and activity restore + purge mutations (ordered transactional teardown)
+- [x] 37-05-PLAN.md — Person and organization restore + purge mutations (two-child detach)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -485,7 +485,7 @@ Plans:
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
-| 37. Trash & Restore | 0/? | Not started | - |
+| 37. Trash & Restore | 5/15 | In Progress|  |
 | 38. Bulk Operations | 0/? | Not started | - |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
