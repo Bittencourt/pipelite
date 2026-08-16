@@ -24,6 +24,7 @@ import { workflowRunSteps } from "./workflows"
 import { httpTemplates } from "./http-templates"
 import { notes } from "./notes"
 import { dealStageHistory } from "./deal-stage-history"
+import { auditLog } from "./audit-log"
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   notificationPreferences: one(notificationPreferences, {
@@ -258,5 +259,27 @@ export const dealStageHistoryRelations = relations(dealStageHistory, ({ one }) =
   changedByUser: one(users, {
     fields: [dealStageHistory.changedBy],
     references: [users.id],
+  }),
+}))
+
+// There is deliberately NO `entity` relation here, for the same reason as notes above:
+// auditLog.entityId is polymorphic and points at four different tables (five counting
+// import_session), so no Drizzle relation is expressible for it. Do not attempt one —
+// resolve the parent in the query layer instead.
+//
+// app_settings gets no relations entry at all: it references nothing and nothing
+// references it.
+export const auditLogRelations = relations(auditLog, ({ one }) => ({
+  actorUser: one(users, {
+    fields: [auditLog.actorUserId],
+    references: [users.id],
+  }),
+  workflowRun: one(workflowRuns, {
+    fields: [auditLog.workflowRunId],
+    references: [workflowRuns.id],
+  }),
+  importSession: one(importSessions, {
+    fields: [auditLog.importSessionId],
+    references: [importSessions.id],
   }),
 }))
