@@ -57,6 +57,16 @@ This phase makes the soft-delete that already exists on the four CRM tables *vis
 - **REST API gets the surface too**: a trash listing endpoint, a restore endpoint per entity, and an admin-gated purge endpoint, following the auth and shape conventions of the existing `src/app/api/v1/` routes (`src/app/api/v1/audit/route.ts:124` shows the admin gate).
 - **No new CRM bus event types.** Restore and purge write audit rows; they do not emit `{entity}.restored`. Emitting a new event type means workflow trigger UI work, which belongs to Phase 41, and emitting an existing `.created` event on restore would be a lie to every subscriber.
 
+### Purge Cascade (added post-research, 2026-08-16)
+
+Phase 37 research overturned this section's assumption that no operation in this phase orphans children. **Purge does.** Every foreign key pointing at the four CRM tables is `ON DELETE NO ACTION` (`confdeltype = 'a'` in `pg_constraint`, verified), so a hard `DELETE` raises SQLSTATE 23503 — empirically confirmed by rolled-back probes for `activities_deal_id_deals_id_fk`, `people_organization_id_organizations_id_fk`, and `deals_person_id_people_id_fk`. And 13,770 of 25,207 deals (54.6%) have at least one activity, so refusing to purge parents with children would break success criterion 4 for the majority of records.
+
+- **A purge DETACHES live children rather than destroying them.** The purge transaction nulls the child foreign key first — `activities.deal_id`, `people.organization_id`, `deals.person_id` — then deletes the parent row. Every one of those columns is already nullable, so this needs no schema change.
+- **Nothing beyond the purged row itself is destroyed.** Children survive as unlinked records. Cascade-purging children, cascade-trashing them, and refusing the purge outright were all considered and rejected: the first two destroy or hide records the admin never chose to delete, and the third fails criterion 4.
+- **The detach is auditable.** The purge audit row records which children were detached, so an unlinked activity can be traced back to the deal that was purged out from under it.
+- **Purge is therefore a transaction with an ordered teardown, not a single statement.** The plan must order it: null child FKs → delete the row, all inside one transaction, so a failure part-way cannot leave children detached from a parent that still exists.
+- The retention pruner runs the same teardown, and processes entity types leaves-first (activities → deals → people → organizations) so a parent is never purged while a sibling pass is still detaching from it.
+
 ### Claude's Discretion
 
 - Tab vs. sub-route mechanics inside `/trash`, empty-state copy, and confirmation-dialog wording
