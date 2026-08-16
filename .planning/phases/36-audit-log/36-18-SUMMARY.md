@@ -183,6 +183,12 @@ Nothing was deferred from this plan. Two observations for whoever runs the phase
 - `startAuditPruner` is live on boot for the Node runtime; `36-20`'s browser verification can look for the startup line and, with retention set to 1 day in `/admin`, watch the count fall.
 - No blockers for the remaining wave-4 plans. `instrumentation.ts` was touched with a 3-line append at the end of the existing guard, which is the lowest-conflict shape available if another wave-4 plan also registers something there.
 
+## Self-Check: PASSED
+
+All four claimed files exist on disk (`src/lib/audit/prune.ts`, `src/lib/audit/prune.test.ts`,
+`instrumentation.ts`, `.planning/phases/36-audit-log/36-18-SUMMARY.md`) and all three task commits
+are present in `git log` on `worktree-agent-a0d00adf0a5c852a6`: `a577097`, `42ba913`, `df0ace1`.
+
 ---
 *Phase: 36-audit-log*
 *Completed: 2026-08-16*
