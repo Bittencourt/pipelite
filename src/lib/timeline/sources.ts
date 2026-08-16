@@ -784,12 +784,23 @@ export const auditSource: TimelineSource = {
 }
 
 /**
- * The registry. Phase 36's audit log becomes a FOURTH entry in this array and nothing
- * else in the assembler changes — the union, the pre-limit, the keyset predicate and the
- * hydration loop are all driven off this list.
+ * The registry.
+ *
+ * Phase 35 predicted that Phase 36's audit log would be a fourth entry here "and nothing else
+ * in the assembler changes". The fourth entry landed; the second half of that prediction did
+ * not, and it is rewritten rather than left standing. This array is now filtered on TWO
+ * dimensions: `appliesTo(entityType)`, which is each source's own statement about where it
+ * makes sense, and a CONSUMER-SUPPLIED scope (`includeAudit`, assemble.ts), which is the
+ * reader's statement about what they want to see. The audit source needed the second dimension
+ * because it applies to every entity type and is nonetheless off by default, so `appliesTo`
+ * alone could never leave it out.
+ *
+ * Everything else the prediction named still holds: the union, the pre-limit, the keyset
+ * predicate and the hydration loop are all driven off this list.
  */
 export const TIMELINE_SOURCES: TimelineSource[] = [
   notesSource,
   activitiesSource,
   stageChangeSource,
+  auditSource,
 ]

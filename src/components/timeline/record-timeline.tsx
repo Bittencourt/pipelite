@@ -25,7 +25,11 @@ import { auth } from "@/auth"
 import { TimelineList } from "@/components/timeline/timeline-list"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { EntityType } from "@/db/schema"
-import { assembleTimeline, countTimeline } from "@/lib/timeline/assemble"
+import {
+  assembleTimeline,
+  countTimeline,
+  type TimelineCounts,
+} from "@/lib/timeline/assemble"
 import { TIMELINE_PAGE_SIZE, type TimelinePage } from "@/lib/timeline/types"
 
 interface RecordTimelineProps {
@@ -57,10 +61,13 @@ export async function RecordTimeline({ entityType, entityId }: RecordTimelinePro
   // full-page error rather than a degraded record page. Before this phase the notes block
   // was a column already present in the page's own query and could not fail
   // independently; now it can, so it degrades to an inline message instead.
+  // `countTimeline` returns BOTH the scoped total and the audit total in one pass. This
+  // component reads only the total for now and passes no scope, so it gets the audit-off
+  // count — the default. The toggle that supplies the scope and renders `auditTotal` is 36-19.
   let page: TimelinePage
-  let total: number
+  let counts: TimelineCounts
   try {
-    ;[page, total] = await Promise.all([
+    ;[page, counts] = await Promise.all([
       assembleTimeline({ entityType, entityId, limit: TIMELINE_PAGE_SIZE }),
       countTimeline(entityType, entityId),
     ])
@@ -90,7 +97,7 @@ export async function RecordTimeline({ entityType, entityId }: RecordTimelinePro
             UI-SPEC typography table. The count treatment matches CustomFieldsSection. */}
         <CardTitle className="text-base leading-tight font-semibold">
           {t("timeline")}{" "}
-          <span className="text-muted-foreground text-sm">({total})</span>
+          <span className="text-muted-foreground text-sm">({counts.total})</span>
         </CardTitle>
       </CardHeader>
 

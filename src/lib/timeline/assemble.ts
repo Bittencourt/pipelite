@@ -40,8 +40,25 @@ function assertEntityType(value: EntityType): EntityType {
   return parsed.data
 }
 
-function applicableSources(entityType: EntityType): TimelineSource[] {
-  return TIMELINE_SOURCES.filter((source) => source.appliesTo(entityType))
+/**
+ * THE REGISTRY IS FILTERED ON TWO DIMENSIONS, NOT ONE.
+ *
+ * `appliesTo(entityType)` is the SOURCE's statement about where it makes sense — a stage
+ * change is meaningless on a person. `includeAudit` is the CONSUMER's statement about what
+ * they want to read, and it is the dimension Phase 35 did not have. The audit source applies
+ * to all four entity types, so without a second dimension there would be no way to leave it
+ * out, and leaving it out is the default (36-CONTEXT § Post-Research Addendum, measured: 15 of
+ * the top 21 merged entries on a busy record would otherwise be audit rows).
+ *
+ * With the scope OFF the returned list is exactly Phase 35's, which is what keeps the default
+ * statement byte-identical to the plan that phase measured — including the single-source case
+ * for organization, person and activity, where `buildTimelineQuery` emits no `UNION ALL` at
+ * all.
+ */
+function applicableSources(entityType: EntityType, includeAudit: boolean): TimelineSource[] {
+  return TIMELINE_SOURCES.filter(
+    (source) => source.appliesTo(entityType) && (source.kind !== "audit" || includeAudit)
+  )
 }
 
 /** ids are UUIDs, but keying the hydration map by kind too makes a collision impossible. */
@@ -54,12 +71,16 @@ function entryKey(kind: string, id: string): string {
  *
  * @param limit the page size. Every branch and the outer clause are emitted at
  * `limit + 1` — the extra row is what derives `hasMore`, and it is discarded.
+ * @param includeAudit whether the record's field-change history is part of this timeline.
+ * DEFAULTS TO FALSE at every level of this module, so a caller that has not been taught about
+ * the scope gets Phase 35's statement unchanged rather than an audit-dominated feed.
  */
 export function buildTimelineQuery(
   entityType: EntityType,
   entityId: string,
   cursor: TimelineCursor | null,
-  limit: number = TIMELINE_PAGE_SIZE
+  limit: number = TIMELINE_PAGE_SIZE,
+  includeAudit: boolean = false
 ): SQL {
   const target: TimelineTarget = {
     entityType: assertEntityType(entityType),
@@ -67,7 +88,7 @@ export function buildTimelineQuery(
   }
   const fetchLimit = limit + 1
 
-  const branches = applicableSources(target.entityType).map((source) =>
+  const branches = applicableSources(target.entityType, includeAudit).map((source) =>
     source.branch(target, cursor, fetchLimit)
   )
 
@@ -97,16 +118,21 @@ export async function assembleTimeline(params: {
   entityId: string
   cursor?: string | null
   limit?: number
+  /** Off unless the caller asks. A cursor minted under one scope is never valid under the
+   *  other — the keyset is applied PER BRANCH, so replaying an audit-off cursor with audit on
+   *  would silently omit every audit entry newer than it. Toggling is a fresh page 1. */
+  includeAudit?: boolean
 }): Promise<TimelinePage> {
   const entityType = assertEntityType(params.entityType)
   const limit = params.limit ?? TIMELINE_PAGE_SIZE
   const cursor = decodeCursor(params.cursor)
+  const includeAudit = params.includeAudit ?? false
 
-  const query = buildTimelineQuery(entityType, params.entityId, cursor, limit)
+  const query = buildTimelineQuery(entityType, params.entityId, cursor, limit, includeAudit)
 
-  const [result, total] = await Promise.all([
+  const [result, counts] = await Promise.all([
     db.execute(query),
-    countTimeline(entityType, params.entityId),
+    countTimeline(entityType, params.entityId, includeAudit),
   ])
 
   const rows = result as unknown as Record<string, unknown>[]
@@ -133,7 +159,7 @@ export async function assembleTimeline(params: {
   // One batched read per PRESENT kind — a page of notes issues no activity or
   // stage-history query at all.
   const hydrated = await Promise.all(
-    applicableSources(entityType)
+    applicableSources(entityType, includeAudit)
       .filter((source) => idsByKind.has(source.kind))
       .map((source) => source.hydrate(idsByKind.get(source.kind) ?? []))
   )
@@ -165,31 +191,67 @@ export async function assembleTimeline(params: {
       hasMore && oldest && oldest.instant
         ? encodeCursor({ instant: oldest.instant, id: oldest.id })
         : null,
-    total,
+    total: counts.total,
   }
 }
 
 /**
- * The header badge count: one `count(*)` per applicable source, summed. Measured
- * 0.480 ms with zero heap fetches (index-only where the index covers the predicate).
+ * TWO NUMBERS, EACH WITH ONE FIXED MEANING, NEITHER EVER STALE.
+ *
+ * `total` counts what the list can ACTUALLY SHOW under the current scope, because it is the
+ * number the card header renders directly above that list. It MUST move when the toggle
+ * moves: a fixed "everything that ever happened" count would render `Timeline (59)` above a
+ * list the reader exhausts at 12 by pressing Load more until it disappears — a defect the user
+ * can see and cannot explain.
+ *
+ * `auditTotal` is the audit source's own count REGARDLESS of the scope, because the toggle's
+ * own label reports it in both states ("Show field changes (47)") and because a record whose
+ * only history is audit entries must not be told that nothing has happened.
+ */
+export interface TimelineCounts {
+  total: number
+  auditTotal: number
+}
+
+/**
+ * The header badge count: one `count(*)` per applicable source. Measured 0.480 ms with zero
+ * heap fetches (index-only where the index covers the predicate).
+ *
+ * ONE PASS FOR BOTH NUMBERS. Every count that either number needs is issued together, so the
+ * audit count is never a second round trip taken after the total is already known. This does
+ * mean the default scope now issues one more count than Phase 35 did — the audit one — and
+ * that is deliberate: the toggle label needs it on every render, in both states, and reading
+ * it lazily would be a second render pass that could disagree with the first.
  */
 export async function countTimeline(
   entityType: EntityType,
-  entityId: string
-): Promise<number> {
+  entityId: string,
+  includeAudit: boolean = false
+): Promise<TimelineCounts> {
   const target: TimelineTarget = {
     entityType: assertEntityType(entityType),
     entityId,
   }
 
-  const counts = await Promise.all(
-    applicableSources(target.entityType).map(async (source) => {
+  // Every source that could contribute to EITHER number: the scoped-in ones plus audit.
+  // `auditSource.appliesTo` is true for all four entity types, so this is exactly the
+  // scope-on list, and the scope is applied to the SUM below rather than to the queries.
+  const counted = await Promise.all(
+    applicableSources(target.entityType, true).map(async (source) => {
       const result = (await db.execute(
         source.countBranch(target)
       )) as unknown as Record<string, unknown>[]
-      return Number(result[0]?.count ?? 0)
+      return { kind: source.kind, count: Number(result[0]?.count ?? 0) }
     })
   )
 
-  return counts.reduce((sum, count) => sum + count, 0)
+  const auditTotal = counted
+    .filter((entry) => entry.kind === "audit")
+    .reduce((sum, entry) => sum + entry.count, 0)
+
+  const total = counted
+    .filter((entry) => entry.kind !== "audit" || includeAudit)
+    .reduce((sum, entry) => sum + entry.count, 0)
+
+  return { total, auditTotal }
 }
