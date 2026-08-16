@@ -45,18 +45,26 @@ type ActivityExpanded = typeof activities.$inferSelect & {
   owner?: ExpandedOwner | null
 }
 
+/**
+ * `previous` is the row as it stood BEFORE the write, from the existence check each handler
+ * already runs — no extra query. A subscriber fires after the write and cannot recover a former
+ * value for itself. It must be in the SAME casing as this site's `data`, which is the raw
+ * camelCase row here (matching `src/lib/mutations/activities.ts`), never `serializeActivity`.
+ */
 function buildActivityEventPayload(
   entityId: string,
   action: "created" | "updated" | "deleted",
   data: Record<string, unknown>,
   userId: string,
-  changedFields: string[] | null = null
+  changedFields: string[] | null = null,
+  previous?: Record<string, unknown>
 ): CrmEventPayload {
   return {
     entity: "activity",
     entityId,
     action,
     data,
+    previous,
     changedFields,
     userId,
     timestamp: new Date().toISOString(),
@@ -244,6 +252,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       recalculatedActivity as unknown as Record<string, unknown>,
       ctx.userId,
       changedFields.length > 0 ? changedFields : null,
+      // The pre-write row, raw camelCase to match `data` above.
+      existingActivity as unknown as Record<string, unknown>,
     ))
 
     return singleResponse(serializeActivity(recalculatedActivity))
@@ -269,12 +279,15 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       .set({ deletedAt: new Date() })
       .where(eq(activities.id, id))
 
-    // Emit CRM event via bus
+    // Emit CRM event via bus. `data` is `{ id }`, so `previous` is the ONLY source of tombstone
+    // state — omitting it would silently produce an audit row with no field detail.
     crmBus.emit("activity.deleted", buildActivityEventPayload(
       id,
       "deleted",
       { id },
       ctx.userId,
+      null,
+      existingActivity as unknown as Record<string, unknown>,
     ))
 
     return noContentResponse()

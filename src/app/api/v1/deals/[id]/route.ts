@@ -336,6 +336,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       // body below stays snake_case for API consumers.
       const eventData = recalculatedDeal as unknown as Record<string, unknown>
 
+      // The pre-write row, from the existence check above — no extra query. Raw camelCase, to
+      // match `eventData` above: `previous` must be in the same casing as its site's `data`,
+      // because the diff normalises a whole object and cannot reconcile two objects that
+      // disagree with each other.
+      const previousDeal = existing as unknown as Record<string, unknown>
+
       // Emit stage_changed event if stage changed
       if (stage_id !== undefined && stage_id !== oldStageId) {
         const stageChangedPayload: DealStageChangedPayload = {
@@ -343,6 +349,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           entityId: updated.id,
           action: "updated",
           data: eventData,
+          previous: previousDeal,
           changedFields,
           userId: context.userId,
           timestamp: new Date().toISOString(),
@@ -358,6 +365,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         entityId: updated.id,
         action: "updated",
         data: eventData,
+        previous: previousDeal,
         changedFields: changedFields.length > 0 ? changedFields : null,
         userId: context.userId,
         timestamp: new Date().toISOString(),
@@ -404,6 +412,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         entityId: id,
         action: "deleted",
         data: { id },
+        // `data` is `{ id }`, so `previous` is the ONLY source of tombstone state. Raw camelCase,
+        // matching the mutation-layer delete emit, so the tombstone is identical whichever path
+        // deleted the row.
+        previous: existing as unknown as Record<string, unknown>,
         changedFields: null,
         userId: context.userId,
         timestamp: new Date().toISOString(),

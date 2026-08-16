@@ -259,6 +259,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       entityId: updated.id,
       action: "updated",
       data: serializePerson(recalculatedPerson) as unknown as Record<string, unknown>,
+      // The pre-write row, from the existence check above — no extra query. Serialized, because
+      // `previous` MUST be in the same casing as this site's `data`, and `data` here is
+      // snake_case. Handing over the raw camelCase row instead would make every key look
+      // changed: the diff normalises a whole object, it cannot reconcile two objects that
+      // disagree with each other.
+      previous: serializePerson(existing) as unknown as Record<string, unknown>,
       changedFields: changedFields.length > 0 ? changedFields : null,
       userId: context.userId,
       timestamp: new Date().toISOString(),
@@ -302,6 +308,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       entityId: id,
       action: "deleted",
       data: { id },
+      // `data` is `{ id }`, so `previous` is the ONLY source of tombstone state. Raw camelCase
+      // here, not serialized: `{ id }` reads identically in either casing, so this site is free
+      // to match the mutation-layer delete emits and produce an identical tombstone whichever
+      // path deleted the row.
+      previous: existing as unknown as Record<string, unknown>,
       changedFields: null,
       userId: context.userId,
       timestamp: new Date().toISOString(),
