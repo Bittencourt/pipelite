@@ -196,6 +196,10 @@ None — no external service configuration required.
 - `readAuditScope` is exported and is the single derivation point should a fifth surface ever need the same scope.
 - No blockers. The one thing a later phase should not do is add a second place where the audit scope is derived or stored — the whole correctness argument here rests on there being exactly one.
 
+## Self-Check: PASSED
+
+All claimed files exist on disk (`audit-filter-toggle.tsx`, `empty-timeline.tsx`, `record-timeline.tsx`, `timeline-list.tsx`, `notes/actions.ts`, `notes/actions.test.ts`, the four `[id]/page.tsx`, this SUMMARY). All four claimed commits are present in `git log`: `3a64b9c`, `67c00a4`, `41b889b`, `0b5e94b`.
+
 ---
 *Phase: 36-audit-log*
 *Completed: 2026-08-16*
