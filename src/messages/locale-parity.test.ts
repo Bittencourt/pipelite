@@ -61,6 +61,116 @@ export const REQUIRED_NOTE_KEYS: string[] = [
 ]
 
 /**
+ * The copy contract from 36-UI-SPEC.md § Copywriting Contract → Full key inventory. Same rule as
+ * REQUIRED_NOTE_KEYS above and the same reason: adding an `audit` string to the UI means adding
+ * its dot-path here first. The list is checked in precisely so that the addition is a reviewable
+ * diff rather than a namespace that silently grows in en-US only.
+ *
+ * 77 keys in the `audit` namespace plus the 2 dashboard-tile keys that live in the pre-existing
+ * `admin.dashboard` namespace. Groups below carry the UI-SPEC's own section names so a key can be
+ * found by the surface that renders it.
+ */
+export const REQUIRED_AUDIT_KEYS: string[] = [
+  // Actor kinds — 4
+  "audit.actorKind.workflowRun",
+  "audit.actorKind.apiKey",
+  "audit.actorKind.import",
+  "audit.actorKind.system",
+
+  // Entry predicates — 12, one per action × entity. Twelve strings rather than one with an
+  // {entity} placeholder because es-ES and pt-BR inflect the demonstrative with the noun's gender.
+  "audit.entry.created.organization",
+  "audit.entry.created.person",
+  "audit.entry.created.deal",
+  "audit.entry.created.activity",
+  "audit.entry.updated.organization",
+  "audit.entry.updated.person",
+  "audit.entry.updated.deal",
+  "audit.entry.updated.activity",
+  "audit.entry.deleted.organization",
+  "audit.entry.deleted.person",
+  "audit.entry.deleted.deal",
+  "audit.entry.deleted.activity",
+
+  // Values and disclosure — 10
+  "audit.value.empty",
+  "audit.value.unavailable",
+  "audit.value.yes",
+  "audit.value.no",
+  "audit.value.files",
+  "audit.value.changedTo",
+  "audit.showMoreFields",
+  "audit.showFewerFields",
+  "audit.unknownActor",
+  "audit.entry.noVisibleChanges",
+
+  // Field labels — 20, covering every audited native column across the four entities. Custom
+  // fields are never translated; they render customFieldDefinitions.name verbatim.
+  "audit.field.title",
+  "audit.field.name",
+  "audit.field.firstName",
+  "audit.field.lastName",
+  "audit.field.email",
+  "audit.field.phone",
+  "audit.field.website",
+  "audit.field.industry",
+  "audit.field.defaultCurrency",
+  "audit.field.value",
+  "audit.field.stage",
+  "audit.field.expectedCloseDate",
+  "audit.field.organization",
+  "audit.field.person",
+  "audit.field.deal",
+  "audit.field.owner",
+  "audit.field.assignee",
+  "audit.field.type",
+  "audit.field.dueDate",
+  "audit.field.completedAt",
+
+  // Filter toggle — 5. emptyHidden.body quotes the toggle's own label, so a locale whose body
+  // stops matching its own filter label points the user at a control they cannot find.
+  "audit.filter.label",
+  "audit.filter.announceShown",
+  "audit.filter.announceHidden",
+  "audit.filter.emptyHidden.heading",
+  "audit.filter.emptyHidden.body",
+
+  // Workflow run section — 8
+  "audit.run.heading",
+  "audit.run.empty",
+  "audit.run.unavailable",
+  "audit.run.untitledRecord",
+  "audit.run.action.created",
+  "audit.run.action.updated",
+  "audit.run.action.deleted",
+  "audit.run.fieldCount",
+
+  // Retention page — 18
+  "audit.retention.title",
+  "audit.retention.description",
+  "audit.retention.windowTitle",
+  "audit.retention.windowLabel",
+  "audit.retention.windowHelp",
+  "audit.retention.notSet",
+  "audit.retention.save",
+  "audit.retention.saving",
+  "audit.retention.saved",
+  "audit.retention.saveFailed",
+  "audit.retention.costTitle",
+  "audit.retention.entriesLabel",
+  "audit.retention.oldestLabel",
+  "audit.retention.oldestNone",
+  "audit.retention.shortenDialog.title",
+  "audit.retention.shortenDialog.description",
+  "audit.retention.shortenDialog.cancel",
+  "audit.retention.shortenDialog.confirm",
+
+  // Dashboard tile — 2, in the pre-existing admin.dashboard namespace
+  "admin.dashboard.auditLog",
+  "admin.dashboard.auditLogDescription",
+]
+
+/**
  * Keys whose translation is legitimately byte-identical to the en-US string in BOTH other
  * locales — proper nouns, brand names, units. Empty today. A key only belongs here after a
  * human decides the identical string is correct, not because a translation was skipped.
@@ -111,79 +221,139 @@ const allKeys = Object.fromEntries(LOCALES.map((l) => [l, flattenKeys(messages[l
   Locale,
   string[]
 >
-const noteKeys = Object.fromEntries(
-  LOCALES.map((l) => [l, allKeys[l].filter((k) => k === "notes" || k.startsWith("notes."))]),
-) as Record<Locale, string[]>
+const NOTES_NAMESPACE = "notes"
+const AUDIT_NAMESPACE = "audit"
+
+/** The two audit strings that live outside the audit namespace, in the admin dashboard tile. */
+const AUDIT_DASHBOARD_KEYS = ["admin.dashboard.auditLog", "admin.dashboard.auditLogDescription"]
+
+/** Matches a namespace root and everything nested under it, and nothing that merely shares a prefix. */
+function inNamespace(namespace: string): (key: string) => boolean {
+  return (key) => key === namespace || key.startsWith(`${namespace}.`)
+}
+
+function keysMatching(match: (key: string) => boolean): Record<Locale, string[]> {
+  return Object.fromEntries(LOCALES.map((l) => [l, allKeys[l].filter(match)])) as Record<
+    Locale,
+    string[]
+  >
+}
+
+const noteKeys = keysMatching(inNamespace(NOTES_NAMESPACE))
+const auditKeys = keysMatching(
+  (key) => inNamespace(AUDIT_NAMESPACE)(key) || AUDIT_DASHBOARD_KEYS.includes(key),
+)
 
 const emptyPerLocale = Object.fromEntries(LOCALES.map((l) => [l, [] as string[]])) as Record<
   Locale,
   string[]
 >
 
-describe("locale parity", () => {
-  it("every required notes.* key exists in every locale", () => {
-    const missing = Object.fromEntries(
-      LOCALES.map((l) => [l, REQUIRED_NOTE_KEYS.filter((k) => !allKeys[l].includes(k))]),
-    ) as Record<Locale, string[]>
+/*
+ * The five assertion bodies below are shared by every copy contract in this file, so a contract is
+ * gated by calling them rather than by copying an `it` block. REQUIRED_NOTE_KEYS and
+ * REQUIRED_AUDIT_KEYS are passed separately — not concatenated — so a failure diff names which
+ * contract broke and lists only its keys.
+ */
 
-    // Keyed by locale so a failure diff names the offending file and the exact missing keys.
-    expect(missing).toEqual(emptyPerLocale)
+/** Contract keys absent from each locale file. */
+function missingIn(required: string[]): Record<Locale, string[]> {
+  return Object.fromEntries(
+    LOCALES.map((l) => [l, required.filter((k) => !allKeys[l].includes(k))]),
+  ) as Record<Locale, string[]>
+}
+
+/** Contract keys that resolve to something other than a non-empty string in each locale file. */
+function blankIn(required: string[]): Record<Locale, string[]> {
+  return Object.fromEntries(
+    LOCALES.map((l) => [
+      l,
+      required.filter((k) => {
+        const value = resolve(messages[l], k)
+        return typeof value !== "string" || value.trim() === ""
+      }),
+    ]),
+  ) as Record<Locale, string[]>
+}
+
+/** Contract keys whose es-ES and pt-BR values are both byte-identical to en-US. */
+function untranslatedInBoth(required: string[]): string[] {
+  return required.filter((key) => {
+    if (IDENTICAL_TRANSLATION_ALLOWED.includes(key)) return false
+    const en = resolve(messages["en-US"], key)
+    if (typeof en !== "string") return false
+    return resolve(messages["es-ES"], key) === en && resolve(messages["pt-BR"], key) === en
   })
+}
 
-  it("the notes namespace has identical key sets across all three locales", () => {
-    const reference = noteKeys[REFERENCE_LOCALE]
+/** Contract keys whose placeholder set changed in translation, keyed by key then locale. */
+function placeholderDrift(required: string[]): Record<string, Record<string, string[]>> {
+  const mismatched: Record<string, Record<string, string[]>> = {}
+  for (const key of required) {
+    const en = resolve(messages["en-US"], key)
+    if (typeof en !== "string") continue
+    const expected = placeholders(en)
+    if (expected.length === 0) continue
     for (const locale of LOCALES) {
-      expect(noteKeys[locale], `notes.* key set differs in ${locale}.json`).toEqual(reference)
-    }
-  })
-
-  it("every notes.* value is a non-empty string", () => {
-    const bad = Object.fromEntries(
-      LOCALES.map((l) => [
-        l,
-        REQUIRED_NOTE_KEYS.filter((k) => {
-          const value = resolve(messages[l], k)
-          return typeof value !== "string" || value.trim() === ""
-        }),
-      ]),
-    ) as Record<Locale, string[]>
-
-    expect(bad).toEqual(emptyPerLocale)
-  })
-
-  it("no notes.* string was left untranslated in both es-ES and pt-BR", () => {
-    // An English string copied verbatim into BOTH other locales is a skipped translation, not a
-    // coincidence. Matching one locale is plausible (cognates); matching both is not.
-    const untranslated = REQUIRED_NOTE_KEYS.filter((key) => {
-      if (IDENTICAL_TRANSLATION_ALLOWED.includes(key)) return false
-      const en = resolve(messages["en-US"], key)
-      if (typeof en !== "string") return false
-      return resolve(messages["es-ES"], key) === en && resolve(messages["pt-BR"], key) === en
-    })
-
-    expect(untranslated).toEqual([])
-  })
-
-  it("interpolation placeholders survive translation for every notes.* key", () => {
-    // next-intl throws at render time when a message references a placeholder the caller did not
-    // pass, so a translator dropping `{from}` breaks the Spanish UI and only the Spanish UI.
-    const mismatched: Record<string, Record<string, string[]>> = {}
-    for (const key of REQUIRED_NOTE_KEYS) {
-      const en = resolve(messages["en-US"], key)
-      if (typeof en !== "string") continue
-      const expected = placeholders(en)
-      if (expected.length === 0) continue
-      for (const locale of LOCALES) {
-        const value = resolve(messages[locale], key)
-        const actual = typeof value === "string" ? placeholders(value) : []
-        if (actual.join(",") !== expected.join(",")) {
-          mismatched[key] ??= { expected }
-          mismatched[key][locale] = actual
-        }
+      const value = resolve(messages[locale], key)
+      const actual = typeof value === "string" ? placeholders(value) : []
+      if (actual.join(",") !== expected.join(",")) {
+        mismatched[key] ??= { expected }
+        mismatched[key][locale] = actual
       }
     }
+  }
+  return mismatched
+}
 
-    expect(mismatched).toEqual({})
+/** Every locale carries the same scoped key set as the reference locale. */
+function expectIdenticalKeySets(scoped: Record<Locale, string[]>, label: string): void {
+  const reference = scoped[REFERENCE_LOCALE]
+  for (const locale of LOCALES) {
+    expect(scoped[locale], `${label} key set differs in ${locale}.json`).toEqual(reference)
+  }
+}
+
+describe("locale parity", () => {
+  it("every required notes and audit key exists in every locale", () => {
+    // Keyed by locale so a failure diff names the offending file and the exact missing keys.
+    expect(missingIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
+    expect(missingIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
+  })
+
+  it("the notes and audit namespaces have identical key sets across all three locales", () => {
+    expectIdenticalKeySets(noteKeys, NOTES_NAMESPACE)
+    expectIdenticalKeySets(auditKeys, AUDIT_NAMESPACE)
+
+    // Stronger than cross-locale identity, and the reason the contract list is checked in: the
+    // shipped audit key set must equal REQUIRED_AUDIT_KEYS exactly, so a string added to the
+    // namespace without its dot-path going into the list fails here instead of shipping ungated.
+    const contract = [...REQUIRED_AUDIT_KEYS].sort()
+    for (const locale of LOCALES) {
+      expect(
+        auditKeys[locale],
+        `${AUDIT_NAMESPACE} key set in ${locale}.json diverges from the checked-in contract`,
+      ).toEqual(contract)
+    }
+  })
+
+  it("every required notes and audit value is a non-empty string", () => {
+    expect(blankIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
+    expect(blankIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
+  })
+
+  it("no required notes or audit string was left untranslated in both es-ES and pt-BR", () => {
+    // An English string copied verbatim into BOTH other locales is a skipped translation, not a
+    // coincidence. Matching one locale is plausible (cognates); matching both is not.
+    expect(untranslatedInBoth(REQUIRED_NOTE_KEYS)).toEqual([])
+    expect(untranslatedInBoth(REQUIRED_AUDIT_KEYS)).toEqual([])
+  })
+
+  it("interpolation placeholders survive translation for every required notes and audit key", () => {
+    // next-intl throws at render time when a message references a placeholder the caller did not
+    // pass, so a translator dropping `{from}` breaks the Spanish UI and only the Spanish UI.
+    expect(placeholderDrift(REQUIRED_NOTE_KEYS)).toEqual({})
+    expect(placeholderDrift(REQUIRED_AUDIT_KEYS)).toEqual({})
   })
 
   it("all three locales have identical whole-file key sets", () => {
