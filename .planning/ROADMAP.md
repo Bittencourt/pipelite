@@ -261,10 +261,10 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 36-01-PLAN.md — AsyncLocalStorage actor context, db-free (AUDIT-02)
-- [ ] 36-02-PLAN.md — pure diff, key normalisation and formula exclusion; `CrmEventPayload.previous` (AUDIT-01)
-- [ ] 36-03-PLAN.md — `audit_log` + `app_settings` schema, four indexes, [BLOCKING] migration 0014, psql evidence script (AUDIT-01, AUDIT-04)
-- [ ] 36-04-PLAN.md — 79 copy keys in three locales + `REQUIRED_AUDIT_KEYS` parity gate (AUDIT-03, AUDIT-04)
+- [x] 36-01-PLAN.md — AsyncLocalStorage actor context, db-free (AUDIT-02)
+- [x] 36-02-PLAN.md — pure diff, key normalisation and formula exclusion; `CrmEventPayload.previous` (AUDIT-01)
+- [x] 36-03-PLAN.md — `audit_log` + `app_settings` schema, four indexes, [BLOCKING] migration 0014, psql evidence script (AUDIT-01, AUDIT-04)
+- [x] 36-04-PLAN.md — 79 copy keys in three locales + `REQUIRED_AUDIT_KEYS` parity gate (AUDIT-03, AUDIT-04)
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -450,7 +450,7 @@ Plans:
 | 33. Database Indexes for the CRM Core | 3/3 | Complete   | 2026-08-14 |
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
-| 36. Audit Log | 0/? | Not started | - |
+| 36. Audit Log | 4/20 | In Progress|  |
 | 37. Trash & Restore | 0/? | Not started | - |
 | 38. Bulk Operations | 0/? | Not started | - |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |

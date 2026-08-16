@@ -153,6 +153,12 @@ Progress: [██████████] 97%
 - [Phase 35]: A doc comment that NAMES a token gated at zero occurrences is itself a gate violation — this fired three times in one phase. Reword rather than weaken the gate
 - [Phase 35]: Raw NUL bytes written into a source file silently flip it to binary for git and grep, disabling the plan's own gates — use `\u0000` escapes
 
+- [Phase 36]: `.planning` files must be COMMITTED, not merely written — the directory is gitignored-but-tracked, so an uncommitted file there is invisible to `git status` AND absent from every executor worktree. 36-PATTERNS.md was written but uncommitted and plan 36-01 could not read it
+- [Phase 36]: `AuditActorKind` is deliberately declared TWICE — in `src/db/schema/audit-log.ts` (owns the persisted contract) and in `src/lib/audit/actor-context.ts`, which carries an explicit dependency-free invariant because all four entry boundaries import it and any dependency propagates into all of them. They are identical today and nothing enforces it; typecheck cannot catch divergence between two structurally identical string unions. **Add a compile-time type-equality assertion in plan 36-11**, which consumes both — do NOT resolve it by importing the schema into actor-context
+- [Phase 36]: `npx` resolves to `npm run` in this environment, so `npx drizzle-kit` fails on the host with "Missing script". Use `./node_modules/.bin/drizzle-kit` on the host; `npx` works normally inside the container
+- [Phase 36]: `SELECT count(*) FROM pg_indexes WHERE tablename='audit_log'` returns 5, not 4 — `pg_indexes` includes the primary key. Filter `AND indexname LIKE 'audit_log%_idx'`
+- [Phase 36]: The audit diff must NOT union both sides' keys blindly — the REST serializers omit `deleted_at` while the pre-read row always carries `deletedAt: null`, so a naive union emits a phantom `deletedAt: {from: null, to: undefined}` on every REST edit. Skip native keys absent from `data` on UPDATES only; custom-field sub-keys are exempt because a vanished key there really is a clear
+
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Directory |
