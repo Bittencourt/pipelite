@@ -256,7 +256,47 @@ Plans:
   4. Admin sets an audit retention window and entries older than it disappear without manual intervention
   5. Audit capture required no edit to any mutation function — it subscribes to the existing `crmBus`
 
-**Plans**: TBD
+**Plans**: 20 plans in 6 waves
+
+Plans:
+**Wave 1**
+
+- [ ] 36-01-PLAN.md — AsyncLocalStorage actor context, db-free (AUDIT-02)
+- [ ] 36-02-PLAN.md — pure diff, key normalisation and formula exclusion; `CrmEventPayload.previous` (AUDIT-01)
+- [ ] 36-03-PLAN.md — `audit_log` + `app_settings` schema, four indexes, [BLOCKING] migration 0014, psql evidence script (AUDIT-01, AUDIT-04)
+- [ ] 36-04-PLAN.md — 79 copy keys in three locales + `REQUIRED_AUDIT_KEYS` parity gate (AUDIT-03, AUDIT-04)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 36-05-PLAN.md — `api_key` and `workflow_run` actor boundaries; first `withApiAuth` test (AUDIT-02)
+- [ ] 36-06-PLAN.md — `user` actor at 15 server actions; `saveFieldValues` gains a real emit (AUDIT-01, AUDIT-02)
+- [ ] 36-07-PLAN.md — `previous` enrichment across the mutation layer and the three inline v1 routes (AUDIT-01)
+- [ ] 36-08-PLAN.md — fail-closed retention settings read/write + audit stats (AUDIT-04)
+- [ ] 36-09-PLAN.md — workflow-run linked-records reader (AUDIT-03)
+- [ ] 36-10-PLAN.md — pure audit value presentation + additive timeline types (AUDIT-01, AUDIT-03)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 36-11-PLAN.md — the `crmBus` audit capture subscriber + instrumentation registration (AUDIT-01, AUDIT-02)
+- [ ] 36-12-PLAN.md — `import` actor at five importer entry points + one summary row per run (AUDIT-01, AUDIT-03)
+- [ ] 36-13-PLAN.md — `audit-entry.tsx`, the dispatcher branch and the timeline union join (AUDIT-01, AUDIT-03)
+- [ ] 36-14-PLAN.md — `/admin/audit` retention control, sidebar entry, dashboard tile (AUDIT-04)
+- [ ] 36-15-PLAN.md — read-only admin-only `GET /api/v1/audit` (AUDIT-03)
+- [ ] 36-16-PLAN.md — workflow run → records-changed section (AUDIT-03)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 36-17-PLAN.md — `auditSource`, the assembler kind scope, and the eight `assemble.test.ts` assertions (AUDIT-03)
+- [ ] 36-18-PLAN.md — capped `ctid` retention pruner + instrumentation registration (AUDIT-04)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 36-19-PLAN.md — the audit filter toggle, the cursor trap and the hidden-history empty state (AUDIT-03)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 36-20-PLAN.md — SC-5 source gate, psql evidence, and the blocking browser verification (AUDIT-01..04)
+
 **UI hint**: yes
 
 ### Phase 37: Trash & Restore
