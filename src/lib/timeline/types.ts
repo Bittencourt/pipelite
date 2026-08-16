@@ -15,16 +15,15 @@ import type { EntityType } from "@/db/schema/custom-fields"
 export const TIMELINE_PAGE_SIZE = 20
 
 /**
- * Phase 36 appends 'audit' here and one file to the assembler's source array —
- * nothing else in the union changes.
+ * Phase 36 appended 'audit' here (36-13) alongside one file in the assembler's source
+ * array — nothing else in the union changed.
  *
- * NOT EDITED BY 36-10, deliberately. Adding 'audit' here fires the exhaustive `never`
- * check in `timeline-entry.tsx:57-62` the instant it lands, so the literal and the
- * renderer branch that satisfies it are added TOGETHER in 36-13. Splitting them would
- * leave `tsc` red at a plan boundary, and a phase whose intermediate states do not
- * typecheck cannot be verified plan by plan.
+ * The literal and the `case "audit"` branch in `timeline-entry.tsx` landed in the SAME
+ * commit, because the exhaustive `never` check in that file turns this one-line edit into
+ * a build break until the branch exists. A phase whose intermediate states do not
+ * typecheck cannot be verified plan by plan, so they are not allowed to drift apart.
  */
-export type TimelineEntryKind = 'note' | 'activity' | 'stage_change'
+export type TimelineEntryKind = 'note' | 'activity' | 'stage_change' | 'audit'
 
 /**
  * The keyset paging position: the (instant, id) pair of the OLDEST entry already
@@ -94,7 +93,7 @@ export interface StageChangeTimelineEntry extends TimelineEntryBase {
 /**
  * Phase 36's audit display contract (36-UI-SPEC § Surface 1 → Data contract).
  *
- * Declared here in 36-10 but NOT yet joined to the `TimelineEntry` union below — see the
+ * Declared in 36-10 and joined to the `TimelineEntry` union below in 36-13 — see the
  * comment on `TimelineEntryKind`. `buildAuditFieldChanges` in `src/lib/audit/present.ts`
  * produces `AuditFieldChange[]`; the timeline source's hydrate (36-17) assembles the rest
  * of `AuditTimelineEntry`; `audit-entry.tsx` (36-13) renders it.
@@ -146,7 +145,7 @@ export interface AuditTimelineEntry extends TimelineEntryBase {
 }
 
 /**
- * `AuditTimelineEntry` is deliberately ABSENT from this union in 36-10. It joins here in
+ * `AuditTimelineEntry` was deliberately ABSENT from this union in 36-10. It joined here in
  * 36-13, in the same commit as `timeline-entry.tsx`'s `case "audit"` branch, because the
  * `never` check in that file turns this one-line edit into a build break until the branch
  * exists. That guard is Phase 35 working as designed and is not to be defeated.
@@ -155,6 +154,7 @@ export type TimelineEntry =
   | NoteTimelineEntry
   | ActivityTimelineEntry
   | StageChangeTimelineEntry
+  | AuditTimelineEntry
 
 export interface TimelinePage {
   entries: TimelineEntry[]
