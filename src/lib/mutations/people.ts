@@ -1,15 +1,18 @@
 import { db } from "@/db"
-import { people, organizations } from "@/db/schema"
+import { people, organizations, deals, notes, auditLog } from "@/db/schema"
 import type { EntityType, CustomFieldDefinition } from "@/db/schema"
-import { eq, and, isNull } from "drizzle-orm"
+import { eq, and, isNull, isNotNull } from "drizzle-orm"
 import { z } from "zod"
 import { crmBus } from "@/lib/events"
 import type { CrmEventPayload } from "@/lib/events"
+import { getCurrentActor } from "@/lib/audit/actor-context"
+import type { AuditActor } from "@/lib/audit/actor-context"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import {
   recalculateFormulas,
   stripFormulaKeys,
   ENTITY_NATIVE_ATTRIBUTES,
+  CHANGED_FIELDS_CUSTOM_SENTINEL,
 } from "@/lib/formula-recalc"
 
 // ---- Zod Schemas ----
@@ -155,6 +158,34 @@ function buildEventPayload(
     timestamp: new Date().toISOString(),
   }
 }
+
+/**
+ * The four actor columns of an `audit_log` row, from an actor captured SYNCHRONOUSLY at the
+ * calling function's entry.
+ *
+ * Restore and purge write their audit row directly rather than through the bus subscriber,
+ * because CONTEXT.md locks that no `person.restored` / `person.purged` event type exists. That
+ * makes this file responsible for the rule `src/lib/events/subscribers/audit.ts:78-83` states:
+ * NEVER borrow a user id from a payload — that field describes the record being written, not the
+ * identity that wrote it. Absence of an actor is recorded honestly as `system`.
+ */
+function auditActorColumns(actor: AuditActor | undefined) {
+  return {
+    actorKind: actor?.kind ?? "system",
+    actorUserId: actor?.userId ?? null,
+    workflowRunId: actor?.workflowRunId ?? null,
+    importSessionId: actor?.importSessionId ?? null,
+  }
+}
+
+/**
+ * How a purge is distinguished from a soft delete in `audit_log`.
+ *
+ * `action` stays `"deleted"` deliberately. A fourth `AuditAction` literal would be a four-file
+ * compile cascade: the type is declared TWICE (`db/schema/audit-log.ts` and
+ * `lib/timeline/types.ts`) and consumed by two exhaustive `Record<AuditAction, …>` maps.
+ */
+const PURGE_MARKER = { __purge: { from: null, to: true } } as const
 
 // ---- Mutations ----
 
@@ -383,5 +414,164 @@ export async function deletePersonMutation(
   } catch (error) {
     console.error("Failed to delete person:", error)
     return { success: false, error: "Failed to delete person" }
+  }
+}
+
+/**
+ * Bring a trashed person back to live state (TRASH-02).
+ *
+ * Three deliberate divergences from the delete this mirrors:
+ *
+ *  1. The existence predicate INVERTS to `isNotNull(deletedAt)`. A live record is not restorable.
+ *  2. A miss returns the discriminated code `"NOT_IN_TRASH"`, never prose. The UI has two
+ *     different strings for "already purged / already restored" and "restore failed"; telling a
+ *     user to retry a record that no longer exists makes them retry forever.
+ *  3. Nothing is emitted on the bus. No `person.restored` event type is introduced (CONTEXT.md),
+ *     and emitting `person.created` would be a lie to every subscriber. Because there is no
+ *     event, the audit row is written directly here instead of by the bus subscriber.
+ *
+ * Restore DOES recalculate where the delete deliberately skips it — the delete's skip is what
+ * leaves the stale derived values recorded for plan 34-11, and restore is the repair point.
+ */
+export async function restorePersonMutation(
+  id: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  // Captured synchronously at entry, before any promise exists — the reason is documented at
+  // src/lib/events/subscribers/audit.ts:48-56.
+  const actor = getCurrentActor()
+
+  const person = await db.query.people.findFirst({
+    where: and(eq(people.id, id), isNotNull(people.deletedAt)),
+  })
+
+  if (!person) {
+    return { success: false, error: "NOT_IN_TRASH" }
+  }
+
+  try {
+    await db
+      .update(people)
+      .set({ deletedAt: null, updatedAt: new Date() })
+      .where(eq(people.id, id))
+
+    // AFTER the update, never before: `cascadeToChildren` filters the child relation's null
+    // `deletedAt`, so the person→deal direction only re-enters the cascade once the parent is
+    // live. `changedFields` MUST be broad — an empty list, or `['deletedAt']`, evaluates zero
+    // formulas silently, because `deletedAt` is not a referenceable attribute for any entity
+    // type and `scopeFormulasToChangedFields` is the SC-4 gate.
+    try {
+      await recalculateFormulas({
+        entityType: ENTITY,
+        entityId: id,
+        changedFields: [CHANGED_FIELDS_CUSTOM_SENTINEL, ...NATIVE_COLUMNS],
+      })
+    } catch (error) {
+      // D-05: formula machinery never blocks a user's write, and the restore has already landed.
+      console.error("[formula-recalc] person restore recalculation failed:", error)
+    }
+
+    // A lost audit row must not roll back a restore the user can already see, so this failure is
+    // logged rather than propagated.
+    try {
+      await db.insert(auditLog).values({
+        entityType: ENTITY,
+        entityId: id,
+        action: "updated",
+        changes: { deletedAt: { from: person.deletedAt, to: null } },
+        ...auditActorColumns(actor),
+      })
+    } catch (error) {
+      console.error("[audit] failed to record person restore:", error)
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error("Failed to restore person:", error)
+    return { success: false, error: "Failed to restore person" }
+  }
+}
+
+/**
+ * Permanently destroy a trashed person (TRASH-03).
+ *
+ * This is an ORDERED TEARDOWN inside ONE transaction, not a single statement. A bare
+ * `DELETE FROM people` raises SQLSTATE 23503 on `deals_person_id_people_id_fk` — every foreign
+ * key into the CRM tables is `ON DELETE NO ACTION`, and that was proven empirically against the
+ * live database, not inferred. Refusing to purge a person who has deals is not an option either:
+ * the retention pruner runs this same teardown unattended and must be able to finish.
+ *
+ * The deal is DETACHED, never destroyed. It is an independent trashable entity with its own
+ * owner and its own trash tab, and `deals.person_id` is already nullable, so the detach needs no
+ * schema change. This is the one operation in the phase that mutates a live record the caller
+ * never selected, which is exactly why every unlink gets its own `audit_log` row: otherwise a
+ * live deal silently loses its person with no trace.
+ *
+ * `detached` is the number of live records unlinked by the purge.
+ */
+export async function purgePersonMutation(
+  id: string,
+): Promise<{ success: true; detached: number } | { success: false; error: string }> {
+  // Captured synchronously at entry, BEFORE the transaction promise exists.
+  const actor = getCurrentActor()
+
+  const person = await db.query.people.findFirst({
+    where: and(eq(people.id, id), isNotNull(people.deletedAt)),
+  })
+
+  if (!person) {
+    return { success: false, error: "NOT_IN_TRASH" }
+  }
+
+  try {
+    const detached = await db.transaction(async (tx) => {
+      // 1. Notes are polymorphic with NO foreign key, so nothing in the database enforces this
+      //    and the rows would dangle forever. A purge takes the record and its notes.
+      await tx
+        .delete(notes)
+        .where(and(eq(notes.entityType, ENTITY), eq(notes.entityId, id)))
+
+      // 2. Detach the deals. `.returning()` because each unlink needs its own audit row.
+      const detachedDeals = await tx
+        .update(deals)
+        .set({ personId: null, updatedAt: new Date() })
+        .where(eq(deals.personId, id))
+        .returning({ id: deals.id })
+
+      // 3. One row per detached deal. `personId` is already in AUDIT_FIELD_LABELS, so the deal's
+      //    timeline renders this with no new code. Skipped entirely when nothing detached.
+      if (detachedDeals.length > 0) {
+        await tx.insert(auditLog).values(
+          detachedDeals.map((deal) => ({
+            entityType: "deal" as EntityType,
+            entityId: deal.id,
+            action: "updated" as const,
+            changes: { personId: { from: id, to: null } },
+            ...auditActorColumns(actor),
+          }))
+        )
+      }
+
+      // 4. Now, and only now, the row itself. `isNotNull` is carried on the DELETE predicate
+      //    itself, so a live record cannot be destroyed even by a guessed id.
+      await tx.delete(people).where(and(eq(people.id, id), isNotNull(people.deletedAt)))
+
+      // 5. The purge's own audit row, INSIDE the transaction so a rollback cannot leave a record
+      //    of a purge that did not happen. `audit_log` has no foreign key on `entity_id`, so
+      //    this record's earlier rows survive untouched — that absence is the design.
+      await tx.insert(auditLog).values({
+        entityType: ENTITY,
+        entityId: id,
+        action: "deleted",
+        changes: PURGE_MARKER,
+        ...auditActorColumns(actor),
+      })
+
+      return detachedDeals.length
+    })
+
+    return { success: true, detached }
+  } catch (error) {
+    console.error("Failed to purge person:", error)
+    return { success: false, error: "Failed to purge person" }
   }
 }

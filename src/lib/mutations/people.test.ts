@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
+// NOTE ON THE PURGE TESTS BELOW: a mocked `db.delete` cannot exercise a real foreign-key
+// constraint. Every FK into the CRM tables is `ON DELETE NO ACTION`, and deleting a person with
+// deals was empirically proven to raise SQLSTATE 23503 on
+// `deals_person_id_people_id_fk`. These tests pin the ORDER and the SHAPE of the teardown;
+// `scripts/trash-checks.sql` (plan 37-15) is the only honest test of the constraint behaviour.
+
 // Mock db
 vi.mock("@/db", () => ({
   db: {
@@ -9,6 +15,8 @@ vi.mock("@/db", () => ({
     },
     insert: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
+    transaction: vi.fn(),
   },
 }))
 
@@ -17,6 +25,13 @@ vi.mock("@/lib/events", () => ({
   crmBus: {
     emit: vi.fn(),
   },
+}))
+
+// Restore and purge write their `audit_log` row directly (there is no restore/purge bus event
+// for the subscriber to hang off), so the actor must be drivable from a test. The real module
+// reads an AsyncLocalStorage store that no test establishes.
+vi.mock("@/lib/audit/actor-context", () => ({
+  getCurrentActor: vi.fn(() => undefined),
 }))
 
 // The mocked recalculation result every call resolves with, so a test can tell a POST-recalc
@@ -47,18 +62,23 @@ vi.mock("@/lib/formula-recalc", async (importOriginal) => {
   }
 })
 
+import { PgDialect } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import { crmBus } from "@/lib/events"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import { getCurrentActor } from "@/lib/audit/actor-context"
 import {
   recalculateFormulas,
   stripFormulaKeys,
   ENTITY_NATIVE_ATTRIBUTES,
+  CHANGED_FIELDS_CUSTOM_SENTINEL,
 } from "@/lib/formula-recalc"
 import {
   createPersonMutation,
   updatePersonMutation,
   deletePersonMutation,
+  restorePersonMutation,
+  purgePersonMutation,
 } from "./people"
 
 const mockDb = db as unknown as {
@@ -68,9 +88,18 @@ const mockDb = db as unknown as {
   }
   insert: ReturnType<typeof vi.fn>
   update: ReturnType<typeof vi.fn>
+  delete: ReturnType<typeof vi.fn>
+  transaction: ReturnType<typeof vi.fn>
 }
 
 const mockEmit = crmBus.emit as ReturnType<typeof vi.fn>
+const mockGetCurrentActor = vi.mocked(getCurrentActor)
+
+/** Renders a drizzle predicate so a test can tell `isNotNull` from `isNull`, and read its params. */
+const pgDialect = new PgDialect()
+const renderQuery = (predicate: unknown) =>
+  pgDialect.sqlToQuery(predicate as Parameters<PgDialect["sqlToQuery"]>[0])
+const renderSql = (predicate: unknown) => renderQuery(predicate).sql
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -498,6 +527,373 @@ describe("formula recalculation (D-01/D-17)", () => {
 
       expect(mockRecalc).toHaveBeenCalledTimes(0)
     })
+  })
+})
+
+describe("restorePersonMutation", () => {
+  const mockRecalc = vi.mocked(recalculateFormulas)
+
+  const DELETED_AT = new Date("2026-08-01T10:00:00.000Z")
+
+  const trashedPerson = {
+    id: "p1",
+    firstName: "John",
+    lastName: "Doe",
+    email: "john@test.com",
+    phone: null,
+    notes: null,
+    organizationId: null,
+    ownerId: "u1",
+    customFields: {} as Record<string, unknown>,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: DELETED_AT,
+  }
+
+  /** The restore `UPDATE`; `where` is the awaited terminal, so it carries the call order. */
+  function stubUpdate() {
+    const whereFn = vi.fn().mockResolvedValue(undefined)
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    return { setFn, whereFn }
+  }
+
+  /** Restore writes its audit row directly — there is no bus event to hang a subscriber off. */
+  function stubAuditInsert() {
+    const valuesFn = vi.fn().mockResolvedValue(undefined)
+    mockDb.insert.mockReturnValue({ values: valuesFn })
+    return valuesFn
+  }
+
+  const auditRow = (valuesFn: ReturnType<typeof vi.fn>) =>
+    valuesFn.mock.calls[0][0] as Record<string, unknown>
+
+  beforeEach(() => {
+    mockGetCurrentActor.mockReturnValue(undefined)
+  })
+
+  it("clears deletedAt and touches nothing else", async () => {
+    mockDb.query.people.findFirst.mockResolvedValue(trashedPerson)
+    const { setFn } = stubUpdate()
+    stubAuditInsert()
+
+    const result = await restorePersonMutation("p1")
+
+    expect(result).toEqual({ success: true })
+    expect(mockDb.update).toHaveBeenCalledTimes(1)
+    const setArg = setFn.mock.calls[0][0] as Record<string, unknown>
+    expect(Object.keys(setArg).sort()).toEqual(["deletedAt", "updatedAt"])
+    expect(setArg.deletedAt).toBeNull()
+    expect(setArg.updatedAt).toBeInstanceOf(Date)
+  })
+
+  it("looks the record up with isNotNull(deletedAt), not isNull", async () => {
+    mockDb.query.people.findFirst.mockResolvedValue(trashedPerson)
+    stubUpdate()
+    stubAuditInsert()
+
+    await restorePersonMutation("p1")
+
+    const where = mockDb.query.people.findFirst.mock.calls[0][0].where
+    expect(renderSql(where)).toContain("is not null")
+    expect(renderSql(where)).not.toMatch(/is null/)
+  })
+
+  it("returns NOT_IN_TRASH and issues no update for a live or missing record", async () => {
+    mockDb.query.people.findFirst.mockResolvedValue(null)
+
+    const result = await restorePersonMutation("p-live")
+
+    expect(result).toEqual({ success: false, error: "NOT_IN_TRASH" })
+    expect(mockDb.update).not.toHaveBeenCalled()
+  })
+
+  it("recalculates with the custom sentinel plus every person native attribute (Pitfall 1)", async () => {
+    mockDb.query.people.findFirst.mockResolvedValue(trashedPerson)
+    stubUpdate()
+    stubAuditInsert()
+
+    await restorePersonMutation("p1")
+
+    expect(mockRecalc).toHaveBeenCalledTimes(1)
+    const input = mockRecalc.mock.calls[0][0]
+    expect(input.entityType).toBe("person")
+    expect(input.entityId).toBe("p1")
+    // `[]` or `['deletedAt']` would evaluate ZERO formulas silently: `deletedAt` is not a
+    // referenceable attribute for any entity type. Compared against the real constant.
+    expect(input.changedFields).toContain(CHANGED_FIELDS_CUSTOM_SENTINEL)
+    for (const column of Object.values(ENTITY_NATIVE_ATTRIBUTES.person)) {
+      expect(input.changedFields).toContain(column)
+    }
+  })
+
+  it("recalculates AFTER the update, so children re-enter the cascade", async () => {
+    mockDb.query.people.findFirst.mockResolvedValue(trashedPerson)
+    const { whereFn } = stubUpdate()
+    stubAuditInsert()
+
+    await restorePersonMutation("p1")
+
+    expect(whereFn.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRecalc.mock.invocationCallOrder[0]
+    )
+  })
+
+  it("emits nothing on the CRM bus — no restore event type exists", async () => {
+    mockDb.query.people.findFirst.mockResolvedValue(trashedPerson)
+    stubUpdate()
+    stubAuditInsert()
+
+    await restorePersonMutation("p1")
+
+    expect(mockEmit).not.toHaveBeenCalled()
+  })
+
+  it("writes exactly one audit row recording deletedAt from the stored timestamp to null", async () => {
+    mockDb.query.people.findFirst.mockResolvedValue(trashedPerson)
+    stubUpdate()
+    const valuesFn = stubAuditInsert()
+
+    await restorePersonMutation("p1")
+
+    expect(mockDb.insert).toHaveBeenCalledTimes(1)
+    expect(auditRow(valuesFn)).toEqual({
+      entityType: "person",
+      entityId: "p1",
+      action: "updated",
+      changes: { deletedAt: { from: DELETED_AT, to: null } },
+      actorKind: "system",
+      actorUserId: null,
+      workflowRunId: null,
+      importSessionId: null,
+    })
+  })
+
+  it("records the established actor rather than defaulting to system", async () => {
+    mockGetCurrentActor.mockReturnValue({ kind: "user", userId: "u9" })
+    mockDb.query.people.findFirst.mockResolvedValue(trashedPerson)
+    stubUpdate()
+    const valuesFn = stubAuditInsert()
+
+    await restorePersonMutation("p1")
+
+    expect(auditRow(valuesFn).actorKind).toBe("user")
+    expect(auditRow(valuesFn).actorUserId).toBe("u9")
+  })
+
+  it("still restores when the audit insert fails", async () => {
+    mockDb.query.people.findFirst.mockResolvedValue(trashedPerson)
+    stubUpdate()
+    mockDb.insert.mockReturnValue({ values: vi.fn().mockRejectedValue(new Error("audit down")) })
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await restorePersonMutation("p1")
+
+    expect(result).toEqual({ success: true })
+    expect(errorSpy).toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+
+  it("returns a failure and logs when the update throws", async () => {
+    mockDb.query.people.findFirst.mockResolvedValue(trashedPerson)
+    const whereFn = vi.fn().mockRejectedValue(new Error("boom"))
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await restorePersonMutation("p1")
+
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).not.toBe("NOT_IN_TRASH")
+    expect(errorSpy).toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+})
+
+describe("purgePersonMutation", () => {
+  const trashedPerson = {
+    id: "p1",
+    firstName: "John",
+    lastName: "Doe",
+    ownerId: "u1",
+    deletedAt: new Date("2026-08-01T10:00:00.000Z"),
+  }
+
+  /**
+   * One `tx` handle with a spy per statement shape. `detachedDeals` is what the detach update's
+   * `.returning()` yields, i.e. the live deals that lose their person.
+   */
+  function stubTransaction(detachedDeals: { id: string }[] = []) {
+    const deleteWhere = vi.fn().mockResolvedValue(undefined)
+    const txDelete = vi.fn().mockReturnValue({ where: deleteWhere })
+
+    const updateReturning = vi.fn().mockResolvedValue(detachedDeals)
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning })
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere })
+    const txUpdate = vi.fn().mockReturnValue({ set: updateSet })
+
+    const insertValues = vi.fn().mockResolvedValue(undefined)
+    const txInsert = vi.fn().mockReturnValue({ values: insertValues })
+
+    const tx = { delete: txDelete, update: txUpdate, insert: txInsert }
+    mockDb.transaction.mockImplementation(
+      async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)
+    )
+
+    return { txDelete, deleteWhere, txUpdate, updateSet, txInsert, insertValues, updateReturning }
+  }
+
+  /** Every `values(...)` argument, flattened: a detach insert passes an array, the purge one object. */
+  const insertedRows = (insertValues: ReturnType<typeof vi.fn>) =>
+    insertValues.mock.calls.flatMap((call) => {
+      const arg = call[0] as Record<string, unknown> | Record<string, unknown>[]
+      return Array.isArray(arg) ? arg : [arg]
+    })
+
+  const purgeRowIndex = (insertValues: ReturnType<typeof vi.fn>) =>
+    insertValues.mock.calls.findIndex((call) => {
+      const arg = call[0] as { changes?: Record<string, unknown> }
+      return !Array.isArray(arg) && arg.changes?.__purge !== undefined
+    })
+
+  beforeEach(() => {
+    mockGetCurrentActor.mockReturnValue(undefined)
+    mockDb.query.people.findFirst.mockResolvedValue(trashedPerson)
+  })
+
+  it("runs the whole teardown inside one transaction, never on the bare db handle", async () => {
+    stubTransaction([{ id: "d1" }])
+
+    const result = await purgePersonMutation("p1")
+
+    expect(result).toEqual({ success: true, detached: 1 })
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1)
+    expect(mockDb.delete).not.toHaveBeenCalled()
+    expect(mockDb.update).not.toHaveBeenCalled()
+    expect(mockDb.insert).not.toHaveBeenCalled()
+  })
+
+  it("orders the teardown: notes, detach deals, detach audit rows, delete person, purge row", async () => {
+    const tx = stubTransaction([{ id: "d1" }])
+
+    await purgePersonMutation("p1")
+
+    const notesDeleted = tx.deleteWhere.mock.invocationCallOrder[0]
+    const dealsDetached = tx.updateReturning.mock.invocationCallOrder[0]
+    const detachAudited = tx.insertValues.mock.invocationCallOrder[0]
+    const personDeleted = tx.deleteWhere.mock.invocationCallOrder[1]
+    const purgeAudited = tx.insertValues.mock.invocationCallOrder[purgeRowIndex(tx.insertValues)]
+
+    expect(notesDeleted).toBeLessThan(dealsDetached)
+    expect(dealsDetached).toBeLessThan(detachAudited)
+    expect(detachAudited).toBeLessThan(personDeleted)
+    expect(personDeleted).toBeLessThan(purgeAudited)
+  })
+
+  it("clears the person's polymorphic notes — nothing in the database enforces this", async () => {
+    const tx = stubTransaction()
+
+    await purgePersonMutation("p1")
+
+    const { params } = renderQuery(tx.deleteWhere.mock.calls[0][0])
+    expect(params).toContain("person")
+    expect(params).toContain("p1")
+  })
+
+  it("DETACHES deals rather than deleting them", async () => {
+    const tx = stubTransaction([{ id: "d1" }])
+
+    await purgePersonMutation("p1")
+
+    const setArg = tx.updateSet.mock.calls[0][0] as Record<string, unknown>
+    expect(setArg.personId).toBeNull()
+    expect(setArg.updatedAt).toBeInstanceOf(Date)
+    // Two deletes only: the notes and the person itself. A deal is an independent trashable
+    // entity with its own owner and its own trash tab.
+    expect(tx.txDelete).toHaveBeenCalledTimes(2)
+  })
+
+  it("carries isNotNull(deletedAt) on the final delete, so a live record can never be purged", async () => {
+    const tx = stubTransaction()
+
+    await purgePersonMutation("p1")
+
+    expect(renderSql(tx.deleteWhere.mock.calls[1][0])).toContain("is not null")
+  })
+
+  it("audits every unlink, one row per detached deal", async () => {
+    const tx = stubTransaction([{ id: "d1" }, { id: "d2" }])
+
+    const result = await purgePersonMutation("p1")
+
+    expect(result).toEqual({ success: true, detached: 2 })
+    const rows = insertedRows(tx.insertValues)
+    const detachRows = rows.filter((row) => row.entityType === "deal")
+    expect(detachRows).toHaveLength(2)
+    expect(detachRows[0]).toEqual({
+      entityType: "deal",
+      entityId: "d1",
+      action: "updated",
+      changes: { personId: { from: "p1", to: null } },
+      actorKind: "system",
+      actorUserId: null,
+      workflowRunId: null,
+      importSessionId: null,
+    })
+  })
+
+  it("writes no detach rows and no empty insert when nothing was detached", async () => {
+    const tx = stubTransaction([])
+
+    const result = await purgePersonMutation("p1")
+
+    expect(result).toEqual({ success: true, detached: 0 })
+    expect(tx.insertValues).toHaveBeenCalledTimes(1)
+    expect(insertedRows(tx.insertValues).every((row) => row.entityType === "person")).toBe(true)
+  })
+
+  it("records the purge itself with action deleted plus the __purge marker, inside the transaction", async () => {
+    const tx = stubTransaction([{ id: "d1" }])
+    mockGetCurrentActor.mockReturnValue({ kind: "user", userId: "admin1" })
+
+    await purgePersonMutation("p1")
+
+    const index = purgeRowIndex(tx.insertValues)
+    expect(index).toBeGreaterThanOrEqual(0)
+    expect(tx.insertValues.mock.calls[index][0]).toEqual({
+      entityType: "person",
+      entityId: "p1",
+      // NOT a fourth `AuditAction` literal — a marker in `changes` instead (Pitfall 6).
+      action: "deleted",
+      changes: { __purge: { from: null, to: true } },
+      actorKind: "user",
+      actorUserId: "admin1",
+      workflowRunId: null,
+      importSessionId: null,
+    })
+    expect(mockDb.insert).not.toHaveBeenCalled()
+  })
+
+  it("returns NOT_IN_TRASH and opens no transaction for a live or missing record", async () => {
+    mockDb.query.people.findFirst.mockResolvedValue(null)
+    stubTransaction()
+
+    const result = await purgePersonMutation("p-live")
+
+    expect(result).toEqual({ success: false, error: "NOT_IN_TRASH" })
+    expect(mockDb.transaction).not.toHaveBeenCalled()
+  })
+
+  it("returns a failure and logs when the teardown rejects", async () => {
+    mockDb.transaction.mockRejectedValue(new Error("23503"))
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await purgePersonMutation("p1")
+
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).not.toBe("NOT_IN_TRASH")
+    expect(errorSpy).toHaveBeenCalled()
+    errorSpy.mockRestore()
   })
 })
 

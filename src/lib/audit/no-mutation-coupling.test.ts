@@ -21,6 +21,19 @@
  *     - `src/lib/custom-fields.ts`. It emits a `crmBus` event (36-06) and imports nothing
  *       from the audit layer — the same posture as the mutation modules, but a different
  *       file group with its own gate.
+ *     - The RESTORE and PURGE mutations Phase 37 adds (TRASH-02 / TRASH-03). Phase 37 locked
+ *       that NO new CRM bus event type is introduced: emitting `{entity}.restored` means
+ *       workflow-trigger UI work that belongs to a later phase, and re-emitting
+ *       `{entity}.created` on a restore would be a lie to every subscriber. With no event,
+ *       there is nothing for the subscriber to hang off, so those two functions — and ONLY
+ *       those two — write their `audit_log` row directly. The alternative was an unaudited
+ *       purge, which is precisely the evidence the audit log exists to keep.
+ *
+ *       This carve-out is BOUNDED, not a blanket pass. Below, a carve-out file must still
+ *       emit on the bus, its audit vocabulary is pinned to the minimum the direct write
+ *       needs, and every create/update/delete mutation in it is sliced out and asserted
+ *       uncoupled individually — which is the actual content of SC-5, now checked per
+ *       function instead of per file.
  * ---------------------------------------------------------------------------------------
  *
  * THREE ANTI-VACUITY REQUIREMENTS. A gate without all three is a string that happens to be
@@ -142,11 +155,61 @@ function couplesToAudit(source: string): boolean {
   return COUPLES_TO_AUDIT.test(stripComments(source))
 }
 
+/**
+ * The event-less audit writers of Phase 37 — the ONLY functions permitted to reach the audit
+ * layer from inside a mutation module, because they emit nothing for the subscriber to hear.
+ */
+const EVENTLESS_AUDIT_WRITER = /export async function (?:restore|purge)[A-Za-z]*Mutation\b/g
+
+/** Everything the subscriber captures instead. These must stay uncoupled, per function. */
+const EVENT_EMITTING_MUTATION = /export async function (?:create|update|delete)[A-Za-z]*Mutation\b/g
+
+/**
+ * The minimum audit vocabulary a direct write needs: the table, and the actor read that
+ * `subscribers/audit.ts:48-56` requires be done synchronously at entry. `buildChanges`,
+ * `runWithActor`, the pruner and the retention reader stay forbidden everywhere — a mutation
+ * module has no business establishing an actor or reading a retention policy.
+ */
+const PERMITTED_EVENTLESS_COUPLINGS = ["auditLog", "getCurrentActor", "AuditActor", "@/lib/audit"]
+
+/**
+ * `@/lib/audit` alone is too coarse to pin: the detector reports that prefix for
+ * `@/lib/audit/prune` just as readily as for `@/lib/audit/actor-context`. Every specifier is
+ * therefore resolved to its module and checked by name.
+ */
+const AUDIT_MODULE_SPECIFIER = /@\/lib\/audit\/[a-z-]+/g
+const PERMITTED_AUDIT_MODULES = ["@/lib/audit/actor-context"]
+
+const matchAll = (source: string, pattern: RegExp) =>
+  Array.from(source.matchAll(new RegExp(pattern.source, "g")), match => match[0])
+
+/**
+ * The source of one exported function: from its declaration to the next top-level `export`.
+ *
+ * Returns `""` when the anchor is absent, which every caller asserts against by name before
+ * using the slice — the WR-13 discipline the file header mandates. A slice that silently
+ * widened to the enclosing module would make the negative assertion below meaningless in the
+ * one direction that matters.
+ */
+function sliceDeclaration(source: string, declaration: string): string {
+  const start = source.indexOf(declaration)
+  if (start === -1) return ""
+  const end = source.indexOf("\nexport ", start + 1)
+  return end === -1 ? source.slice(start) : source.slice(start, end)
+}
+
 const files = listMutationSources(MUTATIONS_DIR)
 const rawSources = new Map(files.map(file => [file, readRaw(file)] as const))
 const strippedSources = new Map(files.map(file => [file, stripComments(rawSources.get(file)!)] as const))
 const crmFiles = files.filter(file => CRM_MUTATION_MODULES.includes(path.basename(file) as never))
 const relative = (file: string) => path.relative(REPO_ROOT, file)
+
+/** Files carrying at least one event-less audit writer, and therefore scoped per function. */
+const carveOutFiles = files.filter(file =>
+  new RegExp(EVENTLESS_AUDIT_WRITER.source).test(strippedSources.get(file)!)
+)
+/** Everything else: the whole-file negative assertion still applies verbatim. */
+const wholeFileScope = files.filter(file => !carveOutFiles.includes(file))
 
 describe("SC-5 anti-vacuity — the scan really found and read the mutation modules", () => {
   it("found the four CRM entity mutation modules and read them", () => {
@@ -190,7 +253,7 @@ describe("SC-5 anti-vacuity — the scan really found and read the mutation modu
 
 describe("SC-5 — no mutation module references the audit layer", () => {
   it("no file under src/lib/mutations couples to the audit layer", () => {
-    const offenders = files
+    const offenders = wholeFileScope
       .filter(file => COUPLES_TO_AUDIT.test(strippedSources.get(file)!))
       .map(file => {
         const hit = COUPLES_TO_AUDIT.exec(strippedSources.get(file)!)
@@ -206,7 +269,7 @@ describe("SC-5 — no mutation module references the audit layer", () => {
     // detector run over raw source would have to treat that as noise; this one never sees
     // it. The assertion is what proves stripComments actually runs on real input.
     const mentionsAudit = (source: string) => /\baudit\b/i.test(source)
-    const withAuditProse = files.filter(file => mentionsAudit(rawSources.get(file)!))
+    const withAuditProse = wholeFileScope.filter(file => mentionsAudit(rawSources.get(file)!))
 
     expect(withAuditProse.length).toBeGreaterThan(0)
 
@@ -215,6 +278,105 @@ describe("SC-5 — no mutation module references the audit layer", () => {
       // rather than in prose, that is a finding to review here — not a line to delete.
       expect(mentionsAudit(strippedSources.get(file)!), `${relative(file)} names the audit layer outside a comment`).toBe(false)
     }
+  })
+})
+
+/*
+ * The Phase 37 carve-out, checked rather than asserted.
+ *
+ * A carve-out that only says "these files are different" is the same as deleting the gate for
+ * them. These four assertions are what keep SC-5 meaningful inside a carve-out file: the file
+ * is still a real CRM mutation module, its audit vocabulary is the minimum a direct write
+ * needs, and — the actual claim — every event-emitting mutation in it is STILL uncoupled, now
+ * proven one function at a time instead of one file at a time.
+ */
+describe("SC-5 inside the Phase 37 carve-out — coupling is confined to the event-less writers", () => {
+  it("the carve-out is non-empty, so these assertions are not running over nothing", () => {
+    // Anti-vacuity requirement 1, applied to the carve-out itself. If restore/purge were
+    // renamed or removed, this goes red rather than certifying an empty set.
+    expect(carveOutFiles.length).toBeGreaterThan(0)
+    expect(wholeFileScope.length).toBeGreaterThan(0)
+  })
+
+  it("every carve-out file is still a CRM mutation module that emits on the bus", () => {
+    // Anti-vacuity requirement 2. The carve-out must not become a place where a module stops
+    // emitting and quietly moves all of its audit capture inline.
+    for (const file of carveOutFiles) {
+      expect(crmFiles, `${relative(file)} is not a CRM mutation module`).toContain(file)
+      expect(strippedSources.get(file)!, `${relative(file)} no longer contains ${EMITS}`).toContain(EMITS)
+    }
+  })
+
+  it("reaches for nothing beyond the audit table and the actor read", () => {
+    for (const file of carveOutFiles) {
+      const hits = matchAll(strippedSources.get(file)!, COUPLES_TO_AUDIT)
+      expect(hits.length, `${relative(file)} matched the detector nowhere`).toBeGreaterThan(0)
+
+      for (const hit of hits) {
+        // `buildChanges`, `runWithActor`, `startAuditPruner` and `readRetentionDays` stay
+        // forbidden: a mutation module must not establish an actor or read a policy.
+        expect(
+          PERMITTED_EVENTLESS_COUPLINGS.some(permitted => hit.includes(permitted)),
+          `${relative(file)} reaches the audit layer via \`${hit}\`, which is outside the permitted vocabulary`,
+        ).toBe(true)
+      }
+
+      // `@/lib/audit` as a hit is only as good as the module behind it. `prune`, `diff`,
+      // `settings` and `present` must never be reachable from a mutation module.
+      for (const specifier of matchAll(strippedSources.get(file)!, AUDIT_MODULE_SPECIFIER)) {
+        expect(
+          PERMITTED_AUDIT_MODULES,
+          `${relative(file)} imports \`${specifier}\`, which the carve-out does not permit`,
+        ).toContain(specifier)
+      }
+    }
+  })
+
+  it("leaves every create, update and delete mutation uncoupled — the actual SC-5 claim", () => {
+    let checked = 0
+
+    for (const file of carveOutFiles) {
+      const source = strippedSources.get(file)!
+      const declarations = matchAll(source, EVENT_EMITTING_MUTATION)
+      expect(declarations.length, `${relative(file)} declares no event-emitting mutation`).toBeGreaterThan(0)
+
+      for (const declaration of declarations) {
+        const body = sliceDeclaration(source, declaration)
+        // The anchor assertion the file header mandates: prove the slice found something
+        // before drawing any conclusion from its contents.
+        expect(body.length, `${relative(file)}: could not slice \`${declaration}\``).toBeGreaterThan(0)
+        expect(
+          COUPLES_TO_AUDIT.test(body),
+          `${relative(file)}: \`${declaration}\` couples to the audit layer via \`${COUPLES_TO_AUDIT.exec(body)?.[0]}\` — capture belongs on the far side of the bus`,
+        ).toBe(false)
+        checked += 1
+      }
+    }
+
+    // Requirement 1 once more: a slicer that matched nothing would pass the loop silently.
+    expect(checked).toBeGreaterThan(0)
+  })
+
+  it("the slicer really isolates a function rather than widening to the module", () => {
+    // A gate for the gate. If `sliceDeclaration` widened to the whole file, the assertion
+    // above would be testing the file, not the function, and would go red for the wrong
+    // reason forever after. This pins the behaviour on a fixture instead.
+    const fixture = [
+      `export async function createThingMutation(input: Input) {`,
+      `  crmBus.emit("thing.created", payload)`,
+      `}`,
+      ``,
+      `export async function purgeThingMutation(id: string) {`,
+      `  await db.insert(auditLog).values(row)`,
+      `}`,
+    ].join("\n")
+
+    const created = sliceDeclaration(fixture, "export async function createThingMutation")
+    expect(created).toContain("crmBus.emit")
+    expect(created).not.toContain("auditLog")
+    expect(couplesToAudit(created)).toBe(false)
+
+    expect(sliceDeclaration(fixture, "export async function noSuchMutation")).toBe("")
   })
 })
 
