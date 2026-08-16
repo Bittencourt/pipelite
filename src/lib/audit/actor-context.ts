@@ -27,7 +27,27 @@ export interface AuditActor {
   importSessionId?: string | null
 }
 
-const actorStorage = new AsyncLocalStorage<AuditActor>()
+// Singleton - must survive across module boundaries in all environments.
+//
+// This is NOT defensive boilerplate. Next.js bundles `instrumentation.ts` into a different
+// module graph from the app's server actions, so this file is instantiated TWICE in a
+// production build: once in the graph that registers the audit subscriber (the READER) and
+// once in the graph that runs the wrapped server actions (the WRITER). With a plain
+// module-level `const`, the writer stores the actor on one AsyncLocalStorage instance and the
+// reader calls `getStore()` on a different one, always gets `undefined`, and every audit row
+// is written as `system` with a null user — silently defeating AUDIT-01, while every unit
+// test passes because vitest has a single module registry.
+//
+// Observed in the running container on 2026-08-16: a deal created by a logged-in user in the
+// browser produced `actor_kind = system`. `crmBus` (src/lib/events/bus.ts:25) already carries
+// this same pattern for the same reason, which is why the EVENT reached the subscriber at all
+// while the ACTOR did not.
+const globalForActor = globalThis as typeof globalThis & {
+  auditActorStorage?: AsyncLocalStorage<AuditActor>
+}
+const actorStorage =
+  globalForActor.auditActorStorage ?? new AsyncLocalStorage<AuditActor>()
+globalForActor.auditActorStorage = actorStorage
 
 /**
  * Read the actor for the current async scope.
