@@ -106,7 +106,8 @@
     "apiKeys": "Chaves de API",
     "userManagement": "Gerenciamento de Usuários",
     "team": "Equipe",
-    "analytics": "Análises"
+    "analytics": "Análises",
+    "trash": "Lixeira"
   },
   "auth": {
     "login": "Entrar",
@@ -406,6 +407,80 @@
       }
     }
   },
+  "trash": {
+    "title": "Lixeira",
+    "description": "Registros excluídos que você pode restaurar, e o que acontece com eles depois.",
+    "column": {
+      "deal": "Negócio",
+      "person": "Pessoa",
+      "organization": "Empresa",
+      "activity": "Atividade",
+      "deletedAt": "Excluído",
+      "deletedBy": "Excluído por",
+      "email": "E-mail",
+      "website": "Website",
+      "dueDate": "Data de vencimento"
+    },
+    "actor": {
+      "notRecorded": "Não registrado",
+      "notRecordedTitle": "Este registro foi excluído antes de o histórico de alterações existir, então quem o excluiu não foi registrado."
+    },
+    "linkedInTrash": "Registro vinculado na lixeira",
+    "linkedInTrashTitle": "Também na lixeira: {names}",
+    "restore": "Restaurar",
+    "restoring": "Restaurando…",
+    "restoreWithLinked": "Restaurar com os registros vinculados",
+    "deletePermanently": "Excluir permanentemente",
+    "deleting": "Excluindo…",
+    "restored": "{name} está de volta em {list}.",
+    "restoredWithLinked": "{count, plural, one {# registro restaurado} other {# registros restaurados}}.",
+    "openRecord": "Abrir",
+    "purged": "{name} foi excluído permanentemente.",
+    "error": {
+      "restoreFailed": "Este registro não foi restaurado. Atualize a página e tente novamente.",
+      "alreadyPurged": "Este registro foi excluído permanentemente e não pode ser restaurado.",
+      "purgeFailed": "Este registro não foi excluído. Atualize a página e tente novamente.",
+      "purgeNotPermitted": "Somente um administrador pode excluir registros permanentemente.",
+      "unavailable": "Não foi possível carregar a lista da lixeira. Atualize a página para tentar novamente."
+    },
+    "empty": {
+      "deals": "Nenhum negócio excluído",
+      "people": "Nenhuma pessoa excluída",
+      "organizations": "Nenhuma empresa excluída",
+      "activities": "Nenhuma atividade excluída",
+      "body": "Os registros excluídos ficam aqui por {days} dias e depois são excluídos permanentemente.",
+      "bodyNoRetention": "Os registros excluídos ficam aqui até que um administrador os exclua permanentemente."
+    },
+    "purgeDialog": {
+      "title": "Excluir permanentemente?",
+      "description": "{name} e suas notas serão excluídos permanentemente. Isso não pode ser desfeito. O histórico de alterações é mantido.",
+      "cancel": "Manter na lixeira",
+      "confirm": "Excluir permanentemente"
+    },
+    "loadMore": "Carregar mais",
+    "retention": {
+      "title": "Lixeira",
+      "description": "Por quanto tempo um registro excluído pode ser restaurado antes de ser excluído permanentemente.",
+      "windowTitle": "Período de retenção",
+      "windowLabel": "Dias para manter os registros excluídos",
+      "windowHelp": "Digite um número inteiro de dias entre 1 e 365. Os registros excluídos há mais tempo que isso são excluídos permanentemente de forma automática, uma vez por dia.",
+      "notSet": "Não definido — nada é esvaziado da lixeira automaticamente.",
+      "save": "Salvar período de retenção",
+      "saving": "Salvando…",
+      "saved": "Período de retenção salvo.",
+      "saveFailed": "O período de retenção não foi salvo. Verifique sua conexão e tente novamente.",
+      "costTitle": "O que há na lixeira agora",
+      "recordsLabel": "Registros na lixeira",
+      "oldestLabel": "Registro excluído mais antigo",
+      "oldestNone": "A lixeira está vazia",
+      "shortenDialog": {
+        "title": "Encurtar o período de retenção?",
+        "description": "Os registros excluídos há mais de {days} dias serão excluídos permanentemente na próxima vez que a lixeira for esvaziada. Isso não pode ser desfeito.",
+        "cancel": "Manter o período atual",
+        "confirm": "Encurtar período de retenção"
+      }
+    }
+  },
   "settings": {
     "profile": {
       "title": "Configurações de Perfil",
@@ -481,7 +556,9 @@
       "pipedriveImport": "Importar do Pipedrive",
       "pipedriveImportDescription": "Importar dados diretamente do Pipedrive usando API",
       "auditLog": "Registro de auditoria",
-      "auditLogDescription": "Revise a retenção do histórico de alterações e veja o que ela custa"
+      "auditLogDescription": "Revise a retenção do histórico de alterações e veja o que ela custa",
+      "trash": "Lixeira",
+      "trashDescription": "Defina por quanto tempo os registros excluídos podem ser restaurados"
     },
     "users": {
       "title": "Usuários",

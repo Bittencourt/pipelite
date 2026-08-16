@@ -106,7 +106,8 @@
     "apiKeys": "API Keys",
     "userManagement": "User Management",
     "team": "Team",
-    "analytics": "Analytics"
+    "analytics": "Analytics",
+    "trash": "Trash"
   },
   "auth": {
     "login": "Login",
@@ -406,6 +407,80 @@
       }
     }
   },
+  "trash": {
+    "title": "Trash",
+    "description": "Deleted records you can restore, and what happens to them next.",
+    "column": {
+      "deal": "Deal",
+      "person": "Person",
+      "organization": "Organization",
+      "activity": "Activity",
+      "deletedAt": "Deleted",
+      "deletedBy": "Deleted by",
+      "email": "Email",
+      "website": "Website",
+      "dueDate": "Due date"
+    },
+    "actor": {
+      "notRecorded": "Not recorded",
+      "notRecordedTitle": "This record was deleted before change history was added, so who deleted it wasn't recorded."
+    },
+    "linkedInTrash": "Linked record in trash",
+    "linkedInTrashTitle": "Also in trash: {names}",
+    "restore": "Restore",
+    "restoring": "Restoring…",
+    "restoreWithLinked": "Restore with linked records",
+    "deletePermanently": "Delete permanently",
+    "deleting": "Deleting…",
+    "restored": "{name} is back in {list}.",
+    "restoredWithLinked": "{count, plural, one {# record restored} other {# records restored}}.",
+    "openRecord": "Open",
+    "purged": "{name} was permanently deleted.",
+    "error": {
+      "restoreFailed": "This record wasn't restored. Refresh the page and try again.",
+      "alreadyPurged": "This record was permanently deleted and can't be restored.",
+      "purgeFailed": "This record wasn't deleted. Refresh the page and try again.",
+      "purgeNotPermitted": "Only an admin can permanently delete records.",
+      "unavailable": "The trash list couldn't be loaded. Refresh the page to try again."
+    },
+    "empty": {
+      "deals": "No deleted deals",
+      "people": "No deleted people",
+      "organizations": "No deleted organizations",
+      "activities": "No deleted activities",
+      "body": "Deleted records stay here for {days} days, then they're permanently deleted.",
+      "bodyNoRetention": "Deleted records stay here until an admin deletes them permanently."
+    },
+    "purgeDialog": {
+      "title": "Delete permanently?",
+      "description": "{name} and its notes will be permanently deleted. This can't be undone. Its change history is kept.",
+      "cancel": "Keep in trash",
+      "confirm": "Delete permanently"
+    },
+    "loadMore": "Load more",
+    "retention": {
+      "title": "Trash",
+      "description": "How long a deleted record can be restored before it is permanently deleted.",
+      "windowTitle": "Retention window",
+      "windowLabel": "Days to keep deleted records",
+      "windowHelp": "Enter a whole number of days between 1 and 365. Records deleted longer ago than this are permanently deleted automatically, once a day.",
+      "notSet": "Not set — nothing is emptied from trash automatically.",
+      "save": "Save retention window",
+      "saving": "Saving…",
+      "saved": "Retention window saved.",
+      "saveFailed": "The retention window wasn't saved. Check your connection and try again.",
+      "costTitle": "What's in trash now",
+      "recordsLabel": "Records in trash",
+      "oldestLabel": "Oldest deleted record",
+      "oldestNone": "Trash is empty",
+      "shortenDialog": {
+        "title": "Shorten retention window?",
+        "description": "Records deleted more than {days} days ago will be permanently deleted the next time trash is emptied. This can't be undone.",
+        "cancel": "Keep current window",
+        "confirm": "Shorten retention window"
+      }
+    }
+  },
   "settings": {
     "profile": {
       "title": "Profile Settings",
@@ -481,7 +556,9 @@
       "pipedriveImport": "Pipedrive Import",
       "pipedriveImportDescription": "Import data directly from Pipedrive using API",
       "auditLog": "Audit Log",
-      "auditLogDescription": "Review change-history retention and see what it costs"
+      "auditLogDescription": "Review change-history retention and see what it costs",
+      "trash": "Trash",
+      "trashDescription": "Set how long deleted records can be restored"
     },
     "users": {
       "title": "Users",

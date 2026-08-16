@@ -171,6 +171,113 @@ export const REQUIRED_AUDIT_KEYS: string[] = [
 ]
 
 /**
+ * The copy contract from 37-UI-SPEC.md § Copywriting Contract → New key inventory. Same rule as the
+ * two lists above: a `trash.*` string reaching the UI means its dot-path is added here first, and
+ * the exact-contract assertion below turns "forgot to add it" into a red suite rather than a string
+ * that ships gated by nothing.
+ *
+ * 58 keys in the `trash` namespace, plus the 2 dashboard-tile keys in the pre-existing
+ * `admin.dashboard` namespace and the 1 sidebar entry in `nav` — 61 total. The per-group counts in
+ * the comments are load-bearing: they are how a reader sees at a glance that a group lost a key.
+ */
+export const REQUIRED_TRASH_KEYS: string[] = [
+  // Page shell — 2
+  "trash.title",
+  "trash.description",
+
+  // Column headers — 9. Four singular entity nouns rather than one "Record" header because es-ES
+  // and pt-BR inflect articles and adjectives with the noun's gender, and those four strings are
+  // reused inside the purge dialog description where the inflection matters.
+  "trash.column.deal",
+  "trash.column.person",
+  "trash.column.organization",
+  "trash.column.activity",
+  "trash.column.deletedAt",
+  "trash.column.deletedBy",
+  "trash.column.email",
+  "trash.column.website",
+  "trash.column.dueDate",
+
+  // Actor — 2. The four non-user actor badges and the unknown-user fallback are reused from the
+  // audit namespace (audit.actorKind.*, audit.unknownActor) and are deliberately absent here.
+  "trash.actor.notRecorded",
+  "trash.actor.notRecordedTitle",
+
+  // Linked records — 2
+  "trash.linkedInTrash",
+  "trash.linkedInTrashTitle",
+
+  // Row actions — 5
+  "trash.restore",
+  "trash.restoring",
+  "trash.restoreWithLinked",
+  "trash.deletePermanently",
+  "trash.deleting",
+
+  // Results — 4
+  "trash.restored",
+  "trash.restoredWithLinked",
+  "trash.openRecord",
+  "trash.purged",
+
+  // Errors — 5
+  "trash.error.restoreFailed",
+  "trash.error.alreadyPurged",
+  "trash.error.purgeFailed",
+  "trash.error.purgeNotPermitted",
+  "trash.error.unavailable",
+
+  // Empty states — 6. bodyNoRetention is the fail-closed variant: when trash.retention_days is
+  // unset or unparseable nothing is purged automatically, so the {days} body would be a promise
+  // the system does not keep.
+  "trash.empty.deals",
+  "trash.empty.people",
+  "trash.empty.organizations",
+  "trash.empty.activities",
+  "trash.empty.body",
+  "trash.empty.bodyNoRetention",
+
+  // Purge dialog — 4. description states what survives ("change history is kept") as well as what
+  // dies, so an admin is not led to believe a purge erases the evidence of the purge.
+  "trash.purgeDialog.title",
+  "trash.purgeDialog.description",
+  "trash.purgeDialog.cancel",
+  "trash.purgeDialog.confirm",
+
+  // Pagination — 1
+  "trash.loadMore",
+
+  // Retention page — 18. windowHelp states the same 1-365 bounds that RETENTION_MIN/RETENTION_MAX
+  // enforce; a range the copy advertises but the validator rejects trains operators to distrust
+  // the form.
+  "trash.retention.title",
+  "trash.retention.description",
+  "trash.retention.windowTitle",
+  "trash.retention.windowLabel",
+  "trash.retention.windowHelp",
+  "trash.retention.notSet",
+  "trash.retention.save",
+  "trash.retention.saving",
+  "trash.retention.saved",
+  "trash.retention.saveFailed",
+  "trash.retention.costTitle",
+  "trash.retention.recordsLabel",
+  "trash.retention.oldestLabel",
+  "trash.retention.oldestNone",
+  "trash.retention.shortenDialog.title",
+  "trash.retention.shortenDialog.description",
+  "trash.retention.shortenDialog.cancel",
+  "trash.retention.shortenDialog.confirm",
+
+  // Dashboard tile — 2, in the pre-existing admin.dashboard namespace
+  "admin.dashboard.trash",
+  "admin.dashboard.trashDescription",
+
+  // Sidebar entry — 1, in the pre-existing nav namespace
+  "nav.trash",
+]
+
+/**
  * Keys whose translation is legitimately byte-identical to the en-US string in BOTH other
  * locales — proper nouns, brand names, units. Empty today. A key only belongs here after a
  * human decides the identical string is correct, not because a translation was skipped.
@@ -223,9 +330,17 @@ const allKeys = Object.fromEntries(LOCALES.map((l) => [l, flattenKeys(messages[l
 >
 const NOTES_NAMESPACE = "notes"
 const AUDIT_NAMESPACE = "audit"
+const TRASH_NAMESPACE = "trash"
 
 /** The two audit strings that live outside the audit namespace, in the admin dashboard tile. */
 const AUDIT_DASHBOARD_KEYS = ["admin.dashboard.auditLog", "admin.dashboard.auditLogDescription"]
+
+/** The three trash strings that live outside the trash namespace: the tile and the sidebar entry. */
+const TRASH_EXTRA_KEYS = [
+  "admin.dashboard.trash",
+  "admin.dashboard.trashDescription",
+  "nav.trash",
+]
 
 /** Matches a namespace root and everything nested under it, and nothing that merely shares a prefix. */
 function inNamespace(namespace: string): (key: string) => boolean {
@@ -243,6 +358,9 @@ const noteKeys = keysMatching(inNamespace(NOTES_NAMESPACE))
 const auditKeys = keysMatching(
   (key) => inNamespace(AUDIT_NAMESPACE)(key) || AUDIT_DASHBOARD_KEYS.includes(key),
 )
+const trashKeys = keysMatching(
+  (key) => inNamespace(TRASH_NAMESPACE)(key) || TRASH_EXTRA_KEYS.includes(key),
+)
 
 const emptyPerLocale = Object.fromEntries(LOCALES.map((l) => [l, [] as string[]])) as Record<
   Locale,
@@ -251,9 +369,9 @@ const emptyPerLocale = Object.fromEntries(LOCALES.map((l) => [l, [] as string[]]
 
 /*
  * The five assertion bodies below are shared by every copy contract in this file, so a contract is
- * gated by calling them rather than by copying an `it` block. REQUIRED_NOTE_KEYS and
- * REQUIRED_AUDIT_KEYS are passed separately — not concatenated — so a failure diff names which
- * contract broke and lists only its keys.
+ * gated by calling them rather than by copying an `it` block. REQUIRED_NOTE_KEYS,
+ * REQUIRED_AUDIT_KEYS and REQUIRED_TRASH_KEYS are passed separately — never concatenated — so a
+ * failure diff names which contract broke and lists only its keys.
  */
 
 /** Contract keys absent from each locale file. */
@@ -315,45 +433,59 @@ function expectIdenticalKeySets(scoped: Record<Locale, string[]>, label: string)
 }
 
 describe("locale parity", () => {
-  it("every required notes and audit key exists in every locale", () => {
+  it("every required notes, audit and trash key exists in every locale", () => {
     // Keyed by locale so a failure diff names the offending file and the exact missing keys.
     expect(missingIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
     expect(missingIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
+    expect(missingIn(REQUIRED_TRASH_KEYS)).toEqual(emptyPerLocale)
   })
 
-  it("the notes and audit namespaces have identical key sets across all three locales", () => {
+  it("the notes, audit and trash namespaces have identical key sets across all three locales", () => {
     expectIdenticalKeySets(noteKeys, NOTES_NAMESPACE)
     expectIdenticalKeySets(auditKeys, AUDIT_NAMESPACE)
+    expectIdenticalKeySets(trashKeys, TRASH_NAMESPACE)
 
     // Stronger than cross-locale identity, and the reason the contract list is checked in: the
     // shipped audit key set must equal REQUIRED_AUDIT_KEYS exactly, so a string added to the
     // namespace without its dot-path going into the list fails here instead of shipping ungated.
-    const contract = [...REQUIRED_AUDIT_KEYS].sort()
+    const auditContract = [...REQUIRED_AUDIT_KEYS].sort()
     for (const locale of LOCALES) {
       expect(
         auditKeys[locale],
         `${AUDIT_NAMESPACE} key set in ${locale}.json diverges from the checked-in contract`,
-      ).toEqual(contract)
+      ).toEqual(auditContract)
+    }
+
+    // Same exact-contract rule for trash, and the same reason.
+    const trashContract = [...REQUIRED_TRASH_KEYS].sort()
+    for (const locale of LOCALES) {
+      expect(
+        trashKeys[locale],
+        `${TRASH_NAMESPACE} key set in ${locale}.json diverges from the checked-in contract`,
+      ).toEqual(trashContract)
     }
   })
 
-  it("every required notes and audit value is a non-empty string", () => {
+  it("every required notes, audit and trash value is a non-empty string", () => {
     expect(blankIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
     expect(blankIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
+    expect(blankIn(REQUIRED_TRASH_KEYS)).toEqual(emptyPerLocale)
   })
 
-  it("no required notes or audit string was left untranslated in both es-ES and pt-BR", () => {
+  it("no required notes, audit or trash string was left untranslated in both es-ES and pt-BR", () => {
     // An English string copied verbatim into BOTH other locales is a skipped translation, not a
     // coincidence. Matching one locale is plausible (cognates); matching both is not.
     expect(untranslatedInBoth(REQUIRED_NOTE_KEYS)).toEqual([])
     expect(untranslatedInBoth(REQUIRED_AUDIT_KEYS)).toEqual([])
+    expect(untranslatedInBoth(REQUIRED_TRASH_KEYS)).toEqual([])
   })
 
-  it("interpolation placeholders survive translation for every required notes and audit key", () => {
+  it("interpolation placeholders survive translation for every required notes, audit and trash key", () => {
     // next-intl throws at render time when a message references a placeholder the caller did not
     // pass, so a translator dropping `{from}` breaks the Spanish UI and only the Spanish UI.
     expect(placeholderDrift(REQUIRED_NOTE_KEYS)).toEqual({})
     expect(placeholderDrift(REQUIRED_AUDIT_KEYS)).toEqual({})
+    expect(placeholderDrift(REQUIRED_TRASH_KEYS)).toEqual({})
   })
 
   it("all three locales have identical whole-file key sets", () => {
