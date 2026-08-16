@@ -27,7 +27,7 @@ vi.mock("@/db", () => ({
 }))
 
 import { db } from "@/db"
-import { activities, dealStageHistory, notes } from "@/db/schema"
+import { activities, auditLog, dealStageHistory, notes, stages } from "@/db/schema"
 import type { EntityType } from "@/db/schema/custom-fields"
 
 import { assembleTimeline, buildTimelineQuery, countTimeline } from "./assemble"
@@ -117,6 +117,33 @@ function activityHydrationRow(id: string, occurredAt: Date) {
     dueDate: new Date(T0 + 86_400_000),
     completedAt: null,
     createdAt: occurredAt,
+  }
+}
+
+/**
+ * One row of `auditSource.hydrate`'s batched read, joins included: the three left-joined
+ * actor columns are null unless the row's own `actorKind` claims them.
+ */
+function auditHydrationRow(
+  id: string,
+  occurredAt: Date,
+  changes: Record<string, { from: unknown; to: unknown }>,
+  overrides: Record<string, unknown> = {}
+) {
+  return {
+    id,
+    entityType: "deal",
+    action: "updated",
+    changes,
+    actorKind: "user",
+    createdAt: occurredAt,
+    actorId: "user-1",
+    actorName: "Ada",
+    actorEmail: "ada@example.com",
+    runId: null,
+    workflowId: null,
+    workflowName: null,
+    ...overrides,
   }
 }
 
@@ -220,29 +247,52 @@ beforeEach(() => {
 // ===========================================================================
 
 describe("buildTimelineQuery — branch composition", () => {
+  // EVERY ASSERTION IN THIS BLOCK IS THE `includeAudit: false` CASE, and passing the flag
+  // explicitly is the point rather than noise: these are Phase 35's measured expectations,
+  // unchanged, and this block is what pins that adding a fourth source left the DEFAULT
+  // statement byte-identical to the plan that phase measured. The parallel audit-on block
+  // below asserts the new shape. Neither was deleted in favour of the other.
   it("builds three branches for a deal", () => {
-    const { lower } = render(buildTimelineQuery("deal", "d1", null, 20))
+    const { lower } = render(buildTimelineQuery("deal", "d1", null, 20, false))
 
     expect(lower).toContain('from "notes"')
     expect(lower).toContain('from "activities"')
     expect(lower).toContain('from "deal_stage_history"')
+    expect(countOf(lower, 'from "audit_log"')).toBe(0)
     expect(countOf(lower, "union all")).toBe(2)
   })
 
   it("builds a single notes branch with no UNION ALL for organization, person and activity", () => {
     for (const entityType of NON_DEAL_ENTITIES) {
-      const { lower } = render(buildTimelineQuery(entityType, "e1", null, 20))
+      const { lower } = render(buildTimelineQuery(entityType, "e1", null, 20, false))
 
       expect(lower).toContain('from "notes"')
-      // A one-branch UNION ALL is a degenerate union, not a simpler one.
+      // A one-branch UNION ALL is a degenerate union, not a simpler one — still true as a
+      // statement about the branch, and now FLAG-CONDITIONAL as a statement about these three
+      // entity types: `auditSource.appliesTo` returns true for all four, so with the scope on
+      // they have two applicable sources and this becomes a union. The decision the original
+      // comment recorded is preserved here rather than deleted; only its scope narrowed.
       expect(countOf(lower, "union all")).toBe(0)
       expect(countOf(lower, 'from "activities"')).toBe(0)
       expect(countOf(lower, 'from "deal_stage_history"')).toBe(0)
+      expect(countOf(lower, 'from "audit_log"')).toBe(0)
     }
   })
 
+  it("omits the audit branch when no scope is passed at all", () => {
+    // The default is OFF at every level. A caller that has not been taught about the scope —
+    // every Phase 35 caller — gets Phase 35's statement, not an audit-dominated feed.
+    const deal = render(buildTimelineQuery("deal", "d1", null, 20))
+    expect(countOf(deal.lower, 'from "audit_log"')).toBe(0)
+    expect(countOf(deal.lower, "union all")).toBe(2)
+
+    const org = render(buildTimelineQuery("organization", "o1", null, 20))
+    expect(countOf(org.lower, 'from "audit_log"')).toBe(0)
+    expect(countOf(org.lower, "union all")).toBe(0)
+  })
+
   it("selects only kind, id, occurred_at and its text key from every branch", () => {
-    const { lower } = render(buildTimelineQuery("deal", "d1", null, 20))
+    const { lower } = render(buildTimelineQuery("deal", "d1", null, 20, false))
 
     // Two-step hydration keeps the union rows narrow. NULL-padding three different
     // column sets into one wide union row is the anti-pattern being prevented.
@@ -257,7 +307,7 @@ describe("buildTimelineQuery — branch composition", () => {
   it("renders the cursor key with to_char at microsecond precision on every branch", () => {
     // WR-02. `.US` is six fractional digits, always — fixed width, so the text sorts
     // exactly as the timestamp does. `.MS` (milliseconds) would reintroduce the defect.
-    const { lower, text } = render(buildTimelineQuery("deal", "d1", null, 20))
+    const { lower, text } = render(buildTimelineQuery("deal", "d1", null, 20, false))
 
     expect(countOf(lower, "to_char(")).toBe(3)
     expect(countOf(text, 'HH24:MI:SS.US"Z"')).toBe(3)
@@ -265,11 +315,85 @@ describe("buildTimelineQuery — branch composition", () => {
   })
 
   it("filters soft-deleted rows out of the notes and activities branches", () => {
-    const { lower } = render(buildTimelineQuery("deal", "d1", null, 20))
+    const { lower } = render(buildTimelineQuery("deal", "d1", null, 20, false))
 
     // notes_live_idx is partial on this predicate, but an index encodes a filter — it
     // does not enforce one (T-35-06).
     expect(countOf(lower, "deleted_at is null")).toBe(2)
+  })
+})
+
+// ===========================================================================
+// buildTimelineQuery — the audit scope  (vitest -t "audit")
+// ===========================================================================
+
+describe("buildTimelineQuery — the audit scope", () => {
+  it("adds a fourth audit branch for a deal when the audit scope is on", () => {
+    const { lower } = render(buildTimelineQuery("deal", "d1", null, 20, true))
+
+    expect(lower).toContain('from "audit_log"')
+    expect(countOf(lower, "union all")).toBe(3)
+    // four branches + the outer select
+    expect(countOf(lower, "occurred_at_key")).toBe(5)
+    expect(countOf(lower, "to_char(")).toBe(4)
+    // four branch sorts + limits, plus the outer pair
+    expect(countOf(lower, "order by")).toBe(5)
+    expect(countOf(lower, "limit")).toBe(5)
+  })
+
+  it("makes an organization, person and activity timeline a union for the first time when the audit scope is on", () => {
+    for (const entityType of NON_DEAL_ENTITIES) {
+      const { lower, params } = render(buildTimelineQuery(entityType, "e1", null, 20, true))
+
+      // The one assertion the audit source falsifies in KIND rather than in degree: these
+      // three had exactly one applicable source in Phase 35, so the degenerate-union branch
+      // fired. `auditSource.appliesTo` returns true for every entity type.
+      expect(countOf(lower, "union all")).toBe(1)
+      expect(lower).toContain('from "notes"')
+      expect(lower).toContain('from "audit_log"')
+      expect(countOf(lower, 'from "activities"')).toBe(0)
+      expect(countOf(lower, "order by")).toBe(3)
+      expect(countOf(lower, "limit")).toBe(3)
+      expect(params.filter((p) => p === 21)).toHaveLength(3)
+      // entity_type is bound on BOTH branches, never rendered into the text (T-36-06).
+      expect(params.filter((p) => p === entityType)).toHaveLength(2)
+      expect(lower).not.toContain(`'${entityType}'`)
+    }
+  })
+
+  it("gives every branch its own pre-limit when the audit scope is on", () => {
+    const { params } = render(buildTimelineQuery("deal", "d1", null, 20, true))
+    // four pre-limits + the outer limit
+    expect(params.filter((p) => p === 21)).toHaveLength(5)
+  })
+
+  it("carries the keyset row comparison into the audit branch and binds it as text", () => {
+    // The keyset is applied PER BRANCH, so a branch without it would return the same rows on
+    // every page. On an audit surface, repeating or omitting history is the worst failure
+    // available — hence both halves of WR-02 are asserted here too.
+    const cursor = { instant: "2026-08-15T12:00:00.478940Z", id: "audit-19" }
+    const deal = render(buildTimelineQuery("deal", "d1", cursor, 20, true))
+
+    expect(countOf(deal.lower, ") < (")).toBe(4)
+    expect(deal.lower).toContain("(al.created_at, al.id) < (")
+    expect(countOf(deal.lower, "::text::timestamp")).toBe(4)
+    expect(deal.params.filter((p) => p === cursor.instant)).toHaveLength(4)
+    expect(deal.params.filter((p) => p instanceof Date)).toHaveLength(0)
+
+    const org = render(buildTimelineQuery("organization", "o1", cursor, 20, true))
+    expect(countOf(org.lower, ") < (")).toBe(2)
+  })
+
+  it("adds no soft-delete predicate for the audit branch, in either scope", () => {
+    // NOT AN OMISSION. `audit_log` has no `deleted_at` column, because audit rows are
+    // immutable append-only facts — the same reason `deal_stage_history` carries none. The
+    // count is therefore 2 in BOTH scopes: notes and activities, and nothing else.
+    expect(
+      countOf(render(buildTimelineQuery("deal", "d1", null, 20, false)).lower, "deleted_at is null")
+    ).toBe(2)
+    expect(
+      countOf(render(buildTimelineQuery("deal", "d1", null, 20, true)).lower, "deleted_at is null")
+    ).toBe(2)
   })
 })
 
@@ -279,23 +403,23 @@ describe("buildTimelineQuery — branch composition", () => {
 
 describe("buildTimelineQuery — pre-limit", () => {
   it("gives every branch its own pre-limit ORDER BY ... DESC, id DESC LIMIT", () => {
-    const deal = render(buildTimelineQuery("deal", "d1", null, 20))
+    const deal = render(buildTimelineQuery("deal", "d1", null, 20, false))
     // three branch sorts + the outer sort
     expect(countOf(deal.lower, "order by")).toBe(4)
     // three branch limits + the outer limit
     expect(countOf(deal.lower, "limit")).toBe(4)
 
-    const org = render(buildTimelineQuery("organization", "o1", null, 20))
+    const org = render(buildTimelineQuery("organization", "o1", null, 20, false))
     expect(countOf(org.lower, "order by")).toBe(2)
     expect(countOf(org.lower, "limit")).toBe(2)
   })
 
   it("sets every pre-limit and the outer limit to pageSize + 1", () => {
     // The +1 is what derives hasMore; the row itself is discarded.
-    const deal = render(buildTimelineQuery("deal", "d1", null, 20))
+    const deal = render(buildTimelineQuery("deal", "d1", null, 20, false))
     expect(deal.params.filter((p) => p === 21)).toHaveLength(4)
 
-    const org = render(buildTimelineQuery("organization", "o1", null, 20))
+    const org = render(buildTimelineQuery("organization", "o1", null, 20, false))
     expect(org.params.filter((p) => p === 21)).toHaveLength(2)
   })
 })
@@ -687,6 +811,128 @@ describe("assembleTimeline — hydration", () => {
     expect(wheres[0]).toContain('"deleted_at" is null')
   })
 
+  it("hydrates an audit page with BATCHED reference reads and no per-entry fan-out", async () => {
+    // T-36-38. A page is 20 entries and this runs inside the record detail page's own render,
+    // so a resolution issued per entry would be dozens of sequential round trips on a
+    // server-rendered path. Two entries that both moved `stageId` must cost ONE audit read
+    // plus ONE stages read — not two, and not four.
+    const t = (i: number) => new Date(T0 - i * 60_000)
+    const rows: RawRow[] = [raw("audit", "al1", t(0)), raw("audit", "al2", t(1))]
+    stubExecute(rows)
+    stubSelect((table) => {
+      if (table === auditLog) {
+        return [
+          auditHydrationRow("al1", t(0), { stageId: { from: "stage-1", to: "stage-2" } }),
+          auditHydrationRow("al2", t(1), { stageId: { from: "stage-2", to: "stage-1" } }),
+        ]
+      }
+      if (table === stages) {
+        return [
+          { id: "stage-1", name: "Lead" },
+          { id: "stage-2", name: "Won" },
+        ]
+      }
+      // No `customFields.` key in this page, so the definitions read is skipped entirely.
+      return []
+    })
+
+    const page = await assembleTimeline({
+      entityType: "deal",
+      entityId: "d1",
+      includeAudit: true,
+    })
+
+    expect(fromCalls).toEqual([auditLog, stages])
+
+    const [entry] = page.entries
+    expect(entry.kind).toBe("audit")
+    if (entry.kind !== "audit") throw new Error("expected an audit entry")
+
+    expect(entry).toMatchObject({
+      action: "updated",
+      entityType: "deal",
+      actorKind: "user",
+      actor: { id: "user-1", name: "Ada", email: "ada@example.com" },
+      workflowRun: null,
+      apiKeyName: null,
+    })
+    // A foreign key NEVER renders as the id itself (T-36-22).
+    expect(entry.changes).toEqual([
+      {
+        field: "stageId",
+        label: "audit.field.stage",
+        from: { type: "reference", label: "Lead" },
+        to: { type: "reference", label: "Won" },
+      },
+    ])
+  })
+
+  it("degrades every unresolvable audit reference to a null the renderer knows how to print", async () => {
+    // Three separate degradations, none of which may become a guess or a broken link: a
+    // referenced row that is gone, a workflow that was deleted after the run, and an api key
+    // whose name `audit_log` does not store at all.
+    const t = (i: number) => new Date(T0 - i * 60_000)
+    const rows: RawRow[] = [raw("audit", "al1", t(0)), raw("audit", "al2", t(1))]
+    stubExecute(rows)
+    stubSelect((table) => {
+      if (table === auditLog) {
+        return [
+          auditHydrationRow(
+            "al1",
+            t(0),
+            { ownerId: { from: "user-9", to: "user-9" } },
+            {
+              actorKind: "workflow_run",
+              actorId: null,
+              actorName: null,
+              actorEmail: null,
+              runId: "run-1",
+              // The run survived; the workflow did not, so the left join found nothing.
+              workflowId: null,
+              workflowName: null,
+            }
+          ),
+          auditHydrationRow(
+            "al2",
+            t(1),
+            {},
+            {
+              actorKind: "api_key",
+              // The subscriber stores the KEY'S OWNER here — never the person who is then
+              // named as the actor, because that would be an attribution nobody made.
+              actorId: "user-1",
+              actorName: "Ada",
+              actorEmail: "ada@example.com",
+            }
+          ),
+        ]
+      }
+      // users read returns nothing: the referenced owner has been hard-deleted.
+      return []
+    })
+
+    const page = await assembleTimeline({
+      entityType: "deal",
+      entityId: "d1",
+      includeAudit: true,
+    })
+
+    const [first, second] = page.entries
+    if (first.kind !== "audit" || second.kind !== "audit") {
+      throw new Error("expected two audit entries")
+    }
+
+    // A workflow that no longer exists renders as the plain kind label — never a link that
+    // leads nowhere.
+    expect(first.workflowRun).toBeNull()
+    expect(first.actor).toBeNull()
+    expect(first.changes[0].to).toEqual({ type: "reference", label: null })
+
+    // `actorKind: "api_key"` must not borrow the joined user as the actor.
+    expect(second.actor).toBeNull()
+    expect(second.apiKeyName).toBeNull()
+  })
+
   it("drops a union row whose hydration returned nothing rather than emitting a hole", async () => {
     // A note soft-deleted between the union and the hydration read.
     const rows = noteRawRows(2)
@@ -706,14 +952,41 @@ describe("assembleTimeline — hydration", () => {
 // ===========================================================================
 
 describe("countTimeline", () => {
-  it("sums one count per applicable source", async () => {
+  it("sums one count per applicable source, with the audit source excluded by default", async () => {
     stubExecute([], 7)
 
-    expect(await countTimeline("deal", "d1")).toBe(21)
+    // notes + activities + stage history. The audit count is READ but not summed into the
+    // total, because the list underneath the header cannot show those entries in this scope.
+    expect(await countTimeline("deal", "d1")).toEqual({ total: 21, auditTotal: 7 })
 
     vi.clearAllMocks()
     stubExecute([], 7)
-    expect(await countTimeline("organization", "o1")).toBe(7)
+    expect(await countTimeline("organization", "o1")).toEqual({ total: 7, auditTotal: 7 })
+  })
+
+  it("moves the total with the audit scope and reports auditTotal in both states", async () => {
+    // The header number MUST match what the list can show. A fixed "everything that ever
+    // happened" total would print a number the reader can never reach by pressing Load more.
+    stubExecute([], 7)
+    expect(await countTimeline("deal", "d1", true)).toEqual({ total: 28, auditTotal: 7 })
+
+    vi.clearAllMocks()
+    stubExecute([], 7)
+    expect(await countTimeline("organization", "o1", true)).toEqual({ total: 14, auditTotal: 7 })
+  })
+
+  it("reads both numbers in ONE pass", async () => {
+    // Every count either number needs is issued together. A lazily-read audit count would be a
+    // second pass whose answer could disagree with the first.
+    stubExecute([], 7)
+
+    await countTimeline("deal", "d1")
+
+    // notes, activities, stage history, audit — four counts, no more and no fewer.
+    expect(mockDb.execute).toHaveBeenCalledTimes(4)
+    for (const call of mockDb.execute.mock.calls as unknown[][]) {
+      expect(render(call[0] as SQL).lower).toContain("count(")
+    }
   })
 
   it("rejects an entityType outside the four literals", async () => {

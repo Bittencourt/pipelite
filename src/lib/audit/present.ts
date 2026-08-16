@@ -28,8 +28,15 @@ export const AUDIT_TITLE_MAX_CHARS = 1000
 /** U+2026. ONE character, so the truncation budget is exact. Never three periods. */
 const ELLIPSIS = "…"
 
-/** Stored change keys for custom fields are namespaced by `./diff.ts` with this prefix. */
-const CUSTOM_FIELD_PREFIX = "customFields."
+/**
+ * Stored change keys for custom fields are namespaced by `./diff.ts` with this prefix.
+ *
+ * EXPORTED for the same reason as `AUDIT_REFERENCE_COLUMNS` below: `auditSource.hydrate`
+ * (36-17) has to recognise the very same keys to know which stored ids are custom LOOKUP
+ * values needing a label, and a second copy of the string would silently stop matching the
+ * day `diff.ts` changed it.
+ */
+export const CUSTOM_FIELD_PREFIX = "customFields."
 
 /** The renderer branches on this prefix, never on a heuristic about the label's content. */
 const CUSTOM_CHANGE_PREFIX = "custom:"
@@ -86,8 +93,17 @@ const DATE_COLUMNS: Record<string, boolean> = {
 /** `deals.value` is `numeric`, which node-postgres hands back as a string. */
 const NUMBER_COLUMNS: ReadonlySet<string> = new Set(["value"])
 
-/** Foreign keys. An id on one of these NEVER becomes a text value. */
-const REFERENCE_COLUMNS: ReadonlySet<string> = new Set([
+/**
+ * Foreign keys. An id on one of these NEVER becomes a text value.
+ *
+ * EXPORTED, and as a tuple rather than a `Set`, so that the half of this rule that needs a
+ * database can be written against the same list. `auditSource.hydrate` (36-17) declares its
+ * column-to-table map as `Record<AuditReferenceColumn, ...>`, so adding a column here without
+ * teaching that map which table the id points at is a COMPILE error rather than a screen that
+ * reads "no longer available" for a reference this module knows perfectly well is one. The two
+ * halves cannot drift.
+ */
+export const AUDIT_REFERENCE_COLUMNS = [
   "stageId",
   "organizationId",
   "personId",
@@ -95,7 +111,11 @@ const REFERENCE_COLUMNS: ReadonlySet<string> = new Set([
   "ownerId",
   "assigneeId",
   "typeId",
-])
+] as const
+
+export type AuditReferenceColumn = (typeof AUDIT_REFERENCE_COLUMNS)[number]
+
+const REFERENCE_COLUMNS: ReadonlySet<string> = new Set(AUDIT_REFERENCE_COLUMNS)
 
 /** `customFieldDefinitions.type` mapped to the value shape it produces. */
 const CUSTOM_TYPE_KINDS: Record<string, ValueKind> = {
