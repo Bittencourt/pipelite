@@ -325,10 +325,10 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 37-06-PLAN.md — Restore/purge dispatch map over the four entity types
-- [ ] 37-07-PLAN.md — Trash read layer: owner-scoped counts and rows, batched deleted-by
-- [ ] 37-08-PLAN.md — /admin/trash retention page, form and admin-gated save action
-- [ ] 37-09-PLAN.md — Nav entries for /trash and /admin/trash + six delete-dialog copy corrections
+- [x] 37-06-PLAN.md — Restore/purge dispatch map over the four entity types
+- [x] 37-07-PLAN.md — Trash read layer: owner-scoped counts and rows, batched deleted-by
+- [x] 37-08-PLAN.md — /admin/trash retention page, form and admin-gated save action
+- [x] 37-09-PLAN.md — Nav entries for /trash and /admin/trash + six delete-dialog copy corrections
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -485,7 +485,7 @@ Plans:
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
-| 37. Trash & Restore | 5/15 | In Progress|  |
+| 37. Trash & Restore | 9/15 | In Progress|  |
 | 38. Bulk Operations | 0/? | Not started | - |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
