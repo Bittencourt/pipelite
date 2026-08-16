@@ -75,8 +75,7 @@ export function TrashTable({
   const tNav = useTranslations("nav")
   const router = useRouter()
 
-  const [isRestoring, startRestore] = useTransition()
-  const [isPurging, startPurge] = useTransition()
+  const [isPending, startTransition] = useTransition()
 
   /**
    * Only the row the user clicked goes busy. Every other row stays interactive, because a user
@@ -84,6 +83,13 @@ export function TrashTable({
    */
   const [pendingRowId, setPendingRowId] = useState<string | null>(null)
   const [purgeTarget, setPurgeTarget] = useState<TrashRow | null>(null)
+
+  /**
+   * ONE transition for all three writes, disambiguated by which target is set. The two are
+   * mutually exclusive by construction — the purge dialog is modal, so no row action is
+   * reachable while it is open, and `pendingRowId` is never set by the purge path.
+   */
+  const isPurging = isPending && purgeTarget !== null
 
   /**
    * Restoring or purging destroys the button that had focus, which drops focus to `<body>`.
@@ -121,7 +127,7 @@ export function TrashTable({
   function handleRestore(row: TrashRow) {
     setPendingRowId(row.id)
 
-    startRestore(async () => {
+    startTransition(async () => {
       try {
         const result = await restoreRecord(tab, row.id)
 
@@ -152,7 +158,7 @@ export function TrashTable({
   function handleRestoreWithLinked(row: TrashRow) {
     setPendingRowId(row.id)
 
-    startRestore(async () => {
+    startTransition(async () => {
       try {
         const result = await restoreWithLinked(tab, row.id)
 
@@ -175,7 +181,7 @@ export function TrashTable({
   }
 
   function confirmPurge(row: TrashRow) {
-    startPurge(async () => {
+    startTransition(async () => {
       try {
         const result = await purgeRecord(tab, row.id)
         setPurgeTarget(null)
@@ -214,7 +220,7 @@ export function TrashTable({
    */
   const meta: TrashTableMeta = {
     renderActions: (row) => {
-      const busy = isRestoring && pendingRowId === row.id
+      const busy = isPending && pendingRowId === row.id
 
       return (
         <>
