@@ -83,6 +83,15 @@ const DEFINITIONS: CustomFieldDefinition[] = [PRICE, ORIGEM, MARGIN]
 
 const MARGIN_WRAPPER = { formula: true, value: 60, error: null }
 
+/**
+ * The actor `saveFieldValues` attributes its emitted event to.
+ *
+ * It is a required 4th parameter rather than an ambient value: the emitted payload's `userId`
+ * reaches webhook consumers and workflow trigger templates, so every caller has to name the
+ * authenticated user it already holds.
+ */
+const ACTOR_USER_ID = "user-actor-1"
+
 /** The stored pre-image. A fresh object per call so no test can mutate another's fixture. */
 function storedBlob(): Record<string, unknown> {
   return {
@@ -166,7 +175,7 @@ describe("saveFieldValues — pre-image diff (FORMULA-02 / SC-4)", () => {
     const result = await saveFieldValues("deal", "d1", {
       Price: 100,
       Origem: ["Outbound Manual"],
-    })
+    }, ACTOR_USER_ID)
 
     expect(result.success).toBe(true)
     expect(mockRecalc).toHaveBeenCalledTimes(1)
@@ -176,7 +185,7 @@ describe("saveFieldValues — pre-image diff (FORMULA-02 / SC-4)", () => {
   it("changes one field -> changedFields lists exactly that field", async () => {
     captureUpdate()
 
-    await saveFieldValues("deal", "d1", { Price: 200, Origem: ["Outbound Manual"] })
+    await saveFieldValues("deal", "d1", { Price: 200, Origem: ["Outbound Manual"] }, ACTOR_USER_ID)
 
     expect(recalcInput().changedFields).toEqual(["Price"])
   })
@@ -184,7 +193,7 @@ describe("saveFieldValues — pre-image diff (FORMULA-02 / SC-4)", () => {
   it("removing a stored key counts as a change", async () => {
     captureUpdate()
 
-    await saveFieldValues("deal", "d1", { Price: 100 })
+    await saveFieldValues("deal", "d1", { Price: 100 }, ACTOR_USER_ID)
 
     expect(recalcInput().changedFields).toEqual(["Origem"])
   })
@@ -196,7 +205,7 @@ describe("saveFieldValues — pre-image diff (FORMULA-02 / SC-4)", () => {
       Price: 100,
       Origem: ["Outbound Manual"],
       Observacao: "novo",
-    })
+    }, ACTOR_USER_ID)
 
     expect(recalcInput().changedFields).toEqual(["Observacao"])
   })
@@ -206,7 +215,7 @@ describe("saveFieldValues — pre-image diff (FORMULA-02 / SC-4)", () => {
 
     // A structurally equal but distinct array instance — reference comparison would mark this
     // changed on every single save and silently defeat SC-4 for every multi_select field.
-    await saveFieldValues("deal", "d1", { Price: 100, Origem: ["Outbound Manual"] })
+    await saveFieldValues("deal", "d1", { Price: 100, Origem: ["Outbound Manual"] }, ACTOR_USER_ID)
 
     expect(recalcInput().changedFields).not.toContain("Origem")
     expect(recalcInput().changedFields).toEqual([])
@@ -218,7 +227,7 @@ describe("saveFieldValues — pre-image diff (FORMULA-02 / SC-4)", () => {
     await saveFieldValues("deal", "d1", {
       Price: 100,
       Origem: ["Outbound Manual", "Inbound"],
-    })
+    }, ACTOR_USER_ID)
 
     expect(recalcInput().changedFields).toEqual(["Origem"])
   })
@@ -231,7 +240,7 @@ describe("saveFieldValues — pre-image diff (FORMULA-02 / SC-4)", () => {
       Price: 100,
       Origem: ["Outbound Manual"],
       Meta: { b: 2, a: 1 },
-    })
+    }, ACTOR_USER_ID)
 
     expect(recalcInput().changedFields).toEqual([])
   })
@@ -239,7 +248,7 @@ describe("saveFieldValues — pre-image diff (FORMULA-02 / SC-4)", () => {
   it("passes entityType and entityId through verbatim and reuses the loaded definitions", async () => {
     captureUpdate()
 
-    await saveFieldValues("deal", "d1", { Price: 200 })
+    await saveFieldValues("deal", "d1", { Price: 200 }, ACTOR_USER_ID)
 
     const input = recalcInput()
     expect(input.entityType).toBe("deal")
@@ -252,7 +261,7 @@ describe("saveFieldValues — pre-image diff (FORMULA-02 / SC-4)", () => {
   it("omits `row` so the helper re-reads the row it just persisted, native attributes included", async () => {
     captureUpdate()
 
-    await saveFieldValues("deal", "d1", { Price: 200 })
+    await saveFieldValues("deal", "d1", { Price: 200 }, ACTOR_USER_ID)
 
     // `getFieldValues` selects ONLY `customFields`, so a hand-built `row` here would be missing
     // every native attribute ({{Value}}, {{Title}}, ...) and would fabricate errors on any
@@ -269,7 +278,7 @@ describe("saveFieldValues — client-posted formula keys are discarded (T-34-04)
   it("a client-supplied formula value never reaches the database", async () => {
     const harness = captureUpdate()
 
-    await saveFieldValues("deal", "d1", { Price: 100, Margin: 999999 })
+    await saveFieldValues("deal", "d1", { Price: 100, Margin: 999999 }, ACTOR_USER_ID)
 
     expect(persistedBlob(harness).Margin).toEqual(MARGIN_WRAPPER)
     expect(persistedBlob(harness).Margin).not.toBe(999999)
@@ -282,7 +291,7 @@ describe("saveFieldValues — client-posted formula keys are discarded (T-34-04)
       Price: 100,
       Origem: ["Outbound Manual"],
       Margin: 999999,
-    })
+    }, ACTOR_USER_ID)
 
     expect(recalcInput().changedFields).not.toContain("Margin")
     expect(recalcInput().changedFields).toEqual([])
@@ -292,7 +301,7 @@ describe("saveFieldValues — client-posted formula keys are discarded (T-34-04)
     captureUpdate()
 
     const values = { Price: 100, Margin: 999999 }
-    await saveFieldValues("deal", "d1", values)
+    await saveFieldValues("deal", "d1", values, ACTOR_USER_ID)
 
     expect(mockStrip).toHaveBeenCalledWith(values, DEFINITIONS)
   })
@@ -316,7 +325,7 @@ describe("saveFieldValues — client-held wrappers are stripped on the way back 
       Price: 100,
       Origem: ["Outbound Manual"],
       Margin: { ...POSTED_WRAPPER },
-    })
+    }, ACTOR_USER_ID)
 
     expect(persistedBlob(harness).Margin).toEqual(MARGIN_WRAPPER)
     expect((persistedBlob(harness).Margin as { value: number }).value).toBe(60)
@@ -326,7 +335,7 @@ describe("saveFieldValues — client-held wrappers are stripped on the way back 
     const harness = captureUpdate()
 
     const values = { Price: 100, Margin: { ...POSTED_WRAPPER } }
-    await saveFieldValues("deal", "d1", values)
+    await saveFieldValues("deal", "d1", values, ACTOR_USER_ID)
 
     expect(mockStrip).toHaveBeenCalledWith(values, DEFINITIONS)
     expect(mockStrip.mock.invocationCallOrder[0]).toBeLessThan(
@@ -341,7 +350,7 @@ describe("saveFieldValues — client-held wrappers are stripped on the way back 
       Price: 250,
       Origem: ["Inbound"],
       Margin: { ...POSTED_WRAPPER },
-    })
+    }, ACTOR_USER_ID)
 
     expect(persistedBlob(harness).Price).toBe(250)
     expect(persistedBlob(harness).Origem).toEqual(["Inbound"])
@@ -354,7 +363,7 @@ describe("saveFieldValues — client-held wrappers are stripped on the way back 
       Price: 100,
       Origem: ["Outbound Manual"],
       Margin: { ...POSTED_WRAPPER },
-    })
+    }, ACTOR_USER_ID)
 
     expect(recalcInput().changedFields).not.toContain("Margin")
     expect(recalcInput().changedFields).toEqual([])
@@ -369,7 +378,7 @@ describe("saveFieldValues — stored formula values survive the whole-blob repla
   it("a post that omits the formula key still persists the stored wrapper", async () => {
     const harness = captureUpdate()
 
-    await saveFieldValues("deal", "d1", { Price: 100, Origem: ["Outbound Manual"] })
+    await saveFieldValues("deal", "d1", { Price: 100, Origem: ["Outbound Manual"] }, ACTOR_USER_ID)
 
     expect(persistedBlob(harness).Margin).toEqual(MARGIN_WRAPPER)
   })
@@ -377,7 +386,7 @@ describe("saveFieldValues — stored formula values survive the whole-blob repla
   it("a post that omits a NON-formula key removes it — the UI blob stays authoritative", async () => {
     const harness = captureUpdate()
 
-    await saveFieldValues("deal", "d1", { Price: 100 })
+    await saveFieldValues("deal", "d1", { Price: 100 }, ACTOR_USER_ID)
 
     expect(persistedBlob(harness)).not.toHaveProperty("Origem")
     expect(persistedBlob(harness).Price).toBe(100)
@@ -393,7 +402,7 @@ describe("saveFieldValues — ordering and failure isolation", () => {
   it("persists BEFORE recalculating, so the helper reads a written row", async () => {
     const harness = captureUpdate()
 
-    await saveFieldValues("deal", "d1", { Price: 200 })
+    await saveFieldValues("deal", "d1", { Price: 200 }, ACTOR_USER_ID)
 
     expect(harness.updateWhereFn).toHaveBeenCalledTimes(1)
     expect(mockRecalc).toHaveBeenCalledTimes(1)
@@ -405,7 +414,7 @@ describe("saveFieldValues — ordering and failure isolation", () => {
   it("still bumps updatedAt — this is a genuine user edit, unlike the recalc's own write", async () => {
     const harness = captureUpdate()
 
-    await saveFieldValues("deal", "d1", { Price: 200 })
+    await saveFieldValues("deal", "d1", { Price: 200 }, ACTOR_USER_ID)
 
     expect(harness.setFn.mock.calls[0][0]).toHaveProperty("updatedAt")
     expect((harness.setFn.mock.calls[0][0] as { updatedAt: unknown }).updatedAt).toBeInstanceOf(
@@ -418,7 +427,7 @@ describe("saveFieldValues — ordering and failure isolation", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     mockRecalc.mockRejectedValueOnce(new Error("boom"))
 
-    const result = await saveFieldValues("deal", "d1", { Price: 200 })
+    const result = await saveFieldValues("deal", "d1", { Price: 200 }, ACTOR_USER_ID)
 
     expect(result.success).toBe(true)
     expect(errorSpy).toHaveBeenCalled()
@@ -428,7 +437,7 @@ describe("saveFieldValues — ordering and failure isolation", () => {
   it("a validation failure short-circuits: no write, no recalculation", async () => {
     const harness = captureUpdate()
 
-    const result = await saveFieldValues("deal", "d1", { Origem: ["Nao Existe"] })
+    const result = await saveFieldValues("deal", "d1", { Origem: ["Nao Existe"] }, ACTOR_USER_ID)
 
     expect(result.success).toBe(false)
     expect(result.error).toContain("Origem")
@@ -453,7 +462,7 @@ describe("saveFieldValues — returns the recomputed blob (CFUI-02)", () => {
     const result = await saveFieldValues("deal", "d1", {
       Price: 100,
       Origem: ["Outbound Manual"],
-    })
+    }, ACTOR_USER_ID)
 
     // The client's `localValues` can only stop being stale if the server hands back what it
     // just derived. `next` is pre-recalculation, so the recalculated blob is the one to return.
@@ -468,7 +477,7 @@ describe("saveFieldValues — returns the recomputed blob (CFUI-02)", () => {
       evaluations: 1,
     })
 
-    const result = await saveFieldValues("deal", "d1", { Price: 100 })
+    const result = await saveFieldValues("deal", "d1", { Price: 100 }, ACTOR_USER_ID)
 
     expect(result.success).toBe(true)
     expect(result.error).toBeUndefined()
@@ -482,7 +491,7 @@ describe("saveFieldValues — returns the recomputed blob (CFUI-02)", () => {
     const result = await saveFieldValues("deal", "d1", {
       Price: 200,
       Origem: ["Outbound Manual"],
-    })
+    }, ACTOR_USER_ID)
 
     // A broken admin-authored formula must never block a user's edit, and must never leave the
     // client with `undefined` to merge either — the written blob is the honest fallback.
@@ -501,7 +510,7 @@ describe("saveFieldValues — returns the recomputed blob (CFUI-02)", () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     mockRecalc.mockRejectedValueOnce(new Error("boom"))
 
-    const result = await saveFieldValues("deal", "d1", { Price: 200 })
+    const result = await saveFieldValues("deal", "d1", { Price: 200 }, ACTOR_USER_ID)
 
     expect(result.values?.Margin).toEqual(MARGIN_WRAPPER)
   })
@@ -509,7 +518,7 @@ describe("saveFieldValues — returns the recomputed blob (CFUI-02)", () => {
   it("a validation failure resolves with no `values` key and no write", async () => {
     const harness = captureUpdate()
 
-    const result = await saveFieldValues("deal", "d1", { Origem: ["Nao Existe"] })
+    const result = await saveFieldValues("deal", "d1", { Origem: ["Nao Existe"] }, ACTOR_USER_ID)
 
     expect(result.success).toBe(false)
     expect(result.error).toContain("Origem")
@@ -522,7 +531,7 @@ describe("saveFieldValues — returns the recomputed blob (CFUI-02)", () => {
     const harness = captureUpdate()
     mockRecalc.mockResolvedValueOnce({ customFields: { Price: 200 }, evaluations: 1 })
 
-    await saveFieldValues("deal", "d1", { Price: 200 })
+    await saveFieldValues("deal", "d1", { Price: 200 }, ACTOR_USER_ID)
 
     expect(harness.updateWhereFn.mock.invocationCallOrder[0]).toBeLessThan(
       mockRecalc.mock.invocationCallOrder[0]

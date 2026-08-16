@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 })
     }
 
-    const result = await saveFieldValues(entityType, entityId, values)
+    const result = await saveFieldValues(entityType, entityId, values, session.user.id)
     return NextResponse.json(result)
   } catch (error) {
     console.error('Failed to save custom fields:', error)
