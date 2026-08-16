@@ -79,6 +79,62 @@ milestone); exporting the audit log; per-field access control on audit reads.
 - The retention admin UI is a number input under `/admin` that writes the `app_settings` key and
   displays the current entry count and oldest entry, so the operator can see what the window costs.
 
+### Post-Research Addendum (decided 2026-08-16, after 36-RESEARCH.md)
+
+Research found three CRM write paths that emit no `crmBus` event at all, which falsifies parts of
+the roadmap's success criteria as written. Four decisions were taken:
+
+- **`saveFieldValues` gains a real emit** (`src/lib/custom-fields.ts:238`). Custom-field edits are
+  audited. **Accepted side effect:** custom-field-only saves will now fire webhooks and workflow
+  triggers for the first time, on a dataset with 169 field definitions. Existing workflows may begin
+  reacting to saves they previously never saw. This is a deliberate behaviour change, not an
+  oversight — plan it explicitly and call it out in the phase summary.
+- **Imports are audited as ONE SUMMARY ROW per import session**, written by the importer rather than
+  derived from the bus. This covers both the CSV importer (`src/app/import/actions.ts:71`) and the
+  Pipedrive importer (`src/lib/import/pipedrive-api-import-actions.ts:92`).
+  **Two honest consequences, both to be stated plainly in the phase summary and carried to the
+  milestone audit rather than glossed:**
+  1. **SC-3 is satisfied at SESSION granularity, not per-record.** An import is distinguishable from
+     a user change, but an individual imported record cannot be traced back to the import that made
+     it. Per-record events were rejected on measured cost: a 25,206-deal import would become 25,206
+     workflow-trigger evaluations and webhook deliveries.
+  2. **SC-5 ("capture required no edit to any mutation function") holds for the four CRM mutation
+     modules but NOT for the importers**, which write their summary row directly. The subscriber
+     remains the sole capture path for every `crmBus`-emitting write.
+- **The timeline gets a filter toggle, with audit entries OFF by default.** Research measured that
+  15 of the top 21 merged entries would be audit rows, which would bury the human-written notes
+  Phase 35 exists to surface. Notes, activities and stage changes render as today; audit entries
+  appear when the toggle is on. This changes the `TimelineSource` consumption path, so plan it as
+  part of the timeline extension rather than as a later polish.
+- Researcher recommendations 3 and 4 accepted as proposed: the workflow run's linked-records list
+  matches that page's existing session-only auth; per-record audit entries are visible to any
+  authenticated user who can already see the record (gating them would change the `TimelineSource`
+  interface, and the record itself is already visible to that user).
+
+Additional research facts the planner must honour:
+- `previous` costs **zero extra queries** — all four mutation modules and all three
+  `/api/v1/{entity}/[id]` routes already `findFirst()` the entire unprojected row before writing.
+  For deletes it is the ONLY source of state: `data` is literally `{ id }` at all seven delete sites.
+- Formula noise is nearly a non-problem: `recalculateFormulas` emits no event at all
+  (`src/lib/formula-recalc.ts:733-741`), so the depth-1 cascade is invisible by construction. The
+  residual case is self-identifying via `isFormulaWrapper` (`src/lib/formula-helpers.ts:144`), a
+  db-free value test — no `custom_field_definitions` query is needed.
+- ALS was probed in the container on the production Node version and works across the exact shape
+  (multi-await mutation → sync emit → non-async handler → fire-and-forget insert), including the
+  `.then()` continuation, nesting, absence, and two concurrent contexts. Two boundaries need one
+  edit each: `src/lib/api/auth.ts:52` and `src/lib/execution/engine.ts:108`.
+- **Five emit sites emit snake_case serialized payloads** while everything else emits raw camelCase,
+  with explicit "do NOT harmonise" comments (`/api/v1/people/*` ×3, `/api/v1/deals` create ×2). A
+  naive diff reports 14 changed keys for a one-field edit — a `normaliseEventData` step is required.
+- Prune strategy is decided by measurement at 1M rows: `ctid IN (… LIMIT 5000)` with a `created_at`
+  index = 17.8 ms; without the index 395.7 ms; the natural `id IN (SELECT …)` form = 311 ms even
+  WITH the index, because the planner picks a Hash Semi Join over a full Seq Scan. Use the `ctid`
+  form. Budget ~437 bytes/row all-in.
+- The "two-edit timeline extension" is two edits in production code but breaks ~8 assertions in
+  `assemble.test.ts`, including the one at `:232` asserting no `UNION ALL` for organization, person
+  and activity — the audit source applies to all four entity types, so that assertion is falsified
+  in kind. Query cost is negligible (4-branch `Merge Append` 0.516 ms vs 0.456 ms today).
+
 ### Claude's Discretion
 - Table and column naming, index selection, the exact JSONB shape of `changes`, batch size and tick
   interval for the pruner, and how the audit timeline entry renders visually.
