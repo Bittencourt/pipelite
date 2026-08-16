@@ -104,11 +104,19 @@ Four sizes, two declared weights, two declared weight exceptions.
 class, so every button label in this phase renders at 500. This phase does not patch a shared primitive
 to satisfy its own contract.
 
-**Weight exception 2 (new, and deliberate):** the `/admin/audit` page `<h1>` uses `text-3xl font-bold`
-(700). Every existing admin page — `admin/page.tsx:51`, users, fields, pipelines — uses exactly that
-class for its `<h1>`. A new admin page rendering its title at 600 while its five siblings render at 700
-would be the visible defect, not the fix. The exception is declared rather than eliminated, and it is
-confined to a single element.
+**Weight exception 2 — consistency with the existing admin pages, NOT a new choice.** The
+`/admin/audit` page `<h1>` uses `text-3xl font-bold` (700). This phase is not deciding anything about
+headings; it is joining a decision the admin shell already made. Every existing admin page —
+`admin/page.tsx:51`, users, fields, pipelines, webhooks — renders its `<h1>` with exactly that class,
+so a sixth admin page whose title alone sat at 600 would read as a rendering bug rather than as
+restraint. The exception copies an existing class string rather than inventing a value, and it is
+confined to one element on one page.
+
+**Two exceptions is the ceiling, and neither is this phase's invention.** Both — 500 from
+`button.tsx`, 700 from the admin page shell — come from shared code this phase declines to patch,
+which is the posture `35-UI-SPEC.md` already took toward `button.tsx`. A later phase citing this
+document as precedent should read it as "inherit an existing exception, never mint a new one", not as
+permission to stack a third.
 
 **Deliberately NOT used: `text-2xl font-bold`.** The admin dashboard renders its counts as
 `text-2xl font-bold` stat numbers. The retention page's two readouts (entry count, oldest entry) are
@@ -378,12 +386,18 @@ When `changes.length > 3`:
 ```
 
 - The `<dl>` carries `id={`audit-fields-${entry.id}`}`.
-- **Plain `useState` + conditional render — deliberately NOT the vendored `Collapsible`.** Three
-  reasons: `CollapsibleTrigger` needs `asChild`, and this phase's hard boundary is that no React
-  element crosses an RSC boundary into a Radix `asChild` slot (Phase 44 / CFUI-01, repo-wide gate
-  active); there is no animation requirement; and a conditional render is one line. The
-  `step-detail.tsx` Collapsible precedent exists for a panel with an animated body — this is a
-  three-row list.
+- **Plain `useState` + conditional render — deliberately NOT the vendored `Collapsible`.** Two
+  reasons, and only these two: there is no animation requirement, and a conditional render is one
+  line. The `step-detail.tsx` precedent exists for a panel with an animated body and a nested error
+  block; this is a three-row list.
+  **CFUI-01 is NOT a reason here and must not be cited as one.** That gate governs a *server*
+  component passing a React element across the RSC boundary into a client `asChild` slot.
+  `audit-entry.tsx` is `'use client'` end to end and is reached through Phase 35's client
+  `TimelineList` subtree, so no server→client crossing occurs and the gate would not engage even if
+  `Collapsible` were used. Nor does the primitive require `asChild`: `step-detail.tsx:70` passes it
+  and `step-detail.tsx:94` does not, in the same file. The decision above stands on its own two
+  reasons — it does not need a boundary rule that does not apply, and a wrong reason quoted as
+  precedent by a later phase is worse than no reason.
 - State is per entry and resets on unmount. Nothing is persisted.
 
 ### Defensive state
@@ -486,6 +500,12 @@ All `aria-hidden="true"`.
 | Field count | `audit.run.fieldCount` ICU plural ("3 fields"), `text-xs text-muted-foreground`. Omitted entirely when `action === 'deleted'` (a tombstone has no field count) |
 | Timestamp | `<time dateTime title>` + `RelativeTime`, `text-xs text-muted-foreground` — same treatment as everywhere else in the product |
 
+**Primary visual anchor:** the column of record titles down the left edge. This panel has no
+accent-filled element by its own colour table — the only `--primary` in it is the title links — so the
+anchor is the 14/600 linked titles, which are the strongest contrast in the block. Everything to the
+right (action badge, field count, timestamp) is 12px muted or a `secondary`/`outline` badge and is
+deliberately subordinate. The operator's question is "which records", so the records carry the eye.
+
 **Ordering:** `occurredAt` descending — newest first, matching the timeline and the runs list.
 
 **Responsive:** the row is `flex … justify-between` with `flex-wrap` on the right-hand cluster. Below
@@ -585,6 +605,12 @@ The phase goal is that this table does not eat the disk; shipping a one-click "n
 undercut it. The unset state is still rendered honestly when it occurs — `retention.notSet`,
 "Not set — entries are never pruned." — so an operator who lands on a fresh install understands the
 state they are in and what saving a number will do.
+
+**Primary visual anchor:** the filled **Save retention window** button, with the number `Input`
+immediately above it. That button is the only `--primary`-filled element on the page. The page has
+exactly one thing to do, and the eye should land on the field and then on the control that commits it.
+The cost card below is 14/600 values on 12/400 muted labels with no fill, no border accent and no
+icon, so it reads as evidence for the decision rather than competing with it.
 
 ### Split
 
