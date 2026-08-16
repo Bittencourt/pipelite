@@ -106,7 +106,8 @@
     "apiKeys": "Claves de API",
     "userManagement": "Gestión de Usuarios",
     "team": "Equipo",
-    "analytics": "Analíticas"
+    "analytics": "Analíticas",
+    "trash": "Papelera"
   },
   "auth": {
     "login": "Iniciar sesión",
@@ -406,6 +407,80 @@
       }
     }
   },
+  "trash": {
+    "title": "Papelera",
+    "description": "Registros eliminados que puedes restaurar, y qué les pasa después.",
+    "column": {
+      "deal": "Oferta",
+      "person": "Persona",
+      "organization": "Empresa",
+      "activity": "Actividad",
+      "deletedAt": "Eliminado",
+      "deletedBy": "Eliminado por",
+      "email": "Correo electrónico",
+      "website": "Sitio web",
+      "dueDate": "Fecha de vencimiento"
+    },
+    "actor": {
+      "notRecorded": "Sin registrar",
+      "notRecordedTitle": "Este registro se eliminó antes de que existiera el historial de cambios, así que no se registró quién lo eliminó."
+    },
+    "linkedInTrash": "Registro vinculado en la papelera",
+    "linkedInTrashTitle": "También en la papelera: {names}",
+    "restore": "Restaurar",
+    "restoring": "Restaurando…",
+    "restoreWithLinked": "Restaurar con los registros vinculados",
+    "deletePermanently": "Eliminar permanentemente",
+    "deleting": "Eliminando…",
+    "restored": "{name} está de nuevo en {list}.",
+    "restoredWithLinked": "{count, plural, one {# registro restaurado} other {# registros restaurados}}.",
+    "openRecord": "Abrir",
+    "purged": "{name} se eliminó permanentemente.",
+    "error": {
+      "restoreFailed": "Este registro no se restauró. Actualiza la página e inténtalo de nuevo.",
+      "alreadyPurged": "Este registro se eliminó permanentemente y no se puede restaurar.",
+      "purgeFailed": "Este registro no se eliminó. Actualiza la página e inténtalo de nuevo.",
+      "purgeNotPermitted": "Solo un administrador puede eliminar registros permanentemente.",
+      "unavailable": "No se pudo cargar la lista de la papelera. Actualiza la página para intentarlo de nuevo."
+    },
+    "empty": {
+      "deals": "No hay ofertas eliminadas",
+      "people": "No hay personas eliminadas",
+      "organizations": "No hay empresas eliminadas",
+      "activities": "No hay actividades eliminadas",
+      "body": "Los registros eliminados permanecen aquí {days} días y luego se eliminan permanentemente.",
+      "bodyNoRetention": "Los registros eliminados permanecen aquí hasta que un administrador los elimine permanentemente."
+    },
+    "purgeDialog": {
+      "title": "¿Eliminar permanentemente?",
+      "description": "{name} y sus notas se eliminarán permanentemente. Esto no se puede deshacer. Su historial de cambios se conserva.",
+      "cancel": "Conservar en la papelera",
+      "confirm": "Eliminar permanentemente"
+    },
+    "loadMore": "Cargar más",
+    "retention": {
+      "title": "Papelera",
+      "description": "Cuánto tiempo se puede restaurar un registro eliminado antes de eliminarse permanentemente.",
+      "windowTitle": "Período de retención",
+      "windowLabel": "Días que se conservan los registros eliminados",
+      "windowHelp": "Introduce un número entero de días entre 1 y 365. Los registros eliminados hace más tiempo que eso se eliminan permanentemente de forma automática, una vez al día.",
+      "notSet": "Sin definir: no se vacía nada de la papelera automáticamente.",
+      "save": "Guardar período de retención",
+      "saving": "Guardando…",
+      "saved": "Período de retención guardado.",
+      "saveFailed": "El período de retención no se guardó. Revisa tu conexión e inténtalo de nuevo.",
+      "costTitle": "Lo que hay ahora en la papelera",
+      "recordsLabel": "Registros en la papelera",
+      "oldestLabel": "Registro eliminado más antiguo",
+      "oldestNone": "La papelera está vacía",
+      "shortenDialog": {
+        "title": "¿Acortar el período de retención?",
+        "description": "Los registros eliminados hace más de {days} días se eliminarán permanentemente la próxima vez que se vacíe la papelera. Esto no se puede deshacer.",
+        "cancel": "Conservar el período actual",
+        "confirm": "Acortar período de retención"
+      }
+    }
+  },
   "settings": {
     "profile": {
       "title": "Configuración de Perfil",
@@ -481,7 +556,9 @@
       "pipedriveImport": "Importar desde Pipedrive",
       "pipedriveImportDescription": "Importar datos directamente desde Pipedrive usando API",
       "auditLog": "Registro de auditoría",
-      "auditLogDescription": "Revisa la retención del historial de cambios y consulta lo que cuesta"
+      "auditLogDescription": "Revisa la retención del historial de cambios y consulta lo que cuesta",
+      "trash": "Papelera",
+      "trashDescription": "Define cuánto tiempo se pueden restaurar los registros eliminados"
     },
     "users": {
       "title": "Usuarios",
