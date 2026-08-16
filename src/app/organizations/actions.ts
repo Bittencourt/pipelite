@@ -6,6 +6,7 @@ import { organizations } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import { runWithActor } from "@/lib/audit/actor-context"
 import {
   createOrganizationMutation,
   updateOrganizationMutation,
@@ -30,10 +31,15 @@ export async function createOrganization(
     return { success: false, error: "Not authenticated" }
   }
 
-  const result = await createOrganizationMutation({
-    ...data,
-    userId: session.user.id,
-  })
+  // The actor scope opens AFTER the session check above, never before it, so an
+  // unauthenticated call establishes no actor at all (T-36-02). `userId` is
+  // `session.user.id` and nothing else — never a form field, never a search param.
+  const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
+    createOrganizationMutation({
+      ...data,
+      userId: session.user.id,
+    })
+  )
 
   if (!result.success) {
     return result
@@ -78,7 +84,9 @@ export async function updateOrganization(
     return { success: false, error: "Not authorized" }
   }
 
-  const result = await updateOrganizationMutation(id, data, session.user.id)
+  const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
+    updateOrganizationMutation(id, data, session.user.id)
+  )
 
   if (!result.success) {
     return result
@@ -123,7 +131,9 @@ export async function deleteOrganization(
     return { success: false, error: "Not authorized" }
   }
 
-  const result = await deleteOrganizationMutation(id, session.user.id)
+  const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
+    deleteOrganizationMutation(id, session.user.id)
+  )
 
   if (!result.success) {
     return result

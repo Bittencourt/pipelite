@@ -2,6 +2,8 @@ import { db } from "@/db"
 import { customFieldDefinitions, organizations, people, deals, activities, type EntityType, type FieldConfig, type CustomFieldDefinition } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
 import type { SelectConfig, LookupConfig } from "@/db/schema"
+import { crmBus } from "@/lib/events/bus"
+import type { CrmEventPayload } from "@/lib/events/types"
 // `formula-recalc` imports `getActiveFieldDefinitions` from this module, so the two form an
 // import cycle. It is safe: every binding involved is a hoisted function declaration and
 // neither module reads the other at module-evaluation time.
@@ -188,10 +190,20 @@ function diffChangedFields(
  *  - There is no `changedFields` from the caller, so it is derived by diffing against a
  *    pre-image. Recalculating unconditionally would violate SC-4 on the busiest path there is.
  *
- * Deliberately emits NO `crmBus` event. This route has never emitted one, so no webhook and no
- * workflow fires for a UI custom-field edit today. Adding one here would start firing workflows
- * on every custom-field edit — a behavioural change with real side-effect risk, outside this
- * phase's boundary. It is recorded as a known limitation, not an oversight.
+ * This function DOES emit a `{entity}.updated` `crmBus` event, carrying the full row before the
+ * write as `previous` and the full row after it as `data`. That emit is what makes a custom-field
+ * edit auditable at all: the audit subscriber is fed exclusively by the bus, and this is the
+ * dominant edit surface on this dataset (169 live field definitions).
+ *
+ * The decision is recorded in `.planning/phases/36-audit-log/36-CONTEXT.md`
+ * § Post-Research Addendum. Its accepted consequence is a real, deliberate behaviour change:
+ * custom-field-only saves now fire webhooks and workflow triggers for the FIRST time. Existing
+ * workflows may begin reacting to saves they previously never saw. This is planned, not
+ * incidental — do not "fix" the emit away on the assumption that it is a bug.
+ *
+ * `recalculateFormulas` is deliberately left silent (`src/lib/formula-recalc.ts`): keeping the
+ * depth-1 formula cascade off the bus is what stops one user edit fanning out into a burst of
+ * derived-value events.
  *
  * Returns the post-recalculation blob as `values` (CFUI-02). `recalculateFormulas` already
  * computes it; without handing it back, the caller's local state can never learn the new formula
@@ -200,7 +212,16 @@ function diffChangedFields(
 export async function saveFieldValues(
   entityType: EntityType,
   entityId: string,
-  values: Record<string, unknown>
+  values: Record<string, unknown>,
+  /**
+   * The authenticated user behind this save, supplied by the caller.
+   *
+   * Deliberately NOT read from the AsyncLocalStorage actor context. The emitted payload's
+   * `userId` feeds webhook consumers and workflow trigger templates, so it must come from the
+   * same place every other emit site in the codebase gets it — the caller's session — rather
+   * than from an ambient value whose absence would silently produce an unattributed event.
+   */
+  actorUserId: string
 ): Promise<{ success: boolean; error?: string; values?: Record<string, unknown> }> {
   // Validate first — before any read or write, exactly as before.
   const validation = await validateFieldValues(entityType, values)
@@ -235,10 +256,27 @@ export async function saveFieldValues(
   const changedFields = diffChangedFields(posted, previousNonFormula)
 
   const table = entityTables[entityType]
+
+  // The `previous` row for the audit diff, read once, before the write.
+  //
+  // Unprojected on purpose: the emitted payload's `previous` has to be the same SHAPE as its
+  // `data`, and `data` is a full raw row at every other emit site in the codebase. Synthesising
+  // it from `getFieldValues` alone would give a `{customFields}` stub that no diff could compare
+  // against a full row.
+  const previousRowResult = await db.select()
+    .from(table)
+    .where(eq(table.id, entityId))
+    .limit(1)
+  const previousRow = previousRowResult[0] as Record<string, unknown> | undefined
+
+  // Hoisted so the emitted `data` carries the value actually persisted, not a second `new Date()`
+  // a few milliseconds later.
+  const writtenAt = new Date()
+
   await db.update(table)
     .set({
       customFields: next,
-      updatedAt: new Date(),
+      updatedAt: writtenAt,
     })
     .where(eq(table.id, entityId))
 
@@ -265,6 +303,33 @@ export async function saveFieldValues(
       `[formula-recalc] saveFieldValues failed, entityType=${entityType} entityId=${entityId}:`,
       error
     )
+  }
+
+  // Emitted AFTER the recalculation and AFTER the D-05 catch, so `data` carries the
+  // post-recalculation blob — and emitted on the D-05 swallow path too, because the write landed
+  // either way and an unlogged write is exactly the failure this is here to remove.
+  //
+  // Guarded on the pre-read only: this function is reachable with an arbitrary `entityId` from the
+  // request body, and `db.update` against a row that does not exist silently affects nothing. With
+  // no row there is no write to audit, and emitting anyway would push a fabricated entityId into
+  // every workflow trigger and webhook subscriber.
+  if (previousRow) {
+    const payload: CrmEventPayload = {
+      entity: entityType,
+      entityId,
+      action: "updated",
+      data: { ...previousRow, customFields: recalculated, updatedAt: writtenAt },
+      previous: previousRow,
+      // Passed through as the bare custom-field names the diff produced. The codebase has no
+      // `customFields.`-prefixed convention for THIS field: `createDealMutation` puts bare names
+      // in `changedFields`, and the workflow trigger's field filter is a free-text list matched by
+      // exact membership, so a user filtering on a field types its own name. (The `customFields.`
+      // namespacing in `src/lib/audit/diff.ts` applies to the audit CHANGE MAP, a different shape.)
+      changedFields: changedFields.length > 0 ? changedFields : null,
+      userId: actorUserId,
+      timestamp: new Date().toISOString(),
+    }
+    crmBus.emit(`${entityType}.updated`, payload)
   }
 
   return { success: true, values: recalculated }
