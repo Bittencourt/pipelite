@@ -57,18 +57,19 @@ const ACTION_BADGE_VARIANT: Record<AuditAction, "outline" | "secondary"> = {
   deleted: "secondary",
 }
 
-/**
- * A degraded render carries no records, and a successful render is never degraded — the union
- * makes "failed but has records" unrepresentable rather than merely unlikely.
- */
-type RunChangedRecordsProps =
-  | { failed: true; records?: undefined }
-  | { failed?: false; records: RunChangedRecord[] }
+interface RunChangedRecordsProps {
+  records: RunChangedRecord[]
+  /**
+   * The page's read threw. Checked BEFORE `records.length`, so a degraded render can never be
+   * mistaken for an empty one — those two states say opposite things to an operator.
+   */
+  failed: boolean
+}
 
-export async function RunChangedRecords(props: RunChangedRecordsProps) {
+export async function RunChangedRecords({ records, failed }: RunChangedRecordsProps) {
   const t = await getTranslations("audit")
 
-  if (props.failed) {
+  if (failed) {
     return (
       <section>
         <h2 className="text-base font-semibold leading-tight mb-4">{t("run.heading")}</h2>
@@ -78,8 +79,6 @@ export async function RunChangedRecords(props: RunChangedRecordsProps) {
       </section>
     )
   }
-
-  const { records } = props
 
   if (records.length === 0) {
     return (

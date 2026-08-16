@@ -9,6 +9,9 @@ import { RunStatusBadge } from "../components/run-status-badge"
 import { formatDuration } from "@/lib/workflows/format"
 import { RunStepList } from "./components/run-step-list"
 import type { RunStep } from "./components/run-step-list"
+import { RunChangedRecords } from "./components/run-changed-records"
+import { readRunChangedRecords } from "@/lib/audit/linked-records"
+import type { RunChangedRecord } from "@/lib/audit/linked-records"
 
 export default async function RunDetailPage({
   params,
@@ -99,6 +102,32 @@ export default async function RunDetailPage({
     }
   }
 
+  // Which CRM records this run changed — the second half of SC-2.
+  //
+  // GUARDED, AND THE GUARD IS THE POINT. `readRunChangedRecords` carries no try/catch of its own
+  // on purpose: a swallow there would return `[]`, and `[]` renders "This run didn't change any
+  // records" — indistinguishable from the truth. So the catch lives here, exactly as
+  // `record-timeline.tsx:60-84` does it. There is no `error.tsx` or `global-error.tsx` anywhere
+  // under `src/app/`, so an unguarded throw would replace this whole run page with Next.js's
+  // default full-page error over one optional section (T-36-35).
+  //
+  // Sequential rather than folded into a `Promise.all`: this page has no such batch today, and
+  // the query is one indexed read plus at most four batched title reads.
+  //
+  // NO AUTH CHECK IS ADDED. The page's session-only posture is matched deliberately (T-36-04,
+  // 36-CONTEXT § Post-Research Addendum): workflows are not owner-scoped in this product, and
+  // `step.input` / `step.output` already render CRM data on this same page. Tightening it here
+  // would be an undeclared behaviour change in a phase that is not about auth.
+  let changedRecords: RunChangedRecord[] = []
+  let changedRecordsFailed = false
+  try {
+    changedRecords = await readRunChangedRecords(runId)
+  } catch (error) {
+    // Logged in full server-side; the user is told only that the section is unavailable.
+    console.error("Run changed-records read failed:", error)
+    changedRecordsFailed = true
+  }
+
   const startedAtFormatted = run.startedAt
     ? new Intl.DateTimeFormat("en-US", {
         dateStyle: "medium",
@@ -138,6 +167,11 @@ export default async function RunDetailPage({
       )}
 
       <RunStepList steps={combinedSteps} />
+
+      {/* Last block in the stack, and that is not arbitrary: reading order on this page is
+          cause → effect. The header says what ran, the step list says what it did, and this
+          says what it changed. Putting effects above causes would invert it. */}
+      <RunChangedRecords records={changedRecords} failed={changedRecordsFailed} />
     </div>
   )
 }
