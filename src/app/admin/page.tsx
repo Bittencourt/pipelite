@@ -4,7 +4,7 @@ import { users } from "@/db/schema/users"
 import { eq, count, and, isNull } from "drizzle-orm"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, UserCheck, Layers, SlidersHorizontal, Database, Key } from "lucide-react"
+import { Users, UserCheck, Layers, SlidersHorizontal, Database, Key, ScrollText } from "lucide-react"
 import { getTranslations } from 'next-intl/server'
 
 export default async function AdminDashboard() {
@@ -190,6 +190,25 @@ export default async function AdminDashboard() {
                 </div>
                 <CardDescription>
                   {t('pipedriveImportDescription')}
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+          {/*
+            Reads admin.dashboard.auditLog / admin.dashboard.auditLogDescription (the `t`
+            above is already scoped to admin.dashboard). This grid is fully translated and
+            stays that way — the English literal in the admin sidebar's array is confined
+            to that file's own convention and is not a licence to write one here.
+          */}
+          <Link href="/admin/audit">
+            <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">{t('auditLog')}</CardTitle>
+                  <ScrollText className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <CardDescription>
+                  {t('auditLogDescription')}
                 </CardDescription>
               </CardHeader>
             </Card>

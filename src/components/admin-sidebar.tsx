@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Users, Home, Layers, SlidersHorizontal, Database, Key, Radio } from "lucide-react"
+import { Users, Home, Layers, SlidersHorizontal, Database, Key, Radio, ScrollText } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
@@ -31,6 +31,15 @@ const sidebarItems = [
     title: "Webhooks",
     href: "/admin/webhooks",
     icon: Radio,
+  },
+  // The English literal is deliberate: every sibling in this array is one, and
+  // half-migrating a single entry would read as a bug rather than as progress. This is the
+  // one new user-visible English literal phase 36 writes; the dashboard tile that points at
+  // the same route IS translated, because that grid already is.
+  {
+    title: "Audit Log",
+    href: "/admin/audit",
+    icon: ScrollText,
   },
   {
     title: "Export Data",
