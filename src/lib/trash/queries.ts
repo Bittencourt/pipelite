@@ -17,7 +17,8 @@
  *      whole page down (T-37-20). Every function fails into a value the page can render: an empty
  *      `Map`, a `null`. Logs carry identifiers and counts only, never record contents.
  */
-import { and, eq, isNotNull, sql } from "drizzle-orm"
+import { and, count, desc, eq, isNotNull, sql, type SQL } from "drizzle-orm"
+import type { PgColumn } from "drizzle-orm/pg-core"
 
 import { db } from "@/db"
 import { activities, auditLog, deals, organizations, people, users } from "@/db/schema"
@@ -25,15 +26,59 @@ import { workflowRuns, workflows } from "@/db/schema/workflows"
 import type { EntityType } from "@/db/schema/custom-fields"
 import type { AuditActorKind } from "@/lib/audit/actor-context"
 
-import type { DeletedByRow } from "./present"
+import { TRASH_PARENTS, TRASH_TAB_TO_ENTITY, type TrashTab } from "./entity-types"
+import { presentDeletedBy, type DeletedByPresentation, type DeletedByRow } from "./present"
 
 const LOG_PREFIX = "[trash-queries]"
+
+/** Matches the four existing list tables (37-UI-SPEC § Route and tab mechanics). */
+export const TRASH_PAGE_SIZE = 50
+
+/** Who is looking. `role` is whatever the session carries, which may be absent entirely. */
+export interface TrashViewer {
+  userId: string
+  role: string | null | undefined
+}
+
+/**
+ * One rendered trash row.
+ *
+ * `secondary` is a STRING OR NULL on every tab, including Activities: the due date is serialised
+ * to an ISO-8601 instant here and formatted at the component layer, so the row type stays uniform
+ * across the four tabs and no `Date` other than `deletedAt` crosses into a client component.
+ */
+export interface TrashRow {
+  id: string
+  name: string
+  secondary: string | null
+  deletedAt: Date
+  /** The names of this record's parents that are ALSO in trash. Always empty for organizations. */
+  linkedParents: string[]
+  deletedBy: DeletedByPresentation
+}
 
 /** What the ownership guards and the restore/purge toasts need about a single trashed record. */
 export interface TrashedRecordRef {
   id: string
   ownerId: string
   name: string
+}
+
+/**
+ * THE PREDICATE EVERY READ IN THIS MODULE SHARES.
+ *
+ * Both halves are composed into ONE where clause so the database applies them together. Returning
+ * a composed `SQL` rather than re-deriving the scope at each call site is what makes it impossible
+ * for the counts and the rows to drift apart: they call this with the same viewer and therefore
+ * get the same scope, which is the whole of "a count a user cannot explain never appears".
+ */
+function trashScope(deletedAt: PgColumn, ownerId: PgColumn, viewer: TrashViewer): SQL {
+  // An admin sees every trashed record; everyone else sees only their own. `undefined` is
+  // drizzle's "omit this condition", so an admin's clause is `deleted_at IS NOT NULL` alone.
+  const scope = viewer.role === "admin" ? undefined : eq(ownerId, viewer.userId)
+
+  // `and()` is only `undefined` when every argument is, and the first one here never is.
+  return and(isNotNull(deletedAt), scope) as SQL
 }
 
 /** `people` has no single title column (src/lib/audit/linked-records.ts:124-125). */
@@ -210,5 +255,314 @@ export async function findTrashedRecord(
   } catch (error) {
     console.error(`${LOG_PREFIX} findTrashedRecord failed for ${entityType} ${id}:`, error)
     return null
+  }
+}
+
+/**
+ * THE FOUR TAB COUNTS, SCOPED EXACTLY AS THE ROWS ARE.
+ *
+ * Four aggregates, issued together. Each one carries the SAME `trashScope` the row query for that
+ * tab carries, which is the property 37-UI-SPEC § Surface 1 requires: `Deals (12)` above a table
+ * a non-admin can only see three rows of is a defect the user can see and cannot explain.
+ *
+ * Returns `null` — NOT a record of zeros — when any of the four rejects. Zeros are a number, and
+ * a wrong number rendered confidently is worse than no number; the tabs omit their counts instead.
+ */
+export async function countTrashed(viewer: TrashViewer): Promise<Record<TrashTab, number> | null> {
+  try {
+    const [dealRows, personRows, organizationRows, activityRows] = await Promise.all([
+      db
+        .select({ value: count() })
+        .from(deals)
+        .where(trashScope(deals.deletedAt, deals.ownerId, viewer)),
+      db
+        .select({ value: count() })
+        .from(people)
+        .where(trashScope(people.deletedAt, people.ownerId, viewer)),
+      db
+        .select({ value: count() })
+        .from(organizations)
+        .where(trashScope(organizations.deletedAt, organizations.ownerId, viewer)),
+      db
+        .select({ value: count() })
+        .from(activities)
+        .where(trashScope(activities.deletedAt, activities.ownerId, viewer)),
+    ])
+
+    return {
+      deals: dealRows[0]?.value ?? 0,
+      people: personRows[0]?.value ?? 0,
+      organizations: organizationRows[0]?.value ?? 0,
+      activities: activityRows[0]?.value ?? 0,
+    }
+  } catch (error) {
+    console.error(`${LOG_PREFIX} countTrashed failed for viewer ${viewer.userId}:`, error)
+    return null
+  }
+}
+
+/** A row before its actor is resolved — the shape every per-tab query normalises to. */
+type UnattributedRow = Omit<TrashRow, "deletedBy">
+
+/** One possible parent of a record: is it in trash, and what is it called. */
+interface ParentCandidate {
+  trashed: boolean
+  name: string | null
+}
+
+/**
+ * The names of the record's parents that are also in trash.
+ *
+ * The parent SET comes from `TRASH_PARENTS`, never from a second list typed out at the call site.
+ * That is what makes `TRASH_PARENTS.organization` being empty the single place that says the
+ * linked-in-trash badge never renders on the Organizations tab — a component-level special case
+ * would be a second place to keep current.
+ */
+function collectTrashedParents(
+  entityType: EntityType,
+  candidates: Partial<Record<EntityType, ParentCandidate>>
+): string[] {
+  const names: string[] = []
+
+  for (const parent of TRASH_PARENTS[entityType]) {
+    const candidate = candidates[parent]
+    // A LEFT-joined parent that does not exist has `trashed === false`, so an absent parent and
+    // a live one collapse to the same (correct) answer: nothing to flag.
+    if (candidate?.trashed === true && candidate.name !== null && candidate.name !== "") {
+      names.push(candidate.name)
+    }
+  }
+
+  return names
+}
+
+async function listTrashedDeals(limit: number, viewer: TrashViewer): Promise<UnattributedRow[]> {
+  const rows = await db
+    .select({
+      id: deals.id,
+      name: deals.title,
+      deletedAt: deals.deletedAt,
+      organizationName: organizations.name,
+      // Computed SERVER-SIDE in the same query — 37-UI-SPEC Assumption 2. Two extra boolean
+      // columns on an already-joined row, not two extra round trips.
+      organizationTrashed: isNotNull(organizations.deletedAt).mapWith(Boolean),
+      personFirstName: people.firstName,
+      personLastName: people.lastName,
+      personTrashed: isNotNull(people.deletedAt).mapWith(Boolean),
+    })
+    .from(deals)
+    // LEFT, because both parent references are nullable and a deal with no organization is not
+    // a deal to hide from its owner.
+    .leftJoin(organizations, eq(organizations.id, deals.organizationId))
+    .leftJoin(people, eq(people.id, deals.personId))
+    .where(trashScope(deals.deletedAt, deals.ownerId, viewer))
+    .orderBy(desc(deals.deletedAt))
+    .limit(limit)
+
+  const built: UnattributedRow[] = []
+
+  for (const row of rows) {
+    // Unreachable under `IS NOT NULL`; narrowing rather than asserting keeps the row type honest.
+    if (row.deletedAt === null) continue
+
+    built.push({
+      id: row.id,
+      name: row.name,
+      secondary: row.organizationName,
+      deletedAt: row.deletedAt,
+      linkedParents: collectTrashedParents("deal", {
+        organization: { trashed: row.organizationTrashed, name: row.organizationName },
+        person: {
+          trashed: row.personTrashed,
+          name:
+            row.personFirstName === null || row.personLastName === null
+              ? null
+              : personName(row.personFirstName, row.personLastName),
+        },
+      }),
+    })
+  }
+
+  return built
+}
+
+async function listTrashedPeople(limit: number, viewer: TrashViewer): Promise<UnattributedRow[]> {
+  const rows = await db
+    .select({
+      id: people.id,
+      firstName: people.firstName,
+      lastName: people.lastName,
+      email: people.email,
+      deletedAt: people.deletedAt,
+      organizationName: organizations.name,
+      organizationTrashed: isNotNull(organizations.deletedAt).mapWith(Boolean),
+    })
+    .from(people)
+    .leftJoin(organizations, eq(organizations.id, people.organizationId))
+    .where(trashScope(people.deletedAt, people.ownerId, viewer))
+    .orderBy(desc(people.deletedAt))
+    .limit(limit)
+
+  const built: UnattributedRow[] = []
+
+  for (const row of rows) {
+    if (row.deletedAt === null) continue
+
+    built.push({
+      id: row.id,
+      name: personName(row.firstName, row.lastName),
+      // The disambiguator between two people with the same name (37-UI-SPEC § Columns).
+      secondary: row.email,
+      deletedAt: row.deletedAt,
+      linkedParents: collectTrashedParents("person", {
+        organization: { trashed: row.organizationTrashed, name: row.organizationName },
+      }),
+    })
+  }
+
+  return built
+}
+
+async function listTrashedOrganizations(
+  limit: number,
+  viewer: TrashViewer
+): Promise<UnattributedRow[]> {
+  const rows = await db
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      website: organizations.website,
+      deletedAt: organizations.deletedAt,
+    })
+    .from(organizations)
+    // NO parent join, and none is possible: `TRASH_PARENTS.organization` is empty, so a join
+    // here would fetch columns nothing could ever read.
+    .where(trashScope(organizations.deletedAt, organizations.ownerId, viewer))
+    .orderBy(desc(organizations.deletedAt))
+    .limit(limit)
+
+  const built: UnattributedRow[] = []
+
+  for (const row of rows) {
+    if (row.deletedAt === null) continue
+
+    built.push({
+      id: row.id,
+      name: row.name,
+      secondary: row.website,
+      deletedAt: row.deletedAt,
+      linkedParents: collectTrashedParents("organization", {}),
+    })
+  }
+
+  return built
+}
+
+async function listTrashedActivities(
+  limit: number,
+  viewer: TrashViewer
+): Promise<UnattributedRow[]> {
+  const rows = await db
+    .select({
+      id: activities.id,
+      name: activities.title,
+      dueDate: activities.dueDate,
+      deletedAt: activities.deletedAt,
+      dealTitle: deals.title,
+      dealTrashed: isNotNull(deals.deletedAt).mapWith(Boolean),
+    })
+    .from(activities)
+    .leftJoin(deals, eq(deals.id, activities.dealId))
+    .where(trashScope(activities.deletedAt, activities.ownerId, viewer))
+    .orderBy(desc(activities.deletedAt))
+    .limit(limit)
+
+  const built: UnattributedRow[] = []
+
+  for (const row of rows) {
+    if (row.deletedAt === null) continue
+
+    built.push({
+      id: row.id,
+      name: row.name,
+      // Serialised HERE rather than passed on as a `Date`: activity titles are frequently
+      // generic ("Call", "Follow up") so the date is the identity, and a string keeps the row
+      // type uniform across the four tabs and safe to hand to a client component.
+      secondary: row.dueDate.toISOString(),
+      deletedAt: row.deletedAt,
+      linkedParents: collectTrashedParents("activity", {
+        deal: { trashed: row.dealTrashed, name: row.dealTitle },
+      }),
+    })
+  }
+
+  return built
+}
+
+function listRowsForTab(
+  tab: TrashTab,
+  limit: number,
+  viewer: TrashViewer
+): Promise<UnattributedRow[]> {
+  switch (tab) {
+    case "deals":
+      return listTrashedDeals(limit, viewer)
+    case "people":
+      return listTrashedPeople(limit, viewer)
+    case "organizations":
+      return listTrashedOrganizations(limit, viewer)
+    case "activities":
+      return listTrashedActivities(limit, viewer)
+    default: {
+      // A fifth tab is a compile error here rather than an empty table at runtime.
+      const unhandled: never = tab
+      void unhandled
+      return Promise.resolve([])
+    }
+  }
+}
+
+/**
+ * ONE PAGE OF THE ACTIVE TAB.
+ *
+ * Only the active tab is queried for rows; the other three contribute counts only. The pagination
+ * is the four existing list tables' idiom verbatim (`src/app/organizations/page.tsx:18-58`): ask
+ * for `TRASH_PAGE_SIZE * page + 1` rows and let the presence of the probe row answer `hasMore`,
+ * so no second `COUNT(*)` is issued to decide whether to show "Load more".
+ *
+ * The actors are then resolved for the WHOLE page in one call. `presentDeletedBy` runs for real
+ * on every row, including the `undefined` case, so a record with no audit row says "not recorded"
+ * rather than being collapsed into an unknown user (T-37-REP2) — which today is every record in
+ * trash, because `audit_log` holds no `action = 'deleted'` rows from before Phase 36 shipped.
+ *
+ * `{ ok: false }` rather than an empty success on failure: the page must be able to tell "nothing
+ * in trash" from "the query broke", and it has no `error.tsx` above it to catch a throw (T-37-20).
+ */
+export async function listTrashed(
+  tab: TrashTab,
+  page: number,
+  viewer: TrashViewer
+): Promise<{ ok: true; rows: TrashRow[]; hasMore: boolean } | { ok: false }> {
+  const pageRows = TRASH_PAGE_SIZE * page
+
+  try {
+    const fetched = await listRowsForTab(tab, pageRows + 1, viewer)
+
+    const hasMore = fetched.length > pageRows
+    const kept = hasMore ? fetched.slice(0, pageRows) : fetched
+
+    const attribution = await resolveDeletedBy(
+      TRASH_TAB_TO_ENTITY[tab],
+      kept.map((row) => row.id)
+    )
+
+    return {
+      ok: true,
+      rows: kept.map((row) => ({ ...row, deletedBy: presentDeletedBy(attribution.get(row.id)) })),
+      hasMore,
+    }
+  } catch (error) {
+    console.error(`${LOG_PREFIX} listTrashed failed for ${tab} page ${page}:`, error)
+    return { ok: false }
   }
 }

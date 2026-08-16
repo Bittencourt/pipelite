@@ -428,7 +428,9 @@ describe("listTrashed", () => {
     expect(sql).toContain("owner_id")
     expect(params).toContain("u1")
 
-    expect(render(selectCalls[0].orderBy[0] as SQL).sql).toContain("deleted_at desc")
+    // Newest deletion first, served by the plain btree migration 0012 already put on the column
+    // (an Index Scan Backward, no sort node — EXPLAIN-verified in 37-RESEARCH).
+    expect(render(selectCalls[0].orderBy[0] as SQL).sql).toContain('"deleted_at" desc')
   })
 
   it("drops the owner predicate for an admin", async () => {
