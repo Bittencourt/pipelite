@@ -1,5 +1,5 @@
 import { db } from "@/db"
-import { people, organizations, auditLog } from "@/db/schema"
+import { people, organizations, deals, notes, auditLog } from "@/db/schema"
 import type { EntityType, CustomFieldDefinition } from "@/db/schema"
 import { eq, and, isNull, isNotNull } from "drizzle-orm"
 import { z } from "zod"
@@ -157,6 +157,15 @@ function auditActorColumns(actor: AuditActor | undefined) {
     importSessionId: actor?.importSessionId ?? null,
   }
 }
+
+/**
+ * How a purge is distinguished from a soft delete in `audit_log`.
+ *
+ * `action` stays `"deleted"` deliberately. A fourth `AuditAction` literal would be a four-file
+ * compile cascade: the type is declared TWICE (`db/schema/audit-log.ts` and
+ * `lib/timeline/types.ts`) and consumed by two exhaustive `Record<AuditAction, …>` maps.
+ */
+const PURGE_MARKER = { __purge: { from: null, to: true } } as const
 
 function buildEventPayload(
   entityId: string,
@@ -479,5 +488,90 @@ export async function restorePersonMutation(
   } catch (error) {
     console.error("Failed to restore person:", error)
     return { success: false, error: "Failed to restore person" }
+  }
+}
+
+/**
+ * Permanently destroy a trashed person (TRASH-03).
+ *
+ * This is an ORDERED TEARDOWN inside ONE transaction, not a single statement. A bare
+ * `DELETE FROM people` raises SQLSTATE 23503 on `deals_person_id_people_id_fk` — every foreign
+ * key into the CRM tables is `ON DELETE NO ACTION`, and that was proven empirically against the
+ * live database, not inferred. Refusing to purge a person who has deals is not an option either:
+ * the retention pruner runs this same teardown unattended and must be able to finish.
+ *
+ * The deal is DETACHED, never destroyed. It is an independent trashable entity with its own
+ * owner and its own trash tab, and `deals.person_id` is already nullable, so the detach needs no
+ * schema change. This is the one operation in the phase that mutates a live record the caller
+ * never selected, which is exactly why every unlink gets its own `audit_log` row: otherwise a
+ * live deal silently loses its person with no trace.
+ *
+ * `detached` is the number of live records unlinked by the purge.
+ */
+export async function purgePersonMutation(
+  id: string,
+): Promise<{ success: true; detached: number } | { success: false; error: string }> {
+  // Captured synchronously at entry, BEFORE the transaction promise exists.
+  const actor = getCurrentActor()
+
+  const person = await db.query.people.findFirst({
+    where: and(eq(people.id, id), isNotNull(people.deletedAt)),
+  })
+
+  if (!person) {
+    return { success: false, error: "NOT_IN_TRASH" }
+  }
+
+  try {
+    const detached = await db.transaction(async (tx) => {
+      // 1. Notes are polymorphic with NO foreign key, so nothing in the database enforces this
+      //    and the rows would dangle forever. A purge takes the record and its notes.
+      await tx
+        .delete(notes)
+        .where(and(eq(notes.entityType, ENTITY), eq(notes.entityId, id)))
+
+      // 2. Detach the deals. `.returning()` because each unlink needs its own audit row.
+      const detachedDeals = await tx
+        .update(deals)
+        .set({ personId: null, updatedAt: new Date() })
+        .where(eq(deals.personId, id))
+        .returning({ id: deals.id })
+
+      // 3. One row per detached deal. `personId` is already in AUDIT_FIELD_LABELS, so the deal's
+      //    timeline renders this with no new code. Skipped entirely when nothing detached.
+      if (detachedDeals.length > 0) {
+        await tx.insert(auditLog).values(
+          detachedDeals.map((deal) => ({
+            entityType: "deal" as EntityType,
+            entityId: deal.id,
+            action: "updated" as const,
+            changes: { personId: { from: id, to: null } },
+            ...auditActorColumns(actor),
+          }))
+        )
+      }
+
+      // 4. Now, and only now, the row itself. `isNotNull` is carried on the DELETE predicate
+      //    itself, so a live record cannot be destroyed even by a guessed id.
+      await tx.delete(people).where(and(eq(people.id, id), isNotNull(people.deletedAt)))
+
+      // 5. The purge's own audit row, INSIDE the transaction so a rollback cannot leave a record
+      //    of a purge that did not happen. `audit_log` has no foreign key on `entity_id`, so
+      //    this record's earlier rows survive untouched — that absence is the design.
+      await tx.insert(auditLog).values({
+        entityType: ENTITY,
+        entityId: id,
+        action: "deleted",
+        changes: PURGE_MARKER,
+        ...auditActorColumns(actor),
+      })
+
+      return detachedDeals.length
+    })
+
+    return { success: true, detached }
+  } catch (error) {
+    console.error("Failed to purge person:", error)
+    return { success: false, error: "Failed to purge person" }
   }
 }
