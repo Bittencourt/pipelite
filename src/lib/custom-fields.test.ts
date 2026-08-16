@@ -451,7 +451,7 @@ describe("saveFieldValues — ordering and failure isolation", () => {
  * -------------------------------------------------------------------------------------- */
 
 describe("saveFieldValues — returns the recomputed blob (CFUI-02)", () => {
-  it("resolves with exactly the customFields recalculateFormulas just computed", async () => {
+  it("resolves with the written blob layered with what recalculateFormulas computed", async () => {
     captureUpdate()
     const recomputed = {
       Price: 100,
@@ -465,9 +465,36 @@ describe("saveFieldValues — returns the recomputed blob (CFUI-02)", () => {
     }, ACTOR_USER_ID)
 
     // The client's `localValues` can only stop being stale if the server hands back what it
-    // just derived. `next` is pre-recalculation, so the recalculated blob is the one to return.
-    expect(result.values).toEqual(recomputed)
-    expect(result.values).toBe(recomputed)
+    // just derived — AND what it just wrote. Returning the recalculated blob alone dropped
+    // `Origem` here, because this mock returns only the formula-touched keys. The real
+    // success path merges into the post-write blob, so layering is a no-op there and the
+    // difference only shows up on the no-op recalc paths (covered below).
+    expect(result.values).toEqual({
+      Price: 100,
+      Origem: ["Outbound Manual"],
+      Margin: { formula: true, value: 40, error: null },
+    })
+  })
+
+  it("keeps the written values when no formula references them (SC-4 no-op recalc)", async () => {
+    captureUpdate()
+    // `formula-recalc.ts:663` returns `input.row?.customFields ?? {}` when nothing references
+    // the changed field, and `saveFieldValues` deliberately omits `row` — so this is `{}` for
+    // the COMMON case of editing a custom field nothing computes from.
+    mockRecalc.mockResolvedValueOnce({ customFields: {}, evaluations: 0 })
+
+    const result = await saveFieldValues("deal", "d1", {
+      Origem: ["Outbound Manual"],
+    }, ACTOR_USER_ID)
+
+    // Regression guard. When this returned `{}`, the value was persisted but the emitted
+    // payload's `data.customFields` was empty, so the audit diff produced no change map and
+    // the subscriber discarded the event — a silent, unaudited write. It also sent an empty
+    // blob to every webhook and workflow trigger.
+    // The posted value must survive the empty recalc result. (The carried-over stored `Margin`
+    // wrapper rides along in `next` too — that is the D-05 behaviour asserted below.)
+    expect(result.values?.Origem).toEqual(["Outbound Manual"])
+    expect(Object.keys(result.values ?? {})).toContain("Origem")
   })
 
   it("preserves the { success: true } shape — `values` is additive, not a replacement", async () => {

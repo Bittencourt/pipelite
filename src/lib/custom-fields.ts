@@ -295,7 +295,25 @@ export async function saveFieldValues(
       changedFields,
       definitionsCache: new Map<EntityType, CustomFieldDefinition[]>([[entityType, definitions]]),
     })
-    recalculated = result.customFields
+    // LAYERED over `next`, never assigned from `result.customFields` alone.
+    //
+    // `recalculateFormulas` has two no-op paths that return a blob which does NOT contain the
+    // values this save just wrote: the SC-4 fast path (`formula-recalc.ts:663`) returns
+    // `input.row?.customFields ?? {}`, and `row` is deliberately omitted above, so it returns
+    // `{}` whenever no formula references the changed field. That is the COMMON case — editing
+    // any custom field that nothing computes from.
+    //
+    // Assigning it directly made the emitted `data.customFields` empty, so the audit diff saw
+    // `{}` before and `{}` after, produced no change map, and the subscriber's
+    // "an update that changed nothing writes no row" guard discarded the event. The value was
+    // persisted but NOTHING was audited — and the same empty blob went to every webhook and
+    // workflow trigger. Observed in the running container on 2026-08-16: editing a plain text
+    // custom field wrote the value and produced zero audit rows.
+    //
+    // On the success path `result.customFields` is `{ ...existing, ...computed }` where
+    // `existing` is the post-write blob, so spreading it over `next` is a no-op there and this
+    // stays correct in both directions.
+    recalculated = { ...next, ...result.customFields }
   } catch (error) {
     // D-05: a broken admin-authored formula must never block a user's edit. Unchanged — the
     // fallback to `next` above is what makes swallowing safe for the caller.
