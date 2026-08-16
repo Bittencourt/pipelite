@@ -26,5 +26,8 @@ export async function register() {
 
     const { startExecutionProcessor } = await import("@/lib/execution/execution-processor")
     startExecutionProcessor()
+
+    const { startAuditPruner } = await import("@/lib/audit/prune")
+    startAuditPruner()
   }
 }
