@@ -258,6 +258,131 @@ export async function findTrashedRecord(
   }
 }
 
+/** One trashed ancestor of a record, with everything the linked-restore path needs about it. */
+export interface TrashedParentRef extends TrashedRecordRef {
+  entityType: EntityType
+}
+
+/**
+ * The parent foreign keys of one record, keyed by the PARENT's entity type.
+ *
+ * Read WITHOUT a `deleted_at` predicate: the child may be trashed (the linked-restore path) or
+ * live (a detail page asking what of its context is missing), and neither answer changes which
+ * parents it points at.
+ */
+async function readParentIds(
+  entityType: EntityType,
+  id: string
+): Promise<Partial<Record<EntityType, string | null>> | null> {
+  switch (entityType) {
+    case "deal": {
+      const rows = await db
+        .select({ organizationId: deals.organizationId, personId: deals.personId })
+        .from(deals)
+        .where(eq(deals.id, id))
+        .limit(1)
+
+      const row = rows[0]
+      return row ? { organization: row.organizationId, person: row.personId } : null
+    }
+
+    case "person": {
+      const rows = await db
+        .select({ organizationId: people.organizationId })
+        .from(people)
+        .where(eq(people.id, id))
+        .limit(1)
+
+      const row = rows[0]
+      return row ? { organization: row.organizationId } : null
+    }
+
+    case "activity": {
+      const rows = await db
+        .select({ dealId: activities.dealId })
+        .from(activities)
+        .where(eq(activities.id, id))
+        .limit(1)
+
+      const row = rows[0]
+      return row ? { deal: row.dealId } : null
+    }
+
+    case "organization":
+      // Unreachable: `findTrashedParents` returns before calling this for an organization.
+      return null
+
+    default: {
+      const unhandled: never = entityType
+      void unhandled
+      return null
+    }
+  }
+}
+
+/**
+ * WHICH OF A RECORD'S PARENTS ARE THEMSELVES IN TRASH — derived on the server, from an id alone.
+ *
+ * This is what the "Restore with linked records" affordance is resolved against, and the reason it
+ * takes an id rather than a list is a security property, not an ergonomic one: a client-supplied
+ * list of records to restore is a client-supplied list of records to WRITE, and no re-check of the
+ * clicked record would say anything about the other ids in it. The caller re-checks owner-or-admin
+ * against each returned `ownerId` independently (T-37-02).
+ *
+ * Two round trips at most for the widest case (a deal with both parents trashed): one for the
+ * child's foreign keys, then the parents concurrently. The parent lookup IS `findTrashedRecord` —
+ * the same `isNotNull(deletedAt)` predicate and the same name/owner projection the ownership
+ * guards already run against, so there is one place in this module where "a record that is in
+ * trash" is expressed and this function does not become a second one.
+ *
+ * A LIVE parent is never returned. Nothing about it needs restoring, and a restore that reached it
+ * would clear a `deleted_at` that was never set and write an audit row for an event that did not
+ * happen.
+ *
+ * The parent SET comes from `TRASH_PARENTS`, never from a second list typed out here, which is what
+ * keeps `TRASH_PARENTS.organization` being empty the single place that says an organization has no
+ * linked-restore affordance — expressed here as an early return that issues NO QUERY AT ALL, so the
+ * emptiness of that list is a control rather than a comment.
+ */
+export async function findTrashedParents(
+  entityType: EntityType,
+  id: string
+): Promise<TrashedParentRef[]> {
+  const parentTypes = TRASH_PARENTS[entityType]
+
+  // Nothing to look up, so nothing is looked up.
+  if (parentTypes.length === 0) return []
+
+  try {
+    const parentIds = await readParentIds(entityType, id)
+
+    // No such record. From the caller's position that is the same answer as "no trashed parents".
+    if (parentIds === null) return []
+
+    const resolved = await Promise.all(
+      parentTypes.map(async (parentType) => {
+        const parentId = parentIds[parentType]
+
+        // A null foreign key is not a query. A deal with no organization has nothing to restore
+        // alongside it, and asking the database to confirm that costs a round trip per parent.
+        if (parentId === null || parentId === undefined) return null
+
+        const parent = await findTrashedRecord(parentType, parentId)
+
+        return parent ? { entityType: parentType, ...parent } : null
+      })
+    )
+
+    // Order is `TRASH_PARENTS` order — outermost first — because that is the order the caller
+    // must restore them in: a parent restored AFTER its child means the child's formula cascade
+    // ran while the parent was still trashed.
+    return resolved.filter((parent): parent is TrashedParentRef => parent !== null)
+  } catch (error) {
+    console.error(`${LOG_PREFIX} findTrashedParents failed for ${entityType} ${id}:`, error)
+    return []
+  }
+}
+
 /**
  * THE FOUR TAB COUNTS, SCOPED EXACTLY AS THE ROWS ARE.
  *
