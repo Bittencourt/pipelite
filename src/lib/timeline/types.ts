@@ -7,12 +7,22 @@
  * is a compile-time break everywhere rather than a runtime surprise.
  */
 
+// `import type` only — erased at compile, so the module stays runtime-free of `@/db`.
+// `sources.ts:13` imports the same symbol the same way.
+import type { EntityType } from "@/db/schema/custom-fields"
+
 /** 20 entries per page, then a "Load more" affordance (D-07). */
 export const TIMELINE_PAGE_SIZE = 20
 
 /**
  * Phase 36 appends 'audit' here and one file to the assembler's source array —
  * nothing else in the union changes.
+ *
+ * NOT EDITED BY 36-10, deliberately. Adding 'audit' here fires the exhaustive `never`
+ * check in `timeline-entry.tsx:57-62` the instant it lands, so the literal and the
+ * renderer branch that satisfies it are added TOGETHER in 36-13. Splitting them would
+ * leave `tsc` red at a plan boundary, and a phase whose intermediate states do not
+ * typecheck cannot be verified plan by plan.
  */
 export type TimelineEntryKind = 'note' | 'activity' | 'stage_change'
 
@@ -81,6 +91,66 @@ export interface StageChangeTimelineEntry extends TimelineEntryBase {
   actor: { id: string; name: string | null; email: string } | null
 }
 
+/**
+ * Phase 36's audit display contract (36-UI-SPEC § Surface 1 → Data contract).
+ *
+ * Declared here in 36-10 but NOT yet joined to the `TimelineEntry` union below — see the
+ * comment on `TimelineEntryKind`. `buildAuditFieldChanges` in `src/lib/audit/present.ts`
+ * produces `AuditFieldChange[]`; the timeline source's hydrate (36-17) assembles the rest
+ * of `AuditTimelineEntry`; `audit-entry.tsx` (36-13) renders it.
+ */
+
+/** Who or what performed the change. Never guessed — an unknown actor records `system`. */
+export type AuditActorKind = 'user' | 'workflow_run' | 'api_key' | 'import' | 'system'
+
+export type AuditAction = 'created' | 'updated' | 'deleted'
+
+/** A single displayable value. `empty` is a first-class case, never an empty string. */
+export type AuditValue =
+  | { type: 'empty' }
+  | { type: 'text'; value: string }
+  | { type: 'number'; value: number }
+  | { type: 'boolean'; value: boolean }
+  | { type: 'date'; iso: string; withTime: boolean }
+  | { type: 'list'; items: string[] }
+  /** A resolved foreign key. `label: null` → the referenced row is gone. */
+  | { type: 'reference'; label: string | null }
+  | { type: 'files'; count: number }
+  /** Already-compacted JSON for anything the cases above do not cover. */
+  | { type: 'json'; value: string }
+
+export interface AuditFieldChange {
+  /** React key + ordering identity: the column name, or `custom:<definitionId>`. */
+  field: string
+  /** Already resolved. Native columns are localized by the source; custom fields carry
+   *  `customFieldDefinitions.name` VERBATIM — user-authored text is never translated. */
+  label: string
+  /** `null` on a `created` entry: there is no before. */
+  from: AuditValue | null
+  to: AuditValue
+}
+
+export interface AuditTimelineEntry extends TimelineEntryBase {
+  kind: 'audit'
+  action: AuditAction
+  entityType: EntityType
+  actorKind: AuditActorKind
+  /** Only when actorKind === 'user'; null when that user row is gone. */
+  actor: { id: string; name: string | null; email: string } | null
+  /** Only when actorKind === 'workflow_run' and the workflow still exists. */
+  workflowRun: { runId: string; workflowId: string; workflowName: string } | null
+  /** Only when actorKind === 'api_key'; `apiKeys.name`. */
+  apiKeyName: string | null
+  /** Empty on `deleted`. May be empty on `updated` — see the UI-SPEC's defensive state. */
+  changes: AuditFieldChange[]
+}
+
+/**
+ * `AuditTimelineEntry` is deliberately ABSENT from this union in 36-10. It joins here in
+ * 36-13, in the same commit as `timeline-entry.tsx`'s `case "audit"` branch, because the
+ * `never` check in that file turns this one-line edit into a build break until the branch
+ * exists. That guard is Phase 35 working as designed and is not to be defeated.
+ */
 export type TimelineEntry =
   | NoteTimelineEntry
   | ActivityTimelineEntry
