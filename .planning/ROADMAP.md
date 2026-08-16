@@ -332,9 +332,9 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 37-10-PLAN.md — restoreRecord, restoreWithLinked and purgeRecord server actions
-- [ ] 37-11-PLAN.md — Daily trash retention pruner + instrumentation registration + Docker log gate
-- [ ] 37-12-PLAN.md — REST /api/v1/trash listing, restore and admin-gated purge
+- [x] 37-10-PLAN.md — restoreRecord, restoreWithLinked and purgeRecord server actions
+- [x] 37-11-PLAN.md — Daily trash retention pruner + instrumentation registration + Docker log gate
+- [x] 37-12-PLAN.md — REST /api/v1/trash listing, restore and admin-gated purge
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -485,7 +485,7 @@ Plans:
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
-| 37. Trash & Restore | 9/15 | In Progress|  |
+| 37. Trash & Restore | 12/15 | In Progress|  |
 | 38. Bulk Operations | 0/? | Not started | - |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
