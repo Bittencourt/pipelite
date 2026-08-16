@@ -144,6 +144,15 @@ Progress: [██████████] 97%
 - [Phase 44]: Client-component wiring is gated by comment-stripped source reads, not by rendering the component — Rendering a 'use client' component needs jsdom plus a testing library, which phase 44 must not install; the behaviour is unit-tested in the pure helper modules and the source gate proves the component calls them
 - [Phase 44]: 44-08: project admin field rows once and share one array (45028 B -> 22353 B, -50.4%) — React Flight back-references an already-written array, so a separate slim availableFields array measured 58681 B - a net increase. Payload optimisation only; CFUI-01 stays fixed structurally by 44-06.
 
+- [Phase 35]: The timeline assembler is the only hand-composed SQL in the codebase — every value binds, `entityType` is validated against the four literals before it reaches a predicate, and `deleted_at IS NULL` is carried EXPLICITLY on every read path (the partial `notes_live_idx` does not enforce its own predicate)
+- [Phase 35]: A JS `Date` must never be bound into a raw drizzle `sql` fragment — postgres.js throws ERR_INVALID_ARG_TYPE. Bind `${iso}::text::timestamp`; a bare `::timestamp` lets Postgres resolve the parameter to OID 1114 and the driver re-serializes it through a `Date`, silently truncating microseconds and breaking keyset paging
+- [Phase 35]: `onSuccess` on the four record dialogs was renamed `onRecordSaved` and is refresh-only — dialog closing lives exclusively in `onOpenChange`. The rename was the enforcement: all seven call sites became type errors
+- [Phase 35]: `revalidatePath` DOES refresh the current client tree regardless of the path argument (measured in a standalone Next 16.1.6 probe), so any effect keyed on a server-rebuilt array prop must guard against being re-run mid-submit
+- [Phase 35]: Legacy `notes` columns are dormant, NOT dropped — that is what keeps `scripts/reconcile-notes.sql` re-runnable as a standing detector
+- [Phase 35]: Formulas referencing `Notes` now freeze at their migration-time value; re-pointing the attribute is an undecided semantic question deferred to the column-drop phase
+- [Phase 35]: A doc comment that NAMES a token gated at zero occurrences is itself a gate violation — this fired three times in one phase. Reword rather than weaken the gate
+- [Phase 35]: Raw NUL bytes written into a source file silently flip it to binary for git and grep, disabling the plan's own gates — use `\u0000` escapes
+
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Directory |
