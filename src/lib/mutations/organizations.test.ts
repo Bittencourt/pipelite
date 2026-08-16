@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
+// NOTE ON THE PURGE TESTS BELOW: a mocked `db.delete` cannot exercise a real foreign-key
+// constraint. Every FK into the CRM tables is `ON DELETE NO ACTION`, and deleting an organization
+// that still has people was empirically proven to raise SQLSTATE 23503 on
+// `people_organization_id_organizations_id_fk`. These tests pin the ORDER and the SHAPE of the
+// teardown; `scripts/trash-checks.sql` (plan 37-15) is the only honest test of the constraint
+// behaviour.
+
 // Mock db
 vi.mock("@/db", () => ({
   db: {
@@ -8,6 +15,8 @@ vi.mock("@/db", () => ({
     },
     insert: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
+    transaction: vi.fn(),
   },
 }))
 
@@ -69,6 +78,7 @@ import {
   updateOrganizationMutation,
   deleteOrganizationMutation,
   restoreOrganizationMutation,
+  purgeOrganizationMutation,
 } from "./organizations"
 
 const mockDb = db as unknown as {
@@ -77,15 +87,18 @@ const mockDb = db as unknown as {
   }
   insert: ReturnType<typeof vi.fn>
   update: ReturnType<typeof vi.fn>
+  delete: ReturnType<typeof vi.fn>
+  transaction: ReturnType<typeof vi.fn>
 }
 
 const mockEmit = crmBus.emit as ReturnType<typeof vi.fn>
 const mockGetCurrentActor = vi.mocked(getCurrentActor)
 
-/** Renders a drizzle predicate to SQL so a test can tell `isNotNull` from `isNull`. */
+/** Renders a drizzle predicate so a test can tell `isNotNull` from `isNull`, and read its params. */
 const pgDialect = new PgDialect()
-const renderSql = (predicate: unknown) =>
-  pgDialect.sqlToQuery(predicate as Parameters<PgDialect["sqlToQuery"]>[0]).sql
+const renderQuery = (predicate: unknown) =>
+  pgDialect.sqlToQuery(predicate as Parameters<PgDialect["sqlToQuery"]>[0])
+const renderSql = (predicate: unknown) => renderQuery(predicate).sql
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -715,6 +728,218 @@ describe("restoreOrganizationMutation", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 
     const result = await restoreOrganizationMutation("org1")
+
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).not.toBe("NOT_IN_TRASH")
+    expect(errorSpy).toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+})
+
+describe("purgeOrganizationMutation", () => {
+  const trashedOrg = {
+    id: "org1",
+    name: "Acme Corp",
+    ownerId: "u1",
+    deletedAt: new Date("2026-08-01T10:00:00.000Z"),
+  }
+
+  /**
+   * One `tx` handle with a spy per statement shape. The organization is the widest teardown in
+   * the phase: TWO child tables are detached, so `.returning()` yields the deals first and the
+   * people second.
+   */
+  function stubTransaction(
+    detachedDeals: { id: string }[] = [],
+    detachedPeople: { id: string }[] = [],
+  ) {
+    const deleteWhere = vi.fn().mockResolvedValue(undefined)
+    const txDelete = vi.fn().mockReturnValue({ where: deleteWhere })
+
+    const updateReturning = vi
+      .fn()
+      .mockResolvedValueOnce(detachedDeals)
+      .mockResolvedValueOnce(detachedPeople)
+      .mockResolvedValue([])
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning })
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere })
+    const txUpdate = vi.fn().mockReturnValue({ set: updateSet })
+
+    const insertValues = vi.fn().mockResolvedValue(undefined)
+    const txInsert = vi.fn().mockReturnValue({ values: insertValues })
+
+    const tx = { delete: txDelete, update: txUpdate, insert: txInsert }
+    mockDb.transaction.mockImplementation(
+      async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)
+    )
+
+    return {
+      txDelete, deleteWhere, txUpdate, updateSet, updateWhere, updateReturning,
+      txInsert, insertValues,
+    }
+  }
+
+  /** Every `values(...)` argument, flattened: a detach insert passes an array, the purge one object. */
+  const insertedRows = (insertValues: ReturnType<typeof vi.fn>) =>
+    insertValues.mock.calls.flatMap((call) => {
+      const arg = call[0] as Record<string, unknown> | Record<string, unknown>[]
+      return Array.isArray(arg) ? arg : [arg]
+    })
+
+  const purgeRowIndex = (insertValues: ReturnType<typeof vi.fn>) =>
+    insertValues.mock.calls.findIndex((call) => {
+      const arg = call[0] as { changes?: Record<string, unknown> }
+      return !Array.isArray(arg) && arg.changes?.__purge !== undefined
+    })
+
+  beforeEach(() => {
+    mockGetCurrentActor.mockReturnValue(undefined)
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+  })
+
+  it("runs the whole teardown inside one transaction, never on the bare db handle", async () => {
+    stubTransaction([{ id: "d1" }], [{ id: "p1" }])
+
+    const result = await purgeOrganizationMutation("org1")
+
+    expect(result).toEqual({ success: true, detached: 2 })
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1)
+    expect(mockDb.delete).not.toHaveBeenCalled()
+    expect(mockDb.update).not.toHaveBeenCalled()
+    expect(mockDb.insert).not.toHaveBeenCalled()
+  })
+
+  it("orders the teardown: notes, detach deals, detach people, audit rows, delete org, purge row", async () => {
+    const tx = stubTransaction([{ id: "d1" }], [{ id: "p1" }])
+
+    await purgeOrganizationMutation("org1")
+
+    const notesDeleted = tx.deleteWhere.mock.invocationCallOrder[0]
+    const dealsDetached = tx.updateReturning.mock.invocationCallOrder[0]
+    const peopleDetached = tx.updateReturning.mock.invocationCallOrder[1]
+    const firstAudit = tx.insertValues.mock.invocationCallOrder[0]
+    const orgDeleted = tx.deleteWhere.mock.invocationCallOrder[1]
+    const purgeAudited = tx.insertValues.mock.invocationCallOrder[purgeRowIndex(tx.insertValues)]
+
+    expect(notesDeleted).toBeLessThan(dealsDetached)
+    expect(dealsDetached).toBeLessThan(peopleDetached)
+    expect(peopleDetached).toBeLessThan(firstAudit)
+    expect(firstAudit).toBeLessThan(orgDeleted)
+    expect(orgDeleted).toBeLessThan(purgeAudited)
+  })
+
+  it("clears the organization's polymorphic notes — nothing in the database enforces this", async () => {
+    const tx = stubTransaction()
+
+    await purgeOrganizationMutation("org1")
+
+    const { params } = renderQuery(tx.deleteWhere.mock.calls[0][0])
+    expect(params).toContain("organization")
+    expect(params).toContain("org1")
+  })
+
+  it("DETACHES both child tables rather than deleting them, and sums the count", async () => {
+    const tx = stubTransaction([{ id: "d1" }, { id: "d2" }], [{ id: "p1" }])
+
+    const result = await purgeOrganizationMutation("org1")
+
+    // The `detached` count is the TOTAL across deals AND people.
+    expect(result).toEqual({ success: true, detached: 3 })
+    expect(renderSql(tx.updateWhere.mock.calls[0][0])).toContain('"deals"."organization_id"')
+    expect(renderSql(tx.updateWhere.mock.calls[1][0])).toContain('"people"."organization_id"')
+    for (const call of tx.updateSet.mock.calls) {
+      const setArg = call[0] as Record<string, unknown>
+      expect(setArg.organizationId).toBeNull()
+      expect(setArg.updatedAt).toBeInstanceOf(Date)
+    }
+    // Two deletes only: the notes and the organization itself. Deals and people are independent
+    // trashable entities with their own owners and their own trash tabs.
+    expect(tx.txDelete).toHaveBeenCalledTimes(2)
+  })
+
+  it("carries isNotNull(deletedAt) on the final delete, so a live record can never be purged", async () => {
+    const tx = stubTransaction()
+
+    await purgeOrganizationMutation("org1")
+
+    expect(renderSql(tx.deleteWhere.mock.calls[1][0])).toContain("is not null")
+  })
+
+  it("audits every unlink, one row per detached deal and one per detached person", async () => {
+    const tx = stubTransaction([{ id: "d1" }], [{ id: "p1" }, { id: "p2" }])
+
+    await purgeOrganizationMutation("org1")
+
+    const rows = insertedRows(tx.insertValues)
+    expect(rows.filter((row) => row.entityType === "deal")).toEqual([
+      {
+        entityType: "deal",
+        entityId: "d1",
+        action: "updated",
+        changes: { organizationId: { from: "org1", to: null } },
+        actorKind: "system",
+        actorUserId: null,
+        workflowRunId: null,
+        importSessionId: null,
+      },
+    ])
+    const personRows = rows.filter((row) => row.entityType === "person")
+    expect(personRows).toHaveLength(2)
+    expect(personRows[1]).toMatchObject({
+      entityId: "p2",
+      action: "updated",
+      changes: { organizationId: { from: "org1", to: null } },
+    })
+  })
+
+  it("writes no rows of a kind that detached nothing, and no empty insert", async () => {
+    const tx = stubTransaction([{ id: "d1" }], [])
+
+    const result = await purgeOrganizationMutation("org1")
+
+    expect(result).toEqual({ success: true, detached: 1 })
+    // One detach insert (deals) plus the purge row. No empty people insert.
+    expect(tx.insertValues).toHaveBeenCalledTimes(2)
+    expect(insertedRows(tx.insertValues).some((row) => row.entityType === "person")).toBe(false)
+  })
+
+  it("records the purge itself with action deleted plus the __purge marker, inside the transaction", async () => {
+    const tx = stubTransaction([{ id: "d1" }], [{ id: "p1" }])
+    mockGetCurrentActor.mockReturnValue({ kind: "user", userId: "admin1" })
+
+    await purgeOrganizationMutation("org1")
+
+    const index = purgeRowIndex(tx.insertValues)
+    expect(index).toBeGreaterThanOrEqual(0)
+    expect(tx.insertValues.mock.calls[index][0]).toEqual({
+      entityType: "organization",
+      entityId: "org1",
+      // NOT a fourth `AuditAction` literal — a marker in `changes` instead (Pitfall 6).
+      action: "deleted",
+      changes: { __purge: { from: null, to: true } },
+      actorKind: "user",
+      actorUserId: "admin1",
+      workflowRunId: null,
+      importSessionId: null,
+    })
+    expect(mockDb.insert).not.toHaveBeenCalled()
+  })
+
+  it("returns NOT_IN_TRASH and opens no transaction for a live or missing record", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(null)
+    stubTransaction()
+
+    const result = await purgeOrganizationMutation("org-live")
+
+    expect(result).toEqual({ success: false, error: "NOT_IN_TRASH" })
+    expect(mockDb.transaction).not.toHaveBeenCalled()
+  })
+
+  it("returns a failure and logs when the teardown rejects", async () => {
+    mockDb.transaction.mockRejectedValue(new Error("23503"))
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await purgeOrganizationMutation("org1")
 
     expect(result.success).toBe(false)
     if (!result.success) expect(result.error).not.toBe("NOT_IN_TRASH")
