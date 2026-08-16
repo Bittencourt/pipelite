@@ -1,3 +1,9 @@
+// NOTE ON WHAT THIS SUITE CANNOT PROVE.
+//
+// `db` is mocked here, so a mocked `delete` cannot exercise a real foreign key. `activities` is
+// a true leaf — a bare `DELETE` on it succeeds today — but no assertion in this file would
+// notice if a future migration added a child table pointing at it. The only honest test of the
+// constraint behaviour itself is `scripts/trash-checks.sql`, delivered by 37-15.
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 // Mock db
@@ -10,6 +16,8 @@ vi.mock("@/db", () => ({
     },
     insert: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
+    transaction: vi.fn(),
   },
 }))
 
@@ -48,7 +56,7 @@ vi.mock("@/lib/audit/actor-context", () => ({
 import { db } from "@/db"
 import { crmBus } from "@/lib/events"
 import { getCurrentActor } from "@/lib/audit/actor-context"
-import { auditLog } from "@/db/schema"
+import { auditLog, notes, activities } from "@/db/schema"
 import { PgDialect } from "drizzle-orm/pg-core"
 import type { SQL } from "drizzle-orm"
 import {
@@ -64,6 +72,7 @@ import {
   deleteActivityMutation,
   toggleActivityCompletionMutation,
   restoreActivityMutation,
+  purgeActivityMutation,
 } from "./activities"
 
 const mockDb = db as unknown as {
@@ -74,6 +83,8 @@ const mockDb = db as unknown as {
   }
   insert: ReturnType<typeof vi.fn>
   update: ReturnType<typeof vi.fn>
+  delete: ReturnType<typeof vi.fn>
+  transaction: ReturnType<typeof vi.fn>
 }
 
 const mockEmit = crmBus.emit as ReturnType<typeof vi.fn>
@@ -95,8 +106,8 @@ beforeEach(() => {
  * is a one-character difference with opposite meaning — an assertion on the rendered predicate is
  * the only way to catch it, because both compile and both return a row-or-undefined.
  */
-const renderPredicate = (where: unknown): string =>
-  new PgDialect().sqlToQuery(where as SQL).sql
+const renderQuery = (where: unknown) => new PgDialect().sqlToQuery(where as SQL)
+const renderPredicate = (where: unknown): string => renderQuery(where).sql
 
 describe("createActivityMutation", () => {
   it("creates activity, emits activity.created, returns success with id", async () => {
@@ -816,6 +827,130 @@ describe("restoreActivityMutation", () => {
     const result = await restoreActivityMutation("act1")
 
     expect(result).toEqual({ success: true })
+    expect(spy).toHaveBeenCalled()
+    spy.mockRestore()
+  })
+})
+
+/* ------------------------------------------------------------------------------------------ *
+ * Purge (TRASH-03) — the ordered teardown
+ * ------------------------------------------------------------------------------------------ */
+
+describe("purgeActivityMutation", () => {
+  const trashedActivity = {
+    id: "act1",
+    title: "Trashed Activity",
+    typeId: "type1",
+    dealId: "d1",
+    ownerId: "u1",
+    deletedAt: new Date("2026-08-01T10:00:00Z"),
+  }
+
+  function stubTransaction() {
+    const deleteWhere = vi.fn().mockResolvedValue(undefined)
+    const txDelete = vi.fn(() => ({ where: deleteWhere }))
+
+    const insertValues = vi.fn().mockResolvedValue(undefined)
+    const txInsert = vi.fn(() => ({ values: insertValues }))
+
+    const txUpdate = vi.fn()
+
+    const tx = { delete: txDelete, insert: txInsert, update: txUpdate }
+    mockDb.transaction.mockImplementation(
+      async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)
+    )
+
+    return { txDelete, deleteWhere, txInsert, insertValues, txUpdate }
+  }
+
+  it("deletes notes then the activity, in that ORDER, in one transaction", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(trashedActivity)
+    const { txDelete, deleteWhere } = stubTransaction()
+
+    const result = await purgeActivityMutation("act1")
+
+    expect(result).toEqual({ success: true, detached: 0 })
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1)
+    expect(txDelete.mock.calls.map((call) => call[0])).toEqual([notes, activities])
+    const order = txDelete.mock.invocationCallOrder
+    expect(order[0]).toBeLessThan(order[1])
+    // The notes predicate is scoped by (entityType, entityId): `notes` has NO foreign key, so
+    // nothing in the database enforces it.
+    const query = renderQuery(deleteWhere.mock.calls[0][0])
+    expect(query.params).toEqual(["activity", "act1"])
+    // Every write on the tx handle, never on `db`.
+    expect(mockDb.delete).not.toHaveBeenCalled()
+    expect(mockDb.insert).not.toHaveBeenCalled()
+  })
+
+  it("detaches nothing — activities is a leaf", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(trashedActivity)
+    const { txUpdate } = stubTransaction()
+
+    const result = await purgeActivityMutation("act1")
+
+    expect(result).toEqual({ success: true, detached: 0 })
+    expect(txUpdate).not.toHaveBeenCalled()
+  })
+
+  it("carries isNotNull(deletedAt) on the final delete itself", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(trashedActivity)
+    const { deleteWhere } = stubTransaction()
+
+    await purgeActivityMutation("act1")
+
+    const rendered = renderPredicate(deleteWhere.mock.calls[1][0])
+    expect(rendered).toContain("is not null")
+    expect(rendered).not.toMatch(/is null/)
+  })
+
+  it("writes the purge audit row with the __purge marker, INSIDE the transaction", async () => {
+    mockGetCurrentActor.mockReturnValue({ kind: "workflow_run", userId: null, workflowRunId: "run-3" })
+    mockDb.query.activities.findFirst.mockResolvedValue(trashedActivity)
+    const { txInsert, insertValues } = stubTransaction()
+
+    await purgeActivityMutation("act1")
+
+    expect(txInsert).toHaveBeenCalledTimes(1)
+    expect(txInsert).toHaveBeenCalledWith(auditLog)
+    expect(insertValues.mock.calls[0][0]).toEqual({
+      entityType: "activity",
+      entityId: "act1",
+      action: "deleted",
+      changes: { __purge: { from: null, to: true } },
+      actorKind: "workflow_run",
+      actorUserId: null,
+      workflowRunId: "run-3",
+      importSessionId: null,
+    })
+  })
+
+  it("inserts the purge audit row AFTER the activity row is gone", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(trashedActivity)
+    const { txDelete, txInsert } = stubTransaction()
+
+    await purgeActivityMutation("act1")
+
+    expect(txDelete.mock.invocationCallOrder[1]).toBeLessThan(txInsert.mock.invocationCallOrder[0])
+  })
+
+  it("returns NOT_IN_TRASH and never opens a transaction for a live or missing activity", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(undefined)
+
+    const result = await purgeActivityMutation("act1")
+
+    expect(result).toEqual({ success: false, error: "NOT_IN_TRASH" })
+    expect(mockDb.transaction).not.toHaveBeenCalled()
+  })
+
+  it("returns a prose failure and logs when the teardown rejects", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(trashedActivity)
+    mockDb.transaction.mockRejectedValue(new Error("23503"))
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await purgeActivityMutation("act1")
+
+    expect(result).toEqual({ success: false, error: "Failed to purge activity" })
     expect(spy).toHaveBeenCalled()
     spy.mockRestore()
   })

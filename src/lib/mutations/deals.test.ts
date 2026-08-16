@@ -1,3 +1,10 @@
+// NOTE ON WHAT THIS SUITE CANNOT PROVE.
+//
+// `db` is mocked here, so a mocked `delete` cannot exercise a real foreign key. The purge
+// teardown below exists precisely because every FK into `deals` is `ON DELETE NO ACTION` and a
+// bare `DELETE` raises SQLSTATE 23503 — and no assertion in this file would notice if that
+// stopped being true. These tests pin the SHAPE and the ORDER of the teardown; the only honest
+// test of the constraint behaviour itself is `scripts/trash-checks.sql`, delivered by 37-15.
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 // Mock db
@@ -13,6 +20,7 @@ vi.mock("@/db", () => ({
     update: vi.fn(),
     delete: vi.fn(),
     select: vi.fn(),
+    transaction: vi.fn(),
   },
 }))
 
@@ -51,7 +59,7 @@ vi.mock("@/lib/audit/actor-context", () => ({
 import { db } from "@/db"
 import { crmBus } from "@/lib/events"
 import { getCurrentActor } from "@/lib/audit/actor-context"
-import { auditLog } from "@/db/schema"
+import { auditLog, notes, deals, dealAssignees, dealStageHistory, activities } from "@/db/schema"
 import { PgDialect } from "drizzle-orm/pg-core"
 import type { SQL } from "drizzle-orm"
 import {
@@ -68,6 +76,7 @@ import {
   updateDealStageMutation,
   reorderDealsMutation,
   restoreDealMutation,
+  purgeDealMutation,
 } from "./deals"
 
 const mockDb = db as unknown as {
@@ -81,6 +90,7 @@ const mockDb = db as unknown as {
   update: ReturnType<typeof vi.fn>
   delete: ReturnType<typeof vi.fn>
   select: ReturnType<typeof vi.fn>
+  transaction: ReturnType<typeof vi.fn>
 }
 
 const mockEmit = crmBus.emit as ReturnType<typeof vi.fn>
@@ -102,8 +112,8 @@ beforeEach(() => {
  * is a one-character difference with opposite meaning — an assertion on the rendered predicate is
  * the only way to catch it, because both compile and both return a row-or-undefined.
  */
-const renderPredicate = (where: unknown): string =>
-  new PgDialect().sqlToQuery(where as SQL).sql
+const renderQuery = (where: unknown) => new PgDialect().sqlToQuery(where as SQL)
+const renderPredicate = (where: unknown): string => renderQuery(where).sql
 
 describe("createDealMutation", () => {
   it("creates deal, emits deal.created, returns success with id", async () => {
@@ -942,6 +952,217 @@ describe("restoreDealMutation", () => {
     // The restore is the user-visible contract; a lost audit row is logged, not swallowed,
     // and never rolls back a write the user can already see.
     expect(result).toEqual({ success: true })
+    expect(spy).toHaveBeenCalled()
+    spy.mockRestore()
+  })
+})
+
+/* ------------------------------------------------------------------------------------------ *
+ * Purge (TRASH-03) — the ordered teardown
+ * ------------------------------------------------------------------------------------------ */
+
+describe("purgeDealMutation", () => {
+  const trashedDeal = {
+    id: "d1",
+    title: "Trashed Deal",
+    stageId: "s1",
+    ownerId: "u1",
+    customFields: {} as Record<string, unknown>,
+    deletedAt: new Date("2026-08-01T10:00:00Z"),
+  }
+
+  /**
+   * A `tx` handle whose three write methods are spies. `db.transaction` is implemented as
+   * `cb => cb(tx)` so the teardown body runs inline and its call ORDER is observable.
+   */
+  function stubTransaction(detachedIds: string[] = []) {
+    const deleteWhere = vi.fn().mockResolvedValue(undefined)
+    const txDelete = vi.fn(() => ({ where: deleteWhere }))
+
+    const updateReturning = vi.fn().mockResolvedValue(detachedIds.map((id) => ({ id })))
+    const updateWhere = vi.fn(() => ({ returning: updateReturning }))
+    const updateSet = vi.fn(() => ({ where: updateWhere }))
+    const txUpdate = vi.fn(() => ({ set: updateSet }))
+
+    const insertValues = vi.fn().mockResolvedValue(undefined)
+    const txInsert = vi.fn(() => ({ values: insertValues }))
+
+    const tx = { delete: txDelete, update: txUpdate, insert: txInsert }
+    mockDb.transaction.mockImplementation(
+      async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)
+    )
+
+    return { txDelete, deleteWhere, txUpdate, updateSet, updateWhere, txInsert, insertValues }
+  }
+
+  it("runs the whole teardown inside ONE transaction, with every write on the tx handle", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    stubTransaction()
+
+    const result = await purgeDealMutation("d1")
+
+    expect(result).toEqual({ success: true, detached: 0 })
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1)
+    // A write escaping onto the `db` handle would not roll back with the rest.
+    expect(mockDb.delete).not.toHaveBeenCalled()
+    expect(mockDb.update).not.toHaveBeenCalled()
+    expect(mockDb.insert).not.toHaveBeenCalled()
+  })
+
+  it("tears down in exactly the required ORDER: notes, assignees, stage history, detach, detach audit, deal, purge audit", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    const { txDelete, txUpdate, txInsert } = stubTransaction(["act1"])
+
+    await purgeDealMutation("d1")
+
+    // The tables, in order. A partial teardown leaves FK-orphaned child rows with no parent
+    // left to purge them later, which is why the order is asserted and not just the counts.
+    expect(txDelete.mock.calls.map((call) => call[0])).toEqual([
+      notes,
+      dealAssignees,
+      dealStageHistory,
+      deals,
+    ])
+    expect(txUpdate.mock.calls.map((call) => call[0])).toEqual([activities])
+    expect(txInsert.mock.calls.map((call) => call[0])).toEqual([auditLog, auditLog])
+
+    const deleteOrder = txDelete.mock.invocationCallOrder
+    const updateOrder = txUpdate.mock.invocationCallOrder
+    const insertOrder = txInsert.mock.invocationCallOrder
+
+    expect(deleteOrder[0]).toBeLessThan(deleteOrder[1]) // notes  -> assignees
+    expect(deleteOrder[1]).toBeLessThan(deleteOrder[2]) // assignees -> stage history
+    expect(deleteOrder[2]).toBeLessThan(updateOrder[0]) // stage history -> detach
+    expect(updateOrder[0]).toBeLessThan(insertOrder[0]) // detach -> detach audit rows
+    expect(insertOrder[0]).toBeLessThan(deleteOrder[3]) // detach audit -> the deal row
+    expect(deleteOrder[3]).toBeLessThan(insertOrder[1]) // the deal row -> purge audit row
+  })
+
+  it("scopes the notes delete to this deal by (entityType, entityId)", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    const { deleteWhere } = stubTransaction()
+
+    await purgeDealMutation("d1")
+
+    // `notes` is polymorphic with NO foreign key, so nothing in the database enforces this
+    // and the rows would dangle forever if the predicate were wrong.
+    const query = renderQuery(deleteWhere.mock.calls[0][0])
+    expect(query.sql).toContain('"entity_type"')
+    expect(query.sql).toContain('"entity_id"')
+    expect(query.params).toEqual(["deal", "d1"])
+  })
+
+  it("carries isNotNull(deletedAt) on the final delete itself", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    const { deleteWhere } = stubTransaction()
+
+    await purgeDealMutation("d1")
+
+    // T-37-15: the guard rides on the DELETE, so a guessed id for a LIVE deal cannot be
+    // purged even if every upstream check were bypassed.
+    const rendered = renderPredicate(deleteWhere.mock.calls[3][0])
+    expect(rendered).toContain("is not null")
+    expect(rendered).not.toMatch(/is null/)
+  })
+
+  it("detaches activities rather than deleting them", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    const { txDelete, updateSet } = stubTransaction(["act1"])
+
+    await purgeDealMutation("d1")
+
+    // An activity is an independent trashable entity with its own owner and its own trash tab.
+    // Destroying it would remove a record the purging admin never selected.
+    expect(txDelete.mock.calls.map((call) => call[0])).not.toContain(activities)
+    const setArg = updateSet.mock.calls[0][0] as Record<string, unknown>
+    expect(setArg.dealId).toBeNull()
+    expect(setArg.updatedAt).toBeInstanceOf(Date)
+  })
+
+  it("writes one audit row per detached activity", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    const { insertValues } = stubTransaction(["act1", "act2"])
+
+    const result = await purgeDealMutation("d1")
+
+    expect(result).toEqual({ success: true, detached: 2 })
+    // T-37-10: without this row a LIVE activity silently loses its deal with no trace.
+    expect(insertValues.mock.calls[0][0]).toEqual([
+      {
+        entityType: "activity",
+        entityId: "act1",
+        action: "updated",
+        changes: { dealId: { from: "d1", to: null } },
+        actorKind: "system",
+        actorUserId: null,
+        workflowRunId: null,
+        importSessionId: null,
+      },
+      {
+        entityType: "activity",
+        entityId: "act2",
+        action: "updated",
+        changes: { dealId: { from: "d1", to: null } },
+        actorKind: "system",
+        actorUserId: null,
+        workflowRunId: null,
+        importSessionId: null,
+      },
+    ])
+  })
+
+  it("writes no detach audit row and issues no empty insert when nothing was detached", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    const { txInsert, insertValues } = stubTransaction([])
+
+    const result = await purgeDealMutation("d1")
+
+    expect(result).toEqual({ success: true, detached: 0 })
+    // Exactly one insert — the purge's own row. `insert([])` is not a no-op in Drizzle.
+    expect(txInsert).toHaveBeenCalledTimes(1)
+    expect(Array.isArray(insertValues.mock.calls[0][0])).toBe(false)
+  })
+
+  it("writes the purge audit row with the __purge marker, INSIDE the transaction", async () => {
+    mockGetCurrentActor.mockReturnValue({ kind: "user", userId: "actor-9" })
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    const { txInsert, insertValues } = stubTransaction([])
+
+    await purgeDealMutation("d1")
+
+    // T-37-07: inside the transaction, so a rollback cannot leave a record of a purge that
+    // did not happen. `action: "deleted"` plus a marker, never a fourth AuditAction literal.
+    expect(txInsert).toHaveBeenCalledWith(auditLog)
+    expect(mockDb.insert).not.toHaveBeenCalled()
+    expect(insertValues.mock.calls[0][0]).toEqual({
+      entityType: "deal",
+      entityId: "d1",
+      action: "deleted",
+      changes: { __purge: { from: null, to: true } },
+      actorKind: "user",
+      actorUserId: "actor-9",
+      workflowRunId: null,
+      importSessionId: null,
+    })
+  })
+
+  it("returns NOT_IN_TRASH and never opens a transaction for a live or missing deal", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(undefined)
+
+    const result = await purgeDealMutation("d1")
+
+    expect(result).toEqual({ success: false, error: "NOT_IN_TRASH" })
+    expect(mockDb.transaction).not.toHaveBeenCalled()
+  })
+
+  it("returns a prose failure and logs when the teardown rejects", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(trashedDeal)
+    mockDb.transaction.mockRejectedValue(new Error("23503"))
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await purgeDealMutation("d1")
+
+    expect(result).toEqual({ success: false, error: "Failed to purge deal" })
     expect(spy).toHaveBeenCalled()
     spy.mockRestore()
   })
