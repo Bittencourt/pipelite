@@ -301,6 +301,111 @@
       "cancel": "Keep note"
     }
   },
+  "audit": {
+    "actorKind": {
+      "workflowRun": "Workflow",
+      "apiKey": "API key",
+      "import": "Import",
+      "system": "System"
+    },
+    "entry": {
+      "created": {
+        "organization": "created this organization",
+        "person": "created this person",
+        "deal": "created this deal",
+        "activity": "created this activity"
+      },
+      "updated": {
+        "organization": "updated this organization",
+        "person": "updated this person",
+        "deal": "updated this deal",
+        "activity": "updated this activity"
+      },
+      "deleted": {
+        "organization": "deleted this organization",
+        "person": "deleted this person",
+        "deal": "deleted this deal",
+        "activity": "deleted this activity"
+      },
+      "noVisibleChanges": "No field-level detail was recorded."
+    },
+    "value": {
+      "empty": "empty",
+      "unavailable": "no longer available",
+      "yes": "Yes",
+      "no": "No",
+      "files": "{count, plural, one {# file} other {# files}}",
+      "changedTo": "changed to"
+    },
+    "showMoreFields": "Show {count, plural, one {# more field} other {# more fields}}",
+    "showFewerFields": "Show fewer fields",
+    "unknownActor": "Unknown user",
+    "field": {
+      "title": "Title",
+      "name": "Name",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email",
+      "phone": "Phone",
+      "website": "Website",
+      "industry": "Industry",
+      "defaultCurrency": "Default currency",
+      "value": "Value",
+      "stage": "Stage",
+      "expectedCloseDate": "Expected close date",
+      "organization": "Organization",
+      "person": "Contact",
+      "deal": "Deal",
+      "owner": "Owner",
+      "assignee": "Assignee",
+      "type": "Type",
+      "dueDate": "Due date",
+      "completedAt": "Completed"
+    },
+    "filter": {
+      "label": "Show field changes",
+      "announceShown": "Field changes shown",
+      "announceHidden": "Field changes hidden",
+      "emptyHidden": {
+        "heading": "No notes, activities or stage changes yet",
+        "body": "{count, plural, one {# field change is hidden} other {# field changes are hidden}} on this record. Turn on Show field changes to see them."
+      }
+    },
+    "run": {
+      "heading": "Records changed",
+      "empty": "This run didn't change any records.",
+      "unavailable": "The changed-records list couldn't be loaded.",
+      "untitledRecord": "Untitled record",
+      "action": {
+        "created": "Created",
+        "updated": "Updated",
+        "deleted": "Deleted"
+      },
+      "fieldCount": "{count, plural, one {# field} other {# fields}}"
+    },
+    "retention": {
+      "title": "Audit Log",
+      "description": "How long a record's change history is kept before it is permanently deleted.",
+      "windowTitle": "Retention window",
+      "windowLabel": "Days of history to keep",
+      "windowHelp": "Enter a whole number of days between 1 and 3650. Entries older than this are deleted automatically once a day.",
+      "notSet": "Not set — entries are never pruned.",
+      "save": "Save retention window",
+      "saving": "Saving…",
+      "saved": "Retention window saved.",
+      "saveFailed": "The retention window wasn't saved. Check your connection and try again.",
+      "costTitle": "What this window costs",
+      "entriesLabel": "Audit entries stored",
+      "oldestLabel": "Oldest entry",
+      "oldestNone": "No entries yet",
+      "shortenDialog": {
+        "title": "Shorten retention window?",
+        "description": "Entries older than {days} days will be permanently deleted the next time pruning runs. This can't be undone.",
+        "cancel": "Keep current window",
+        "confirm": "Shorten retention window"
+      }
+    }
+  },
   "settings": {
     "profile": {
       "title": "Profile Settings",
@@ -374,7 +479,9 @@
       "exportData": "Export Data",
       "exportDescription": "Export organizations, people, deals, and activities",
       "pipedriveImport": "Pipedrive Import",
-      "pipedriveImportDescription": "Import data directly from Pipedrive using API"
+      "pipedriveImportDescription": "Import data directly from Pipedrive using API",
+      "auditLog": "Audit Log",
+      "auditLogDescription": "Review change-history retention and see what it costs"
     },
     "users": {
       "title": "Users",
