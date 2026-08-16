@@ -143,6 +143,13 @@ None - no external service configuration required.
 - Plan 37-14's retention pruner should call `purge{Entity}Mutation` directly and process leaves-first (activities → deals → people → organizations), so a parent is never purged while a sibling pass is still detaching from it.
 - Plan 37-15's `scripts/trash-checks.sql` still owes the real constraint assertions; the unit tests here deliberately do not claim to cover them.
 
+## Self-Check: PASSED
+
+- All 5 modified source files present on disk.
+- All 6 commits present in `git log` (`c82b31b`, `5cf0e2c`, `3d0d283`, `49325c1`, `86ee13f`, `180a979`).
+- Working tree clean; `git diff --diff-filter=D 85cafea..HEAD` reports zero deleted files.
+- `npm test` 1384 passed / 4 skipped (vitest) + 8 passed (rsc); `npm run typecheck` exit 0; `npm run lint` 0 errors (125 pre-existing warnings, none in the files touched).
+
 ---
 *Phase: 37-trash-restore*
 *Completed: 2026-08-16*
