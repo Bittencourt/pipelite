@@ -655,3 +655,101 @@ finding, but it is unproven either way and needs real accumulated data to settle
 ## Self-Check: PASSED (for Tasks 1-2 only)
 
 Task 3 is unexecuted by design and is not covered by this check.
+
+---
+
+# Task 3 — Browser verification in Docker (executed 2026-08-16)
+
+Driven by the orchestrator against `http://localhost:3001` after rebuilding the `app` image.
+**Two production defects were found and fixed during this task.** Both were invisible to the
+1,335-test suite; both defeated the phase's own goal in the running container.
+
+## Defect 1 — every audit row was attributed to `system` (fixed, `46b3413`)
+
+Next.js bundles `instrumentation.ts` into a different module graph from the app's server actions,
+so `src/lib/audit/actor-context.ts` was instantiated **twice** in a production build: once in the
+graph that registers the audit subscriber (the READER) and once in the graph that runs the wrapped
+server actions (the WRITER). Each held its own `AsyncLocalStorage`, so `getStore()` in the
+subscriber always returned `undefined` and every row fell back to `?? "system"` with a null user.
+
+- **Observed:** a deal created by a logged-in user in the browser wrote `actor_kind = system`,
+  `actor_user_id = NULL`.
+- **Confirmed by bundle inspection:** two chunks in `/app/.next/server/chunks` each define
+  `getCurrentActor` and construct their own `AsyncLocalStorage` — `d3f92449` (contains
+  `registerAuditSubscriber`) and `2ca07b42` (the app graph).
+- **Why the tests missed it:** vitest has a single module registry, so reader and writer are always
+  the same instance under test.
+- **Why the EVENT arrived but the ACTOR did not:** `crmBus` (`src/lib/events/bus.ts:25`) already
+  carries a `globalThis` singleton for exactly this reason. `actorStorage` did not.
+- **Fix:** same `globalThis` pattern.
+- **Verified after fix:** the same browser edit records `actor_kind = user` with the correct
+  `actor_user_id`.
+
+This alone would have shipped AUDIT-01 as non-functional: no CRM change would have been traceable
+to who made it.
+
+## Defect 2 — custom-field edits produced no audit row at all (fixed, `3b393c7`)
+
+`recalculateFormulas` has two no-op paths returning a blob that does not contain the values the
+save just wrote. The SC-4 fast path (`formula-recalc.ts:663`) returns `input.row?.customFields ?? {}`,
+and `saveFieldValues` **deliberately omits `row`** — so it returns `{}` whenever no formula
+references the changed field, which is the common case for any custom field nothing computes from.
+
+`saveFieldValues:298` assigned that result directly, so the emitted `data.customFields` was `{}`.
+The audit diff compared `{}` before against `{}` after, produced no change map, and the
+subscriber's "an update that changed nothing writes no row" guard discarded the event.
+
+- **Observed:** editing the text custom field `UUID UC (TYR Core)` persisted the value
+  (`{"UUID UC (TYR Core)": "AUDIT36-CF-TEST-2"}`) and wrote **zero** audit rows. No `[audit]` error
+  in the logs, because the insert was never attempted.
+- **Blast radius beyond audit:** the same empty blob went to every webhook and workflow trigger —
+  undercutting the very behaviour change 36-06 introduced (T-36-16).
+- **Fix:** layer the recalc result over the written blob (`{ ...next, ...result.customFields }`).
+  On the success path `result.customFields` is `{ ...existing, ...computed }` over the post-write
+  blob, so this is a no-op there.
+- **Test change (flagged deliberately):** the CFUI-02 test asserted `result.values` was *identically*
+  `recalculateFormulas`' return. That expectation encoded the bug and silently dropped a posted
+  non-formula value (`Origem`). Rewritten to assert the merge, plus a new regression test covering
+  the empty-recalc path.
+- **Verified after fix:** the same edit writes one row —
+  `{"customFields.UUID UC (TYR Core)": {"from": "AUDIT36-CF-TEST-2", "to": "AUDIT36-CF-FIXED"}}`.
+
+## Step-by-step results
+
+| # | Step | Result |
+|---|---|---|
+| 1 | User edit → attributed entry with before→after | **PASS** (after Defect 1 fix) — `prbitt@gmail.com updated this deal`, avatar rail, `UUID UC (TYR Core) AUDIT36-CF-TEST-2 → AUDIT36-CF-FIXED`. Multi-field rendering confirmed on the create entry (Title / Value / Stage + "Show 6 more fields"). Performed as a custom-field + workflow edit rather than title+owner — the deal detail page exposes no native-field edit control. |
+| 2 | Filter default OFF | **PASS** — `Timeline (0)` with `Show field changes (1)` and the toggle off on first load; audit total shown separately in parentheses. |
+| 3 | Cursor trap | **PASS** — 48 entries across 3 pages, strict descending, no duplicates or gaps. Toggling OFF dropped `?changes=1`, reset to `Timeline (0)` and discarded all 48 rather than merging. Toggling back ON restarts at page 1; Load more yields a second page of audit entries. |
+| 4 | Empty-state trap | **PASS** — "No notes, activities or stage changes yet / 1 field change is hidden on this record. Turn on Show field changes to see them." Does **not** say "Nothing has happened yet" and names the control. |
+| 5 | Custom fields (the behaviour change) | **PASS after two fixes.** This is the step that exposed both defects. **Observed answer on the side effect:** no workflow fired and no webhook was delivered — because at the time of the test there were zero active workflows with an `*.updated` trigger and no webhook subscriptions configured in this database. The trigger/webhook exposure is therefore real but currently unexercised here; on a database with active unfiltered `*.updated` workflows it would fire on every custom-field edit. |
+| 6 | Workflow attribution (SC-2) | **PASS** — run completed; row `actor_kind = workflow_run` carrying `workflow_run_id`, one changed field. Timeline shows "AUDIT36 walkthrough workflow updated this person" with the Workflow badge, rail icon and a link to the run. Run detail shows "Records changed (1)" listing Audit Tester, Updated, "1 field". |
+| 7 | API key, exactly one field (SC-3) | **PASS** — the step the plan called most likely to fail. `PUT /api/v1/people/:id` with `{"phone": ...}` produced `actor_kind = api_key` and **exactly one** changed field, correct from→to. The snake_case-payload regression did not occur. Entry renders the generic "API key" label, consistent with 36-17's finding that `apiKeyName` is permanently null. |
+| 8 | Import, one summary row (SC-3) | **PASS** — 3-row CSV import produced **exactly one** row: `actor_kind = import`, `entity_type = import_session`, `changes = {people: 3, warnings: 0, autoCreated: 0}`. No per-record rows. `import_session_id` is null on the CSV path, matching 36-12. |
+| 9 | Retention (SC-4) | **PASS** — input showed **90** on first load with no admin action (migration-0014 seed). "Audit entries stored" and "Oldest entry" both render. Lowering to 1 raised the shorten dialog with the required "the next time pruning runs" copy; raising back to 90 correctly did **not**. After restart the pruner used the runtime value: `[audit-prune] deleted 0 row(s) older than 1d` (0 is correct — all entries are same-day). Restored to 90. |
+| 10 | Escaping | **PASS** — a custom field named `<script>alert(1)</script>` renders as literal text in both the field list and the audit entry. No execution, no broken markup, page stayed responsive. |
+| 11 | Cross-cutting (dark mode, 320px, es-ES/pt-BR) | **NOT VERIFIED.** `resize_window` reported success twice but the rendered viewport did not change, so the 320px check could not be performed honestly; dark mode and the two locales were not exercised. This remains outstanding human UAT. |
+
+## Additional findings (not fixed — outside this phase)
+
+- **`deals.createdAt` renders as a raw i18n key** on the deal detail page; the container logs
+  `Error: MISSING_MESSAGE: deals.createdAt (en-US)` on every render. Pre-existing, not Phase 36.
+- **Retention dialog copy says "1 days"** — no singular pluralisation. Phase 36 copy defect, cosmetic.
+- **`users.name` is NULL** for the test account, so entries fall back to the email address and the
+  Owner field reads "Unknown". A data condition, not a defect — the actor join resolves correctly.
+
+## Environment note
+
+The container was stale at the start of Task 3 (built during Phase 35, zero of this phase's commits,
+no source mount). It was rebuilt from the main checkout, and rebuilt twice more to verify each fix.
+
+## Test artifacts left in the database
+
+`AUDIT-36 Walkthrough Test Deal`, person `audit36-test-person`, 3 imported `*Audit36` people,
+workflow `audit36-wf` (deactivated), and 52 `audit_log` rows. The walkthrough's API key was
+**deleted** and the `<script>` custom-field definition **removed** (it rendered on every person page).
+
+## Task 3 verdict
+
+Ten of eleven steps pass. Step 11 is outstanding. Two defects that defeated AUDIT-01 in production
+were found here and nowhere else — which is precisely the gap this plan exists to close.
