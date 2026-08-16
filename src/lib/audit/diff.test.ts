@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 
-import type { CrmEntityType, CrmEventPayload } from "@/lib/events/types"
+import type { CrmEventPayload } from "@/lib/events/types"
 
 import { IGNORED_COLUMNS, buildChanges, normaliseEventData } from "./diff"
 
@@ -134,9 +134,8 @@ describe("buildChanges - native columns", () => {
     // serializePerson/serializeDeal emit no deleted_at at all, while the pre-read row that
     // becomes `previous` always carries `deletedAt: null`. Treating "absent from data" as
     // "changed to undefined" would put a phantom deletedAt entry in every REST edit.
-    const { deletedAt: _omitted, ...serverReportedRow } = personRow({
-      email: "ana@new.example",
-    })
+    const serverReportedRow = personRow({ email: "ana@new.example" })
+    delete serverReportedRow.deletedAt
 
     const changes = buildChanges(
       payload({
