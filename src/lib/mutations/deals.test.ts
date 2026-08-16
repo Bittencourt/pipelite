@@ -976,16 +976,20 @@ describe("purgeDealMutation", () => {
    * `cb => cb(tx)` so the teardown body runs inline and its call ORDER is observable.
    */
   function stubTransaction(detachedIds: string[] = []) {
-    const deleteWhere = vi.fn().mockResolvedValue(undefined)
-    const txDelete = vi.fn(() => ({ where: deleteWhere }))
+    // Annotated `ReturnType<typeof vi.fn>` — the same posture `mockDb` above uses — so
+    // `mock.calls[n][0]` is readable. The arrow bodies take no parameters, so an inferred
+    // signature would make the call tuple empty and every argument assertion a type error.
+    const deleteWhere: ReturnType<typeof vi.fn> = vi.fn(() => Promise.resolve(undefined))
+    const txDelete: ReturnType<typeof vi.fn> = vi.fn(() => ({ where: deleteWhere }))
 
-    const updateReturning = vi.fn().mockResolvedValue(detachedIds.map((id) => ({ id })))
-    const updateWhere = vi.fn(() => ({ returning: updateReturning }))
-    const updateSet = vi.fn(() => ({ where: updateWhere }))
-    const txUpdate = vi.fn(() => ({ set: updateSet }))
+    const updateReturning: ReturnType<typeof vi.fn> =
+      vi.fn(() => Promise.resolve(detachedIds.map((id) => ({ id }))))
+    const updateWhere: ReturnType<typeof vi.fn> = vi.fn(() => ({ returning: updateReturning }))
+    const updateSet: ReturnType<typeof vi.fn> = vi.fn(() => ({ where: updateWhere }))
+    const txUpdate: ReturnType<typeof vi.fn> = vi.fn(() => ({ set: updateSet }))
 
-    const insertValues = vi.fn().mockResolvedValue(undefined)
-    const txInsert = vi.fn(() => ({ values: insertValues }))
+    const insertValues: ReturnType<typeof vi.fn> = vi.fn(() => Promise.resolve(undefined))
+    const txInsert: ReturnType<typeof vi.fn> = vi.fn(() => ({ values: insertValues }))
 
     const tx = { delete: txDelete, update: txUpdate, insert: txInsert }
     mockDb.transaction.mockImplementation(

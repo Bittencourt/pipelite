@@ -1,5 +1,5 @@
 import { db } from "@/db"
-import { activities, activityTypes, deals, auditLog } from "@/db/schema"
+import { activities, activityTypes, deals, notes, auditLog } from "@/db/schema"
 import type { CustomFieldDefinition, EntityType } from "@/db/schema"
 import { eq, and, isNull, isNotNull } from "drizzle-orm"
 import { z } from "zod"
@@ -443,6 +443,68 @@ export async function restoreActivityMutation(
   }
 
   return { success: true }
+}
+
+/**
+ * Permanently destroy a trashed activity (TRASH-03).
+ *
+ * `activities` is a true LEAF — no table carries a foreign key into it, empirically confirmed
+ * by a rolled-back `DELETE` probe — so the teardown is just notes, then the row, then the audit
+ * row. It detaches nothing and always reports `detached: 0`; the count is on the return type so
+ * the dispatch in this phase can treat all four entity types uniformly.
+ *
+ * `notes` still has to be deleted explicitly: it is polymorphic with NO foreign key
+ * (src/db/schema/notes.ts:16-20), so nothing in the database enforces it and the rows would
+ * dangle forever. See `purgeDealMutation` in ./deals.ts for the full teardown reasoning.
+ */
+export async function purgeActivityMutation(
+  id: string,
+): Promise<{ success: true; detached: number } | { success: false; error: string }> {
+  // Read the actor SYNCHRONOUSLY at function entry, before the transaction promise exists.
+  const actor = getCurrentActor()
+
+  const activity = await db.query.activities.findFirst({
+    where: and(eq(activities.id, id), isNotNull(activities.deletedAt)),
+  })
+
+  if (!activity) {
+    return { success: false, error: "NOT_IN_TRASH" }
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      // 1. Notes: polymorphic, no foreign key, so this must be explicit.
+      await tx
+        .delete(notes)
+        .where(and(eq(notes.entityType, "activity"), eq(notes.entityId, id)))
+
+      // 2. The row itself. The `isNotNull` guard rides on the DELETE so a guessed id for a
+      //    LIVE activity cannot be purged even if every upstream check were bypassed
+      //    (T-37-15).
+      await tx
+        .delete(activities)
+        .where(and(eq(activities.id, id), isNotNull(activities.deletedAt)))
+
+      // 3. The purge's own audit row, INSIDE the transaction, so a rollback cannot leave a
+      //    record of a purge that did not happen (T-37-07). `action: "deleted"` plus a marker
+      //    rather than a fourth AuditAction literal — see `purgeDealMutation` for why.
+      await tx.insert(auditLog).values({
+        entityType: "activity",
+        entityId: id,
+        action: "deleted",
+        changes: { __purge: { from: null, to: true } },
+        actorKind: actor?.kind ?? "system",
+        actorUserId: actor?.userId ?? null,
+        workflowRunId: actor?.workflowRunId ?? null,
+        importSessionId: actor?.importSessionId ?? null,
+      })
+    })
+
+    return { success: true, detached: 0 }
+  } catch (error) {
+    console.error("Failed to purge activity:", error)
+    return { success: false, error: "Failed to purge activity" }
+  }
 }
 
 export async function toggleActivityCompletionMutation(

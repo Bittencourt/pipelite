@@ -1,5 +1,15 @@
 import { db } from "@/db"
-import { deals, stages, organizations, people, dealAssignees, auditLog } from "@/db/schema"
+import {
+  deals,
+  stages,
+  organizations,
+  people,
+  dealAssignees,
+  dealStageHistory,
+  activities,
+  notes,
+  auditLog,
+} from "@/db/schema"
 import type { CustomFieldDefinition, EntityType } from "@/db/schema"
 import { eq, and, isNull, isNotNull, desc, sql } from "drizzle-orm"
 import { z } from "zod"
@@ -596,6 +606,123 @@ export async function restoreDealMutation(
   }
 
   return { success: true }
+}
+
+/**
+ * Permanently destroy a trashed deal (TRASH-03).
+ *
+ * This is an ORDERED TEARDOWN inside one transaction, not a `DELETE`. Every foreign key
+ * pointing at `deals` is `ON DELETE NO ACTION`, and 54.6% of deals have at least one activity,
+ * so a bare delete raises SQLSTATE 23503 for the majority of real records — in the pruner that
+ * would kill the tick (T-37-16). Refusing to purge a parent that has children was considered
+ * and rejected in 37-CONTEXT § Purge Cascade: it fails SC-4 for most of the data.
+ *
+ * The children are handled by DISPOSITION, not uniformly:
+ *
+ *   - `notes` are deleted. Polymorphic with no foreign key, so nothing enforces them and the
+ *     rows would dangle forever; 37-CONTEXT locks that a purge takes the record and its notes.
+ *   - `deal_assignees` and `deal_stage_history` are deleted. Neither row has any independent
+ *     identity — they mean nothing without the deal. Note that stage history is not the audit
+ *     log; the audit log is what keeps the evidence, and it is untouched here.
+ *   - `activities` are DETACHED, never deleted. An activity is an independent trashable entity
+ *     with its own owner and its own trash tab, so destroying one would remove a record the
+ *     purging admin never selected. `activities.deal_id` is already nullable, so this needs no
+ *     schema change.
+ *
+ * ORPHAN STATE, STATED PLAINLY: the detach is the one operation in this phase that mutates a
+ * LIVE row the caller did not select. The mitigation is the per-child audit row below, so an
+ * unlinked activity can be traced back to the deal that was purged out from under it.
+ */
+export async function purgeDealMutation(
+  id: string,
+): Promise<{ success: true; detached: number } | { success: false; error: string }> {
+  // Read the actor SYNCHRONOUSLY at function entry, before the transaction promise exists
+  // (src/lib/events/subscribers/audit.ts:48-56).
+  const actor = getCurrentActor()
+
+  const deal = await db.query.deals.findFirst({
+    where: and(eq(deals.id, id), isNotNull(deals.deletedAt)),
+  })
+
+  if (!deal) {
+    return { success: false, error: "NOT_IN_TRASH" }
+  }
+
+  const auditActor = {
+    actorKind: actor?.kind ?? "system",
+    actorUserId: actor?.userId ?? null,
+    workflowRunId: actor?.workflowRunId ?? null,
+    importSessionId: actor?.importSessionId ?? null,
+  } as const
+
+  try {
+    let detached = 0
+
+    await db.transaction(async (tx) => {
+      // 1. Notes: polymorphic, no foreign key, so this must be explicit.
+      await tx
+        .delete(notes)
+        .where(and(eq(notes.entityType, "deal"), eq(notes.entityId, id)))
+
+      // 2. Pure children with no independent identity.
+      await tx.delete(dealAssignees).where(eq(dealAssignees.dealId, id))
+      await tx.delete(dealStageHistory).where(eq(dealStageHistory.dealId, id))
+
+      // 3. Independent entities that merely reference this deal — detach, never delete.
+      const detachedActivities = await tx
+        .update(activities)
+        .set({ dealId: null, updatedAt: new Date() })
+        .where(eq(activities.dealId, id))
+        .returning({ id: activities.id })
+      detached = detachedActivities.length
+
+      // 4. One audit row per detached child (T-37-10). `dealId` is already in
+      //    AUDIT_FIELD_LABELS, so the activity's timeline renders this with no new code.
+      //    Skipped entirely when nothing was detached: `insert([])` is not a no-op.
+      if (detachedActivities.length > 0) {
+        await tx.insert(auditLog).values(
+          detachedActivities.map((activity) => ({
+            entityType: "activity" as const,
+            entityId: activity.id,
+            action: "updated" as const,
+            changes: { dealId: { from: id, to: null } },
+            ...auditActor,
+          }))
+        )
+      }
+
+      // 5. Now, and only now, the row itself. The `isNotNull` guard rides on the DELETE so a
+      //    guessed id for a LIVE deal cannot be purged even if every upstream check were
+      //    bypassed (T-37-15).
+      await tx.delete(deals).where(and(eq(deals.id, id), isNotNull(deals.deletedAt)))
+
+      // 6. The purge's own audit row, INSIDE the transaction, so a rollback cannot leave a
+      //    record of a purge that did not happen (T-37-07).
+      //
+      //    `action: "deleted"` plus a marker in `changes`, rather than a fourth AuditAction
+      //    literal. A fourth literal would cascade across two duplicate type declarations and
+      //    two exhaustive `Record<AuditAction, ...>` maps (RESEARCH Pitfall 6), and 37-CONTEXT
+      //    grants this discretion explicitly. `buildAuditFieldChanges` returns `[]` for
+      //    `action === "deleted"`, so the marker never renders in a timeline — which is fine,
+      //    because a purged record's timeline is unreachable, and is a reason to prefer it.
+      //
+      //    The record's PRE-EXISTING audit rows are untouched: `audit_log.entity_id` has no
+      //    foreign key by design (src/db/schema/audit-log.ts:40-45), and that is exactly what
+      //    preserves the evidence the purge dialog promises to keep.
+      await tx.insert(auditLog).values({
+        entityType: "deal",
+        entityId: id,
+        action: "deleted",
+        changes: { __purge: { from: null, to: true } },
+        ...auditActor,
+      })
+    })
+
+    return { success: true, detached }
+  } catch (error) {
+    console.error("Failed to purge deal:", error)
+    return { success: false, error: "Failed to purge deal" }
+  }
 }
 
 export async function updateDealStageMutation(
