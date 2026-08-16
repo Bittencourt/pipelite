@@ -261,6 +261,11 @@ rows with parent flags and attribution, and a `TrashRow` shape that is JSON-safe
 `deletedAt`. The restore and purge server actions have `findTrashedRecord` for their owner-or-admin
 guard and for the `{name}` in their toasts.
 
+## Self-Check: PASSED
+
+Both created files exist on disk; all five commit hashes resolve in `git log`; the working tree is
+clean and no tracked file was deleted between `8f012d0` and `HEAD`.
+
 ---
 *Phase: 37-trash-restore*
 *Completed: 2026-08-16*
