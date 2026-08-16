@@ -228,11 +228,24 @@ export async function deleteNote(noteId: string): Promise<VoidResult> {
  * `cursor` stays OPAQUE here. `assembleTimeline` decodes and zod-validates it, and
  * `decodeCursor` degrades a hostile value to page 1 rather than to a 500 (T-35-02). This
  * action must never decode it and must never trust it.
+ *
+ * THE SCOPE TRAVELS WITH THE CURSOR, AND THAT IS CORRECTNESS (T-36-37)
+ * A cursor is scope-specific because the keyset predicate is applied PER BRANCH
+ * (`sources.ts`). A cursor minted with audit OFF and replayed with audit ON returns audit
+ * entries older than the cursor and SILENTLY OMITS every audit entry newer than it — the
+ * ones inside the window the reader has already scrolled past. So page 2 must be drawn from
+ * the same source set as page 1, which means the caller sends the flag it rendered page 1
+ * with. Toggling is never a `Load more`: it is a navigation and a fresh page 1.
+ *
+ * `includeAudit` defaults to FALSE for the same reason it does at every level of
+ * `assemble.ts`: a caller that has not been taught about the scope gets Phase 35's timeline
+ * unchanged rather than an audit-dominated one.
  */
 export async function loadMoreTimeline(
   entityType: EntityType,
   entityId: string,
-  cursor: string
+  cursor: string,
+  includeAudit: boolean = false
 ): Promise<PageResult> {
   try {
     const session = await auth()
@@ -241,7 +254,12 @@ export async function loadMoreTimeline(
       return { success: false, error: NOT_AUTHENTICATED }
     }
 
-    const page = await assembleTimeline({ entityType, entityId, cursor })
+    const page = await assembleTimeline({
+      entityType,
+      entityId,
+      cursor,
+      includeAudit,
+    })
 
     return { success: true, page }
   } catch (error) {

@@ -523,6 +523,24 @@ describe("loadMoreTimeline", () => {
       entityType: "deal",
       entityId: "d1",
       cursor,
+      // The scope defaults OFF, so an untaught caller gets Phase 35's timeline.
+      includeAudit: false,
+    })
+  })
+
+  // T-36-37. The keyset predicate is applied per branch, so a cursor is scope-specific:
+  // page 2 has to be drawn from the same source set as page 1 or the audit entries newer
+  // than the cursor are silently omitted.
+  it("carries the audit scope through to the assembler", async () => {
+    mockAuth.mockResolvedValue(sessionFor("u1"))
+
+    await loadMoreTimeline("deal", "d1", "cursor", true)
+
+    expect(mockAssemble).toHaveBeenCalledWith({
+      entityType: "deal",
+      entityId: "d1",
+      cursor: "cursor",
+      includeAudit: true,
     })
   })
 

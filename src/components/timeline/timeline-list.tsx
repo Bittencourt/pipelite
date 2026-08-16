@@ -30,6 +30,22 @@
  * convention change in a plan that is not about state management. The hook's name is
  * kept out of this file entirely, because the plan gates its absence with a raw grep.
  *
+ * THE AUDIT SCOPE IS CARRIED, NEVER RE-DERIVED (T-36-37)
+ * `includeAudit` arrives from the server render and is sent back with EVERY `Load more`, so
+ * page 2 is drawn from the same source set as page 1. It matters because the keyset
+ * predicate is applied per branch (`sources.ts`): a cursor minted with the scope off and
+ * replayed with it on returns audit entries older than the cursor and silently omits every
+ * one newer than it — inside the window the reader has already scrolled past. `sources.ts`
+ * states the standard for this class of bug in its own words: "On an audit surface, omitting
+ * history is the worst failure available."
+ *
+ * TOGGLING RESTARTS AT PAGE 1, AND THE RESET IS A REMOUNT DONE BY THE CALLER
+ * Already-loaded pages MUST be discarded on a scope change; merging two scopes is not an
+ * option. `record-timeline.tsx` keys this component on the scope, so a toggle remounts the
+ * subtree and the seeding below runs again against fresh server props. The general
+ * no-re-seed rule is therefore still ON — a `revalidatePath` after a note mutation must
+ * still not drop appended pages — and only a scope change resets.
+ *
  * `onUpdated` IS LOAD-BEARING (35-11)
  * `NoteEntry` clears its optimistic override the instant it calls `onUpdated`, on the
  * assumption that THIS component applies the returned entry to its own state. If
@@ -57,6 +73,10 @@ interface TimelineListProps {
   initialEntries: TimelineEntry[]
   initialCursor: string | null
   hasMore: boolean
+  /** The scope page one was read under. Sent back with every `Load more`. */
+  includeAudit: boolean
+  /** The record's audit-entry count regardless of the scope. Selects the empty state. */
+  auditTotal: number
   /** From the session, server-side. Drives `canManage`, which is cosmetic only. */
   currentUserId: string
   isAdmin: boolean
@@ -68,6 +88,8 @@ export function TimelineList({
   initialEntries,
   initialCursor,
   hasMore,
+  includeAudit,
+  auditTotal,
   currentUserId,
   isAdmin,
 }: TimelineListProps) {
@@ -103,7 +125,12 @@ export function TimelineList({
     setLoading(true)
 
     try {
-      const result = await loadMoreTimeline(entityType, entityId, cursor)
+      const result = await loadMoreTimeline(
+        entityType,
+        entityId,
+        cursor,
+        includeAudit
+      )
 
       if (result.success) {
         const page = result.page
@@ -136,6 +163,10 @@ export function TimelineList({
 
   const canLoadMore = more && cursor !== null
 
+  // Only when the list is empty BECAUSE the scope is closed. With the scope open, or with
+  // no audit history at all, Phase 35's copy is still the true thing to say.
+  const hasHiddenHistory = !includeAudit && auditTotal > 0
+
   return (
     <div>
       {/*
@@ -146,14 +177,24 @@ export function TimelineList({
 
       <div className="mt-4 border-t pt-4">
         {entries.length === 0 ? (
-          // A deal merges notes, activities and stage changes; the other three entity
-          // types only have the notes source (`appliesTo` in sources.ts).
-          <EmptyTimeline variant={entityType === "deal" ? "full" : "notesOnly"} />
+          hasHiddenHistory ? (
+            // Something DID happen here; it is just behind the closed toggle. Saying
+            // "nothing has happened yet" over it would be the UI misreporting its own
+            // data (T-36-40).
+            <EmptyTimeline variant="hiddenHistory" hiddenCount={auditTotal} />
+          ) : (
+            // A deal merges notes, activities and stage changes; the other three entity
+            // types only have the notes source (`appliesTo` in sources.ts).
+            <EmptyTimeline variant={entityType === "deal" ? "full" : "notesOnly"} />
+          )
         ) : (
           // An ordered list, newest first, so the DOM order and the visual order agree
           // (35-UI-SPEC Accessibility Contract). The renderers all emit a plain div; the
           // <ol>/<li> structure belongs here.
-          <ol className="space-y-4">
+          //
+          // The id is what the filter toggle's `aria-controls` resolves to: the toggle
+          // changes THIS list's contents, not its own subtree.
+          <ol id="record-timeline-list" className="space-y-4">
             {entries.map((entry, index) => (
               <li key={entry.id} className="relative">
                 {index < entries.length - 1 ? (
