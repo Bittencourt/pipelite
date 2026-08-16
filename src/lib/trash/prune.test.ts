@@ -215,7 +215,7 @@ describe("the expired-id statement", () => {
     await vi.advanceTimersByTimeAsync(INITIAL_DELAY)
 
     const { sql } = renderedCall()
-    expect(sql).toContain("select")
+    expect(sql.toLowerCase()).toContain("select ")
     expect(sql.toLowerCase()).not.toContain("delete from")
   })
 })
