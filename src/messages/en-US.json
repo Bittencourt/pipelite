@@ -483,6 +483,62 @@
       }
     }
   },
+  "bulk": {
+    "selectRow": "Select {name}",
+    "selectAllLoaded": "{count, plural, one {Select the 1 loaded record} other {Select all # loaded records}}",
+    "selectAllInStage": "{count, plural, one {Select the 1 deal in {stage}} other {Select all # deals in {stage}}}",
+    "selectAllInStageCapped": "Select the first {max} of {total} deals in {stage}",
+    "selected": "{count, plural, one {# selected} other {# selected}}",
+    "actionBarLabel": "{count, plural, one {Actions for # selected record} other {Actions for # selected records}}",
+    "reassignOwner": "Reassign owner",
+    "exportCsv": "Export CSV",
+    "delete": "Delete",
+    "clearSelection": "Clear selection",
+    "exporting": "Preparing CSV…",
+    "deleteDialog": {
+      "title": "{count, plural, one {Delete 1 record?} other {Delete # records?}}",
+      "description": "{count, plural, one {# record moves to Trash. You can restore it for {days} days.} other {# records move to Trash. You can restore them for {days} days.}}",
+      "descriptionNoRetention": "{count, plural, one {# record moves to Trash. You can restore it until an admin deletes it permanently.} other {# records move to Trash. You can restore them until an admin deletes them permanently.}}",
+      "cancel": "Keep records",
+      "confirm": "{count, plural, one {Delete 1 record} other {Delete # records}}",
+      "deleting": "Deleting…"
+    },
+    "reassignDialog": {
+      "title": "Reassign owner",
+      "description": "{count, plural, one {Choose the new owner of # selected record.} other {Choose the new owner of # selected records.}}",
+      "ownerLabel": "New owner",
+      "ownerPlaceholder": "Choose a user",
+      "noEmailNotice": "The new owner isn't emailed about this change.",
+      "cancel": "Keep current owners",
+      "confirm": "{count, plural, one {Reassign 1 record} other {Reassign # records}}",
+      "reassigning": "Reassigning…"
+    },
+    "deleted": "{count, plural, one {# record moved to Trash.} other {# records moved to Trash.}}",
+    "reassigned": "{count, plural, one {# record reassigned to {owner}.} other {# records reassigned to {owner}.}}",
+    "exported": "{count, plural, one {# record exported.} other {# records exported.}}",
+    "partial": "{succeeded} of {total} succeeded. {failed} failed.",
+    "openTrash": "Open Trash",
+    "working": "Working…",
+    "failures": {
+      "deleteTitle": "{count, plural, one {# record wasn't deleted} other {# records weren't deleted}}",
+      "reassignTitle": "{count, plural, one {# record wasn't reassigned} other {# records weren't reassigned}}",
+      "retryHint": "These records are still selected. Fix the problem and try again.",
+      "dismiss": "Dismiss"
+    },
+    "error": {
+      "tooMany": "You can act on at most {max} records at once. {count} are selected.",
+      "deleteFailed": "No records were deleted. Refresh the page and try again.",
+      "reassignFailed": "No records were reassigned. Refresh the page and try again.",
+      "exportFailed": "The CSV couldn't be created. Refresh the page and try again.",
+      "notPermitted": "You can only change records you own."
+    },
+    "reason": {
+      "notFound": "No longer exists",
+      "notPermitted": "You don't have access",
+      "alreadyDeleted": "Already in Trash",
+      "unknown": "Couldn't be saved"
+    }
+  },
   "settings": {
     "profile": {
       "title": "Profile Settings",

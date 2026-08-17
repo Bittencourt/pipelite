@@ -483,6 +483,62 @@
       }
     }
   },
+  "bulk": {
+    "selectRow": "Seleccionar {name}",
+    "selectAllLoaded": "{count, plural, one {Seleccionar el registro cargado} other {Seleccionar los # registros cargados}}",
+    "selectAllInStage": "{count, plural, one {Seleccionar la oferta de {stage}} other {Seleccionar las # ofertas de {stage}}}",
+    "selectAllInStageCapped": "Seleccionar las primeras {max} de {total} ofertas de {stage}",
+    "selected": "{count, plural, one {# seleccionado} other {# seleccionados}}",
+    "actionBarLabel": "{count, plural, one {Acciones para # registro seleccionado} other {Acciones para # registros seleccionados}}",
+    "reassignOwner": "Reasignar propietario",
+    "exportCsv": "Exportar CSV",
+    "delete": "Eliminar",
+    "clearSelection": "Borrar la selección",
+    "exporting": "Preparando el CSV…",
+    "deleteDialog": {
+      "title": "{count, plural, one {¿Eliminar 1 registro?} other {¿Eliminar # registros?}}",
+      "description": "{count, plural, one {# registro va a la papelera. Puedes restaurarlo durante {days} días.} other {# registros van a la papelera. Puedes restaurarlos durante {days} días.}}",
+      "descriptionNoRetention": "{count, plural, one {# registro va a la papelera. Puedes restaurarlo hasta que un administrador lo elimine permanentemente.} other {# registros van a la papelera. Puedes restaurarlos hasta que un administrador los elimine permanentemente.}}",
+      "cancel": "Conservar los registros",
+      "confirm": "{count, plural, one {Eliminar 1 registro} other {Eliminar # registros}}",
+      "deleting": "Eliminando…"
+    },
+    "reassignDialog": {
+      "title": "Reasignar propietario",
+      "description": "{count, plural, one {Elige el nuevo propietario de # registro seleccionado.} other {Elige el nuevo propietario de # registros seleccionados.}}",
+      "ownerLabel": "Nuevo propietario",
+      "ownerPlaceholder": "Elige un usuario",
+      "noEmailNotice": "Al nuevo propietario no se le envía ningún correo sobre este cambio.",
+      "cancel": "Conservar los propietarios actuales",
+      "confirm": "{count, plural, one {Reasignar 1 registro} other {Reasignar # registros}}",
+      "reassigning": "Reasignando…"
+    },
+    "deleted": "{count, plural, one {# registro se movió a la papelera.} other {# registros se movieron a la papelera.}}",
+    "reassigned": "{count, plural, one {# registro reasignado a {owner}.} other {# registros reasignados a {owner}.}}",
+    "exported": "{count, plural, one {# registro exportado.} other {# registros exportados.}}",
+    "partial": "{succeeded} de {total} se completaron. {failed} fallaron.",
+    "openTrash": "Abrir la papelera",
+    "working": "Procesando…",
+    "failures": {
+      "deleteTitle": "{count, plural, one {# registro no se eliminó} other {# registros no se eliminaron}}",
+      "reassignTitle": "{count, plural, one {# registro no se reasignó} other {# registros no se reasignaron}}",
+      "retryHint": "Estos registros siguen seleccionados. Corrige el problema e inténtalo de nuevo.",
+      "dismiss": "Descartar"
+    },
+    "error": {
+      "tooMany": "Puedes actuar sobre {max} registros como máximo a la vez. Hay {count} seleccionados.",
+      "deleteFailed": "No se eliminó ningún registro. Actualiza la página e inténtalo de nuevo.",
+      "reassignFailed": "No se reasignó ningún registro. Actualiza la página e inténtalo de nuevo.",
+      "exportFailed": "No se pudo crear el CSV. Actualiza la página e inténtalo de nuevo.",
+      "notPermitted": "Solo puedes cambiar los registros que te pertenecen."
+    },
+    "reason": {
+      "notFound": "Ya no existe",
+      "notPermitted": "No tienes acceso",
+      "alreadyDeleted": "Ya está en la papelera",
+      "unknown": "No se pudo guardar"
+    }
+  },
   "settings": {
     "profile": {
       "title": "Configuración de Perfil",
