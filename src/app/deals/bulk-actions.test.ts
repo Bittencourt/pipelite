@@ -81,8 +81,9 @@ import { revalidatePath } from "next/cache"
 import { runWithActor } from "@/lib/audit/actor-context"
 import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
 import { sendDealAssignedEmail } from "@/lib/email/send"
+import { fetchFilteredData } from "@/lib/export/formatters"
 
-import { bulkDeleteDeals, bulkReassignDealOwner } from "./actions"
+import { bulkDeleteDeals, bulkReassignDealOwner, exportSelectedDeals } from "./actions"
 
 const mockAuth = vi.mocked(auth as unknown as () => Promise<Session | null>)
 const mockRevalidatePath = vi.mocked(revalidatePath)
@@ -90,6 +91,7 @@ const mockDelete = vi.mocked(deleteRecordByType)
 const mockReassign = vi.mocked(updateRecordOwnerByType)
 const mockRunWithActor = vi.mocked(runWithActor)
 const mockEmail = vi.mocked(sendDealAssignedEmail)
+const mockFetchFiltered = vi.mocked(fetchFilteredData)
 
 type DealRow = { id: string; ownerId: string | null } | undefined
 const mockDealFindFirst = db.query.deals.findFirst as unknown as ReturnType<typeof vi.fn>
@@ -132,6 +134,14 @@ beforeEach(() => {
   mockUserFindFirst.mockResolvedValue(APPROVED_TARGET)
   mockDelete.mockResolvedValue({ success: true })
   mockReassign.mockResolvedValue({ success: true })
+  // `count` deliberately differs from every test's input id count, so a filename built from
+  // `uniqueIds.length` instead of the fetch result cannot pass.
+  mockFetchFiltered.mockResolvedValue({
+    success: true,
+    data: "id,title\nd1,Acme renewal\n",
+    filename: "deals-2026-08-17.csv",
+    count: 7,
+  })
 })
 
 describe("bulkDeleteDeals", () => {
@@ -520,5 +530,94 @@ describe("bulkReassignDealOwner", () => {
 
     expect(result).toEqual({ success: true, succeeded: ids, failed: [] })
     expect(mockEmail).not.toHaveBeenCalled()
+  })
+})
+
+describe("exportSelectedDeals", () => {
+  it("refuses an unauthenticated caller without reading a single row", async () => {
+    mockAuth.mockResolvedValue(null)
+
+    const result = await exportSelectedDeals(["d1"])
+
+    expect(result.success).toBe(false)
+    expect(mockFetchFiltered).not.toHaveBeenCalled()
+  })
+
+  it("refuses an empty selection rather than exporting the whole table", async () => {
+    mockAuth.mockResolvedValue(sessionFor(OWNER))
+
+    const result = await exportSelectedDeals([])
+
+    expect(result.success).toBe(false)
+    expect(mockFetchFiltered).not.toHaveBeenCalled()
+  })
+
+  it("refuses a malformed argument", async () => {
+    mockAuth.mockResolvedValue(sessionFor(OWNER))
+
+    for (const hostile of ["d1", { ids: ["d1"] }, [42], null]) {
+      expect((await exportSelectedDeals(hostile as unknown as string[])).success).toBe(false)
+    }
+
+    expect(mockFetchFiltered).not.toHaveBeenCalled()
+  })
+
+  it("refuses more than BULK_MAX_IDS ids", async () => {
+    mockAuth.mockResolvedValue(sessionFor(OWNER))
+
+    const result = await exportSelectedDeals(idsOf(101))
+
+    expect(result.success).toBe(false)
+    expect(mockFetchFiltered).not.toHaveBeenCalled()
+  })
+
+  it("builds the export options ENTIRELY server-side, with no stage filter", async () => {
+    // The deep-equal is the T-38-01 gate: it fails on an EXTRA key too, which is what proves no
+    // `stage` filter leaked in even though `/deals` is a kanban organised by stage and the filter
+    // type has a slot for one. The selection already determines the rows.
+    mockAuth.mockResolvedValue(sessionFor(OWNER, "member"))
+
+    await exportSelectedDeals(["d1", "d2", "d1"])
+
+    expect(mockFetchFiltered).toHaveBeenCalledTimes(1)
+    expect(mockFetchFiltered).toHaveBeenCalledWith({
+      entityType: "deal",
+      format: "csv",
+      includeCustomFields: true,
+      filters: { ids: ["d1", "d2"] },
+    })
+  })
+
+  it("names the file deals-selected-<count>-<date>.csv, counting from the fetch RESULT", async () => {
+    mockAuth.mockResolvedValue(sessionFor(OWNER))
+
+    const result = await exportSelectedDeals(["d1", "d2"])
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.filename).toMatch(/^deals-selected-\d+-\d{4}-\d{2}-\d{2}\.csv$/)
+    // 7 is the mocked `count`; the input carried 2 ids, so a filename built from the argument
+    // would read `deals-selected-2-…`.
+    expect(result.filename.split("-")[2]).toBe("7")
+    expect(result.data).toBe("id,title\nd1,Acme renewal\n")
+    expect(result.count).toBe(7)
+  })
+
+  it("passes a fetch failure through unchanged", async () => {
+    mockAuth.mockResolvedValue(sessionFor(OWNER))
+    mockFetchFiltered.mockResolvedValue({ success: false, error: "Unknown entity type" })
+
+    expect(await exportSelectedDeals(["d1"])).toEqual({
+      success: false,
+      error: "Unknown entity type",
+    })
+  })
+
+  it("exports for a NON-ADMIN too: the scoped export carries no admin gate", async () => {
+    // `getExportData` in the admin export action IS admin-gated, and that is exactly why this
+    // action exists with its own narrow signature rather than reusing it.
+    mockAuth.mockResolvedValue(sessionFor(OTHER, "member"))
+
+    expect((await exportSelectedDeals(["d1"])).success).toBe(true)
   })
 })
