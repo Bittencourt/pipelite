@@ -1,12 +1,13 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useMemo, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
   useReactTable,
+  type RowSelectionState,
 } from "@tanstack/react-table"
 import {
   Table,
@@ -25,6 +26,16 @@ import { DeleteDialog } from "./delete-dialog"
 import { deleteOrganization } from "./actions"
 import { toast } from "sonner"
 import { useDataTableKeyboard } from "@/components/keyboard"
+import { useSelectColumn } from "@/components/bulk/select-column"
+
+/**
+ * The accessible name of a row's checkbox: "Select Acme Ltda", never "Select row".
+ *
+ * Declared at module scope on purpose. `useSelectColumn` memoises the column definition on this
+ * function's identity, so an inline arrow would hand it a new identity on every render and rebuild
+ * the table's whole column model on every paint.
+ */
+const getOrganizationLabel = (org: Organization) => org.name
 
 interface DataTableProps {
   columns: ColumnDef<Organization, unknown>[]
@@ -59,6 +70,67 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
   const [orgToDelete, setOrgToDelete] = useState<Organization | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /**
+   * BULK SELECTION LIVES HERE — in TanStack's own `rowSelection`, per list. No URL parameter, no
+   * global store, no context: a selection is a transient, per-surface intent, and putting it in the
+   * URL would make it survivable across a share or a reload, which is the wrong lifetime for a set
+   * of records about to be deleted.
+   */
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+
+  /**
+   * CLEAR ON A SEARCH CHANGE — keyed on the search STRING, never on the `data` array.
+   *
+   * The distinction is the whole point and it is not stylistic. Measured in Phase 35 against
+   * Next 16.1.6 and recorded in `handleRecordSaved` below: an action that calls `revalidatePath` at
+   * all re-renders the CURRENT client tree a few milliseconds after it resolves, whichever path it
+   * names — and every bulk action calls it. A clear keyed on `data` would therefore fire in the
+   * middle of a bulk action's own revalidation and wipe the failed-record selection that has to
+   * survive for the retry to be one click. Succeeded ids are removed explicitly in `handleOutcome`,
+   * never by a reactive clear.
+   *
+   * Written as React's documented adjust-state-on-a-prop-change pattern rather than as
+   * `useEffect(() => setRowSelection({}), [search])` because this repo lints a synchronous state
+   * update inside an effect as an ERROR. It is also the better shape: the reset happens during the
+   * same render that first sees the new search, so no paint ever shows the old selection against
+   * the new result set.
+   */
+  const [prevSearch, setPrevSearch] = useState(search)
+  if (prevSearch !== search) {
+    setPrevSearch(search)
+    setRowSelection({})
+  }
+
+  const selectColumn = useSelectColumn<Organization>(getOrganizationLabel)
+
+  /**
+   * The shared checkbox column is PREPENDED — first column, before the existing leading column —
+   * and it is composed here rather than in `columns.tsx` because that module exports a STATIC array
+   * imported by a server component, so a column defined there could never call `useTranslations`
+   * and its accessible name would ship as untranslated English.
+   */
+  const columnsWithSelect = useMemo(
+    () => [selectColumn, ...columns],
+    [selectColumn, columns],
+  )
+
+  /**
+   * The submitted id list, derived DEFENSIVELY: the truthy keys of `rowSelection` intersected with
+   * the ids actually loaded.
+   *
+   * TanStack does not prune `rowSelection` when a row leaves `data`, so after a successful bulk
+   * delete the keys of the deleted rows would linger as phantoms inflating the count — and a
+   * phantom id in a destructive submit is an action on a record the user never picked (T-38-37).
+   * The intersection makes that impossible by construction, on top of the explicit clearing in
+   * `handleOutcome`. It is deliberately NOT derived from the table's own selected-row model, whose
+   * accessor is asserted absent from this file by a source gate.
+   */
+  const loadedIds = useMemo(() => new Set(data.map((r) => r.id)), [data])
+  const selectedIds = useMemo(
+    () => Object.keys(rowSelection).filter((id) => rowSelection[id] && loadedIds.has(id)),
+    [rowSelection, loadedIds],
+  )
 
   const handleAddNew = () => {
     setEditingOrg(null)
@@ -140,7 +212,19 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
 
   const table = useReactTable({
     data,
-    columns,
+    columns: columnsWithSelect,
+    /**
+     * MANDATORY, and load-bearing rather than hygiene. TanStack's default row id is the row INDEX,
+     * and this list's rows array is CUMULATIVE across Load More (`page.tsx` fetches
+     * `PAGE_SIZE * pageNum + 1` and slices back to `PAGE_SIZE * pageNum`). With index keys any
+     * reorder or removal silently retargets the selection onto different records, and the next
+     * action would be a bulk delete of records the user never picked (T-38-36). Keying on the
+     * record id is also exactly what makes the selection survive Load More.
+     */
+    getRowId: (row) => row.id,
+    state: { rowSelection },
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: true,
     getCoreRowModel: getCoreRowModel(),
     meta: {
       refresh: refresh || (() => {}),
@@ -212,7 +296,13 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length}
+                  /*
+                    Read from the TABLE, not from the `columns` prop: the prop no longer matches the
+                    rendered column count now that the select column is prepended, and the visible
+                    symptom of the stale count is an empty state misaligned by one cell on a
+                    filtered-to-nothing list.
+                  */
+                  colSpan={table.getAllLeafColumns().length}
                   className="h-24 text-center"
                 >
                   No organizations found.
