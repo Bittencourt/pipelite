@@ -79,8 +79,13 @@ import { revalidatePath } from "next/cache"
 import { runWithActor } from "@/lib/audit/actor-context"
 import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
+import { fetchFilteredData } from "@/lib/export/formatters"
 
-import { bulkDeleteActivities, bulkReassignActivityOwner } from "./actions"
+import {
+  bulkDeleteActivities,
+  bulkReassignActivityOwner,
+  exportSelectedActivities,
+} from "./actions"
 
 /** The row shape the per-record read returns, carrying BOTH user-valued columns. */
 type ActivityRow = {
@@ -97,6 +102,7 @@ const mockAuth = vi.mocked(auth as unknown as () => Promise<Session | null>)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockDelete = vi.mocked(deleteRecordByType)
 const mockUpdateOwner = vi.mocked(updateRecordOwnerByType)
+const mockFetchFiltered = vi.mocked(fetchFilteredData)
 const mockRunWithActor = vi.mocked(runWithActor)
 const mockActivityFindFirst = vi.mocked(
   db.query.activities.findFirst as unknown as (
@@ -155,6 +161,12 @@ beforeEach(() => {
   mockUserFindFirst.mockResolvedValue(APPROVED_TARGET)
   mockDelete.mockResolvedValue({ success: true })
   mockUpdateOwner.mockResolvedValue({ success: true })
+  mockFetchFiltered.mockResolvedValue({
+    success: true,
+    data: "id,title\n",
+    filename: "activities-2026-08-17.csv",
+    count: 7,
+  })
   mockAuth.mockResolvedValue(sessionFor(OWNER))
 })
 
@@ -481,5 +493,85 @@ describe("bulkReassignActivityOwner", () => {
       expect(call).toHaveLength(4)
       for (const argument of call) expect(typeof argument).toBe("string")
     }
+  })
+})
+
+/**
+ * THE SCOPED EXPORT MUST NOT BE ABLE TO EXPRESS "NO FILTER" (T-38-01).
+ *
+ * The only pre-existing export action is admin-gated and takes a full options object. This one is
+ * open to any signed-in user, so if it accepted an options or filters argument, a caller handing it
+ * `{}` would receive every activity in the table — an admin-gate bypass. The deep-equal below is the
+ * runtime half of that guarantee and the source gate at the bottom of this file is the other half.
+ */
+describe("exportSelectedActivities", () => {
+  it("C.1 refuses an unauthenticated caller without reading anything", async () => {
+    mockAuth.mockResolvedValue(null)
+
+    const result = await exportSelectedActivities(["a1"])
+
+    expect(result.success).toBe(false)
+    if (result.success) throw new Error("unreachable")
+    expect(result.error.length).toBeGreaterThan(0)
+    expect(mockFetchFiltered).not.toHaveBeenCalled()
+  })
+
+  it("C.2 refuses an empty selection rather than exporting the whole table", async () => {
+    expect((await exportSelectedActivities([])).success).toBe(false)
+    expect(mockFetchFiltered).not.toHaveBeenCalled()
+  })
+
+  it("C.2b refuses a malformed argument", async () => {
+    expect((await exportSelectedActivities({} as unknown as string[])).success).toBe(false)
+    expect(mockFetchFiltered).not.toHaveBeenCalled()
+  })
+
+  it("C.3 refuses more ids than the cap", async () => {
+    expect((await exportSelectedActivities(idList(BULK_MAX_IDS + 1))).success).toBe(false)
+    expect(mockFetchFiltered).not.toHaveBeenCalled()
+  })
+
+  it("C.4 constructs every export option server-side and passes NO date filters", async () => {
+    await exportSelectedActivities(["a1", "a2"])
+
+    // `toStrictEqual`, so an explicitly-undefined `dateFrom`/`dateTo` key would still fail: the
+    // point of the assertion is that no filter key other than `ids` exists at all.
+    expect(mockFetchFiltered).toHaveBeenCalledTimes(1)
+    expect(mockFetchFiltered.mock.calls[0][0]).toStrictEqual({
+      entityType: "activity",
+      format: "csv",
+      includeCustomFields: true,
+      filters: { ids: ["a1", "a2"] },
+    })
+    const options = mockFetchFiltered.mock.calls[0][0]
+    expect(Object.keys(options.filters ?? {})).toStrictEqual(["ids"])
+  })
+
+  it("C.4b dedupes the selection before scoping the read", async () => {
+    await exportSelectedActivities(["a1", "a1", "a2"])
+
+    expect(mockFetchFiltered.mock.calls[0][0].filters?.ids).toStrictEqual(["a1", "a2"])
+  })
+
+  it("C.5 returns an untranslated activities-selected filename counted from the RESULT", async () => {
+    // The mocked count (7) deliberately differs from the two ids submitted: the filename must
+    // report how many rows were exported, not how many were asked for.
+    const result = await exportSelectedActivities(["a1", "a2"])
+
+    expect(result.success).toBe(true)
+    if (!result.success) throw new Error("unreachable")
+    expect(result.filename).toMatch(/^activities-selected-\d+-\d{4}-\d{2}-\d{2}\.csv$/)
+    expect(result.filename.split("-")[2]).toBe("7")
+    expect(result.data).toBe("id,title\n")
+    expect(result.count).toBe(7)
+  })
+
+  it("C.6 passes a fetch failure through unchanged", async () => {
+    mockFetchFiltered.mockResolvedValue({ success: false, error: "Export failed. Please try again." })
+
+    expect(await exportSelectedActivities(["a1"])).toEqual({
+      success: false,
+      error: "Export failed. Please try again.",
+    })
   })
 })
