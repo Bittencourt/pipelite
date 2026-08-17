@@ -625,7 +625,12 @@ describe("resolveFieldPath — parsing is linear, not backtracking (T-34-20)", (
     }
 
     time(2000) // warm-up, discarded
-    const small = time(8000)
+    // The floor is kept from the original test and still earns its place: it cannot bind in
+    // practice (n=8000 measures ~0.95ms here, twenty times the floor), but without it a single
+    // near-zero reading under an extreme scheduler stall would make the ratio Infinity and fail
+    // the test spuriously. Raised from the original 0.5 to 0.05 because 0.5 was half of a real
+    // measurement at the OLD n=4000 and would have distorted the ratio at this larger n.
+    const small = Math.max(time(8000), 0.05)
     const large = time(128000) // 16x the input
 
     expect(large / small).toBeLessThan(80)
