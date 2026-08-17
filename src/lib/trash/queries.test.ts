@@ -30,6 +30,7 @@ import {
   resolveDeletedBy,
   findTrashedRecord,
   findTrashedParents,
+  countPurgeImpact,
   countTrashed,
   listTrashed,
   listTrashedWindow,
@@ -555,6 +556,61 @@ describe("countTrashed", () => {
 
     // Zeros would be a WRONG number rendered confidently; null lets the tabs omit the count.
     expect(await countTrashed(MEMBER)).toBeNull()
+    expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
+  })
+})
+
+/*
+ * WR-08. The number the purge confirmation shows for the category of consequence it used to omit
+ * entirely — the LIVE records a purge unlinks but keeps. The assertions that matter are that it
+ * counts the same rows the teardown detaches, and that a failure is `null` rather than `0`.
+ */
+describe("countPurgeImpact", () => {
+  it("counts the activities a deal purge would unlink", async () => {
+    queueSelects([{ value: 117 }])
+
+    expect(await countPurgeImpact("deal", "d1")).toBe(117)
+    expect(selectCalls[0].from).toBe(activities)
+    expect(renderedWhere().params).toContain("d1")
+  })
+
+  it("counts the deals a person purge would unlink", async () => {
+    queueSelects([{ value: 4 }])
+
+    expect(await countPurgeImpact("person", "p1")).toBe(4)
+    expect(selectCalls[0].from).toBe(deals)
+  })
+
+  it("sums BOTH child tables for an organization, the widest teardown", async () => {
+    queueSelects([{ value: 12 }], [{ value: 3 }])
+
+    // 12 deals + 3 people. Counting one table would understate the consent screen by the other.
+    expect(await countPurgeImpact("organization", "o1")).toBe(15)
+    expect(selectCalls.map((call) => call.from)).toEqual([deals, people])
+  })
+
+  it("answers 0 for an activity WITHOUT querying, because a leaf detaches nothing", async () => {
+    expect(await countPurgeImpact("activity", "a1")).toBe(0)
+    expect(selectCalls).toHaveLength(0)
+  })
+
+  it("carries no deleted_at predicate, matching what the teardown actually detaches", async () => {
+    queueSelects([{ value: 2 }])
+
+    await countPurgeImpact("deal", "d1")
+
+    // The purge nulls the foreign key on every child, trashed or live, so the previewed number and
+    // the `detached` count in the purge's audit row are the same number. It is also why rule 2 of
+    // the module holds here: there is no `isNull` to write.
+    const { sql } = renderedWhere()
+    expect(sql).not.toContain("deleted_at")
+  })
+
+  it("returns null, never 0, when the count cannot be taken", async () => {
+    queueSelects(new Error("connection reset"))
+
+    // `0` would render as "nothing else will change" on an irreversible confirmation.
+    expect(await countPurgeImpact("deal", "d1")).toBeNull()
     expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
   })
 })

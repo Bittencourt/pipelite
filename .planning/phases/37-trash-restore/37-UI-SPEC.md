@@ -652,7 +652,11 @@ components use `getTranslations`; client components use `useTranslations`.
 | `audit.unknownActor` | A `user` actor whose row is gone |
 | `common.actions` | The `sr-only` header of the actions column |
 
-### New key inventory (en-US) — 61 keys
+### New key inventory (en-US) — 63 keys
+
+> Amended 2026-08-17 from 61 by the code-review fix pass: `trash.linkedNotRestored` (WR-06) and
+> `trash.purgeDialog.descriptionUnknownImpact` (WR-08). `src/messages/locale-parity.test.ts` holds
+> the machine-checked copy of this inventory; this table is the prose one and the two must agree.
 
 **Navigation** — 1 key, existing namespace
 
@@ -710,14 +714,23 @@ dialog description where that inflection matters.
 | `trash.deletePermanently` | Delete permanently |
 | `trash.deleting` | Deleting… |
 
-**Results** — 4 keys
+**Results** — 5 keys
 
 | Key | Copy |
 |-----|------|
 | `trash.restored` | {name} is back in {list}. |
 | `trash.restoredWithLinked` | `{count, plural, one {# record restored} other {# records restored}}.` |
+| `trash.linkedNotRestored` | `{count, plural, one {# linked record wasn't restored. You may not have access to it.} other {# linked records weren't restored. You may not have access to them.}}` |
 | `trash.openRecord` | Open |
 | `trash.purged` | {name} was permanently deleted. |
+
+**`linkedNotRestored` added 2026-08-17 (code review WR-06).** `restoreWithLinked` skips a parent the
+caller may not touch and drops a parent whose restore failed, and both were excluded from `count`
+without being reported — so a user who clicked *Restore with linked records* on a deal whose two
+parents both belong to a colleague saw `1 record restored.`, no account of the other two, and the
+badge that offered the affordance still on screen after the refresh. This is a second, `warning`-level
+toast following the success toast, and it carries a COUNT only: naming the parents would disclose the
+existence of records the caller may not see.
 
 **Errors** — 5 keys
 
@@ -745,14 +758,27 @@ The heading is per entity (gendered plurals); the body is entity-agnostic and ne
 nothing is purged automatically, and an empty state promising a 30-day window would be a lie the UI
 tells about its own configuration.
 
-**Purge dialog** — 4 keys
+**Purge dialog** — 5 keys
 
 | Key | Copy |
 |-----|------|
 | `trash.purgeDialog.title` | Delete permanently? |
-| `trash.purgeDialog.description` | {name} and its notes will be permanently deleted. This can't be undone. Its change history is kept. |
+| `trash.purgeDialog.description` | {name} and its notes will be permanently deleted. {detached, plural, =0 {} one {# linked record will be unlinked but kept. } other {# linked records will be unlinked but kept. }}This can't be undone. Its change history is kept. |
+| `trash.purgeDialog.descriptionUnknownImpact` | {name} and its notes will be permanently deleted. Any linked records will be unlinked but kept. This can't be undone. Its change history is kept. |
 | `trash.purgeDialog.cancel` | Keep in trash |
 | `trash.purgeDialog.confirm` | Delete permanently |
+
+**Copy amendment, 2026-08-17 (code review WR-08, confirmed by UAT G1).** `description` originally
+read *"{name} and its notes will be permanently deleted. This can't be undone. Its change history is
+kept."* — which enumerated what a purge DESTROYS and what it PRESERVES and said nothing about what it
+MODIFIES. It modifies live records the admin never selected: purging one deal nulls `deal_id` on up
+to 117 activities, and purging an organization detaches every deal and person under it. UAT G1
+watched a live person silently lose its organization through this dialog. The plural clause is the
+minimum honest addition, driven by a count `previewPurgeImpact` reads before the write.
+
+`descriptionUnknownImpact` is the variant used when that count could not be read. It is a separate
+string rather than the `=0` branch on purpose: zero is a FACT the dialog asserts ("nothing else will
+change"), and "we could not find out" must not be able to render as it.
 
 **Pagination** — 1 key
 

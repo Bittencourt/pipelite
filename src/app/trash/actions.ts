@@ -39,7 +39,7 @@ import type { EntityType } from "@/db/schema/custom-fields"
 import { runWithActor } from "@/lib/audit/actor-context"
 import { purgeRecordByType, restoreRecordByType } from "@/lib/trash/dispatch"
 import { parseTrashTab, TRASH_TAB_TO_ENTITY, type TrashTab } from "@/lib/trash/entity-types"
-import { findTrashedParents, findTrashedRecord } from "@/lib/trash/queries"
+import { countPurgeImpact, findTrashedParents, findTrashedRecord } from "@/lib/trash/queries"
 
 const LOG_PREFIX = "[trash-actions]"
 
@@ -290,6 +290,53 @@ export async function restoreWithLinked(
 }
 
 /**
+ * WHAT A PURGE WOULD ALSO CHANGE — read BEFORE the write, for the confirmation dialog.
+ *
+ * A read, but an ADMIN-ONLY one, gated in the same order as `purgeRecord` below: the role check
+ * precedes every lookup, so this cannot become the existence oracle that ordering exists to close.
+ * A member who POSTs it directly learns `NOT_ADMIN` and nothing about the id.
+ *
+ * The count is what makes the purge dialog honest about the third category of consequence — the
+ * live records it MODIFIES but neither destroys nor preserves (see `countPurgeImpact`). It is read
+ * here rather than folded into `purgeRecord` because the dialog needs it BEFORE the admin agrees,
+ * and a number produced by the write cannot inform the consent for that write.
+ *
+ * `detached: null` means the count could not be taken. The dialog must then fall back to wording
+ * that promises no number, never to `0` — claiming "nothing else will change" on the strength of a
+ * failed query is the worst available answer on this surface.
+ */
+export async function previewPurgeImpact(
+  tab: TrashTab,
+  id: string
+): Promise<TrashActionResult<{ detached: number | null }>> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return { success: false, code: "NOT_AUTHENTICATED" }
+  }
+
+  if (session.user.role !== "admin") {
+    return { success: false, code: "NOT_ADMIN" }
+  }
+
+  const trashTab = parseTrashTab(tab)
+  const entityType: EntityType = TRASH_TAB_TO_ENTITY[trashTab]
+
+  const recordId = parseRecordId(id)
+  if (recordId === null) {
+    return { success: false, code: "NOT_IN_TRASH" }
+  }
+
+  // Scoped to TRASHED records, like every other read on this surface: a live record must not be
+  // measurable through the purge preview.
+  const record = await findTrashedRecord(entityType, recordId)
+  if (!record) {
+    return { success: false, code: "NOT_IN_TRASH" }
+  }
+
+  return { success: true, detached: await countPurgeImpact(entityType, recordId) }
+}
+
+/**
  * Destroy a trashed record permanently. ADMIN ONLY (TRASH-03).
  *
  * The role check is the FIRST thing after the session check and comes BEFORE any lookup, so a
@@ -339,7 +386,11 @@ export async function purgeRecord(
 
   revalidatePath("/trash")
 
-  // `detached` is the count of LIVE children the purge unlinked rather than destroyed. The dialog
-  // promised the change history survives; the count is what the toast can honestly add.
+  // `detached` is the count of children the purge unlinked rather than destroyed, as the write
+  // actually observed it. The CONSENT for that unlinking is obtained before the write, from
+  // `previewPurgeImpact` — so this value is not what the toast reports (repeating a number the
+  // admin already agreed to adds nothing to a completed action). It is returned because the caller
+  // is entitled to what the write measured, and because a divergence from the previewed count is a
+  // real signal: it means the record's children changed between the dialog and the confirm.
   return { success: true, name: record.name, detached: result.detached }
 }

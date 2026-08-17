@@ -176,8 +176,8 @@ export const REQUIRED_AUDIT_KEYS: string[] = [
  * the exact-contract assertion below turns "forgot to add it" into a red suite rather than a string
  * that ships gated by nothing.
  *
- * 59 keys in the `trash` namespace, plus the 2 dashboard-tile keys in the pre-existing
- * `admin.dashboard` namespace and the 1 sidebar entry in `nav` — 62 total. The per-group counts in
+ * 60 keys in the `trash` namespace, plus the 2 dashboard-tile keys in the pre-existing
+ * `admin.dashboard` namespace and the 1 sidebar entry in `nav` — 63 total. The per-group counts in
  * the comments are load-bearing: they are how a reader sees at a glance that a group lost a key.
  */
 export const REQUIRED_TRASH_KEYS: string[] = [
@@ -241,10 +241,17 @@ export const REQUIRED_TRASH_KEYS: string[] = [
   "trash.empty.body",
   "trash.empty.bodyNoRetention",
 
-  // Purge dialog — 4. description states what survives ("change history is kept") as well as what
-  // dies, so an admin is not led to believe a purge erases the evidence of the purge.
+  // Purge dialog — 5. description states all three categories of consequence: what DIES (the
+  // record and its notes), what is MODIFIED (the linked records unlinked but kept — the clause
+  // WR-08 added, after UAT G1 watched a live person lose its organization through a dialog that
+  // never mentioned it), and what SURVIVES ("change history is kept"), so an admin is not led to
+  // believe a purge erases the evidence of the purge.
   "trash.purgeDialog.title",
   "trash.purgeDialog.description",
+  // The no-number variant, for when the unlink count could not be read before the dialog opened.
+  // A separate string rather than a `=0` branch: zero is a FACT the dialog states, and "unknown"
+  // must not be able to render as it (WR-08).
+  "trash.purgeDialog.descriptionUnknownImpact",
   "trash.purgeDialog.cancel",
   "trash.purgeDialog.confirm",
 

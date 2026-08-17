@@ -46,6 +46,7 @@ vi.mock("@/lib/trash/dispatch", () => ({
 vi.mock("@/lib/trash/queries", () => ({
   findTrashedRecord: vi.fn(),
   findTrashedParents: vi.fn(),
+  countPurgeImpact: vi.fn(),
 }))
 
 vi.mock("@/lib/audit/actor-context", () => ({
@@ -56,9 +57,9 @@ import { auth } from "@/auth"
 import { revalidatePath } from "next/cache"
 import { runWithActor } from "@/lib/audit/actor-context"
 import { purgeRecordByType, restoreRecordByType } from "@/lib/trash/dispatch"
-import { findTrashedParents, findTrashedRecord } from "@/lib/trash/queries"
+import { countPurgeImpact, findTrashedParents, findTrashedRecord } from "@/lib/trash/queries"
 
-import { purgeRecord, restoreRecord, restoreWithLinked } from "./actions"
+import { previewPurgeImpact, purgeRecord, restoreRecord, restoreWithLinked } from "./actions"
 
 const mockAuth = vi.mocked(auth as unknown as () => Promise<Session | null>)
 const mockRevalidatePath = vi.mocked(revalidatePath)
@@ -66,6 +67,7 @@ const mockRestore = vi.mocked(restoreRecordByType)
 const mockPurge = vi.mocked(purgeRecordByType)
 const mockFindRecord = vi.mocked(findTrashedRecord)
 const mockFindParents = vi.mocked(findTrashedParents)
+const mockCountImpact = vi.mocked(countPurgeImpact)
 const mockRunWithActor = vi.mocked(runWithActor)
 
 const OWNER = "u1"
@@ -107,6 +109,7 @@ beforeEach(() => {
   mockFindParents.mockResolvedValue([])
   mockRestore.mockResolvedValue({ success: true })
   mockPurge.mockResolvedValue({ success: true, detached: 0 })
+  mockCountImpact.mockResolvedValue(0)
 })
 
 describe("restoreRecord", () => {
@@ -480,5 +483,89 @@ describe("purgeRecord", () => {
     await purgeRecord("people'; --" as unknown as "people", "d1")
 
     expect(mockPurge).toHaveBeenCalledWith("deal", "d1")
+  })
+})
+
+/*
+ * WR-08. The pre-write read that makes the purge confirmation honest about the live records it
+ * unlinks. It is a READ, but it is admin-only and gated in the same order as the write it precedes,
+ * so it cannot become the existence oracle that ordering exists to close (T-37-01).
+ */
+describe("previewPurgeImpact", () => {
+  it("reports the count for an admin", async () => {
+    mockAuth.mockResolvedValue(sessionFor(ADMIN, "admin"))
+    mockCountImpact.mockResolvedValue(117)
+
+    expect(await previewPurgeImpact("deals", "d1")).toEqual({ success: true, detached: 117 })
+    expect(mockCountImpact).toHaveBeenCalledWith("deal", "d1")
+  })
+
+  it("passes null straight through when the count could not be taken", async () => {
+    mockAuth.mockResolvedValue(sessionFor(ADMIN, "admin"))
+    mockCountImpact.mockResolvedValue(null)
+
+    // Never coerced to 0 on the way out: the dialog has to be able to fall back to wording that
+    // promises no number.
+    expect(await previewPurgeImpact("deals", "d1")).toEqual({ success: true, detached: null })
+  })
+
+  it("refuses a non-admin BEFORE any lookup, so it is not an existence oracle", async () => {
+    mockAuth.mockResolvedValue(sessionFor(OWNER))
+
+    expect(await previewPurgeImpact("deals", "d1")).toEqual({
+      success: false,
+      code: "NOT_ADMIN",
+    })
+    // The absence is the assertion: the record's owner gets the identical answer for a real id and
+    // an invented one, because neither was looked up.
+    expect(mockFindRecord).not.toHaveBeenCalled()
+    expect(mockCountImpact).not.toHaveBeenCalled()
+  })
+
+  it("refuses an unauthenticated caller without reading anything", async () => {
+    mockAuth.mockResolvedValue(null)
+
+    expect(await previewPurgeImpact("deals", "d1")).toEqual({
+      success: false,
+      code: "NOT_AUTHENTICATED",
+    })
+    expect(mockFindRecord).not.toHaveBeenCalled()
+    expect(mockCountImpact).not.toHaveBeenCalled()
+  })
+
+  it("reports NOT_IN_TRASH for a record that is live, gone, or already purged", async () => {
+    mockAuth.mockResolvedValue(sessionFor(ADMIN, "admin"))
+    mockFindRecord.mockResolvedValue(null)
+
+    expect(await previewPurgeImpact("deals", "d1")).toEqual({
+      success: false,
+      code: "NOT_IN_TRASH",
+    })
+    // A live record must not be measurable through the preview either.
+    expect(mockCountImpact).not.toHaveBeenCalled()
+  })
+
+  it("narrows both arguments before either reaches a query", async () => {
+    mockAuth.mockResolvedValue(sessionFor(ADMIN, "admin"))
+
+    await previewPurgeImpact("people'; --" as unknown as "people", "d1")
+    expect(mockCountImpact).toHaveBeenCalledWith("deal", "d1")
+
+    mockCountImpact.mockClear()
+    expect(await previewPurgeImpact("deals", { id: "d1" } as unknown as string)).toEqual({
+      success: false,
+      code: "NOT_IN_TRASH",
+    })
+    expect(mockCountImpact).not.toHaveBeenCalled()
+  })
+
+  it("writes nothing at all — it is a read on a destructive surface", async () => {
+    mockAuth.mockResolvedValue(sessionFor(ADMIN, "admin"))
+
+    await previewPurgeImpact("deals", "d1")
+
+    expect(mockPurge).not.toHaveBeenCalled()
+    expect(mockRestore).not.toHaveBeenCalled()
+    expect(mockRevalidatePath).not.toHaveBeenCalled()
   })
 })

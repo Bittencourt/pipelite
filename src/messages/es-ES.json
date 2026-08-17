@@ -454,7 +454,8 @@
     },
     "purgeDialog": {
       "title": "¿Eliminar permanentemente?",
-      "description": "{name} y sus notas se eliminarán permanentemente. Esto no se puede deshacer. Su historial de cambios se conserva.",
+      "description": "{name} y sus notas se eliminarán permanentemente. {detached, plural, =0 {} one {# registro vinculado se desvinculará, pero se conservará. } other {# registros vinculados se desvincularán, pero se conservarán. }}Esto no se puede deshacer. Su historial de cambios se conserva.",
+      "descriptionUnknownImpact": "{name} y sus notas se eliminarán permanentemente. Los registros vinculados se desvincularán, pero se conservarán. Esto no se puede deshacer. Su historial de cambios se conserva.",
       "cancel": "Conservar en la papelera",
       "confirm": "Eliminar permanentemente"
     },

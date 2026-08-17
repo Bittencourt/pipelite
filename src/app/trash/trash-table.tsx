@@ -48,7 +48,7 @@ import {
 import type { TrashTab } from "@/lib/trash/entity-types"
 import type { TrashRow } from "@/lib/trash/queries"
 
-import { purgeRecord, restoreRecord, restoreWithLinked } from "./actions"
+import { previewPurgeImpact, purgeRecord, restoreRecord, restoreWithLinked } from "./actions"
 import type { TrashErrorCode } from "./actions"
 import { useTrashColumns, type TrashTableMeta } from "./trash-columns"
 
@@ -83,6 +83,57 @@ export function TrashTable({
    */
   const [pendingRowId, setPendingRowId] = useState<string | null>(null)
   const [purgeTarget, setPurgeTarget] = useState<TrashRow | null>(null)
+
+  /**
+   * How many linked records the pending purge would unlink, or `null` for "not known".
+   *
+   * `null` covers BOTH "the count has not arrived yet" and "the count could not be taken", and
+   * collapsing the two is correct here: the dialog's job is to say what it knows, and it knows the
+   * same amount in either case. It renders the no-number wording for `null` rather than assuming
+   * zero — telling an admin nothing else will change, on the strength of a query that failed or has
+   * not returned, is the one wrong answer available on this surface.
+   *
+   * Deliberately NOT a reason to disable Confirm. An admin who confirms before the count lands has
+   * consented to the wording they were actually shown, which promises no number; blocking the most
+   * important control in the surface on a count it does not need would be the worse trade.
+   */
+  const [purgeImpact, setPurgeImpact] = useState<number | null>(null)
+
+  /**
+   * Which row the open dialog is about, as a ref rather than as state.
+   *
+   * The preview below is a request in flight against a dialog the user can close and reopen on a
+   * DIFFERENT row before it lands. Without this check a slow count for row A would arrive after the
+   * dialog had moved to row B and be rendered as B's impact — a wrong number on a confirmation for
+   * an irreversible write. A ref, because the resolved callback needs the value as of resolution
+   * time, not as of the render that started the request.
+   */
+  const purgeTargetIdRef = useRef<string | null>(null)
+
+  /** Open the confirmation, then fill in what else the purge would touch. */
+  function openPurgeDialog(row: TrashRow) {
+    purgeTargetIdRef.current = row.id
+    setPurgeTarget(row)
+    setPurgeImpact(null)
+
+    void previewPurgeImpact(tab, row.id)
+      .then((result) => {
+        if (purgeTargetIdRef.current !== row.id) return
+        // Nothing is reported to the user on failure: the dialog is already open and already
+        // honest, and a toast about a count would be noise stacked on a destructive decision.
+        if (result.success) setPurgeImpact(result.detached)
+      })
+      .catch(() => {
+        if (purgeTargetIdRef.current === row.id) setPurgeImpact(null)
+      })
+  }
+
+  /** Close the confirmation and invalidate any preview still in flight for it. */
+  function closePurgeDialog() {
+    purgeTargetIdRef.current = null
+    setPurgeTarget(null)
+    setPurgeImpact(null)
+  }
 
   /**
    * ONE transition for all three writes, disambiguated by which target is set. The two are
@@ -194,7 +245,7 @@ export function TrashTable({
     startTransition(async () => {
       try {
         const result = await purgeRecord(tab, row.id)
-        setPurgeTarget(null)
+        closePurgeDialog()
 
         if (!result.success) {
           switch (result.code) {
@@ -225,7 +276,7 @@ export function TrashTable({
         toast.success(t("purged", { name: result.name }))
         settle()
       } catch {
-        setPurgeTarget(null)
+        closePurgeDialog()
         toast.error(t("error.purgeFailed"))
       }
     })
@@ -286,7 +337,7 @@ export function TrashTable({
               variant="ghost"
               size="sm"
               className="text-destructive hover:text-destructive"
-              onClick={() => setPurgeTarget(row)}
+              onClick={() => openPurgeDialog(row)}
             >
               <Trash2 className="h-4 w-4" />
               {t("deletePermanently")}
@@ -385,22 +436,38 @@ export function TrashTable({
         `delete-note-dialog.tsx` both use. `onOpenChange` refuses to close while the purge is in
         flight, so ESC and an overlay click cannot abandon a request that is already running.
 
-        The description names what SURVIVES as well as what dies. A purge preserves the record's
-        change history and writes one more entry recording the purge; omitting that would leave
-        an admin believing a purge erases the evidence of the purge (T-37-14).
+        The description names all THREE categories of consequence, which is what took a copy
+        amendment to get right (WR-08, UAT G1):
+
+          - DESTROYED — the record and its notes;
+          - MODIFIED  — the linked records the purge unlinks but keeps. These are LIVE rows the
+            admin did not select: purging one deal unlinks up to 117 activities, and purging an
+            organization unlinks every deal and person under it. The dialog enumerated the other
+            two categories and silently omitted this one, and UAT G1 watched a live person lose its
+            organization through it. The count comes from `previewPurgeImpact` before the write;
+            when it is not known, `descriptionUnknownImpact` says so without inventing a number;
+          - PRESERVED — the change history, plus one further entry recording the purge. Omitting
+            that would leave an admin believing a purge erases the evidence of the purge (T-37-14).
       */}
       <AlertDialog
         open={purgeTarget !== null}
         onOpenChange={(open) => {
           if (isPurging) return
-          if (!open) setPurgeTarget(null)
+          if (!open) closePurgeDialog()
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("purgeDialog.title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("purgeDialog.description", { name: purgeTarget?.name ?? "" })}
+              {purgeImpact === null
+                ? t("purgeDialog.descriptionUnknownImpact", {
+                    name: purgeTarget?.name ?? "",
+                  })
+                : t("purgeDialog.description", {
+                    name: purgeTarget?.name ?? "",
+                    detached: purgeImpact,
+                  })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

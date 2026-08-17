@@ -454,7 +454,8 @@
     },
     "purgeDialog": {
       "title": "Excluir permanentemente?",
-      "description": "{name} e suas notas serão excluídos permanentemente. Isso não pode ser desfeito. O histórico de alterações é mantido.",
+      "description": "{name} e suas notas serão excluídos permanentemente. {detached, plural, =0 {} one {# registro vinculado será desvinculado, mas será mantido. } other {# registros vinculados serão desvinculados, mas serão mantidos. }}Isso não pode ser desfeito. O histórico de alterações é mantido.",
+      "descriptionUnknownImpact": "{name} e suas notas serão excluídos permanentemente. Os registros vinculados serão desvinculados, mas serão mantidos. Isso não pode ser desfeito. O histórico de alterações é mantido.",
       "cancel": "Manter na lixeira",
       "confirm": "Excluir permanentemente"
     },

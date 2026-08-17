@@ -454,7 +454,8 @@
     },
     "purgeDialog": {
       "title": "Delete permanently?",
-      "description": "{name} and its notes will be permanently deleted. This can't be undone. Its change history is kept.",
+      "description": "{name} and its notes will be permanently deleted. {detached, plural, =0 {} one {# linked record will be unlinked but kept. } other {# linked records will be unlinked but kept. }}This can't be undone. Its change history is kept.",
+      "descriptionUnknownImpact": "{name} and its notes will be permanently deleted. Any linked records will be unlinked but kept. This can't be undone. Its change history is kept.",
       "cancel": "Keep in trash",
       "confirm": "Delete permanently"
     },

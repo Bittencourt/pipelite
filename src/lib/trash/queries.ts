@@ -294,6 +294,84 @@ export async function findTrashedRecord(
   }
 }
 
+/**
+ * HOW MANY LINKED RECORDS A PURGE WOULD UNLINK — the number the confirmation dialog needs.
+ *
+ * The purge confirmation enumerates what is DESTROYED ("{name} and its notes") and what is
+ * PRESERVED ("its change history is kept") and said nothing at all about what is MODIFIED. It is
+ * modified: purging one deal nulls `deal_id` on up to 117 linked activities, and purging an
+ * organization detaches every deal and person under it — records the admin never selected. UAT G1
+ * observed a live person silently losing its organization through a dialog that gave no hint it
+ * would happen. A consent screen that lists two of the three categories of consequence is not
+ * consent for the third.
+ *
+ * COUNTS EXACTLY WHAT THE PURGE DETACHES, statement for statement — the same tables, the same
+ * foreign keys, and the same ABSENCE of a `deleted_at` filter that the teardown in
+ * `src/lib/mutations/*.ts` uses. That is deliberate on both halves:
+ *
+ *   - matching the teardown means the number in the dialog and the `detached` count in the purge's
+ *     audit row are the same number, so the record of what happened cannot contradict what the
+ *     admin agreed to;
+ *   - and it is why this function needs no `deleted_at` predicate, which keeps rule 2 of this
+ *     module intact (there is no `isNull` here, by construction).
+ *
+ * An activity detaches nothing and issues NO QUERY, the same posture `findTrashedParents` takes for
+ * an organization: the emptiness is expressed as a control, not as a comment.
+ *
+ * Returns `null` — not `0` — when the count cannot be taken. Zero means "nothing will be unlinked",
+ * which the dialog states as a fact; the caller must be able to tell that apart from "unknown" and
+ * fall back to wording that promises nothing (rule 3: nothing here throws).
+ */
+export async function countPurgeImpact(
+  entityType: EntityType,
+  id: string
+): Promise<number | null> {
+  try {
+    switch (entityType) {
+      case "deal": {
+        const rows = await db
+          .select({ value: count() })
+          .from(activities)
+          .where(eq(activities.dealId, id))
+
+        return rows[0]?.value ?? 0
+      }
+
+      case "person": {
+        const rows = await db
+          .select({ value: count() })
+          .from(deals)
+          .where(eq(deals.personId, id))
+
+        return rows[0]?.value ?? 0
+      }
+
+      case "organization": {
+        // Two child tables — the widest teardown, and the only one that needs two counts.
+        const [dealRows, personRows] = await Promise.all([
+          db.select({ value: count() }).from(deals).where(eq(deals.organizationId, id)),
+          db.select({ value: count() }).from(people).where(eq(people.organizationId, id)),
+        ])
+
+        return (dealRows[0]?.value ?? 0) + (personRows[0]?.value ?? 0)
+      }
+
+      case "activity":
+        // A leaf. Nothing points at it, so nothing is detached and nothing is asked.
+        return 0
+
+      default: {
+        const unhandled: never = entityType
+        void unhandled
+        return null
+      }
+    }
+  } catch (error) {
+    console.error(`${LOG_PREFIX} countPurgeImpact failed for ${entityType} ${id}:`, error)
+    return null
+  }
+}
+
 /** One trashed ancestor of a record, with everything the linked-restore path needs about it. */
 export interface TrashedParentRef extends TrashedRecordRef {
   entityType: EntityType
