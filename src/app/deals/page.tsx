@@ -4,6 +4,7 @@ import { deals, stages, pipelines, users, dealAssignees } from "@/db/schema"
 import { eq, and, isNull, gte, lte, asc, sql } from "drizzle-orm"
 import { redirect } from "next/navigation"
 import { KanbanBoard } from "./kanban-board"
+import { readTrashRetentionDays } from "@/lib/trash/settings"
 import { getTranslations } from 'next-intl/server'
 
 
@@ -162,6 +163,33 @@ export default async function DealsPage({
     orderBy: [users.email],
   })
 
+  /**
+   * A SECOND, SEPARATE users query for the bulk reassign picker, and the separation is deliberate.
+   *
+   * The `allUsers` query above filters on `deletedAt` ALONE and feeds BOTH `DealFilters` and
+   * `DealDialog`. Tightening it with a `status` predicate would silently remove options from two
+   * existing dropdowns — a user who owns deals but has not been approved would vanish from the owner
+   * FILTER, making their deals unfindable. That missing predicate is recorded as pre-existing and
+   * out of scope, so it is left exactly as it was.
+   *
+   * A reassign TARGET is a different question from a filter VALUE: handing ownership to a deleted or
+   * unapproved account transfers records to a principal who cannot act on them (T-38-06). This query
+   * therefore carries BOTH predicates, matching what `bulkReassignDealOwner` independently enforces
+   * server-side — the picker never offers a target the action would refuse with `invalid_owner`.
+   *
+   * `retentionDays` comes straight from `readTrashRetentionDays()` with NO numeric fallback. `null`
+   * means nothing is purged automatically, and a `?? 30` here would make the bulk delete dialog
+   * promise a restore window the pruner is not enforcing (T-38-10).
+   */
+  const [bulkOwners, retentionDays] = await Promise.all([
+    db.query.users.findMany({
+      where: and(isNull(users.deletedAt), eq(users.status, "approved")),
+      columns: { id: true, name: true, email: true },
+      orderBy: [users.name],
+    }),
+    readTrashRetentionDays(),
+  ])
+
   // Get first open stage for default create dialog
   const firstOpenStage = pipelineStages.find(s => s.type === 'open')
 
@@ -185,6 +213,8 @@ export default async function DealsPage({
         defaultStageId={firstOpenStage?.id}
         owners={allUsers.map(u => ({ id: u.id, name: u.name || u.email }))}
         users={allUsers.map(u => ({ id: u.id, name: u.name, email: u.email }))}
+        bulkOwners={bulkOwners.map(u => ({ id: u.id, name: u.name || "Unknown" }))}
+        retentionDays={retentionDays}
         activeFilters={{
           stage: params.stage,
           owner: params.owner,

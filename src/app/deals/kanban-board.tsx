@@ -53,6 +53,15 @@ interface KanbanBoardProps {
   defaultStageId?: string
   owners: Array<{ id: string; name: string }>
   users: { id: string; name: string | null; email: string }[]
+  /**
+   * The bulk reassign picker's options — a SEPARATE list from `owners`, which is the filter dropdown's
+   * and is built without a `status` predicate. Handing ownership to a deleted or unapproved account
+   * transfers records to a principal who cannot act on them, so this one is filtered on both
+   * (T-38-06).
+   */
+  bulkOwners: Array<{ id: string; name: string }>
+  /** `null` means nothing is purged automatically. NEVER defaulted to a number anywhere (T-38-10). */
+  retentionDays: number | null
   activeFilters: { stage?: string; owner?: string; assignee?: string; dateFrom?: string; dateTo?: string }
 }
 
