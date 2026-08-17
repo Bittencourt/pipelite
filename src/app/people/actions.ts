@@ -10,6 +10,8 @@ import { runWithActor } from "@/lib/audit/actor-context"
 import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
 import type { BulkFailure, BulkWriteResult } from "@/lib/bulk/types"
+import { fetchFilteredData } from "@/lib/export/formatters"
+import type { ExportResult } from "@/lib/export/types"
 import {
   createPersonMutation,
   updatePersonMutation,
@@ -343,4 +345,55 @@ export async function bulkReassignPersonOwner(
   }
 
   return { success: true, ...outcome }
+}
+
+/**
+ * Export exactly the selected people as CSV (BULK-04).
+ *
+ * THE PARAMETER LIST IS ONE LIST OF IDS AND NOTHING ELSE, AND THAT IS THE SECURITY CONTROL.
+ *
+ * The only other export action in the repo, in `src/app/admin/export/actions.ts`, is gated on the
+ * caller being an administrator and takes a whole options object. Modelling this one on it would be
+ * an admin-gate bypass: an authenticated member could hand it an empty filter object and receive
+ * every person in the table (T-38-01). So no options argument exists to hand it. Every field of the
+ * request below is a literal written here, on the server, and an empty selection is refused rather
+ * than being allowed to widen into "everything".
+ *
+ * The filename is rewritten here rather than inside the shared fetch helper, which several other
+ * surfaces depend on. Its `people` slug is the untranslated English plural the helper's own mapping
+ * already uses — a locale-dependent name on disk is unsupportable — and the number in it comes from
+ * the RESULT's row count, never from the length of the submitted list, so the name and the file's
+ * contents cannot disagree.
+ */
+export async function exportSelectedPeople(ids: string[]): Promise<ExportResult> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return { success: false, error: "Not authenticated" }
+  }
+
+  // Any signed-in user may export their OWN selection; the scoped export carries no further gate,
+  // because the selection is what scopes it.
+  const uniqueIds = parseBulkIds(ids)
+  if (!uniqueIds || uniqueIds.length === 0) {
+    return { success: false, error: "No records selected" }
+  }
+
+  if (uniqueIds.length > BULK_MAX_IDS) {
+    return { success: false, error: "Too many records" }
+  }
+
+  const result = await fetchFilteredData({
+    entityType: "person",
+    format: "csv",
+    includeCustomFields: true,
+    filters: { ids: uniqueIds },
+  })
+
+  if (!result.success) {
+    return result
+  }
+
+  const date = new Date().toISOString().split("T")[0]
+
+  return { ...result, filename: `people-selected-${result.count}-${date}.csv` }
 }
