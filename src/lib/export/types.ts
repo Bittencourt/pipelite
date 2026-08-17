@@ -7,6 +7,11 @@ export interface ExportFilters {
   owner?: string
   dateFrom?: string
   dateTo?: string
+  /**
+   * Selection-scoped filter used by the bulk export actions: restricts the export to exactly
+   * these record ids. An empty array yields ZERO rows by design, never the whole table.
+   */
+  ids?: string[]
 }
 
 export interface ExportOptions {
