@@ -7,7 +7,12 @@ import { paginatedResponse } from "@/lib/api/response"
 import { Problems } from "@/lib/api/errors"
 import { resolveActorRole } from "@/lib/notes/authorize"
 import type { EntityType } from "@/db/schema/custom-fields"
-import { TRASH_TABS, TRASH_TAB_TO_ENTITY, parseTrashTab } from "@/lib/trash/entity-types"
+import {
+  TRASH_TABS,
+  TRASH_TAB_TO_ENTITY,
+  parseTrashTab,
+  type TrashTab,
+} from "@/lib/trash/entity-types"
 import { TRASH_PAGE_SIZE, countTrashed, listTrashed, type TrashRow } from "@/lib/trash/queries"
 import type { DeletedByPresentation } from "@/lib/trash/present"
 
@@ -139,10 +144,32 @@ function serializeDeletedBy(presentation: DeletedByPresentation): SerializedDele
   }
 }
 
-/** The public shape of a trashed record: snake_case, like every other `/api/v1` serializer. */
+/**
+ * The public shape of a trashed record: snake_case, like every other `/api/v1` serializer.
+ *
+ * TWO TYPE FIELDS, DELIBERATELY, because the trash surface genuinely has two vocabularies and a
+ * client needs both (src/lib/trash/entity-types.ts:9-17):
+ *
+ *   - `entity_type` is the SINGULAR `EntityType` — the same value and the same key `/api/v1/audit`
+ *     and `/api/v1/custom-field-definitions` already emit, so a client correlating this row with
+ *     an audit row or a field definition meets one vocabulary, not two. Never the plural tab here:
+ *     re-spelling a shared key's values on one route is how a client that works against three
+ *     endpoints starts failing against the fourth.
+ *   - `type` is the PLURAL tab, which is exactly what the URL grammar accepts — `?type=` on this
+ *     route, and the `{type}` segment on `/api/v1/trash/{type}/{id}` and its `/restore` sibling.
+ *     This is the field to round-trip, and it is named after the parameter it feeds.
+ *
+ * An earlier revision emitted only `entity_type` and instructed the caller to round-trip it, which
+ * was a 400 every time — both write routes validate their segment against `TRASH_TABS`, the plural
+ * list. The fix is on this side rather than in those routes on purpose: teaching the write routes
+ * to also accept `deal` would give the destructive endpoint two spellings for one table, and a
+ * purge is the last place to widen an allow-list to paper over a serializer bug.
+ */
 interface SerializedTrashRow {
   id: string
   entity_type: EntityType
+  /** The plural tab, i.e. the `{type}` segment for the restore and purge routes. */
+  type: TrashTab
   name: string
   secondary: string | null
   deleted_at: string
@@ -151,12 +178,17 @@ interface SerializedTrashRow {
   deleted_by: SerializedDeletedBy
 }
 
-function serializeTrashRow(row: TrashRow, entityType: EntityType): SerializedTrashRow {
+function serializeTrashRow(
+  row: TrashRow,
+  entityType: EntityType,
+  tab: TrashTab
+): SerializedTrashRow {
   return {
     id: row.id,
-    // The SINGULAR entity type, so a client can round-trip a row straight into
-    // /api/v1/trash/{type}/{id} without transforming the plural tab name itself.
     entity_type: entityType,
+    // The value that round-trips: `DELETE /api/v1/trash/${type}/${id}` and
+    // `POST /api/v1/trash/${type}/${id}/restore` both take this string verbatim.
+    type: tab,
     name: row.name,
     secondary: row.secondary,
     deleted_at: row.deletedAt.toISOString(),
@@ -235,7 +267,7 @@ export async function GET(request: NextRequest) {
       const window = listed.rows.slice(offset, offset + limit)
 
       return paginatedResponse(
-        window.map((row) => serializeTrashRow(row, entityType)),
+        window.map((row) => serializeTrashRow(row, entityType, tab)),
         counts[tab],
         offset,
         limit
