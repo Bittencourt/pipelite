@@ -63,8 +63,13 @@ import { revalidatePath } from "next/cache"
 import { runWithActor } from "@/lib/audit/actor-context"
 import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
+import { fetchFilteredData } from "@/lib/export/formatters"
 
-import { bulkDeleteOrganizations, bulkReassignOrganizationOwner } from "./actions"
+import {
+  bulkDeleteOrganizations,
+  bulkReassignOrganizationOwner,
+  exportSelectedOrganizations,
+} from "./actions"
 
 const mockAuth = vi.mocked(auth as unknown as () => Promise<Session | null>)
 const mockRevalidatePath = vi.mocked(revalidatePath)
@@ -73,6 +78,7 @@ const mockDeleteRecord = vi.mocked(deleteRecordByType)
 const mockUpdateOwner = vi.mocked(updateRecordOwnerByType)
 const mockOrgFindFirst = vi.mocked(db.query.organizations.findFirst)
 const mockUserFindFirst = vi.mocked(db.query.users.findFirst)
+const mockFetchFilteredData = vi.mocked(fetchFilteredData)
 
 const OWNER = "u1"
 const OTHER = "u2"
@@ -119,6 +125,7 @@ beforeEach(() => {
   mockUserFindFirst.mockReset()
   mockDeleteRecord.mockReset()
   mockUpdateOwner.mockReset()
+  mockFetchFilteredData.mockReset()
 
   mockRunWithActor.mockImplementation((_actor, fn) => fn())
   mockAuth.mockResolvedValue(sessionFor(OWNER))
@@ -126,6 +133,12 @@ beforeEach(() => {
   mockUserFindFirst.mockResolvedValue(APPROVED_TARGET as never)
   mockDeleteRecord.mockResolvedValue({ success: true })
   mockUpdateOwner.mockResolvedValue({ success: true })
+  mockFetchFilteredData.mockResolvedValue({
+    success: true,
+    data: "id,name\r\no1,Org o1\r\n",
+    filename: "organizations-2026-08-17.csv",
+    count: 7,
+  })
 })
 
 describe("bulkDeleteOrganizations", () => {
@@ -351,5 +364,66 @@ describe("bulkReassignOrganizationOwner", () => {
     await bulkReassignOrganizationOwner(["o1"], NEW_OWNER)
 
     expect(mockUpdateOwner).toHaveBeenCalledWith("organization", "o1", NEW_OWNER, OWNER)
+  })
+})
+
+describe("exportSelectedOrganizations", () => {
+  it("refuses an unauthenticated caller without fetching anything", async () => {
+    mockAuth.mockResolvedValue(null)
+
+    const result = await exportSelectedOrganizations(["o1"])
+
+    expect(result.success).toBe(false)
+    expect(mockFetchFilteredData).not.toHaveBeenCalled()
+  })
+
+  it("refuses an empty selection rather than fetching the whole table", async () => {
+    const result = await exportSelectedOrganizations([])
+
+    expect(result.success).toBe(false)
+    expect(mockFetchFilteredData).not.toHaveBeenCalled()
+  })
+
+  it("refuses more ids than the cap without fetching", async () => {
+    const ids = Array.from({ length: BULK_MAX_IDS + 1 }, (_, index) => `o${index + 1}`)
+
+    const result = await exportSelectedOrganizations(ids)
+
+    expect(result.success).toBe(false)
+    expect(mockFetchFilteredData).not.toHaveBeenCalled()
+  })
+
+  it("builds every export option server-side, taking only the ids from the caller", async () => {
+    await exportSelectedOrganizations(["o1", "o2", "o2"])
+
+    expect(mockFetchFilteredData).toHaveBeenCalledTimes(1)
+    expect(mockFetchFilteredData.mock.calls[0][0]).toEqual({
+      entityType: "organization",
+      format: "csv",
+      includeCustomFields: true,
+      filters: { ids: ["o1", "o2"] },
+    })
+  })
+
+  it("names the file from the fetch result's own count, never from the input length", async () => {
+    // The mocked count (7) differs from the three ids submitted on purpose: a filename built from the
+    // input length would silently disagree with the rows actually in the file.
+    const result = await exportSelectedOrganizations(["o1", "o2", "o3"])
+
+    expect(result.success).toBe(true)
+    if (!result.success) throw new Error("expected the export to succeed")
+    expect(result.filename).toMatch(/^organizations-selected-\d+-\d{4}-\d{2}-\d{2}\.csv$/)
+    expect(result.filename).toContain("-selected-7-")
+    expect(result.count).toBe(7)
+    expect(result.data).toBe("id,name\r\no1,Org o1\r\n")
+  })
+
+  it("passes a fetch failure through unchanged", async () => {
+    mockFetchFilteredData.mockResolvedValue({ success: false, error: "Export failed. Please try again." })
+
+    expect(await exportSelectedOrganizations(["o1"])).toEqual({
+      success: false,
+      error: "Export failed. Please try again.",
+    })
   })
 })
