@@ -40,8 +40,10 @@
  */
 
 import { Download, Loader2, Trash2, UserPen, X } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { useEffect, useState, useTransition } from "react"
+import { toast } from "sonner"
 
 import { BulkDeleteDialog } from "@/components/bulk/bulk-delete-dialog"
 import {
@@ -51,11 +53,34 @@ import {
 import { Button } from "@/components/ui/button"
 import type { EntityType } from "@/db/schema/custom-fields"
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
-import type { BulkOutcome, BulkWriteResult } from "@/lib/bulk/types"
+import type { BulkErrorCode, BulkOutcome, BulkWriteResult } from "@/lib/bulk/types"
 import type { ExportResult } from "@/lib/export/types"
+import { ENTITY_TO_TRASH_TAB } from "@/lib/trash/entity-types"
 
 /** Which action is in flight. ONE value rather than three booleans: the bar is not a queue. */
 type PendingAction = null | "delete" | "reassign" | "export"
+
+const CSV_MIME_TYPE = "text/csv;charset=utf-8;"
+
+/**
+ * Hand a string to the browser as a file. Copied in shape from the admin export form rather than
+ * written a third way, so the whole product produces downloads by one mechanism.
+ *
+ * The revoke at the end is what releases the blob: an object URL keeps its blob alive for the
+ * lifetime of the document, so a user exporting repeatedly would otherwise accumulate every CSV they
+ * ever generated in memory until they navigated away.
+ */
+function downloadFile(content: string, filename: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(url)
+}
 
 export interface BulkActionBarProps {
   entityType: EntityType
@@ -88,6 +113,7 @@ export function BulkActionBar({
   onClear,
 }: BulkActionBarProps) {
   const t = useTranslations("bulk")
+  const router = useRouter()
 
   const [, startTransition] = useTransition()
 
@@ -140,6 +166,32 @@ export function BulkActionBar({
     return Object.fromEntries(ids.map((id) => [id, getLabel(id)]))
   }
 
+  /**
+   * Turn a WHOLE-CALL rejection into a sentence, by branching on the closed code and never on prose.
+   *
+   * No arm renders the server's own text. Those refusals are written for a server log and the union
+   * they arrive in carries no string member at all, so there is no code path along which a database
+   * detail could reach the browser (T-38-07). The cap branch is the one that earns a message of its
+   * own: it can state both numbers, so a user who is over the limit learns by how much instead of
+   * being told to refresh and try the identical thing again.
+   */
+  function describeWholeCallFailure(
+    error: BulkErrorCode,
+    max: number | undefined,
+    attempted: number,
+    fallback: string,
+  ): string {
+    switch (error) {
+      case "too_many":
+        return t("error.tooMany", { max: max ?? BULK_MAX_IDS, count: attempted })
+      case "not_authenticated":
+      case "invalid_owner":
+      case "no_selection":
+      default:
+        return fallback
+    }
+  }
+
   function handleDelete() {
     const ids = [...selectedIds]
     const labelById = captureLabels(ids)
@@ -149,17 +201,71 @@ export function BulkActionBar({
     startTransition(async () => {
       try {
         const result = await onDelete(ids)
-        setDeleteOpen(false)
 
-        if (!result.success) return
+        if (!result.success) {
+          /**
+           * NEITHER onOutcome NOR onClear on a whole-call rejection. Zero records were touched, so
+           * the cause is one thing rather than N things: the selection stays exactly as the user left
+           * it and no inline report is shown, because a twelve-item list all reading the same
+           * sentence is noise stacked on a single failure.
+           */
+          toast.error(
+            describeWholeCallFailure(
+              result.error,
+              result.max,
+              ids.length,
+              t("error.deleteFailed"),
+            ),
+          )
+          return
+        }
 
-        onOutcome({
-          kind: "delete",
-          succeeded: result.succeeded,
-          failed: result.failed,
-          labelById,
-        })
+        const { succeeded, failed } = result
+
+        // Always, on every success arm — including the one where nothing succeeded. This is what
+        // deselects the succeeded ids, keeps the failed ones selected, and names every failure.
+        onOutcome({ kind: "delete", succeeded, failed, labelById })
+
+        if (failed.length === 0) {
+          // Required despite the no-toast-where-the-result-is-visible rule: rows vanishing is
+          // ambiguous between deleted, filtered and failed, so the destination has to be named. The
+          // deep link is what makes verifying it a single click rather than a hunt (D-09).
+          //
+          // THE QUERY PARAMETER IS `type`, NOT `tab`. 38-10-PLAN specified `?tab=`, and the trash
+          // page reads `searchParams.type` and hands it to `parseTrashTab`, which falls back to the
+          // default tab for anything it does not recognise. So `?tab=people` would silently land on
+          // Deals — a wrong destination for three of the four entity types, on the one link the
+          // phase's restore criterion is checked through. The map is the plan's; the parameter name
+          // is the one the surface actually parses (`trash/page.tsx`, `trash-tabs.tsx`).
+          toast.success(t("deleted", { count: succeeded.length }), {
+            action: {
+              label: t("openTrash"),
+              onClick: () =>
+                router.push(`/trash?type=${ENTITY_TO_TRASH_TAB[entityType]}`),
+            },
+          })
+        } else if (succeeded.length > 0) {
+          // A WARNING, not an error: records really did change, and calling that an error
+          // misdescribes the outcome. The inline report names which ones did not.
+          toast.warning(
+            t("partial", {
+              succeeded: succeeded.length,
+              total: ids.length,
+              failed: failed.length,
+            }),
+          )
+        } else {
+          // Every record failed individually, which is NOT the same as the call being refused —
+          // hence the report above as well as this line.
+          toast.error(t("error.deleteFailed"))
+        }
+      } catch {
+        toast.error(t("error.deleteFailed"))
       } finally {
+        // The dialog closes on confirm either way. Progress, results and failures are reported by the
+        // toast and by the inline report, both of which outlive it; keeping it open to host a failure
+        // list would trap focus in a modal the user must dismiss before retrying.
+        setDeleteOpen(false)
         setPending(null)
       }
     })
@@ -174,17 +280,50 @@ export function BulkActionBar({
     startTransition(async () => {
       try {
         const result = await onReassign(ids, ownerId)
-        setReassignOpen(false)
 
-        if (!result.success) return
+        if (!result.success) {
+          // An invalid-owner refusal is mapped onto the same sentence as any other whole-call
+          // rejection rather than surfaced as a code: the picker only ever offered active users, so
+          // if the server disagrees the user has no repair to make beyond refreshing.
+          toast.error(
+            describeWholeCallFailure(
+              result.error,
+              result.max,
+              ids.length,
+              t("error.reassignFailed"),
+            ),
+          )
+          return
+        }
 
-        onOutcome({
-          kind: "reassign",
-          succeeded: result.succeeded,
-          failed: result.failed,
-          labelById,
-        })
+        const { succeeded, failed } = result
+
+        onOutcome({ kind: "reassign", succeeded, failed, labelById })
+
+        if (failed.length === 0) {
+          // No toast action here: unlike a delete there is nowhere else to go, and the owner column
+          // on two of the four surfaces does not even render the value that changed.
+          toast.success(
+            t("reassigned", {
+              count: succeeded.length,
+              owner: owners.find((option) => option.id === ownerId)?.name ?? "",
+            }),
+          )
+        } else if (succeeded.length > 0) {
+          toast.warning(
+            t("partial", {
+              succeeded: succeeded.length,
+              total: ids.length,
+              failed: failed.length,
+            }),
+          )
+        } else {
+          toast.error(t("error.reassignFailed"))
+        }
+      } catch {
+        toast.error(t("error.reassignFailed"))
       } finally {
+        setReassignOpen(false)
         setPending(null)
       }
     })
@@ -199,9 +338,24 @@ export function BulkActionBar({
       try {
         const result = await onExport(ids)
 
-        if (!result.success) return
+        if (!result.success) {
+          // The failure arm of an export result carries a server-composed string. It is deliberately
+          // NOT rendered: it never passed through the translator, and it is written for a log.
+          // Selection is PRESERVED, because the user's next act is to retry.
+          toast.error(t("error.exportFailed"))
+          return
+        }
 
+        // The filename comes from the server, so the name and the row count cannot disagree, and it
+        // is never translated — a locale-dependent name on disk is unsupportable.
+        downloadFile(result.data, result.filename, CSV_MIME_TYPE)
+
+        // Required even though nothing in the page changed — which is exactly why: the file left the
+        // browser, so there is no visible result for the no-redundant-toast rule to apply to.
+        toast.success(t("exported", { count: result.count }))
         onClear()
+      } catch {
+        toast.error(t("error.exportFailed"))
       } finally {
         setPending(null)
       }
