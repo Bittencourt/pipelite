@@ -8,6 +8,9 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { runWithActor } from "@/lib/audit/actor-context"
 import { sendDealAssignedEmail } from "@/lib/email/send"
+import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
+import { BULK_MAX_IDS } from "@/lib/bulk/limits"
+import type { BulkFailure, BulkWriteResult } from "@/lib/bulk/types"
 import {
   createDealMutation,
   updateDealMutation,
@@ -165,6 +168,203 @@ export async function deleteDeal(
   }
 
   return result
+}
+
+/**
+ * The three bulk actions below deliberately sit HERE, immediately after `deleteDeal`, so each bulk
+ * ownership predicate is a few lines from the single-record predicate it must match verbatim.
+ *
+ * DEALS IS THE ONE ENTITY OF THE FOUR WHOSE PREDICATE CARRIES THE ADMIN CLAUSE. The organizations,
+ * people and activities actions guard on ownership alone. The clause below is therefore copied from
+ * this file's own `deleteDeal` and `updateDeal` and must never be "unified" with the other three:
+ * removing it is a regression an admin hits on the first click, and adding it to the other three is
+ * a privilege escalation shipped as a bulk feature.
+ *
+ * Every one of the three is BEST-EFFORT and SEQUENTIAL: no batched `WHERE id IN (...)` (which would
+ * authorize once for many rows), no parallel fan-out, and no wrapping transaction (which structurally
+ * cannot report WHICH record failed). One actor scope wraps the whole loop and the cache is
+ * revalidated once after it.
+ */
+
+/**
+ * A bindable id, narrowed at runtime.
+ *
+ * A server action is a POST endpoint, so `ids: string[]` is an annotation and not a control — a
+ * caller can send a number, an object, `null`, or a megabyte string, and it would otherwise flow
+ * straight into `eq(deals.id, id)`. Same reasoning, and the same 64-character ceiling, as
+ * `parseRecordId` in `src/app/trash/actions.ts`. A bare shape test, not a UUID pattern: the value's
+ * only job here is to be a bindable parameter.
+ */
+const MAX_BULK_ID_LENGTH = 64
+
+/** The deduped id list, or `null` when the argument is not a list of bindable ids at all. */
+function parseBulkIds(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null
+
+  for (const value of raw) {
+    if (typeof value !== "string") return null
+    if (value.length === 0 || value.length > MAX_BULK_ID_LENGTH) return null
+  }
+
+  return Array.from(new Set(raw as string[]))
+}
+
+/**
+ * Soft-delete many deals (BULK-02).
+ *
+ * A per-record miss maps to `notFound`, never to `alreadyDeleted`: the read below is already scoped
+ * with `isNull(deals.deletedAt)`, so a deal that is already in Trash simply does not match, and
+ * telling the two apart would cost a second query per id for a nicer label (38-RESEARCH A6).
+ */
+export async function bulkDeleteDeals(ids: string[]): Promise<BulkWriteResult> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return { success: false, error: "not_authenticated" }
+  }
+
+  const uniqueIds = parseBulkIds(ids)
+  if (!uniqueIds || uniqueIds.length === 0) {
+    return { success: false, error: "no_selection" }
+  }
+
+  // The server enforces the cap; the bulk bar's mirror of the same constant is advisory only.
+  if (uniqueIds.length > BULK_MAX_IDS) {
+    return { success: false, error: "too_many", max: BULK_MAX_IDS }
+  }
+
+  // The actor scope opens AFTER the session check above, never before it, so an unauthenticated
+  // call establishes no actor at all (T-36-02) — and ONCE around the whole loop, not per record.
+  const outcome = await runWithActor({ kind: "user", userId: session.user.id }, async () => {
+    const succeeded: string[] = []
+    const failed: BulkFailure[] = []
+
+    for (const id of uniqueIds) {
+      const deal = await db.query.deals.findFirst({
+        where: and(eq(deals.id, id), isNull(deals.deletedAt)),
+      })
+
+      if (!deal) {
+        failed.push({ id, reason: "notFound" })
+        continue
+      }
+
+      if (deal.ownerId !== session.user.id && session.user.role !== "admin") {
+        failed.push({ id, reason: "notPermitted" })
+        continue
+      }
+
+      const result = await deleteRecordByType("deal", id, session.user.id)
+
+      if (result.success) {
+        succeeded.push(id)
+      } else {
+        // The mutation's own message is written for a server log and may name a table or a
+        // constraint, so it stops here and the client receives a closed code (T-38-07).
+        failed.push({ id, reason: "unknown" })
+      }
+    }
+
+    return { succeeded, failed }
+  })
+
+  if (outcome.succeeded.length > 0) {
+    revalidatePath("/deals")
+  }
+
+  return { success: true, ...outcome }
+}
+
+/**
+ * Transfer many deals to one new owner (BULK-03).
+ *
+ * NO NOTIFICATION IS SENT, ON ANY PATH (D-13). The only email on any owner or assignee path is the
+ * deal-assigned one above, and it fires off newly added ASSIGNEES — never off `ownerId`. The owner
+ * mutation this routes to returns no new-assignee list, so there is nothing to loop over and no
+ * suppression flag is needed: a per-record notification would emit up to 100 messages from one
+ * click, and a digest is deferred rather than built.
+ *
+ * The routing goes through the bulk dispatch map to the owner-only mutation, which touches exactly
+ * two columns. It must NEVER go through the general deal update with a partial payload: that schema
+ * is a `.partial()` of the create schema, which preserves the assignee list's `.default([])`, so
+ * such a call unconditionally clears every join row for the deal — a loss that never appears in the
+ * audited diff, because those rows live in a join table.
+ */
+export async function bulkReassignDealOwner(
+  ids: string[],
+  ownerId: string
+): Promise<BulkWriteResult> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return { success: false, error: "not_authenticated" }
+  }
+
+  const uniqueIds = parseBulkIds(ids)
+  if (!uniqueIds || uniqueIds.length === 0) {
+    return { success: false, error: "no_selection" }
+  }
+
+  if (uniqueIds.length > BULK_MAX_IDS) {
+    return { success: false, error: "too_many", max: BULK_MAX_IDS }
+  }
+
+  // The target is validated ONCE for the whole call, before any actor scope opens, and against BOTH
+  // predicates: a soft-deleted OR not-yet-approved user is not a legal owner, because transferring
+  // records to an inactive principal hides them from everyone who can act on them (T-38-06). The
+  // owner picker on the kanban page filters on the deleted column alone and can therefore offer an
+  // unapproved user; it is not the analog for this check.
+  const targetId = parseBulkIds([ownerId])?.[0]
+  const targetOwner = targetId
+    ? await db.query.users.findFirst({
+        where: and(
+          eq(users.id, targetId),
+          isNull(users.deletedAt),
+          eq(users.status, "approved")
+        ),
+      })
+    : undefined
+
+  if (!targetId || !targetOwner) {
+    return { success: false, error: "invalid_owner" }
+  }
+
+  const outcome = await runWithActor({ kind: "user", userId: session.user.id }, async () => {
+    const succeeded: string[] = []
+    const failed: BulkFailure[] = []
+
+    for (const id of uniqueIds) {
+      const deal = await db.query.deals.findFirst({
+        where: and(eq(deals.id, id), isNull(deals.deletedAt)),
+      })
+
+      if (!deal) {
+        failed.push({ id, reason: "notFound" })
+        continue
+      }
+
+      if (deal.ownerId !== session.user.id && session.user.role !== "admin") {
+        failed.push({ id, reason: "notPermitted" })
+        continue
+      }
+
+      // Argument order is ("deal", record, NEW OWNER, ACTOR). All four are strings, so nothing but
+      // this call site and its test keeps the last two from being swapped.
+      const result = await updateRecordOwnerByType("deal", id, targetId, session.user.id)
+
+      if (result.success) {
+        succeeded.push(id)
+      } else {
+        failed.push({ id, reason: "unknown" })
+      }
+    }
+
+    return { succeeded, failed }
+  })
+
+  if (outcome.succeeded.length > 0) {
+    revalidatePath("/deals")
+  }
+
+  return { success: true, ...outcome }
 }
 
 /**
