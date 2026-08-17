@@ -11,6 +11,8 @@ import { sendDealAssignedEmail } from "@/lib/email/send"
 import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
 import type { BulkFailure, BulkWriteResult } from "@/lib/bulk/types"
+import { fetchFilteredData } from "@/lib/export/formatters"
+import type { ExportResult } from "@/lib/export/types"
 import {
   createDealMutation,
   updateDealMutation,
@@ -365,6 +367,57 @@ export async function bulkReassignDealOwner(
   }
 
   return { success: true, ...outcome }
+}
+
+/**
+ * Export exactly the selected deals as CSV (BULK-04).
+ *
+ * THE SIGNATURE IS A LIST OF RECORD IDS AND NOTHING ELSE, and that is the security control, not a
+ * convenience. The other export entry point in this app is admin-gated and takes a whole options
+ * object; a NON-admin action that accepted such an object and was handed `{}` would answer with every
+ * deal in the database — an admin-gate bypass reachable from any browser, because a server action is
+ * a POST endpoint (T-38-01). So no format, no filter object, no entity type and no options parameter
+ * is accepted here: every field below is a literal built on the server.
+ *
+ * Any authenticated user may export their OWN selection, so there is deliberately no role check —
+ * the scope is the selection, which they could already read.
+ *
+ * No stage filter is passed even though the filter type has a slot for one and the deals page is a
+ * kanban organised by stage: the selection already determines the rows, and a second, narrower
+ * predicate could only silently drop rows the user ticked.
+ */
+export async function exportSelectedDeals(ids: string[]): Promise<ExportResult> {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return { success: false, error: "Not authenticated" }
+  }
+
+  const uniqueIds = parseBulkIds(ids)
+  if (!uniqueIds || uniqueIds.length === 0) {
+    return { success: false, error: "No records selected" }
+  }
+
+  if (uniqueIds.length > BULK_MAX_IDS) {
+    return { success: false, error: "Too many records" }
+  }
+
+  const result = await fetchFilteredData({
+    entityType: "deal",
+    format: "csv",
+    includeCustomFields: true,
+    filters: { ids: uniqueIds },
+  })
+
+  if (!result.success) {
+    return result
+  }
+
+  // The slug is the English plural the formatter's own mapping produces and is NEVER translated: a
+  // filename is not UI copy, and a localised one breaks every downstream importer. The count comes
+  // from the fetch result, so it reports rows WRITTEN rather than rows requested.
+  const date = new Date().toISOString().split("T")[0]
+
+  return { ...result, filename: `deals-selected-${result.count}-${date}.csv` }
 }
 
 /**
