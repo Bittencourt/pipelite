@@ -1041,7 +1041,7 @@ live Docker Postgres, or `[CITED]` to a specific file and line.
    - *What we know:* `bulk.openTrash` is in the key catalogue; `ENTITY_TO_TRASH_TAB`
      (`src/lib/trash/entity-types.ts:47`) already maps `EntityType → TrashTab`, and `/trash` parses
      a tab param via `parseTrashTab`.
-   - *Recommendation:* deep-link the tab (`/trash?tab=organizations`). It is one existing constant and
+   - *Recommendation:* deep-link the tab (`/trash?type=organizations`). It is one existing constant and
      it is what makes SC-2 ("finds those records in trash") a one-click check rather than a hunt.
 
 ---

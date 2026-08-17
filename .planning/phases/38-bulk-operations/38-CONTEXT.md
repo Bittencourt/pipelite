@@ -56,7 +56,13 @@ table view, reassigning Activity `assigneeId`, and any new export format.
   records are deselected.
 - The post-delete affordance deep-links the correct Trash tab using the existing
   `ENTITY_TO_TRASH_TAB` map rather than landing on `/trash` generically (auto-accepted recommended,
-  autonomous mode).
+  autonomous mode). **The query parameter is `?type=`, NOT `?tab=`** — found during plan 38-10.
+  `src/app/trash/page.tsx:49,59` declares `searchParams: Promise<{ type?: string; page?: string }>`
+  and calls `parseTrashTab(params.type)`, and `parseTrashTab` returns `DEFAULT_TRASH_TAB` (`"deals"`)
+  for anything unrecognised — including `undefined`. So `?tab=people` silently loads the **Deals**
+  tab, which is the wrong destination for three of the four entity types on the single link through
+  which success criterion 2 is meant to be a one-click check. `trash-table.tsx:427` and
+  `trash-tabs.tsx` both already write `?type=`. The gate asserts `?type=` present AND `?tab=` absent.
 - **A second user must be restored as a plan task.** The live database has exactly one approved,
   non-deleted user owning all 46,054 organizations, so SC-3 (per-record failure named) and SC-5
   (reassignment in change history) are literally unverifiable as-is — reassigning to the same owner
