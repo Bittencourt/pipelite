@@ -590,15 +590,33 @@ describe("resolveFieldPath — parsing is linear, not backtracking (T-34-20)", (
   // A ReDoS regression shows up as super-linear growth, so assert on the SCALING
   // ratio rather than an absolute wall-clock budget. An absolute threshold is
   // flaky: it passes on an idle machine and fails under parallel suite load
-  // (observed at 125ms against a 100ms limit). Both measurements here run under
-  // the same conditions, so the ratio is load-independent.
+  // (observed at 125ms against a 100ms limit).
+  //
+  // The ratio is NOT automatically load-independent, and an earlier version of this
+  // test claimed it was. It compared a 4x input span against a 10x threshold, which
+  // fails under vitest's own parallel workers — measured at 11.9x, 13.34x and 15.6x
+  // on three separate occasions while passing in isolation every time. The reason is
+  // arithmetic, not luck: 4x input predicts 4x for linear and 16x for quadratic, so a
+  // 10x threshold sits only 2.5x above the linear prediction, and observed jitter
+  // exceeded that. At 15.6x, ordinary scheduler noise was landing ABOVE quadratic's
+  // own prediction — the signal and the noise had no separation left.
+  //
+  // Widening the input span fixes it by pushing the two predictions apart. 16x input
+  // predicts 16x for linear and 256x for quadratic. Both windows are also large
+  // enough that real work dominates the ~0.9ms of fixed overhead that made the old
+  // 4000-element measurement mostly constant.
+  //
+  // Measured on this machine 2026-08-17: 13.8x idle, 21.0x with the full 85-file
+  // suite running concurrently. The 80x threshold therefore keeps ~3.8x of headroom
+  // over the worst observed load figure while staying ~3.2x below the quadratic
+  // prediction it exists to catch.
   it("scales linearly, not quadratically, with path length", () => {
     const ctx = realCtx()
     const time = (n: number) => {
       const paths = pathologicalPaths(n)
-      // Best-of-3 to damp scheduler noise and JIT warm-up.
+      // Best-of-5 to damp scheduler noise and JIT warm-up.
       let best = Infinity
-      for (let run = 0; run < 3; run++) {
+      for (let run = 0; run < 5; run++) {
         const start = performance.now()
         for (const path of paths) resolveFieldPath(ctx, path)
         best = Math.min(best, performance.now() - start)
@@ -607,12 +625,9 @@ describe("resolveFieldPath — parsing is linear, not backtracking (T-34-20)", (
     }
 
     time(2000) // warm-up, discarded
-    const small = Math.max(time(4000), 0.5) // floor avoids divide-by-noise
-    const large = time(16000) // 4x the input
+    const small = time(8000)
+    const large = time(128000) // 16x the input
 
-    // Linear parsing predicts ~4x. Quadratic backtracking predicts ~16x or worse.
-    // 10x sits between the two, so this fails on a genuine regression while
-    // tolerating ordinary timing jitter.
-    expect(large / small).toBeLessThan(10)
+    expect(large / small).toBeLessThan(80)
   })
 })
