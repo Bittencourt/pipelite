@@ -171,6 +171,20 @@ describe("bulkDeleteDeals", () => {
     expect(mockRevalidatePath).not.toHaveBeenCalled()
   })
 
+  it("counts the cap AFTER deduping: 101 entries carrying 100 distinct ids is a legal call", async () => {
+    // Pins the ORDER of the two guards. If the cap were checked against the raw argument, this call
+    // would be refused even though the user selected 100 records — and if dedupe ran after the cap,
+    // a caller could smuggle 5,000 entries past a 100-id cap by repeating one id.
+    mockAuth.mockResolvedValue(sessionFor(OWNER))
+    const distinct = idsOf(100)
+    queueDeals(distinct.map(id => row(id)))
+
+    const result = await bulkDeleteDeals([...distinct, distinct[0]])
+
+    expect(result).toEqual({ success: true, succeeded: distinct, failed: [] })
+    expect(mockDelete).toHaveBeenCalledTimes(100)
+  })
+
   it("accepts exactly BULK_MAX_IDS ids — the cap is a ceiling, not an off-by-one refusal", async () => {
     mockAuth.mockResolvedValue(sessionFor(OWNER))
     queueDeals(idsOf(100).map(id => row(id)))
@@ -341,17 +355,30 @@ describe("bulkDeleteDeals", () => {
     await bulkDeleteDeals(["x1", "x2"])
     expect(mockRevalidatePath).not.toHaveBeenCalled()
 
-    // TWELVE successes and still ONE call: the count above could be satisfied by a per-record
-    // revalidate in a run that happened to succeed once, so the N-success case is the one that
-    // actually distinguishes "after the loop" from "inside it".
+    // NINE successes out of twelve, and still ONE call. The two scenarios above are both VACUOUS on
+    // their own: a run with exactly one success produces exactly one call whether the revalidation
+    // sits after the loop or inside it, so only an N-success batch distinguishes the two placements.
+    // Verified by negative proof 3 — moving it into the loop makes this assertion report 9 calls.
+    vi.clearAllMocks()
+    mockRunWithActor.mockImplementation((_actor, fn) => fn())
+    mockAuth.mockResolvedValue(sessionFor(OWNER, "member"))
+    const mixed = idsOf(12)
+    queueDeals(mixed.map((id, index) => row(id, index < 9 ? OWNER : OTHER)))
+    mockDelete.mockResolvedValue({ success: true })
+
+    await bulkDeleteDeals(mixed)
+    expect(mockDelete).toHaveBeenCalledTimes(9)
+    expect(mockRevalidatePath).toHaveBeenCalledTimes(1)
+
+    // And the same for a batch in which every id succeeds.
     vi.clearAllMocks()
     mockRunWithActor.mockImplementation((_actor, fn) => fn())
     mockAuth.mockResolvedValue(sessionFor(OWNER))
-    const ids = idsOf(12)
-    queueDeals(ids.map(id => row(id)))
+    const allOwned = idsOf(12)
+    queueDeals(allOwned.map(id => row(id)))
     mockDelete.mockResolvedValue({ success: true })
 
-    await bulkDeleteDeals(ids)
+    await bulkDeleteDeals(allOwned)
     expect(mockRevalidatePath).toHaveBeenCalledTimes(1)
   })
 
@@ -794,6 +821,16 @@ describe("source gate: deals/actions.ts (comment-stripped)", () => {
     }
   })
 
+  it("checks the cap BEFORE any actor scope opens in both bulk writes", () => {
+    for (const name of WRITE_ACTIONS) {
+      const slice = sliceExport(name)
+      expect(
+        slice.indexOf("BULK_MAX_IDS"),
+        `${name} must refuse an over-cap call before establishing an actor, so a rejected call leaves no attribution behind`
+      ).toBeLessThan(slice.indexOf("runWithActor"))
+    }
+  })
+
   it("keeps every destructive and notifying identifier out of both bulk writes", () => {
     for (const name of WRITE_ACTIONS) {
       const slice = sliceExport(name)
@@ -818,10 +855,19 @@ describe("source gate: deals/actions.ts (comment-stripped)", () => {
   it("admits nothing but ids into the scoped export", () => {
     const slice = sliceExport("exportSelectedDeals")
 
+    // ANTI-VACUOUS BY CONSTRUCTION, not by the token ban below. The parameter list is EXTRACTED and
+    // compared for equality, so this assertion fails if the declaration is missing, renamed, grows a
+    // second parameter, or has its type widened — none of which any ban list could notice. The ban
+    // list is the second line of defence, for a widening that keeps the shape.
+    const parameterList = slice.slice(
+      slice.indexOf("(") + 1,
+      slice.indexOf(")", slice.indexOf("("))
+    )
+
     expect(
-      /export async function exportSelectedDeals\(\s*ids:\s*string\[\]\s*\)/.test(slice),
+      parameterList.replace(/\s+/g, " ").trim(),
       "exportSelectedDeals must take a single ids parameter: an options or filter argument handed {} would export every deal in the database (T-38-01)"
-    ).toBe(true)
+    ).toBe("ids: string[]")
 
     for (const token of FORBIDDEN_IN_EXPORT) {
       expect(slice, `exportSelectedDeals must not reference ${token}`).not.toContain(token)
