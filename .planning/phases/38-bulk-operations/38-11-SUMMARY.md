@@ -243,6 +243,15 @@ None - no external service configuration required.
 - Plans 38-12/13/14 (People, Deals, Activities) can copy `bulk-actions.test.ts` and the action skeleton directly. **Two things must change per entity:** the predicate string (`person.ownerId`/`activity.ownerId` with no bypass; **deals keeps `&& session.user.role !== "admin"`**, so the Deals suite's asymmetry test must assert the OPPOSITE outcome and its source gate must NOT ban `session.user.role`), and the `entityType` literal passed to the dispatch functions and the export options.
 - The export filename slug is the English plural from `formatters.ts`'s own mapping: `people`, `deals`, `activities` — never translated.
 
+## Self-Check: PASSED
+
+- `src/app/organizations/actions.ts` — FOUND
+- `src/app/organizations/bulk-actions.test.ts` — FOUND
+- `.planning/phases/38-bulk-operations/38-11-SUMMARY.md` — FOUND
+- Commits `9b2fe35`, `ea40cfd`, `89e5026`, `fa32023`, `71d4ebc`, `c439bb8` — all FOUND in `git log`
+- `git diff --diff-filter=D HEAD~6 HEAD` — no file deletions
+- `git status --short` — clean; STATE.md and ROADMAP.md untouched (orchestrator owns those)
+
 ---
 *Phase: 38-bulk-operations*
 *Completed: 2026-08-17*
