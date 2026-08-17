@@ -397,7 +397,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 38-19-PLAN.md — the cross-surface select-wiring gate + the phase-wide suite/typecheck/lint run (BULK-01..04)
+- [x] 38-19-PLAN.md — the cross-surface select-wiring gate + the phase-wide suite/typecheck/lint run (BULK-01..04)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -525,7 +525,7 @@ Plans:
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
-| 38. Bulk Operations | 18/20 | In Progress|  |
+| 38. Bulk Operations | 19/20 | In Progress|  |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
