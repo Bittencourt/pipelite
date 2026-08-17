@@ -3,6 +3,46 @@
 Out-of-scope discoveries logged during execution. Nothing here was fixed; each entry names the
 plan that found it and why it is not that plan's work.
 
+## From the phase code review (38-REVIEW.md) — disposition
+
+Status `issues_found`: 1 critical, 10 warnings, 4 info. The review independently re-verified the
+declared security contract in all twelve actions and found it intact.
+
+### FIXED — CR-01 (critical): the capped per-stage select-all could never deselect
+Fixed in `e341b4f`, reproduced and re-verified live. The cap makes "all selected" unreachable, so the
+header checkbox pins at `indeterminate`, and an indeterminate CONTROLLED Radix checkbox emits `true`
+on every click — so branching on the emitted value took the select path forever. Measured before:
+click 1 → 100, clicks 2 and 3 → nothing. After: 0 → 100 → 0 → 100 → 0. Nine live stages are over the
+cap, so this was the ordinary case.
+
+### FIXED — WR-10: the ReDoS assertion lost its divide-by-noise floor
+Fixed in `cdbee1d`. This was a fair hit against the orchestrator's own earlier change to that test.
+
+### OPEN — the ones that most deserve a follow-up phase, in priority order
+1. **WR-09 (security-relevant): the scoped export applies NO per-record ownership predicate**, while
+   delete and reassign both do. Any authenticated user can export any records by id. This is an
+   inconsistency in the phase's own contract, not a pre-existing issue, and it needs a product
+   decision — should export be owner-scoped like the writes, or is read-by-id intentionally open?
+2. **WR-05: the element-level id narrowing — the phase's primary injection guard — has ZERO test
+   coverage** in all four suites. Deleting the `typeof`/length checks from all four files leaves 320
+   tests green. This is the fifth instance of the phase's own pattern: a gate that proves nothing.
+3. **WR-07 (the root cause of CR-01 escaping): every bulk UI gate is a source-text grep and no
+   component is rendered anywhere.** ~2,500 lines of tests, zero renders. The gate covering the exact
+   CR-01 behaviour asserts only that the string `BULK_MAX_IDS` appears in the file. Closing this means
+   deciding whether to add jsdom — which this phase deliberately refused — or to accept that
+   interaction behaviour is browser-verified only.
+4. **WR-08: CSV formula injection.** A pre-existing sink, but this phase moves it from admin-gated to
+   reachable by any signed-in user over anyone's records, with `includeCustomFields: true`.
+5. **WR-02**: bulk reassign never revalidates detail routes, and bulk delete of people never
+   revalidates `/organizations/[id]`, which lists that org's live people. The `occurrences(...) === 1`
+   gate locks the omission in.
+6. **WR-03**: the table select-all is uncapped, contradicting `limits.ts`; **WR-04**:
+   `bulkReassignOrganizationOwner` is the only reassign that never narrows `ownerId`; **WR-06**: the id
+   parser is duplicated four times in three implementations under two names; **WR-01**: nameless users
+   all render as "Unknown" while `email` is fetched and discarded.
+7. **IN-02** is worth noting for consistency: `kanban-board.tsx` clears selection from inside an
+   effect — the very pattern three sibling files in this same phase treat as a build error.
+
 ## From plan 38-20's UAT, triaged by the orchestrator
 
 Plan 38-20 reported seven findings. Two were fixed (`cd6d44f`); the rest are recorded here with the
