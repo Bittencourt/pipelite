@@ -55,8 +55,15 @@ table view, reassigning Activity `assigneeId`, and any new export format.
 - The reassigned field is `ownerId`, which all four entities carry (`organizations.ownerId`,
   `people.ownerId`, `deals.ownerId`, `activities.ownerId`). Activities' separate `assigneeId` is out
   of scope for this phase.
-- The picker reuses `src/components/ui/entity-combobox.tsx` over active users rather than
-  introducing a new member-picker component.
+- The picker uses the already-vendored `src/components/ui/select.tsx`, which is the owner-picking
+  idiom on 3 of the 4 surfaces today. **Corrected during 38-UI-SPEC:** this decision originally
+  named `entity-combobox.tsx`, which is unimplementable here — it routes through
+  `searchEntities(entityType: EntityType)` and `EntityType` (`src/db/schema/custom-fields.ts:19`) is
+  a four-literal union reused by two *persisted* columns (`audit_log.entity_type`,
+  `notes.entity_type`) plus `assertEntityType`, so admitting "user" would be a schema change. Either
+  way, no new member-picker component is introduced. Options are filtered to
+  `status = 'approved'` AND `deletedAt IS NULL` (note: `deals/page.tsx:159-163` filters on
+  `deletedAt` alone and can therefore offer an unapproved user — that file is not touched here).
 - **No email is sent on bulk reassign.** A per-record notification would emit up to 100 emails from
   one click; a digest email is deferred, not built.
 - Reassignment routes through the existing per-entity update mutations, so each record produces its
