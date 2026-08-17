@@ -381,12 +381,12 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 38-09-PLAN.md — the per-record failure report, uncapped and scroll-bounded (BULK-02, BULK-03)
-- [ ] 38-10-PLAN.md — the floating bulk action bar at `z-[60]`, its handlers and the CSV download (BULK-02..04)
-- [ ] 38-11-PLAN.md — Organizations bulk delete / reassign / scoped export + session-swapping suite (BULK-02..04)
-- [ ] 38-12-PLAN.md — People bulk delete / reassign / scoped export + session-swapping suite (BULK-02..04)
-- [ ] 38-13-PLAN.md — Deals bulk actions incl. the admin-bypass asymmetry and the no-email gate (BULK-02..04)
-- [ ] 38-14-PLAN.md — Activities bulk actions incl. the `assigneeId` boundary gate (BULK-02..04)
+- [x] 38-09-PLAN.md — the per-record failure report, uncapped and scroll-bounded (BULK-02, BULK-03)
+- [x] 38-10-PLAN.md — the floating bulk action bar at `z-[60]`, its handlers and the CSV download (BULK-02..04)
+- [x] 38-11-PLAN.md — Organizations bulk delete / reassign / scoped export + session-swapping suite (BULK-02..04)
+- [x] 38-12-PLAN.md — People bulk delete / reassign / scoped export + session-swapping suite (BULK-02..04)
+- [x] 38-13-PLAN.md — Deals bulk actions incl. the admin-bypass asymmetry and the no-email gate (BULK-02..04)
+- [x] 38-14-PLAN.md — Activities bulk actions incl. the `assigneeId` boundary gate (BULK-02..04)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -525,7 +525,7 @@ Plans:
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
-| 38. Bulk Operations | 8/20 | In Progress|  |
+| 38. Bulk Operations | 14/20 | In Progress|  |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
