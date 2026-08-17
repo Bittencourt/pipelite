@@ -23,10 +23,18 @@ import { Organization } from "./columns"
 import { Plus, Search } from "lucide-react"
 import { OrganizationDialog } from "./organization-dialog"
 import { DeleteDialog } from "./delete-dialog"
-import { deleteOrganization } from "./actions"
+import {
+  bulkDeleteOrganizations,
+  bulkReassignOrganizationOwner,
+  deleteOrganization,
+  exportSelectedOrganizations,
+} from "./actions"
 import { toast } from "sonner"
 import { useDataTableKeyboard } from "@/components/keyboard"
+import { BulkActionBar } from "@/components/bulk/bulk-action-bar"
+import { BulkFailureReport } from "@/components/bulk/bulk-failure-report"
 import { useSelectColumn } from "@/components/bulk/select-column"
+import type { BulkOutcome } from "@/lib/bulk/types"
 
 /**
  * The accessible name of a row's checkbox: "Select Acme Ltda", never "Select row".
@@ -62,7 +70,16 @@ interface DataTableProps {
   bulkOwners: { id: string; name: string }[]
 }
 
-export function DataTable({ columns, data, hasMore = false, search = "", currentPage = 1, refresh }: DataTableProps) {
+export function DataTable({
+  columns,
+  data,
+  hasMore = false,
+  search = "",
+  currentPage = 1,
+  refresh,
+  retentionDays,
+  bulkOwners,
+}: DataTableProps) {
   const router = useRouter()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null)
@@ -78,6 +95,15 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
    * of records about to be deleted.
    */
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+
+  /**
+   * The last bulk result that had at least one per-record failure, or `null`.
+   *
+   * It is held here rather than inside the bar because the report it feeds renders ABOVE the table
+   * while the bar is fixed to the bottom of the viewport, and because it must outlive the dialog the
+   * action was confirmed in.
+   */
+  const [outcome, setOutcome] = useState<BulkOutcome | null>(null)
 
   /**
    * CLEAR ON A SEARCH CHANGE — keyed on the search STRING, never on the `data` array.
@@ -190,6 +216,45 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
     refresh?.()
   }
 
+  /**
+   * What happens after a bulk delete or reassign settles — the one place the selection is reconciled
+   * against a result.
+   *
+   * SUCCEEDED IDS ARE DROPPED AND FAILED IDS ARE KEPT, EXPLICITLY AND HERE. Not in an effect: an
+   * effect would have to key on something that changes when the result arrives, and the only such
+   * value is the server-supplied rows array, which `revalidatePath` also churns mid-action. Keeping
+   * the failed records selected is what makes the retry the same button rather than a re-pick, and
+   * it is a locked decision (38-UI-SPEC § Surface 7).
+   *
+   * The failed ids are re-asserted rather than merely left alone, so the reconciliation is correct
+   * even for a record whose key was somehow absent from the previous map.
+   */
+  const handleOutcome = (next: BulkOutcome) => {
+    const succeeded = new Set(next.succeeded)
+
+    setRowSelection((prev) => {
+      const remaining: RowSelectionState = {}
+
+      for (const id of Object.keys(prev)) {
+        if (prev[id] && !succeeded.has(id)) remaining[id] = true
+      }
+
+      for (const failure of next.failed) {
+        remaining[failure.id] = true
+      }
+
+      return remaining
+    })
+
+    // A fully successful action REPLACES any previous report with nothing, so a stale list of
+    // failures from an earlier attempt cannot outlive the retry that fixed it.
+    setOutcome(next.failed.length > 0 ? next : null)
+
+    // Same convention as `handleRecordSaved` above, and for the same reason: the action's own
+    // `revalidatePath` is what re-renders the rows, so this is only the optional parent hook.
+    refresh?.()
+  }
+
   const handleSearchChange = (value: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
@@ -250,6 +315,20 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
           Add Organization
         </Button>
       </div>
+      {/*
+        ABOVE THE TABLE, below the search row — a report to READ, not a control to press, and it can
+        run to as many lines as there were failures. It is deliberately not inside the fixed bar,
+        which has to stay one compact control cluster down to 320px.
+      */}
+      {outcome !== null && outcome.failed.length > 0 && (
+        <BulkFailureReport
+          kind={outcome.kind}
+          failures={outcome.failed}
+          labelById={outcome.labelById}
+          onDismiss={() => setOutcome(null)}
+        />
+      )}
+
       <div className="rounded-md border" {...containerProps}>
         <Table>
           <TableHeader>
@@ -341,6 +420,34 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
         organizationName={orgToDelete?.name || ""}
         onConfirm={handleDeleteConfirm}
         isLoading={isDeleting}
+      />
+
+      {/*
+        LAST IN THE STACK, AFTER Load More, AND THAT POSITION IS THE POINT. The bar renders its own
+        `h-20` sibling spacer to buy back the space its `fixed` element covers, so mounted any higher
+        the spacer would inject 80px into the MIDDLE of the page. Placed here it changes only what
+        sits below everything, and no row the user is aiming at moves (T-38-38).
+
+        The three server actions are passed as the imported functions themselves, never wrapped in a
+        local closure that reshapes the arguments, so the bar's `(ids)` and `(ids, ownerId)` call
+        shapes ARE the actions' own signatures and any mismatch is a type error rather than a runtime
+        surprise. No keyboard binding is added here either: `Escape` is owned by the bar, and the
+        list's own bare-letter hotkeys keep their single-record meaning.
+      */}
+      <BulkActionBar
+        entityType="organization"
+        selectedIds={selectedIds}
+        getLabel={(id) => data.find((r) => r.id === id)?.name ?? id}
+        retentionDays={retentionDays}
+        owners={bulkOwners}
+        onDelete={bulkDeleteOrganizations}
+        onReassign={bulkReassignOrganizationOwner}
+        onExport={exportSelectedOrganizations}
+        onOutcome={handleOutcome}
+        onClear={() => {
+          setRowSelection({})
+          setOutcome(null)
+        }}
       />
     </div>
   )
