@@ -375,9 +375,9 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 38-06-PLAN.md — `src/lib/bulk/{limits,types,dispatch}.ts` + the dispatch mis-wiring test (BULK-02, BULK-03)
-- [ ] 38-07-PLAN.md — the shared checkbox column: `buildSelectColumn` (pure) + `useSelectColumn` (BULK-01)
-- [ ] 38-08-PLAN.md — the bulk delete and reassign dialogs + their comment-stripped source gate (BULK-02, BULK-03)
+- [x] 38-06-PLAN.md — `src/lib/bulk/{limits,types,dispatch}.ts` + the dispatch mis-wiring test (BULK-02, BULK-03)
+- [x] 38-07-PLAN.md — the shared checkbox column: `buildSelectColumn` (pure) + `useSelectColumn` (BULK-01)
+- [x] 38-08-PLAN.md — the bulk delete and reassign dialogs + their comment-stripped source gate (BULK-02, BULK-03)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -525,7 +525,7 @@ Plans:
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
-| 38. Bulk Operations | 5/20 | In Progress|  |
+| 38. Bulk Operations | 8/20 | In Progress|  |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
