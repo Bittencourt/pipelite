@@ -56,6 +56,8 @@ vi.mock("@/lib/audit/actor-context", () => ({
   getCurrentActor: vi.fn(() => undefined),
 }))
 
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { db } from "@/db"
 import { crmBus } from "@/lib/events"
 import { getCurrentActor } from "@/lib/audit/actor-context"
@@ -74,6 +76,7 @@ import {
   updateDealMutation,
   deleteDealMutation,
   updateDealStageMutation,
+  updateDealOwnerMutation,
   reorderDealsMutation,
   restoreDealMutation,
   purgeDealMutation,
@@ -1169,5 +1172,209 @@ describe("purgeDealMutation", () => {
     expect(result).toEqual({ success: false, error: "Failed to purge deal" })
     expect(spy).toHaveBeenCalled()
     spy.mockRestore()
+  })
+})
+
+/* ------------------------------------------------------------------------------------------ *
+ * Bulk owner reassignment (BULK-03)
+ * ------------------------------------------------------------------------------------------ */
+
+describe("updateDealOwnerMutation", () => {
+  const existingDeal = {
+    id: "d1",
+    title: "Test Deal",
+    stageId: "s1",
+    value: "100",
+    organizationId: "o1",
+    personId: null,
+    ownerId: "u1",
+    position: "10000",
+    expectedCloseDate: null,
+    notes: null,
+    customFields: {},
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: null,
+  }
+
+  /** `.returning()` hands back the real post-write row, so the payload cannot drift. */
+  const updatedDeal = { ...existingDeal, ownerId: "u2" }
+
+  function stubUpdateReturning(row: Record<string, unknown>) {
+    const returningFn = vi.fn().mockResolvedValue([row])
+    const whereFn = vi.fn().mockReturnValue({ returning: returningFn })
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    return setFn
+  }
+
+  const emittedPayload = (event: string) => {
+    const call = mockEmit.mock.calls.find((c) => c[0] === event)
+    return call?.[1] as {
+      data?: Record<string, unknown>
+      previous?: Record<string, unknown>
+      changedFields?: string[] | null
+      userId?: string
+    }
+  }
+
+  it("writes only ownerId and updatedAt, and returns success", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(existingDeal)
+    const setFn = stubUpdateReturning(updatedDeal)
+
+    const result = await updateDealOwnerMutation("d1", "u2", "actor-1")
+
+    expect(result).toEqual({ success: true })
+    expect(mockDb.update).toHaveBeenCalledTimes(1)
+    expect(setFn).toHaveBeenCalledTimes(1)
+    const setArg = setFn.mock.calls[0][0] as Record<string, unknown>
+    expect(Object.keys(setArg).sort()).toEqual(["ownerId", "updatedAt"])
+    expect(setArg.ownerId).toBe("u2")
+    expect(setArg.updatedAt).toBeInstanceOf(Date)
+  })
+
+  it("emits deal.updated with the full post-write row and changedFields ['ownerId']", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(existingDeal)
+    stubUpdateReturning(updatedDeal)
+
+    await updateDealOwnerMutation("d1", "u2", "actor-1")
+
+    expect(mockEmit).toHaveBeenCalledTimes(1)
+    const payload = emittedPayload("deal.updated")
+    expect(payload).toBeDefined()
+    expect(payload.changedFields).toEqual(["ownerId"])
+    expect(payload.userId).toBe("actor-1")
+    // Identity, not equality: a hand-built partial payload would silently narrow the diff,
+    // because diff.ts skips native keys absent from `data` on an update.
+    expect(payload.data).toBe(updatedDeal)
+    expect(payload.previous).toBe(existingDeal)
+  })
+
+  // T-38-05. The generic update mutation destroys every assignee join row for the deal when it
+  // is handed an owner-only payload, and the loss never appears in the diffed row — so a spy is
+  // the only possible detector.
+  it("never issues a delete on the happy path (T-38-05 regression gate)", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(existingDeal)
+    stubUpdateReturning(updatedDeal)
+
+    const result = await updateDealOwnerMutation("d1", "u2", "actor-1")
+
+    expect(result).toEqual({ success: true })
+    expect(db.delete).not.toHaveBeenCalled()
+  })
+
+  it("short-circuits idempotently when the owner is unchanged (D-15)", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(existingDeal)
+    stubUpdateReturning(existingDeal)
+
+    const result = await updateDealOwnerMutation("d1", "u1", "actor-1")
+
+    expect(result).toEqual({ success: true })
+    expect(mockDb.update).not.toHaveBeenCalled()
+    expect(mockEmit).not.toHaveBeenCalled()
+    expect(db.delete).not.toHaveBeenCalled()
+  })
+
+  it("returns the missing-deal error for a missing or soft-deleted row", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(undefined)
+    stubUpdateReturning(updatedDeal)
+
+    const result = await updateDealOwnerMutation("d1", "u2", "actor-1")
+
+    expect(result).toEqual({ success: false, error: "Deal not found" })
+    expect(mockDb.update).not.toHaveBeenCalled()
+    expect(mockEmit).not.toHaveBeenCalled()
+    expect(db.delete).not.toHaveBeenCalled()
+  })
+
+  // T-38-14. The assignee email fires in the server action off `newAssigneeUserIds`; a result
+  // that has no such key cannot trigger it, which is how "no email on bulk reassign" holds
+  // structurally rather than through a suppression flag.
+  it("resolves with no newAssigneeUserIds key, so no caller can send the assignee email", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(existingDeal)
+    stubUpdateReturning(updatedDeal)
+
+    const result = await updateDealOwnerMutation("d1", "u2", "actor-1")
+
+    expect(result).not.toHaveProperty("newAssigneeUserIds")
+    expect(result).not.toHaveProperty("dealTitle")
+    expect(Object.keys(result)).toEqual(["success"])
+  })
+
+  it("runs no formula pass: ownerId is absent from ENTITY_NATIVE_ATTRIBUTES.deal", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(existingDeal)
+    stubUpdateReturning(updatedDeal)
+
+    await updateDealOwnerMutation("d1", "u2", "actor-1")
+
+    expect(Object.values(ENTITY_NATIVE_ATTRIBUTES.deal)).not.toContain("ownerId")
+    expect(mockRecalc).not.toHaveBeenCalled()
+  })
+
+  it("returns a prose failure and logs when the update rejects", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(existingDeal)
+    const returningFn = vi.fn().mockRejectedValue(new Error("boom"))
+    const whereFn = vi.fn().mockReturnValue({ returning: returningFn })
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await updateDealOwnerMutation("d1", "u2", "actor-1")
+
+    expect(result).toEqual({ success: false, error: "Failed to reassign deal owner" })
+    expect(spy).toHaveBeenCalled()
+    expect(mockEmit).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
+  /*
+   * The source-slice gate.
+   *
+   * A spy assertion only covers the paths this suite drives. The declaration slice covers every
+   * path there is, including ones nobody thought to test — which is what makes the "never
+   * touches the join table" claim structural rather than incidental.
+   *
+   * Comments are NOT stripped here on purpose: a comment inside the function that names one of
+   * these identifiers is a reason to reword the comment, never to weaken the gate.
+   */
+  describe("source slice", () => {
+    const SOURCE = readFileSync(
+      path.join(process.cwd(), "src", "lib", "mutations", "deals.ts"),
+      "utf8",
+    )
+    const DECLARATION = "export async function updateDealOwnerMutation"
+
+    /** From the declaration to the next top-level `export`, matching the Phase 36 slicer. */
+    function sliceDeclaration(source: string, declaration: string): string {
+      const start = source.indexOf(declaration)
+      if (start === -1) return ""
+      const end = source.indexOf("\nexport ", start + 1)
+      return end === -1 ? source.slice(start) : source.slice(start, end)
+    }
+
+    it("declares the mutation exactly once", () => {
+      const occurrences = SOURCE.split(DECLARATION).length - 1
+      expect(occurrences).toBe(1)
+    })
+
+    it.each(["dealAssignees", "computeNewAssigneeIds", "db.delete", "recalc"])(
+      "the declaration slice contains zero occurrences of %s",
+      (forbidden) => {
+        const body = sliceDeclaration(SOURCE, DECLARATION)
+        // Anti-vacuity: prove the slice found the function before concluding anything from it.
+        expect(body.length, `could not slice \`${DECLARATION}\``).toBeGreaterThan(0)
+        expect(body).toContain("crmBus.emit")
+        expect(body).not.toContain(forbidden)
+      },
+    )
+
+    it("the slicer isolates a function rather than widening to the module", () => {
+      // A gate for the gate: the whole module obviously does contain these identifiers, so a
+      // slicer that widened would make every assertion above pass for the wrong reason.
+      expect(SOURCE).toContain("dealAssignees")
+      const body = sliceDeclaration(SOURCE, DECLARATION)
+      expect(body.length).toBeLessThan(SOURCE.length)
+      expect(sliceDeclaration(SOURCE, "export async function noSuchMutation")).toBe("")
+    })
   })
 })

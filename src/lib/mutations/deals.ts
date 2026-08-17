@@ -757,6 +757,78 @@ export async function purgeDealMutation(
   }
 }
 
+/**
+ * Reassign a deal's owner, and nothing else (BULK-03).
+ *
+ * NEVER route an owner change through `updateDealMutation`. `updateDealSchema` is
+ * `dealSchema.partial()`, and `.partial()` does not remove `assigneeIds`' `.default([])`, so
+ * `safeParse({ ownerId })` yields `{ assigneeIds: [], ownerId }` — and the generic update path
+ * then clears every assignee join row for the deal before deciding what to re-insert. That loss
+ * is UNAUDITED: assignees live in a join table and never appear in the diffed deal row, so no
+ * timeline, no webhook and no test would show it. That latent bug in `updateDealMutation` is
+ * recorded in 38-RESEARCH Pitfall 2 and is NOT fixed here; this function routes around it, and
+ * `deals.test.ts` gates the routing with a spy plus a source-slice assertion.
+ *
+ * Two further properties are load-bearing rather than incidental:
+ *
+ *   - The result carries no `newAssigneeUserIds`. `src/app/deals/actions.ts` sends
+ *     `sendDealAssignedEmail` off that field, so its absence is what makes "no email on bulk
+ *     reassign" (D-13) structural — there is no suppression flag to forget.
+ *   - The same-owner request returns early, before the `try`, with no write and no event (D-15).
+ *     Reassigning to the current owner therefore writes no timeline row, which is correct: the
+ *     record did not change.
+ *
+ * The `update` prefix in the name is deliberate — it is what puts this function inside the
+ * per-function SC-5 gate in `src/lib/audit/no-mutation-coupling.test.ts`.
+ */
+export async function updateDealOwnerMutation(
+  id: string,
+  ownerId: string,
+  userId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  // Unprojected, so it doubles as the event's before-value at no extra query cost.
+  const deal = await db.query.deals.findFirst({
+    where: and(eq(deals.id, id), isNull(deals.deletedAt)),
+  })
+
+  if (!deal) {
+    return { success: false, error: "Deal not found" }
+  }
+
+  // D-15, outside the try: nothing to write, so nothing to fail and nothing to report.
+  if (deal.ownerId === ownerId) {
+    return { success: true }
+  }
+
+  try {
+    // Exactly two columns. No formula pass runs for this write: `ownerId` is absent from
+    // ENTITY_NATIVE_ATTRIBUTES.deal, so a scoped pass would evaluate nothing at all.
+    const [updated] = await db
+      .update(deals)
+      .set({ ownerId, updatedAt: new Date() })
+      .where(eq(deals.id, id))
+      .returning()
+
+    // The FULL post-write row, not a hand-built `{ id, ownerId }`: `buildChanges` reads `data`
+    // for an update and skips native keys absent from it, so a partial payload would silently
+    // narrow the diff.
+    crmBus.emit("deal.updated", buildEventPayload(
+      id,
+      "updated",
+      updated as unknown as Record<string, unknown>,
+      userId,
+      ["ownerId"],
+      // The pre-write row, from the existence check at the top of this function.
+      deal as unknown as Record<string, unknown>,
+    ))
+
+    return { success: true }
+  } catch (error) {
+    console.error("Failed to reassign deal owner:", error)
+    return { success: false, error: "Failed to reassign deal owner" }
+  }
+}
+
 export async function updateDealStageMutation(
   id: string,
   stageId: string,
