@@ -33,6 +33,10 @@ interface DataTableProps {
   search?: string
   currentPage?: number
   refresh?: () => void
+  /** null means nothing is purged automatically. Never defaulted, here or upstream. */
+  retentionDays: number | null
+  /** The bulk reassign pool: approved, non-deleted users only. Named for the picker it feeds. */
+  bulkOwners: { id: string; name: string }[]
 }
 
 export function DataTable({ columns, data, hasMore = false, search = "", currentPage = 1, refresh }: DataTableProps) {
