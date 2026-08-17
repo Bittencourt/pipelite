@@ -340,6 +340,72 @@ export async function updateOrganizationMutation(
   }
 }
 
+/**
+ * Transfer one organization to a different owner (BULK-03).
+ *
+ * WHY THIS EXISTS AS ITS OWN FUNCTION, rather than a call to `updateOrganizationMutation` above:
+ * `ownerId` is not a key of `organizationSchema`, and zod's default object mode discards unknown
+ * keys in silence. `updateOrganizationSchema.safeParse({ ownerId })` therefore resolves to
+ * `{ success: true, data: {} }`, the generic update writes only `updatedAt`, and the payload it
+ * emits diffs to nothing — so the change-history row is dropped downstream while the caller is
+ * told the reassign succeeded. Widening the schema instead is rejected deliberately: it would let
+ * `PATCH /api/v1/organizations/:id` accept owner transfers from any authenticated REST caller.
+ *
+ * `data` MUST be the full post-write row. On an update, `src/lib/audit/diff.ts` skips native keys
+ * that are absent from `data`, so a `{ id, ownerId }` payload silently narrows the change set for
+ * every subscriber. `.returning()` is used in preference to a hand-built `{ ...organization,
+ * ownerId }` spread so the emitted row cannot drift from the table.
+ *
+ * Ownership is NOT checked here. Per the established layering, a mutation checks existence only;
+ * the per-record authorization predicate lives in the calling server action, where it differs by
+ * entity and must not be unified.
+ */
+export async function updateOrganizationOwnerMutation(
+  id: string,
+  ownerId: string,
+  userId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const organization = await db.query.organizations.findFirst({
+    where: and(eq(organizations.id, id), isNull(organizations.deletedAt)),
+  })
+
+  if (!organization) {
+    return { success: false, error: "Organization not found" }
+  }
+
+  // Idempotent by design (D-15). A request for the owner the record already has writes nothing
+  // and emits nothing, so no history entry is produced for a no-op — which is why the reassign
+  // picker does not need to hide the current owner.
+  if (organization.ownerId === ownerId) {
+    return { success: true }
+  }
+
+  try {
+    const [updated] = await db
+      .update(organizations)
+      .set({ ownerId, updatedAt: new Date() })
+      .where(eq(organizations.id, id))
+      .returning()
+
+    // No recalculation: `ownerId` is absent from ENTITY_NATIVE_ATTRIBUTES.organization, so a
+    // recalculation would scope to zero evaluations and cost a definitions read for nothing.
+    crmBus.emit("organization.updated", buildEventPayload(
+      id,
+      "updated",
+      updated as unknown as Record<string, unknown>,
+      userId,
+      ["ownerId"],
+      // The pre-write row, from the existence check above — the only source of before-values.
+      organization as unknown as Record<string, unknown>,
+    ))
+
+    return { success: true }
+  } catch (error) {
+    console.error("Failed to reassign organization owner:", error)
+    return { success: false, error: "Failed to reassign organization owner" }
+  }
+}
+
 export async function deleteOrganizationMutation(
   id: string,
   userId: string,

@@ -67,6 +67,27 @@ function personRow(overrides: Record<string, unknown> = {}): Record<string, unkn
   }
 }
 
+/**
+ * The raw camelCase organization row, as `updateOrganizationOwnerMutation` emits it from
+ * `.returning()`. Full, not a two-key stub: the whole point of the gate below is that the real
+ * native-key set is exercised.
+ */
+function organizationRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "org-1",
+    name: "Tyr Energia",
+    website: "https://tyr.example",
+    industry: "Energia",
+    notes: null,
+    ownerId: "user-1",
+    customFields: { Origem: ["Outbound Manual"] },
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-08-01T00:00:00.000Z"),
+    deletedAt: null,
+    ...overrides,
+  }
+}
+
 describe("IGNORED_COLUMNS", () => {
   it("covers exactly the four columns that change without a user changing them", () => {
     // updatedAt differs on literally every write; position differs on every kanban reorder;
@@ -395,6 +416,122 @@ describe("buildChanges - payload casing", () => {
       "value",
     ])
     expect(changes.stageId).toEqual({ from: undefined, to: "stage-1" })
+  })
+})
+
+/*
+ * BULK-03 — the owner-reassign emit shape, pinned against the real diff.
+ *
+ * `updateOrganizationOwnerMutation` / `updatePersonOwnerMutation` emit an `updated` payload whose
+ * `data` is the full post-write row, whose `previous` is the pre-read row, and whose
+ * `changedFields` is `["ownerId"]`. That shape is a deliberate choice, and this block is the
+ * mechanical proof it produces a real change entry: `subscribers/audit.ts:63` RETURNS WITHOUT
+ * WRITING when an `updated` payload's change map is empty, so a payload that diffs to nothing
+ * makes a reassign vanish from change history while every caller is told it succeeded. That is
+ * exactly what routing a reassign through the generic update mutation would do, since `ownerId`
+ * is stripped by `organizationSchema` / `personSchema` before it reaches a column.
+ */
+describe("buildChanges - the owner-reassign emit shape (BULK-03)", () => {
+  /** The payload `updateOrganizationOwnerMutation` really emits, reproduced by hand. */
+  const reassignPayload = (
+    overrides: { data?: Record<string, unknown>; previous?: Record<string, unknown> } = {}
+  ) =>
+    payload({
+      entity: "organization",
+      entityId: "org-1",
+      action: "updated",
+      changedFields: ["ownerId"],
+      previous: overrides.previous ?? organizationRow({ ownerId: "user-1" }),
+      data:
+        overrides.data ??
+        organizationRow({
+          ownerId: "user-2",
+          updatedAt: new Date("2026-08-17T00:00:00.000Z"),
+        }),
+    })
+
+  it("reports ownerId with the old and new owner ids, and nothing else", () => {
+    const changes = buildChanges(reassignPayload())
+
+    expect(Object.keys(changes)).toContain("ownerId")
+    expect(changes.ownerId).toEqual({ from: "user-1", to: "user-2" })
+    // `updatedAt` moved too, and is ignored — so the owner is the only entry. A second entry
+    // here would mean the mutation's `.set()` had grown a field it has no business writing.
+    expect(Object.keys(changes)).toEqual(["ownerId"])
+  })
+
+  it("yields a NON-EMPTY map, which is what makes the audit row land at all", () => {
+    const changes = buildChanges(reassignPayload())
+
+    // THE LOAD-BEARING ASSERTION. src/lib/events/subscribers/audit.ts:63 reads
+    // `if (payload.action === "updated" && Object.keys(changes).length === 0) return` — an empty
+    // map writes NO row. A bulk reassign that diffed to `{}` would therefore be invisible in
+    // change history, silently, with the whole suite green.
+    expect(
+      changes,
+      "an empty change map makes subscribers/audit.ts skip the insert entirely, so the reassign would leave no change-history row",
+    ).not.toEqual({})
+    expect(Object.keys(changes).length).toBeGreaterThan(0)
+  })
+
+  it("still finds ownerId if data were narrowed to { id, ownerId }, but loses every other column silently", () => {
+    // This is why the mutation emits the FULL `.returning()` row rather than a hand-built
+    // `{ id, ownerId }`: the narrow payload happens to work for this one field, so the defect it
+    // would introduce is invisible here and only shows up on a future multi-field caller.
+    const narrow = buildChanges(
+      reassignPayload({ data: { id: "org-1", ownerId: "user-2" } })
+    )
+
+    expect(narrow.ownerId).toEqual({ from: "user-1", to: "user-2" })
+    expect(Object.keys(narrow)).toEqual(["ownerId"])
+
+    // No phantom "cleared" entry for the native columns that vanished from `data`: on an update,
+    // diff.ts skips any key absent from `data`. Absent means "not asserted", not "set to null" —
+    // which is precisely why a narrow payload narrows the record instead of failing loudly.
+    for (const key of ["name", "website", "industry", "notes", "deletedAt", "customFields.Origem"]) {
+      expect(key in narrow, `${key} should not appear as a change`).toBe(false)
+    }
+  })
+
+  it("yields no ownerId entry when the requested owner is the owner it already had", () => {
+    // The mechanism behind the same-owner behaviour (D-15). The mutation short-circuits before
+    // any write, so this payload is never emitted in practice — but if it ever were, the diff
+    // would be empty and the subscriber would correctly write nothing.
+    const changes = buildChanges(
+      reassignPayload({
+        previous: organizationRow({ ownerId: "user-1" }),
+        data: organizationRow({
+          ownerId: "user-1",
+          updatedAt: new Date("2026-08-17T00:00:00.000Z"),
+        }),
+      })
+    )
+
+    expect("ownerId" in changes).toBe(false)
+    expect(changes).toEqual({})
+  })
+
+  it("reports ownerId on a person reassign too, despite the person key map", () => {
+    // `person` is one of the two entities with a snake_case key map (`owner_id -> ownerId`).
+    // The mutation emits raw camelCase, which normaliseEventData passes through untouched, so
+    // the map cannot turn this into a two-entry `owner_id` + `ownerId` diff.
+    const changes = buildChanges(
+      payload({
+        entity: "person",
+        entityId: "person-1",
+        action: "updated",
+        changedFields: ["ownerId"],
+        previous: personRow({ ownerId: "user-1" }),
+        data: personRow({
+          ownerId: "user-2",
+          updatedAt: new Date("2026-08-17T00:00:00.000Z"),
+        }),
+      })
+    )
+
+    expect(Object.keys(changes)).toEqual(["ownerId"])
+    expect(changes.ownerId).toEqual({ from: "user-1", to: "user-2" })
+    expect("owner_id" in changes).toBe(false)
   })
 })
 

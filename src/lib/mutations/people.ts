@@ -378,6 +378,72 @@ export async function updatePersonMutation(
   }
 }
 
+/**
+ * Transfer one person to a different owner (BULK-03). Mirrors
+ * `updateOrganizationOwnerMutation` in ./organizations.ts exactly.
+ *
+ * WHY THIS EXISTS AS ITS OWN FUNCTION, rather than a call to `updatePersonMutation` above:
+ * `ownerId` is not a key of `personSchema`, and zod's default object mode discards unknown keys
+ * in silence. `updatePersonSchema.safeParse({ ownerId })` therefore resolves to
+ * `{ success: true, data: {} }`, the generic update writes only `updatedAt`, and the payload it
+ * emits diffs to nothing — so the change-history row is dropped downstream while the caller is
+ * told the reassign succeeded. Widening the schema instead is rejected deliberately: it would let
+ * `PATCH /api/v1/people/:id` accept owner transfers from any authenticated REST caller.
+ *
+ * `data` MUST be the full post-write row. On an update, `src/lib/audit/diff.ts` skips native keys
+ * that are absent from `data`, so a `{ id, ownerId }` payload silently narrows the change set for
+ * every subscriber. `.returning()` is used in preference to a hand-built `{ ...person, ownerId }`
+ * spread so the emitted row cannot drift from the table.
+ *
+ * Ownership is NOT checked here. Per the established layering, a mutation checks existence only;
+ * the per-record authorization predicate lives in the calling server action.
+ */
+export async function updatePersonOwnerMutation(
+  id: string,
+  ownerId: string,
+  userId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const person = await db.query.people.findFirst({
+    where: and(eq(people.id, id), isNull(people.deletedAt)),
+  })
+
+  if (!person) {
+    return { success: false, error: "Person not found" }
+  }
+
+  // Idempotent by design (D-15). A request for the owner the record already has writes nothing
+  // and emits nothing, so no history entry is produced for a no-op — which is why the reassign
+  // picker does not need to hide the current owner.
+  if (person.ownerId === ownerId) {
+    return { success: true }
+  }
+
+  try {
+    const [updated] = await db
+      .update(people)
+      .set({ ownerId, updatedAt: new Date() })
+      .where(eq(people.id, id))
+      .returning()
+
+    // No recalculation: `ownerId` is absent from ENTITY_NATIVE_ATTRIBUTES.person, so a
+    // recalculation would scope to zero evaluations and cost a definitions read for nothing.
+    crmBus.emit("person.updated", buildEventPayload(
+      id,
+      "updated",
+      updated as unknown as Record<string, unknown>,
+      userId,
+      ["ownerId"],
+      // The pre-write row, from the existence check above — the only source of before-values.
+      person as unknown as Record<string, unknown>,
+    ))
+
+    return { success: true }
+  } catch (error) {
+    console.error("Failed to reassign person owner:", error)
+    return { success: false, error: "Failed to reassign person owner" }
+  }
+}
+
 export async function deletePersonMutation(
   id: string,
   userId: string,
