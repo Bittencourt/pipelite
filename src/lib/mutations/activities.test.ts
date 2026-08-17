@@ -53,6 +53,8 @@ vi.mock("@/lib/audit/actor-context", () => ({
   getCurrentActor: vi.fn(() => undefined),
 }))
 
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { db } from "@/db"
 import { crmBus } from "@/lib/events"
 import { getCurrentActor } from "@/lib/audit/actor-context"
@@ -69,6 +71,7 @@ import {
 import {
   createActivityMutation,
   updateActivityMutation,
+  updateActivityOwnerMutation,
   deleteActivityMutation,
   toggleActivityCompletionMutation,
   restoreActivityMutation,
@@ -956,5 +959,198 @@ describe("purgeActivityMutation", () => {
     expect(result).toEqual({ success: false, error: "Failed to purge activity" })
     expect(spy).toHaveBeenCalled()
     spy.mockRestore()
+  })
+})
+
+/* ------------------------------------------------------------------------------------------ *
+ * Bulk owner reassignment (BULK-03)
+ * ------------------------------------------------------------------------------------------ */
+
+describe("updateActivityOwnerMutation", () => {
+  const existingActivity = {
+    id: "act1",
+    title: "Call client",
+    typeId: "type1",
+    dealId: null,
+    ownerId: "u1",
+    assigneeId: "u9",
+    dueDate: new Date(),
+    completedAt: null,
+    notes: null,
+    customFields: {},
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: null,
+  }
+
+  /** `.returning()` hands back the real post-write row, so the payload cannot drift. */
+  const updatedActivity = { ...existingActivity, ownerId: "u2" }
+
+  function stubUpdateReturning(row: Record<string, unknown>) {
+    const returningFn = vi.fn().mockResolvedValue([row])
+    const whereFn = vi.fn().mockReturnValue({ returning: returningFn })
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    return setFn
+  }
+
+  const emittedPayload = (event: string) => {
+    const call = mockEmit.mock.calls.find((c) => c[0] === event)
+    return call?.[1] as {
+      data?: Record<string, unknown>
+      previous?: Record<string, unknown>
+      changedFields?: string[] | null
+      userId?: string
+    }
+  }
+
+  // T-38-13. D-11 scopes Activities' separate assignee column out of this phase entirely, so a
+  // set() that carried it would be writing a field nobody asked to change.
+  it("sets exactly ownerId and updatedAt, never the assignee column (T-38-13)", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(existingActivity)
+    const setFn = stubUpdateReturning(updatedActivity)
+
+    const result = await updateActivityOwnerMutation("act1", "u2", "actor-1")
+
+    expect(result).toEqual({ success: true })
+    expect(mockDb.update).toHaveBeenCalledTimes(1)
+    const setArg = setFn.mock.calls[0][0] as Record<string, unknown>
+    expect(Object.keys(setArg).sort()).toEqual(["ownerId", "updatedAt"])
+    expect(setArg).not.toHaveProperty("assigneeId")
+    expect(setArg.ownerId).toBe("u2")
+    expect(setArg.updatedAt).toBeInstanceOf(Date)
+  })
+
+  // T-38-09. `activitySchema` never declared ownerId, so routing this through
+  // updateActivityMutation would have written only updatedAt, emitted an empty diff, and had
+  // the audit subscriber drop the row — a silent no-op with the whole suite green.
+  it("emits activity.updated with the full post-write row and changedFields ['ownerId']", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(existingActivity)
+    stubUpdateReturning(updatedActivity)
+
+    await updateActivityOwnerMutation("act1", "u2", "actor-1")
+
+    expect(mockEmit).toHaveBeenCalledTimes(1)
+    const payload = emittedPayload("activity.updated")
+    expect(payload).toBeDefined()
+    expect(payload.changedFields).toEqual(["ownerId"])
+    expect(payload.userId).toBe("actor-1")
+    // Identity, not equality: a hand-built partial payload would silently narrow the diff,
+    // because diff.ts skips native keys absent from `data` on an update.
+    expect(payload.data).toBe(updatedActivity)
+    expect(payload.previous).toBe(existingActivity)
+  })
+
+  it("short-circuits idempotently when the owner is unchanged (D-15)", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(existingActivity)
+    stubUpdateReturning(existingActivity)
+
+    const result = await updateActivityOwnerMutation("act1", "u1", "actor-1")
+
+    expect(result).toEqual({ success: true })
+    expect(mockDb.update).not.toHaveBeenCalled()
+    expect(mockEmit).not.toHaveBeenCalled()
+  })
+
+  it("returns the missing-activity error for a missing or soft-deleted row", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(undefined)
+    stubUpdateReturning(updatedActivity)
+
+    const result = await updateActivityOwnerMutation("act1", "u2", "actor-1")
+
+    expect(result).toEqual({ success: false, error: "Activity not found" })
+    expect(mockDb.update).not.toHaveBeenCalled()
+    expect(mockEmit).not.toHaveBeenCalled()
+  })
+
+  it("reads the row with isNull(deletedAt), so a trashed activity is never reassigned", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(existingActivity)
+    stubUpdateReturning(updatedActivity)
+
+    await updateActivityOwnerMutation("act1", "u2", "actor-1")
+
+    const where = mockDb.query.activities.findFirst.mock.calls[0][0].where
+    expect(renderPredicate(where)).toContain("is null")
+  })
+
+  it("runs no formula pass: ownerId is absent from ENTITY_NATIVE_ATTRIBUTES.activity", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(existingActivity)
+    stubUpdateReturning(updatedActivity)
+
+    await updateActivityOwnerMutation("act1", "u2", "actor-1")
+
+    expect(Object.values(ENTITY_NATIVE_ATTRIBUTES.activity)).not.toContain("ownerId")
+    expect(mockRecalc).not.toHaveBeenCalled()
+  })
+
+  it("returns a prose failure and logs when the update rejects", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(existingActivity)
+    const returningFn = vi.fn().mockRejectedValue(new Error("boom"))
+    const whereFn = vi.fn().mockReturnValue({ returning: returningFn })
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await updateActivityOwnerMutation("act1", "u2", "actor-1")
+
+    expect(result).toEqual({ success: false, error: "Failed to reassign activity owner" })
+    expect(spy).toHaveBeenCalled()
+    expect(mockEmit).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
+  /*
+   * The source-slice gate.
+   *
+   * A spy assertion only covers the paths this suite drives. The declaration slice covers every
+   * path there is, which is what makes "never writes the assignee column" structural.
+   *
+   * Comments are NOT stripped here on purpose: a comment inside the function that names the
+   * forbidden identifier is a reason to reword the comment, never to weaken the gate.
+   */
+  describe("source slice", () => {
+    const SOURCE = readFileSync(
+      path.join(process.cwd(), "src", "lib", "mutations", "activities.ts"),
+      "utf8",
+    )
+    const DECLARATION = "export async function updateActivityOwnerMutation"
+
+    /** From the declaration to the next top-level `export`, matching the Phase 36 slicer. */
+    function sliceDeclaration(source: string, declaration: string): string {
+      const start = source.indexOf(declaration)
+      if (start === -1) return ""
+      const end = source.indexOf("\nexport ", start + 1)
+      return end === -1 ? source.slice(start) : source.slice(start, end)
+    }
+
+    it("declares the mutation exactly once", () => {
+      const occurrences = SOURCE.split(DECLARATION).length - 1
+      expect(occurrences).toBe(1)
+    })
+
+    it("the declaration slice contains zero occurrences of assigneeId", () => {
+      const body = sliceDeclaration(SOURCE, DECLARATION)
+      // Anti-vacuity: prove the slice found the function before concluding anything from it.
+      expect(body.length, `could not slice \`${DECLARATION}\``).toBeGreaterThan(0)
+      expect(body).toContain("crmBus.emit")
+      expect(body).not.toContain("assigneeId")
+    })
+
+    it("the slicer isolates a function rather than widening to the module", () => {
+      // A gate for the gate: the whole module obviously does write that column, so a slicer
+      // that widened would make the assertion above pass for the wrong reason.
+      expect(SOURCE).toContain("assigneeId")
+      const body = sliceDeclaration(SOURCE, DECLARATION)
+      expect(body.length).toBeLessThan(SOURCE.length)
+      expect(sliceDeclaration(SOURCE, "export async function noSuchMutation")).toBe("")
+    })
+
+    it("activitySchema still does not declare ownerId, which is why this function exists", () => {
+      // If a later change adds ownerId to the schema, this goes red and the narrow mutation's
+      // rationale gets reconsidered deliberately rather than quietly becoming redundant.
+      const schema = sliceDeclaration(SOURCE, "export const activitySchema")
+      expect(schema.length).toBeGreaterThan(0)
+      expect(schema).not.toContain("ownerId")
+    })
   })
 })
