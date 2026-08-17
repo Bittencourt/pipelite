@@ -193,7 +193,20 @@ export function TrashTable({
               // endpoint the browser can invoke without ever rendering this page.
               toast.error(t("error.purgeNotPermitted"))
               break
+            case "NOT_IN_TRASH":
+              // The SAME handling `reportRestoreFailure` gives this code, and for the same
+              // reason: the record was purged or restored in another tab, so it is already
+              // gone. Falling through to `purgeFailed` with no refresh left the dead row on
+              // screen telling the admin the purge failed, which invites a retry of a record
+              // that no longer exists — the exact loop the code vocabulary exists to break.
+              toast.error(t("error.alreadyPurged"))
+              router.refresh()
+              break
+            case "NOT_AUTHENTICATED":
+            case "NOT_AUTHORIZED":
+            case "FAILED":
             default:
+              // The row stays and the control re-enables, so the action is still reachable.
               toast.error(t("error.purgeFailed"))
           }
           return
