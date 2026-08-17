@@ -1,11 +1,28 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import Papa from "papaparse"
+import { PgDialect } from "drizzle-orm/pg-core"
+import type { SQL } from "drizzle-orm"
 
 // formatters.ts imports the drizzle client at module scope for its fetch* helpers.
-// None of the pure formatting functions under test touch it, so a bare stub is enough
-// and keeps this suite DB-free.
+// None of the PURE formatting functions under test touch it, so the stub below never
+// opens a connection and this suite stays DB-free.
+//
+// The stub is SHAPED rather than bare (it was `{ query: {} }` before Phase 38) so the
+// `fetchFilteredData` dispatch and the `where` predicate each fetcher builds can be
+// asserted without a database. Every `findMany` resolves `[]`, which is what the
+// flattener suites below rely on: none of them reads the database at all.
+const dbSpies = vi.hoisted(() => {
+  const table = () => ({ findMany: vi.fn(async () => [] as unknown[]) })
+  return {
+    organizations: table(),
+    people: table(),
+    deals: table(),
+    activities: table(),
+  }
+})
+
 vi.mock("@/db", () => ({
-  db: { query: {} },
+  db: { query: dbSpies },
 }))
 
 import {
@@ -14,8 +31,10 @@ import {
   flattenOrganization,
   exportToCSV,
   exportToJSON,
+  fetchFilteredData,
 } from "./formatters"
 import { exportToPipedriveCSV, toPipedriveFormat } from "./pipedrive"
+import type { ExportEntityType, ExportFilters } from "./types"
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -303,5 +322,147 @@ describe("exportToPipedriveCSV column derivation across all rows", () => {
     ).meta.fields!
 
     expect(headers.slice(0, nativeOrder.length)).toEqual(nativeOrder)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ExportFilters.ids narrowing (BULK-04)
+//
+// WHAT THIS BLOCK PROVES, and it is worth being explicit about the boundary:
+//   - `fetchFilteredData` dispatches to exactly ONE of the four private fetchers per entity
+//     type, and to none of the other three (a mis-wired switch arm typechecks identically to
+//     a correct one, so only a behavioural assertion catches it);
+//   - a `filters.ids` list reaches that fetcher's `where` predicate as BOUND PARAMETERS, never
+//     as text interpolated into the statement (T-38-15);
+//   - an EMPTY id list still contributes a predicate, so the predicate can never silently
+//     degrade to "no filter" and return the whole table (T-38-01).
+//
+// WHAT IT DELIBERATELY CANNOT PROVE: that the predicate is SQL the database will accept, or
+// that it selects the right rows. `@/db` is mocked in this file, so no statement is ever
+// executed against Postgres. Phase 37 shipped a malformed drizzle fragment — an interpolated
+// list that expanded to `= ANY(($1,$2,$3))` — and a wholly-mocked suite passed it cleanly.
+// The generated SQL and the resulting row counts are therefore proven against the live
+// database in `src/lib/export/formatters-live.test.ts`, which is not optional coverage for
+// this feature but the primary detector for that whole class of defect.
+// ---------------------------------------------------------------------------
+
+const dialect = new PgDialect()
+
+/** Render a fetcher's `where` predicate to the SQL text + bound params it would execute. */
+function renderWhere(where: unknown): { sql: string; params: unknown[] } {
+  const q = dialect.sqlToQuery(where as SQL)
+  return { sql: q.sql, params: q.params }
+}
+
+type TableKey = keyof typeof dbSpies
+
+// Annotated as a total Record so a fifth `ExportEntityType` makes this file fail to compile
+// (TS2741) rather than quietly leaving an entity type uncovered.
+const TABLE_BY_ENTITY: Record<ExportEntityType, TableKey> = {
+  organization: "organizations",
+  person: "people",
+  deal: "deals",
+  activity: "activities",
+}
+
+const ENTITY_CASES = Object.entries(TABLE_BY_ENTITY) as [ExportEntityType, TableKey][]
+
+function csvExport(entityType: ExportEntityType, options: { filters?: ExportFilters }) {
+  return fetchFilteredData({
+    entityType,
+    format: "csv",
+    includeCustomFields: true,
+    ...options,
+  })
+}
+
+function whereOf(table: TableKey): { sql: string; params: unknown[] } {
+  // The stub is declared arg-less (nothing in this file cares what a fetcher passes except
+  // this helper), so the recorded call tuple needs re-typing to be read.
+  const calls = dbSpies[table].findMany.mock.calls as unknown as [{ where?: unknown }][]
+  expect(calls.length).toBe(1)
+  return renderWhere(calls[0][0].where)
+}
+
+/** A mis-wired switch arm is invisible to the type system; only this catches it. */
+function expectOnlyTableQueried(expected: TableKey): void {
+  for (const table of Object.keys(dbSpies) as TableKey[]) {
+    if (table === expected) {
+      expect(dbSpies[table].findMany).toHaveBeenCalledTimes(1)
+    } else {
+      expect(dbSpies[table].findMany).not.toHaveBeenCalled()
+    }
+  }
+}
+
+describe("fetchFilteredData id narrowing", () => {
+  beforeEach(() => {
+    for (const table of Object.values(dbSpies)) table.findMany.mockClear()
+  })
+
+  it("covers every export entity type below", () => {
+    // Anti-vacuity: deleting a case from the table below must fail here, not pass silently.
+    expect(Object.keys(TABLE_BY_ENTITY)).toEqual([
+      "organization",
+      "person",
+      "deal",
+      "activity",
+    ])
+    expect(ENTITY_CASES).toHaveLength(4)
+  })
+
+  describe.each(ENTITY_CASES)("%s", (entityType, table) => {
+    it(`queries only ${table} and binds every id as a parameter`, async () => {
+      await csvExport(entityType, { filters: { ids: ["id-a", "id-b"] } })
+
+      expectOnlyTableQueried(table)
+
+      const { sql, params } = whereOf(table)
+      // Both ids arrive as bound parameters...
+      expect(params).toEqual(["id-a", "id-b"])
+      // ...and neither is interpolated into the statement text (T-38-15).
+      expect(sql).not.toContain("id-a")
+      expect(sql).not.toContain("id-b")
+      expect(sql).toContain(`"${table}"."id" in `)
+    })
+
+    it("still contributes a predicate for an empty id list", async () => {
+      await csvExport(entityType, { filters: { ids: [] } })
+      const scoped = whereOf(table)
+
+      dbSpies[table].findMany.mockClear()
+      await csvExport(entityType, {})
+      const unscoped = whereOf(table)
+
+      // Differing from the unfiltered predicate is the assertion that matters: it proves the
+      // condition was added rather than skipped. The SQL text itself, and the zero rows it
+      // returns against real data, are proven in `formatters-live.test.ts`.
+      expect(scoped.sql).not.toBe(unscoped.sql)
+      expect(scoped.sql).toContain("false")
+      expect(unscoped.sql).not.toContain("false")
+    })
+
+    it("leaves the predicate untouched when no id list is supplied", async () => {
+      await csvExport(entityType, {})
+      const omitted = whereOf(table)
+
+      dbSpies[table].findMany.mockClear()
+      await csvExport(entityType, { filters: {} })
+      const empty = whereOf(table)
+
+      expect(empty).toEqual(omitted)
+      expect(omitted.sql).toContain(`"${table}"."deleted_at" is null`)
+    })
+
+    it("composes an id list with the existing owner filter", async () => {
+      await csvExport(entityType, { filters: { owner: "user-1", ids: ["id-a"] } })
+
+      const { sql, params } = whereOf(table)
+      // The id list narrows, it does not replace: the owner predicate survives alongside it.
+      expect(sql).toContain(`"${table}"."owner_id" =`)
+      expect(sql).toContain(`"${table}"."id" in `)
+      expect(sql).toContain(`"${table}"."deleted_at" is null`)
+      expect(params).toEqual(["user-1", "id-a"])
+    })
   })
 })

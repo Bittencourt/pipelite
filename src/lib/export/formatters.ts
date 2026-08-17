@@ -9,7 +9,7 @@ import {
   activityTypes,
   users,
 } from "@/db/schema"
-import { eq, and, isNull, gte, lte } from "drizzle-orm"
+import { eq, and, isNull, gte, lte, inArray } from "drizzle-orm"
 import type { ExportEntityType, ExportFilters, ExportOptions, ExportResult } from "./types"
 import { toPipedriveFormat, exportToPipedriveCSV } from "./pipedrive"
 import { deriveCsvColumns } from "./csv-columns"
@@ -245,6 +245,23 @@ export function exportToJSON(
 // ---------------------------------------------------------------------------
 // Data fetching with filters
 // ---------------------------------------------------------------------------
+//
+// `filters.ids` (BULK-04) narrows the read to a caller-supplied selection. All four fetchers
+// below guard on PRESENCE, never on length:
+//
+//   if (filters?.ids) conditions.push(...)          <- correct
+//   if (filters?.ids && filters.ids.length) ...     <- an admin-gate bypass (T-38-01)
+//
+// Skipping the push for an empty array would drop the predicate entirely and return the whole
+// table. Drizzle 0.45.1 renders an empty membership test as the literal `false`
+// (node_modules/drizzle-orm/sql/expressions/conditions.js), so keeping the push yields zero
+// rows. That is the second line of defence behind the `(ids: string[])`-only signature the
+// per-entity bulk export actions carry; `formatters-live.test.ts` proves it against the real
+// database, because a mocked suite structurally cannot catch a malformed membership fragment.
+//
+// Every id crosses into SQL as a bound parameter (T-38-15) — never interpolated into a raw
+// `sql` fragment. The 100-id cap belongs to the server actions, not here: this is a shared
+// read path the admin full export also uses and it must not acquire a bulk-specific limit.
 
 async function fetchOrganizations(
   filters: ExportFilters | undefined,
@@ -254,6 +271,9 @@ async function fetchOrganizations(
 
   if (filters?.owner) {
     conditions.push(eq(organizations.ownerId, filters.owner))
+  }
+  if (filters?.ids) {
+    conditions.push(inArray(organizations.id, filters.ids))
   }
 
   const rows = await db.query.organizations.findMany({
@@ -274,6 +294,9 @@ async function fetchPeople(
 
   if (filters?.owner) {
     conditions.push(eq(people.ownerId, filters.owner))
+  }
+  if (filters?.ids) {
+    conditions.push(inArray(people.id, filters.ids))
   }
 
   const rows = await db.query.people.findMany({
@@ -305,6 +328,9 @@ async function fetchDeals(
   if (filters?.dateTo) {
     conditions.push(lte(deals.expectedCloseDate, new Date(filters.dateTo)))
   }
+  if (filters?.ids) {
+    conditions.push(inArray(deals.id, filters.ids))
+  }
 
   const rows = await db.query.deals.findMany({
     where: and(...conditions),
@@ -333,6 +359,9 @@ async function fetchActivities(
   }
   if (filters?.dateTo) {
     conditions.push(lte(activities.dueDate, new Date(filters.dateTo)))
+  }
+  if (filters?.ids) {
+    conditions.push(inArray(activities.id, filters.ids))
   }
 
   const rows = await db.query.activities.findMany({
