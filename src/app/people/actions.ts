@@ -382,6 +382,12 @@ export async function exportSelectedPeople(ids: string[]): Promise<ExportResult>
     return { success: false, error: "Too many records" }
   }
 
+  // TOMBSTONE, and it is load-bearing: never reintroduce an ExportOptions or ExportFilters
+  // parameter on this function. The line deliberately names both in a COMMENT so that
+  // `bulk-actions.test.ts`'s signature gate — which asserts they are absent — fails loudly if it
+  // ever stops stripping comments, instead of passing while detecting nothing. A raw-text grep
+  // colliding with the comment that explains it is this repo's most repeated review defect
+  // (nine times in Phase 37 alone).
   const result = await fetchFilteredData({
     entityType: "person",
     format: "csv",

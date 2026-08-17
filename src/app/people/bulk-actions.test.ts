@@ -74,6 +74,11 @@ vi.mock("@/lib/audit/actor-context", () => ({
 import { auth } from "@/auth"
 import { db } from "@/db"
 import { revalidatePath } from "next/cache"
+import {
+  callArguments,
+  readStrippedSource,
+  stripComments,
+} from "@/components/custom-fields/__tests__/source-scan"
 import { runWithActor } from "@/lib/audit/actor-context"
 import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
@@ -303,9 +308,17 @@ describe("bulkDeletePeople", () => {
   })
 
   it("revalidates once after the loop when at least one record succeeded", async () => {
-    queuePeople([personRow("p1", OWNER), personRow("p2", OTHER)])
+    // NINE successes, not one. With a single success a per-record `revalidatePath` inside the loop
+    // ALSO produces exactly one call, so a small batch cannot tell the two shapes apart and the
+    // assertion passes on defective code. Measured, not assumed: moving the call into the loop was
+    // green at 1 success, failed with "called 1 times, but got 3" at 3, and reads 9 here. The same
+    // reasoning is why the actor-scope case above uses twelve ids rather than one.
+    queuePeople([
+      ...ids(9).map(id => personRow(id, OWNER)),
+      ...ids(3, "x").map(id => personRow(id, OTHER)),
+    ])
 
-    await bulkDeletePeople(["p1", "p2"])
+    await bulkDeletePeople([...ids(9), ...ids(3, "x")])
 
     expect(mockRevalidatePath).toHaveBeenCalledTimes(1)
     expect(mockRevalidatePath).toHaveBeenCalledWith("/people")
@@ -429,6 +442,7 @@ describe("bulkReassignPersonOwner", () => {
   })
 
   it("opens one actor scope and revalidates once after the loop", async () => {
+    // Twelve successes, so a per-record scope or a per-record revalidation would read as 12.
     queuePeople(ids(12).map(id => personRow(id, OWNER)))
 
     await bulkReassignPersonOwner(ids(12), NEW_OWNER)
@@ -535,5 +549,225 @@ describe("exportSelectedPeople", () => {
       success: false,
       error: "Unknown entity type",
     })
+  })
+})
+
+/**
+ * THE SOURCE GATE — COMMENT-BLIND BY CONSTRUCTION.
+ *
+ * Every assertion below reads `readStrippedSource`, never raw file text. Phase 37 shipped a
+ * grep-based acceptance gate that collided with an explanatory COMMENT nine times in one phase —
+ * once with the plan's own suggested wording — and Phase 35 hit the same thing three times. This
+ * gate is unusually exposed to it, because the rules it enforces are NEGATIVES ABOUT IDENTIFIERS
+ * (`ExportOptions` must not be a parameter; `updatePersonMutation` must not be called) which the
+ * source explains in prose right beside the code — `actions.ts` carries a tombstone comment naming
+ * each. Nothing here reads raw file text — this file contains no direct filesystem read at all, and
+ * the plan's own acceptance gate counts that to zero — so the collision cannot be reintroduced one
+ * careless assertion at a time. (That gate tripped on THIS paragraph's first draft, which named the
+ * `node:fs` function out loud. The comment was reworded; the gate was not weakened. Twelfth
+ * occurrence across phases 37-38.)
+ *
+ * ANTI-VACUITY, per `no-mutation-coupling.test.ts:38-50`: prove the file was read, prove the three
+ * declarations were found, and assert POSITIVE markers before any negative. A slicing helper handed
+ * a missing anchor is the specific failure mode WR-13 records — `indexOf(x, -1)` behaves as
+ * `indexOf(x, 0)`, so the slice silently widens to the enclosing module and every negative assertion
+ * becomes meaningless. Hence the named `> -1` assertion inside the helper's callers. The
+ * detector-vocabulary case below is the gate for the gate: it pins that the stripper really removes
+ * a forbidden identifier written in a comment while leaving the same identifier in code alone, so a
+ * regression that lost the stripping fails HERE rather than silently passing everything.
+ */
+const ACTIONS_PATH = "src/app/people/actions.ts"
+const STRIPPED = readStrippedSource(ACTIONS_PATH)
+
+const BULK_DECLARATIONS = [
+  "export async function bulkDeletePeople",
+  "export async function bulkReassignPersonOwner",
+  "export async function exportSelectedPeople",
+] as const
+
+/**
+ * One exported declaration's source, from its own `export async function …` to the next top-level
+ * `export`. Returns `""` when the anchor is absent; every caller asserts the anchor by name FIRST.
+ */
+function sliceDeclaration(source: string, declaration: string): string {
+  const start = source.indexOf(declaration)
+  if (start === -1) return ""
+  const end = source.indexOf("\nexport ", start + 1)
+  return end === -1 ? source.slice(start) : source.slice(start, end)
+}
+
+function slice(source: string, declaration: string): string {
+  expect(
+    source.indexOf(declaration),
+    `${ACTIONS_PATH} no longer declares \`${declaration}\` — the slicing anchor is gone, so every negative assertion below would silently widen to the whole module (WR-13)`
+  ).toBeGreaterThan(-1)
+  return sliceDeclaration(source, declaration)
+}
+
+function occurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1
+}
+
+const WRITE_DECLARATIONS = [
+  "export async function bulkDeletePeople",
+  "export async function bulkReassignPersonOwner",
+] as const
+
+/** Vocabulary the scoped export's declaration must never contain. */
+const FORBIDDEN_IN_EXPORT = [
+  "ExportFilters",
+  "ExportOptions",
+  "ExportFormat",
+  "pipedrive",
+  "getExportData",
+  "role",
+] as const
+
+/** Vocabulary either bulk write must never contain. */
+const FORBIDDEN_IN_WRITES = [
+  "Promise.all",
+  "db.transaction",
+  "session.user.role",
+  "updatePersonMutation",
+  "auditLog",
+] as const
+
+describe("source gate — the three bulk declarations in src/app/people/actions.ts", () => {
+  it("read the file and found all three declarations, with their positive markers", () => {
+    // Requirement 1 and 2: without this, a rename turns every negative below into a scan of "".
+    expect(STRIPPED.length, `${ACTIONS_PATH} is empty`).toBeGreaterThan(0)
+
+    for (const declaration of BULK_DECLARATIONS) {
+      const body = slice(STRIPPED, declaration)
+      expect(body.length, `${declaration} sliced to nothing`).toBeGreaterThan(0)
+    }
+
+    // Positive markers, asserted BEFORE any absence.
+    const deleteSlice = slice(STRIPPED, WRITE_DECLARATIONS[0])
+    const reassignSlice = slice(STRIPPED, WRITE_DECLARATIONS[1])
+    const exportSlice = slice(STRIPPED, BULK_DECLARATIONS[2])
+
+    expect(deleteSlice).toContain("runWithActor")
+    expect(deleteSlice).toContain('deleteRecordByType("person"')
+    expect(reassignSlice).toContain("runWithActor")
+    expect(reassignSlice).toContain('updateRecordOwnerByType("person"')
+    expect(exportSlice).toContain("fetchFilteredData")
+    expect(exportSlice).toContain("people-selected-")
+  })
+
+  it("GATE FOR THE GATE: the stripper removes a forbidden word from prose and keeps it in code", () => {
+    // `actions.ts` carries a tombstone comment naming `ExportOptions` and another naming
+    // `updatePersonMutation`, precisely because a raw-text grep would collide with the prose that
+    // explains the rule. This case pins that the detector below is blind to prose and NOT blind to
+    // code — without it, "stripping happens" is an assumption rather than a measurement.
+    const fixture = [
+      "// never reintroduce an ExportOptions parameter, and never call updatePersonMutation",
+      "/* auditLog and db.transaction are also forbidden here */",
+      'const real = ExportOptions.name + "updatePersonMutation"',
+    ].join("\n")
+
+    const stripped = stripComments(fixture)
+
+    expect(occurrences(stripped, "ExportOptions"), "prose mention survived stripping").toBe(1)
+    expect(stripped).not.toContain("never reintroduce")
+    expect(stripped).not.toContain("auditLog")
+    expect(stripped).not.toContain("db.transaction")
+    // The code occurrence is untouched, including inside a string literal.
+    expect(stripped).toContain('ExportOptions.name + "updatePersonMutation"')
+
+    // And the tombstones really are prose: the stripped slices carry neither identifier.
+    expect(slice(STRIPPED, WRITE_DECLARATIONS[0])).not.toContain("updatePersonMutation")
+    expect(slice(STRIPPED, BULK_DECLARATIONS[2])).not.toContain("ExportOptions")
+  })
+
+  it("declares the scoped export with a single ids parameter and nothing else", () => {
+    // THE SOURCE GATE PLAN 38-04 DEFERRED TO THIS PLAN. In wave 1 it would have matched zero
+    // functions, and a gate over zero matches is a vacuous pass.
+    //
+    // ANTI-VACUOUS BY CONSTRUCTION, not by a token ban alone. The banned-vocabulary case below can
+    // only ever say "these words are absent", which is also true of a declaration that was renamed
+    // or deleted. This one reads the parameter list itself, so it fails if the function is missing,
+    // renamed, or grows a second parameter of ANY name — including one nobody thought to ban.
+    const [parameterList, ...extra] = callArguments(
+      STRIPPED,
+      "export async function exportSelectedPeople"
+    )
+
+    expect(
+      parameterList,
+      "exportSelectedPeople is not declared, so every negative assertion about its signature would be vacuous"
+    ).toBeDefined()
+    expect(extra).toHaveLength(0)
+    expect(parameterList.trim()).toBe("ids: string[]")
+    expect(parameterList).not.toContain(",")
+
+    expect(STRIPPED).toMatch(
+      /export async function exportSelectedPeople\(\s*ids:\s*string\[\]\s*\)\s*:\s*Promise<ExportResult>/
+    )
+  })
+
+  it("keeps every options, format and admin-gate word out of the scoped export", () => {
+    const exportSlice = slice(STRIPPED, BULK_DECLARATIONS[2])
+
+    for (const token of FORBIDDEN_IN_EXPORT) {
+      expect(
+        exportSlice,
+        `exportSelectedPeople must not mention \`${token}\`: the only other export action is admin-gated, so an action that could accept a filter object and receive {} would return every person in the table (T-38-01)`
+      ).not.toContain(token)
+    }
+  })
+
+  it("keeps batching, transactions, role checks and hand-rolled audit writes out of both bulk writes", () => {
+    for (const declaration of WRITE_DECLARATIONS) {
+      const body = slice(STRIPPED, declaration)
+      for (const token of FORBIDDEN_IN_WRITES) {
+        expect(
+          body,
+          `${declaration} must not mention \`${token}\`: an aborting transaction cannot name which record failed, and people carry no admin bypass`
+        ).not.toContain(token)
+      }
+    }
+  })
+
+  it("opens exactly one actor scope per bulk write, built from the session", () => {
+    for (const declaration of WRITE_DECLARATIONS) {
+      const body = slice(STRIPPED, declaration)
+      expect(occurrences(body, "runWithActor"), `${declaration} actor scopes`).toBe(1)
+
+      const [scopeArgs, ...extra] = callArguments(body, "runWithActor")
+      expect(extra).toHaveLength(0)
+      expect(scopeArgs).toContain('kind: "user"')
+    }
+  })
+
+  it("revalidates once per bulk write, outside the actor scope rather than per record", () => {
+    for (const declaration of WRITE_DECLARATIONS) {
+      const body = slice(STRIPPED, declaration)
+      expect(occurrences(body, "revalidatePath"), `${declaration} revalidations`).toBe(1)
+
+      // Not merely "later in the file": the call must be OUTSIDE the scope callback, which
+      // string-aware brace matching over the call's own arguments is what proves.
+      const [scopeArgs] = callArguments(body, "runWithActor")
+      expect(
+        scopeArgs,
+        `${declaration} calls revalidatePath inside the runWithActor callback, so it would fire once per record`
+      ).not.toContain("revalidatePath")
+      expect(body.indexOf("revalidatePath")).toBeGreaterThan(body.indexOf("runWithActor"))
+    }
+  })
+
+  it("validates the reassign target before the loop, on both predicates", () => {
+    const body = slice(STRIPPED, WRITE_DECLARATIONS[1])
+    const targetCheck = body.indexOf('eq(users.status, "approved")')
+
+    expect(
+      targetCheck,
+      "bulkReassignPersonOwner must filter the target on approved status, not just on deletion (T-38-06)"
+    ).toBeGreaterThan(-1)
+    expect(body).toContain("isNull(users.deletedAt)")
+    expect(
+      targetCheck,
+      "the target must be validated BEFORE the actor scope opens, so an invalid target establishes no actor and writes nothing"
+    ).toBeLessThan(body.indexOf("runWithActor"))
   })
 })
