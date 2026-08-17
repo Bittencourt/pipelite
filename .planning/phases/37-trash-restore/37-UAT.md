@@ -75,10 +75,31 @@ status: blocked
 severity: low
 The dev database has exactly one live approved user and they are the admin; all six member rows are soft-deleted. Creating a member means writing a real login credential into the real dev database, which no ROLLBACK undoes. An attempt to observe it by temporarily demoting the admin account was correctly blocked by the runtime safety classifier (mutating a role then browsing is indistinguishable from privilege escalation); the role was restored immediately and no workaround was attempted. Enforcement is covered server-side; only the client-side hide/disable distinction is unproven.
 
-### G3 — Dark mode not verified at 320px
-status: blocked
-severity: low
-`resize_window` did not change `window.innerWidth` in this environment. Structural inspection suggests a possible horizontal page overflow at 320px from the `nowrap` / `overflow-x: visible` tablist (494px). Needs a real narrow viewport or devtools device emulation to confirm or clear.
+### G3 — Dark mode at 320px — DEFECT FOUND AND FIXED
+status: resolved
+severity: was medium (two of four tabs unreachable)
+`resize_window` could not change `window.innerWidth`, so the check was redone in a **320px same-origin iframe**, where mobile media queries genuinely evaluate (`matchMedia('(min-width: 640px)').matches === false` confirmed).
+
+**The suspicion was correct and it was a real defect.** At a 317px viewport the tablist measured 494px with `overflow-x: visible` and did NOT scroll internally — it widened the document to 526px. Observed on screen in dark mode: "Organizations" clipped mid-word, "Activities" entirely off-screen, reachable only by scrolling the whole page sideways. The table beside it was already correctly contained in `relative w-full overflow-x-auto`; the list was the outlier.
+
+**Fix:** `max-w-full overflow-x-auto` on the `TabsList` in `src/app/trash/trash-tabs.tsx`, with a comment recording the measurements so it is not "tidied away" later. Re-measured after a container rebuild: tablist `overflow-x: auto`, `scrollW 357 > clientW 220` (scrolls itself), all four tabs present and reachable, `<main>` down to 301px — clean.
+
+**Residual page overflow is NOT this phase's and NOT this page's.** After the fix the document still exceeded the viewport by 98px, traced to the global app `<header>` (`sticky top-0 z-50 w-full border-b …`, `scrollWidth 416` vs `clientWidth 301`). Measured across four routes at 320px, all identical:
+
+| Route | page overflow | header scrollW | main scrollW |
+|---|---|---|---|
+| /organizations | 98px | 416 | 301 |
+| /people | 98px | 416 | 301 |
+| /deals | 98px | 416 | 408 |
+| /trash | 98px | 416 | **301** |
+
+The header overflows on every page equally; `/trash` is now as clean as any other route and cleaner than `/deals`. Phase 37 never touched `nav-header.tsx` (37-09 explicitly left it alone). Tracked below as G5.
+
+### G5 — Global app header overflows the viewport at 320px (pre-existing, app-wide)
+status: open
+severity: low-medium
+severity_note: cosmetic on every page, but it means the entire app has a horizontal scrollbar on a phone
+The `<header>` element measures `scrollWidth 416` against a `clientWidth 301` at a 317px viewport, on every route measured. Its widest descendant is a `flex items-center gap-4` nav row that neither wraps nor scrolls. Predates Phase 37 and is unaffected by it — surfaced here only because verifying G3 required measuring the whole document. Belongs in its own small plan, not a trash phase.
 
 ### G4 — The three /api/v1/trash routes have no checked-in test
 status: failed

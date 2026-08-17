@@ -84,7 +84,17 @@ export function TrashTabs({ tab, counts, children }: TrashTabsProps) {
 
   return (
     <Tabs value={tab} onValueChange={handleTabChange} activationMode="manual">
-      <TabsList>
+      {/*
+        `max-w-full` plus horizontal scrolling is load-bearing, not cosmetic. The four
+        triggers measure ~494px together, so on a 320px viewport the default `w-fit` list
+        widened the PAGE instead of scrolling itself: measured 526px of document against a
+        316px viewport, leaving "Organizations" clipped mid-word and "Activities" off-screen
+        with no way to reach either except scrolling the whole page sideways. The table
+        beside it already scrolls inside its own wrapper; this makes the list behave the
+        same way. Verified in a 320px same-origin iframe, where the mobile breakpoints
+        genuinely evaluate.
+      */}
+      <TabsList className="max-w-full overflow-x-auto">
         {/*
           All four tabs always render. A tab with zero records is still labelled and still
           selectable — a tab that appears and disappears between visits is worse than one that
