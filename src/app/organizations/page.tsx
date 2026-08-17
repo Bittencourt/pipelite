@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card"
 import { Building2 } from "lucide-react"
 import { getTranslations } from 'next-intl/server'
+import { readTrashRetentionDays } from "@/lib/trash/settings"
 
 const PAGE_SIZE = 50
 
@@ -66,7 +67,47 @@ export default async function OrganizationsPage({
   const pageNum = Math.max(1, parseInt(params.page ?? "1"))
   const search = params.search ?? ""
 
-  const { rows: orgs, hasMore } = await getOrganizations(search || undefined, pageNum)
+  /*
+   * Three independent reads in one round trip. Two of the three are new and exist only to feed the
+   * bulk selection bar mounted inside `data-table.tsx`; both cross the RSC boundary as PLAIN
+   * SERIALIZABLE VALUES and nothing else, which is why no bulk component is imported here.
+   *
+   * `retentionDays` is passed straight through, un-defaulted, and no numeric fallback may ever be
+   * added anywhere in this file. The read fails closed to `null` when the window is unset,
+   * corrupted, tampered with or out of range; nothing is purged automatically in that state, and
+   * that `null` is exactly what selects the bulk delete dialog's no-retention copy. A coalesced
+   * default here would have the dialog promise a window the pruner is not enforcing (T-38-10). The
+   * real thirty-day default lives in DATA — a seeded `app_settings` row from migration 0015 —
+   * never in code.
+   *
+   * `bulkOwners` is a NEW, SEPARATE query rather than a widening of the `leftJoin` above, which
+   * exists only to supply the `ownerName` COLUMN. Both of its predicates are load-bearing: handing
+   * up to a hundred records to a soft-deleted or unapproved user is a data defect that no
+   * per-record failure could ever report, because every one of those writes SUCCEEDS — the rows
+   * simply land on a principal who cannot sign in (T-38-06). `src/app/deals/page.tsx` filters its
+   * own owner picker on the soft-delete column alone and is an anti-analog here, not a template.
+   * The prop is named `bulkOwners`, not `owners`, so it can never be conflated with a future owner
+   * FILTER list on this same surface.
+   */
+  const [{ rows: orgs, hasMore }, retentionDays, ownerRows] = await Promise.all([
+    getOrganizations(search || undefined, pageNum),
+    readTrashRetentionDays(),
+    db.query.users.findMany({
+      where: and(isNull(users.deletedAt), eq(users.status, "approved")),
+      columns: {
+        id: true,
+        name: true,
+        email: true,
+      },
+      orderBy: [users.name],
+    }),
+  ])
+
+  const bulkOwners = ownerRows.map((u) => ({
+    id: u.id,
+    name: u.name || "Unknown",
+  }))
+
   const t = await getTranslations('organizations')
 
   return (
@@ -98,6 +139,8 @@ export default async function OrganizationsPage({
               hasMore={hasMore}
               search={search}
               currentPage={pageNum}
+              retentionDays={retentionDays}
+              bulkOwners={bulkOwners}
             />
           </CardContent>
         </Card>

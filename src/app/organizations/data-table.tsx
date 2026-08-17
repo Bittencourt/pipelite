@@ -1,12 +1,13 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useMemo, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
   useReactTable,
+  type RowSelectionState,
 } from "@tanstack/react-table"
 import {
   Table,
@@ -22,9 +23,27 @@ import { Organization } from "./columns"
 import { Plus, Search } from "lucide-react"
 import { OrganizationDialog } from "./organization-dialog"
 import { DeleteDialog } from "./delete-dialog"
-import { deleteOrganization } from "./actions"
+import {
+  bulkDeleteOrganizations,
+  bulkReassignOrganizationOwner,
+  deleteOrganization,
+  exportSelectedOrganizations,
+} from "./actions"
 import { toast } from "sonner"
 import { useDataTableKeyboard } from "@/components/keyboard"
+import { BulkActionBar } from "@/components/bulk/bulk-action-bar"
+import { BulkFailureReport } from "@/components/bulk/bulk-failure-report"
+import { useSelectColumn } from "@/components/bulk/select-column"
+import type { BulkOutcome } from "@/lib/bulk/types"
+
+/**
+ * The accessible name of a row's checkbox: "Select Acme Ltda", never "Select row".
+ *
+ * Declared at module scope on purpose. `useSelectColumn` memoises the column definition on this
+ * function's identity, so an inline arrow would hand it a new identity on every render and rebuild
+ * the table's whole column model on every paint.
+ */
+const getOrganizationLabel = (org: Organization) => org.name
 
 interface DataTableProps {
   columns: ColumnDef<Organization, unknown>[]
@@ -33,9 +52,34 @@ interface DataTableProps {
   search?: string
   currentPage?: number
   refresh?: () => void
+  /**
+   * The configured trash retention window, or `null` when nothing is purged automatically.
+   *
+   * Required, and NEVER defaulted at any point on the way down: `null` is what selects the bulk
+   * delete dialog's no-retention copy, so a coalesced number here would have the dialog promise a
+   * window the pruner is not enforcing (T-38-10).
+   */
+  retentionDays: number | null
+  /**
+   * Reassignment targets — active users only, `deleted_at IS NULL` AND `status = 'approved'`.
+   *
+   * Named `bulkOwners` rather than `owners` so it cannot be conflated with a future owner FILTER
+   * list on this surface. The predicate is the server page's responsibility and the bulk reassign
+   * action re-validates the chosen target once before its write loop.
+   */
+  bulkOwners: { id: string; name: string }[]
 }
 
-export function DataTable({ columns, data, hasMore = false, search = "", currentPage = 1, refresh }: DataTableProps) {
+export function DataTable({
+  columns,
+  data,
+  hasMore = false,
+  search = "",
+  currentPage = 1,
+  refresh,
+  retentionDays,
+  bulkOwners,
+}: DataTableProps) {
   const router = useRouter()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null)
@@ -43,6 +87,76 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
   const [orgToDelete, setOrgToDelete] = useState<Organization | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /**
+   * BULK SELECTION LIVES HERE — in TanStack's own `rowSelection`, per list. No URL parameter, no
+   * global store, no context: a selection is a transient, per-surface intent, and putting it in the
+   * URL would make it survivable across a share or a reload, which is the wrong lifetime for a set
+   * of records about to be deleted.
+   */
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+
+  /**
+   * The last bulk result that had at least one per-record failure, or `null`.
+   *
+   * It is held here rather than inside the bar because the report it feeds renders ABOVE the table
+   * while the bar is fixed to the bottom of the viewport, and because it must outlive the dialog the
+   * action was confirmed in.
+   */
+  const [outcome, setOutcome] = useState<BulkOutcome | null>(null)
+
+  /**
+   * CLEAR ON A SEARCH CHANGE — keyed on the search STRING, never on the `data` array.
+   *
+   * The distinction is the whole point and it is not stylistic. Measured in Phase 35 against
+   * Next 16.1.6 and recorded in `handleRecordSaved` below: an action that calls `revalidatePath` at
+   * all re-renders the CURRENT client tree a few milliseconds after it resolves, whichever path it
+   * names — and every bulk action calls it. A clear keyed on `data` would therefore fire in the
+   * middle of a bulk action's own revalidation and wipe the failed-record selection that has to
+   * survive for the retry to be one click. Succeeded ids are removed explicitly in `handleOutcome`,
+   * never by a reactive clear.
+   *
+   * Written as React's documented adjust-state-on-a-prop-change pattern rather than as
+   * `useEffect(() => setRowSelection({}), [search])` because this repo lints a synchronous state
+   * update inside an effect as an ERROR. It is also the better shape: the reset happens during the
+   * same render that first sees the new search, so no paint ever shows the old selection against
+   * the new result set.
+   */
+  const [prevSearch, setPrevSearch] = useState(search)
+  if (prevSearch !== search) {
+    setPrevSearch(search)
+    setRowSelection({})
+  }
+
+  const selectColumn = useSelectColumn<Organization>(getOrganizationLabel)
+
+  /**
+   * The shared checkbox column is PREPENDED — first column, before the existing leading column —
+   * and it is composed here rather than in `columns.tsx` because that module exports a STATIC array
+   * imported by a server component, so a column defined there could never call `useTranslations`
+   * and its accessible name would ship as untranslated English.
+   */
+  const columnsWithSelect = useMemo(
+    () => [selectColumn, ...columns],
+    [selectColumn, columns],
+  )
+
+  /**
+   * The submitted id list, derived DEFENSIVELY: the truthy keys of `rowSelection` intersected with
+   * the ids actually loaded.
+   *
+   * TanStack does not prune `rowSelection` when a row leaves `data`, so after a successful bulk
+   * delete the keys of the deleted rows would linger as phantoms inflating the count — and a
+   * phantom id in a destructive submit is an action on a record the user never picked (T-38-37).
+   * The intersection makes that impossible by construction, on top of the explicit clearing in
+   * `handleOutcome`. It is deliberately NOT derived from the table's own selected-row model, whose
+   * accessor is asserted absent from this file by a source gate.
+   */
+  const loadedIds = useMemo(() => new Set(data.map((r) => r.id)), [data])
+  const selectedIds = useMemo(
+    () => Object.keys(rowSelection).filter((id) => rowSelection[id] && loadedIds.has(id)),
+    [rowSelection, loadedIds],
+  )
 
   const handleAddNew = () => {
     setEditingOrg(null)
@@ -102,6 +216,45 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
     refresh?.()
   }
 
+  /**
+   * What happens after a bulk delete or reassign settles — the one place the selection is reconciled
+   * against a result.
+   *
+   * SUCCEEDED IDS ARE DROPPED AND FAILED IDS ARE KEPT, EXPLICITLY AND HERE. Not in an effect: an
+   * effect would have to key on something that changes when the result arrives, and the only such
+   * value is the server-supplied rows array, which `revalidatePath` also churns mid-action. Keeping
+   * the failed records selected is what makes the retry the same button rather than a re-pick, and
+   * it is a locked decision (38-UI-SPEC § Surface 7).
+   *
+   * The failed ids are re-asserted rather than merely left alone, so the reconciliation is correct
+   * even for a record whose key was somehow absent from the previous map.
+   */
+  const handleOutcome = (next: BulkOutcome) => {
+    const succeeded = new Set(next.succeeded)
+
+    setRowSelection((prev) => {
+      const remaining: RowSelectionState = {}
+
+      for (const id of Object.keys(prev)) {
+        if (prev[id] && !succeeded.has(id)) remaining[id] = true
+      }
+
+      for (const failure of next.failed) {
+        remaining[failure.id] = true
+      }
+
+      return remaining
+    })
+
+    // A fully successful action REPLACES any previous report with nothing, so a stale list of
+    // failures from an earlier attempt cannot outlive the retry that fixed it.
+    setOutcome(next.failed.length > 0 ? next : null)
+
+    // Same convention as `handleRecordSaved` above, and for the same reason: the action's own
+    // `revalidatePath` is what re-renders the rows, so this is only the optional parent hook.
+    refresh?.()
+  }
+
   const handleSearchChange = (value: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
@@ -124,7 +277,19 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
 
   const table = useReactTable({
     data,
-    columns,
+    columns: columnsWithSelect,
+    /**
+     * MANDATORY, and load-bearing rather than hygiene. TanStack's default row id is the row INDEX,
+     * and this list's rows array is CUMULATIVE across Load More (`page.tsx` fetches
+     * `PAGE_SIZE * pageNum + 1` and slices back to `PAGE_SIZE * pageNum`). With index keys any
+     * reorder or removal silently retargets the selection onto different records, and the next
+     * action would be a bulk delete of records the user never picked (T-38-36). Keying on the
+     * record id is also exactly what makes the selection survive Load More.
+     */
+    getRowId: (row) => row.id,
+    state: { rowSelection },
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: true,
     getCoreRowModel: getCoreRowModel(),
     meta: {
       refresh: refresh || (() => {}),
@@ -150,6 +315,20 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
           Add Organization
         </Button>
       </div>
+      {/*
+        ABOVE THE TABLE, below the search row — a report to READ, not a control to press, and it can
+        run to as many lines as there were failures. It is deliberately not inside the fixed bar,
+        which has to stay one compact control cluster down to 320px.
+      */}
+      {outcome !== null && outcome.failed.length > 0 && (
+        <BulkFailureReport
+          kind={outcome.kind}
+          failures={outcome.failed}
+          labelById={outcome.labelById}
+          onDismiss={() => setOutcome(null)}
+        />
+      )}
+
       <div className="rounded-md border" {...containerProps}>
         <Table>
           <TableHeader>
@@ -196,7 +375,13 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length}
+                  /*
+                    Read from the TABLE, not from the `columns` prop: the prop no longer matches the
+                    rendered column count now that the select column is prepended, and the visible
+                    symptom of the stale count is an empty state misaligned by one cell on a
+                    filtered-to-nothing list.
+                  */
+                  colSpan={table.getAllLeafColumns().length}
                   className="h-24 text-center"
                 >
                   No organizations found.
@@ -235,6 +420,34 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
         organizationName={orgToDelete?.name || ""}
         onConfirm={handleDeleteConfirm}
         isLoading={isDeleting}
+      />
+
+      {/*
+        LAST IN THE STACK, AFTER Load More, AND THAT POSITION IS THE POINT. The bar renders its own
+        `h-20` sibling spacer to buy back the space its `fixed` element covers, so mounted any higher
+        the spacer would inject 80px into the MIDDLE of the page. Placed here it changes only what
+        sits below everything, and no row the user is aiming at moves (T-38-38).
+
+        The three server actions are passed as the imported functions themselves, never wrapped in a
+        local closure that reshapes the arguments, so the bar's `(ids)` and `(ids, ownerId)` call
+        shapes ARE the actions' own signatures and any mismatch is a type error rather than a runtime
+        surprise. No keyboard binding is added here either: `Escape` is owned by the bar, and the
+        list's own bare-letter hotkeys keep their single-record meaning.
+      */}
+      <BulkActionBar
+        entityType="organization"
+        selectedIds={selectedIds}
+        getLabel={(id) => data.find((r) => r.id === id)?.name ?? id}
+        retentionDays={retentionDays}
+        owners={bulkOwners}
+        onDelete={bulkDeleteOrganizations}
+        onReassign={bulkReassignOrganizationOwner}
+        onExport={exportSelectedOrganizations}
+        onOutcome={handleOutcome}
+        onClear={() => {
+          setRowSelection({})
+          setOutcome(null)
+        }}
       />
     </div>
   )
