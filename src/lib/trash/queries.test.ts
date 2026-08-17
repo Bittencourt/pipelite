@@ -624,6 +624,41 @@ describe("listTrashed", () => {
     expect(result.rows[0].linkedParents).toEqual([])
   })
 
+  /*
+   * WR-07. The badge's boolean is projected from the PARENT's row across a LEFT JOIN, so the
+   * module's rule 1 ("the owner predicate is part of the query") has to hold there too. It did
+   * not: a bare `IS NOT NULL` disclosed that a colleague's organization is in trash, together
+   * with its name, to a member `restoreWithLinked` would refuse. These assertions are on the
+   * PROJECTION rather than the WHERE clause, because that is where the predicate now lives —
+   * the row itself must keep rendering, only the badge degrades.
+   */
+  it("carries the PARENT's own owner predicate on each linked-in-trash boolean", async () => {
+    queueSelects([dealRow("d1")])
+
+    await listTrashed("deals", 1, MEMBER)
+
+    for (const field of ["organizationTrashed", "personTrashed"] as const) {
+      const { sql, params } = render(selectCalls[0].fields[field] as SQL)
+
+      expect(sql, `${field} must test the parent's deleted_at`).toContain("is not null")
+      expect(sql, `${field} must scope to the parent's own owner`).toContain("owner_id")
+      expect(params, `${field} must bind the viewer's id, never interpolate it`).toContain("u1")
+    }
+  })
+
+  it("drops the parent owner predicate for an admin, who may see every parent", async () => {
+    queueSelects([dealRow("d1")])
+
+    await listTrashed("deals", 1, ADMIN)
+
+    for (const field of ["organizationTrashed", "personTrashed"] as const) {
+      const { sql } = render(selectCalls[0].fields[field] as SQL)
+
+      expect(sql).toContain("is not null")
+      expect(sql, `${field} must not narrow an admin's view`).not.toContain("owner_id")
+    }
+  })
+
   it("never produces a linked parent on the Organizations tab", async () => {
     queueSelects([
       { id: "o1", name: "Acme Inc", deletedAt: DELETED_AT, website: "acme.test" },
@@ -703,6 +738,48 @@ describe("listTrashed", () => {
     expect(result.rows[0].name).toBe("Ada Lovelace")
     expect(result.rows[0].secondary).toBe("ada@example.com")
     expect(result.rows[0].linkedParents).toEqual(["Acme Inc"])
+  })
+
+  it("scopes the people and activities tabs' parent booleans the same way (WR-07)", async () => {
+    queueSelects(
+      [
+        {
+          id: "p1",
+          firstName: "Ada",
+          lastName: "Lovelace",
+          email: "ada@example.com",
+          deletedAt: DELETED_AT,
+          organizationName: "Acme Inc",
+          organizationTrashed: true,
+        },
+      ],
+      [
+        {
+          id: "a1",
+          name: "Follow up",
+          dueDate: new Date("2026-09-01T00:00:00.000Z"),
+          deletedAt: DELETED_AT,
+          dealTitle: "Acme renewal",
+          dealTrashed: true,
+        },
+      ]
+    )
+
+    await listTrashed("people", 1, MEMBER)
+    await listTrashed("activities", 1, MEMBER)
+
+    // One assertion per tab that HAS a parent join, so a tab added later cannot inherit the
+    // unscoped form by being the only one nothing checks.
+    for (const [callIndex, field] of [
+      [0, "organizationTrashed"],
+      [1, "dealTrashed"],
+    ] as const) {
+      const { sql, params } = render(selectCalls[callIndex].fields[field] as SQL)
+
+      expect(sql, `${field} must test the parent's deleted_at`).toContain("is not null")
+      expect(sql, `${field} must scope to the parent's own owner`).toContain("owner_id")
+      expect(params, `${field} must bind the viewer's id`).toContain("u1")
+    }
   })
 
   it("uses the website as the organizations tab's secondary column", async () => {

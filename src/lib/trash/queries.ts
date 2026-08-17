@@ -81,6 +81,42 @@ function trashScope(deletedAt: PgColumn, ownerId: PgColumn, viewer: TrashViewer)
   return and(isNotNull(deletedAt), scope) as SQL
 }
 
+/**
+ * IS THIS PARENT IN TRASH, AS FAR AS THIS VIEWER IS ENTITLED TO KNOW.
+ *
+ * Rule 1 above is about the parent joins too, and it was not being applied to them. `trashScope`
+ * guards the BASE table, but the parent `LEFT JOIN`s carried no owner predicate, so a bare
+ * `IS NOT NULL` on the parent's `deleted_at` projected the trashed state of records outside the
+ * viewer's scope. A member owning deal *D* under a colleague's organization *O* therefore learned
+ * that *O* is in trash — a record they cannot see on any tab, and one `restoreWithLinked` correctly
+ * REFUSES to restore for them (src/app/trash/actions.ts). The read side was disclosing precisely
+ * what the write side takes care to protect, and it disclosed the parent's NAME with it: this
+ * boolean is what `collectTrashedParents` gates the badge's label on.
+ *
+ * Composed from the SAME `trashScope` the rows and the counts use, deliberately — a second
+ * hand-written owner comparison is the drift Phase 35 recorded and this module's rule 1 exists to
+ * prevent. Under a `LEFT JOIN` with no matched parent every term is `NULL`, `IS NOT NULL` is
+ * `false`, and `false AND NULL` is `false` in SQL's three-valued logic, so an absent parent, a live
+ * parent and an out-of-scope trashed parent all collapse to the same answer: nothing to flag.
+ *
+ * IT DEGRADES, IT DOES NOT REFUSE. The row itself still renders, and the linked-in-trash badge and
+ * the *Restore with linked records* button both simply do not appear — which is honest, because the
+ * button would have been offered only to silently skip that parent.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT HIDE: the parent's name where it is a record's own SECONDARY
+ * COLUMN (a deal's organization, an activity's deal). That column is locked in 37-CONTEXT and the
+ * same name is already on the live list the viewer reads their own deals from, so it discloses
+ * nothing new. The leak was never the name — it was the TRASHED STATE, and the badge that pairs
+ * the two.
+ */
+function parentTrashedForViewer(
+  deletedAt: PgColumn,
+  ownerId: PgColumn,
+  viewer: TrashViewer
+): SQL<boolean> {
+  return trashScope(deletedAt, ownerId, viewer).mapWith(Boolean)
+}
+
 /** `people` has no single title column (src/lib/audit/linked-records.ts:124-125). */
 function personName(firstName: string, lastName: string): string {
   return `${firstName} ${lastName}`.trim()
@@ -469,11 +505,16 @@ async function listTrashedDeals(limit: number, viewer: TrashViewer): Promise<Una
       deletedAt: deals.deletedAt,
       organizationName: organizations.name,
       // Computed SERVER-SIDE in the same query — 37-UI-SPEC Assumption 2. Two extra boolean
-      // columns on an already-joined row, not two extra round trips.
-      organizationTrashed: isNotNull(organizations.deletedAt).mapWith(Boolean),
+      // columns on an already-joined row, not two extra round trips. Each one carries the
+      // PARENT's OWN owner predicate; see `parentTrashedForViewer`.
+      organizationTrashed: parentTrashedForViewer(
+        organizations.deletedAt,
+        organizations.ownerId,
+        viewer
+      ),
       personFirstName: people.firstName,
       personLastName: people.lastName,
-      personTrashed: isNotNull(people.deletedAt).mapWith(Boolean),
+      personTrashed: parentTrashedForViewer(people.deletedAt, people.ownerId, viewer),
     })
     .from(deals)
     // LEFT, because both parent references are nullable and a deal with no organization is not
@@ -520,7 +561,12 @@ async function listTrashedPeople(limit: number, viewer: TrashViewer): Promise<Un
       email: people.email,
       deletedAt: people.deletedAt,
       organizationName: organizations.name,
-      organizationTrashed: isNotNull(organizations.deletedAt).mapWith(Boolean),
+      // The PARENT's own owner predicate rides on this boolean — see `parentTrashedForViewer`.
+      organizationTrashed: parentTrashedForViewer(
+        organizations.deletedAt,
+        organizations.ownerId,
+        viewer
+      ),
     })
     .from(people)
     .leftJoin(organizations, eq(organizations.id, people.organizationId))
@@ -594,7 +640,8 @@ async function listTrashedActivities(
       dueDate: activities.dueDate,
       deletedAt: activities.deletedAt,
       dealTitle: deals.title,
-      dealTrashed: isNotNull(deals.deletedAt).mapWith(Boolean),
+      // The PARENT's own owner predicate rides on this boolean — see `parentTrashedForViewer`.
+      dealTrashed: parentTrashedForViewer(deals.deletedAt, deals.ownerId, viewer),
     })
     .from(activities)
     .leftJoin(deals, eq(deals.id, activities.dealId))
