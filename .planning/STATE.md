@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-17T13:41:31.263Z"
+last_updated: "2026-08-17T13:42:35.196Z"
 last_activity: 2026-08-17
 progress:
   total_phases: 13
@@ -20,13 +20,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 37 — Trash & Restore
+**Current focus:** Phase 38 — Bulk Operations
 
 ## Position
 
 Phase: 44 - Custom Field UI Repair (complete — 9/9 plans)
 Plan: 9 of 9 complete
-Status: Ready to execute
+Status: Executing Phase 38
 Last activity: 2026-08-17
 
 Progress: [██████████] 97%
@@ -241,9 +241,9 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 
 ## Current Position
 
-Phase: 37 (Trash & Restore) — EXECUTING
-Plan: 1 of 15
-Status: Ready to execute
-Last activity: 2026-08-17 -- Phase 38 planning complete
+Phase: 38 (Bulk Operations) — EXECUTING
+Plan: 1 of 20
+Status: Executing Phase 38
+Last activity: 2026-08-17 -- Phase 38 execution started
 
 - 2026-08-17: Phase 37 COMPLETE (15 plans, 6 waves) — Trash & Restore. `/trash` with four scoped tabs, `/admin/trash` retention (1..365, default 30, seeded as data, fail-closed with NO `?? 30`), restore + ordered transactional purge for all four CRM entities, three REST endpoints, and a daily pruner PROVEN running in the container (`[trash-prune] Starting with initial delay of 60s, ticking daily`, all six processors announcing from the merged-master build). Suite 1549 -> 1703 passing, typecheck 0, lint 0 errors throughout. Verified 4/4 success criteria plus a live browser walkthrough (8/10 UAT steps, both "deleted by" strings, manual tab activation, restore with children intact, purge detaching a live child with both audit rows). Code review: 1 critical + 9 warnings, all in-scope findings fixed; CR-01 deliberately scoped to correcting a false comment. The 320px check found and fixed a real tablist overflow defect. Autonomous run STOPPED here by user — phases 38-43 remain.
