@@ -116,6 +116,18 @@ table view, reassigning Activity `assigneeId`, and any new export format.
   from a full one on disk.
 - CSV only. The Pipedrive variant in `src/lib/export/pipedrive.ts` is not offered for scoped export.
 
+### Layering (found during 38-PATTERNS, auto-accepted recommended, autonomous mode)
+- The floating bulk bar takes **`z-[60]`**, not the UI-SPEC's `z-30`. `ShortcutsHint`
+  (`src/components/keyboard/shortcuts-hint.tsx:33`, mounted at `src/app/layout.tsx:53`) is
+  `fixed bottom-0 left-0 right-0 z-50` for the first 10 seconds of any session whose
+  `localStorage` flag is unset, so on a fresh browser profile a `z-30` bar renders *behind* it.
+  `z-[60]` is deterministic and couples nothing; the hint still auto-dismisses on its own.
+  A z-index is not a spacing token, so this does not touch the UI-SPEC spacing exception list.
+- **No change to `<Toaster />`.** Sonner's own container carries `z-index: 999999999`
+  (`node_modules/sonner/dist/styles.css`), so a toast always renders above the bar regardless of the
+  bar's z-index and regardless of the default bottom-right position. The UI-SPEC checklist item
+  "the bar does not cover the Sonner toast region" is satisfied structurally, not by positioning.
+
 ### Claude's Discretion
 - Component decomposition of the bulk toolbar (one shared component vs per-entity), the exact
   placement of the toolbar relative to the search input, the shape of the server action return type
