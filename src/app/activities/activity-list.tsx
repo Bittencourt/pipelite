@@ -9,6 +9,8 @@ import {
   getCoreRowModel,
   useReactTable,
   getFilteredRowModel,
+  type OnChangeFn,
+  type RowSelectionState,
 } from "@tanstack/react-table"
 import {
   Table,
@@ -46,6 +48,7 @@ import { deleteActivity, toggleActivityCompletion } from "./actions"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { useDataTableKeyboard } from "@/components/keyboard"
+import { useSelectColumn } from "@/components/bulk/select-column"
 import { useFormatter, useTranslations } from 'next-intl'
 import { RelativeTime } from "@/components/ui/relative-time"
 
@@ -85,6 +88,15 @@ interface ActivityListProps {
   activityTypes: ActivityType[]
   onEdit: (activity: Activity) => void
   onRefresh?: () => void
+  /**
+   * THE SELECTION STATE LIVES IN THE PARENT, NOT HERE, AND THAT IS A LAYOUT DECISION AS MUCH AS A
+   * STATE ONE. `ActivitiesClient` owns the Load More button, the filter row and the search prop;
+   * this component receives neither. Declaring the state here would put the bulk bar's 80px spacer
+   * ABOVE the Load More button — so the fixed bar would cover the very control the spacer exists to
+   * keep reachable (T-38-38) — and would leave no filter key to clear the selection on.
+   */
+  rowSelection: RowSelectionState
+  onRowSelectionChange: OnChangeFn<RowSelectionState>
 }
 
 // Icon mapping for activity types
@@ -135,6 +147,8 @@ export function ActivityList({
   activityTypes,
   onEdit,
   onRefresh,
+  rowSelection,
+  onRowSelectionChange,
 }: ActivityListProps) {
   const router = useRouter()
   const format = useFormatter()
@@ -211,6 +225,13 @@ export function ActivityList({
       setIsDeleting(false)
     }
   }
+
+  /*
+    The checkbox column's accessible name is the activity TITLE — the same expression the title
+    column renders as the link text — so the control announces the record the user is looking at
+    rather than a row number.
+  */
+  const selectColumn = useSelectColumn<Activity>((a) => a.title)
 
   // Column definitions
   const columns: ColumnDef<Activity, unknown>[] = [
@@ -388,10 +409,34 @@ export function ActivityList({
     },
   ]
 
+  /*
+    PREPENDED, never appended: the checkbox is the first cell of every row.
+
+    Deliberately NOT wrapped in `useMemo`. `columns` above is a fresh array literal on every render
+    of this component and always has been, so a memo keyed on it can never hit — it would only add a
+    `react-hooks/exhaustive-deps` warning (this repo's lint gate is measured, so a new warning is a
+    regression) while memoising nothing. The select column definition is already memoised by the
+    shared hook, and the row selection state lives in the parent, so rebuilding this array on every
+    render costs no selection.
+  */
+  const columnsWithSelect = [selectColumn, ...columns]
+
   const table = useReactTable({
     data: sortedActivities,
-    columns,
+    columns: columnsWithSelect,
+    /*
+      MANDATORY, AND THE SINGLE MOST DANGEROUS LINE TO OMIT ON THIS SURFACE. TanStack's default row
+      id is the row INDEX, and `sortedActivities` re-sorts on every render while Load More grows the
+      array cumulatively — so index-keyed selection silently retargets onto different records, and
+      the next bulk delete would destroy rows the user never picked (T-38-36).
+    */
+    getRowId: (row) => row.id,
+    enableRowSelection: true,
+    state: { rowSelection },
+    onRowSelectionChange,
     getCoreRowModel: getCoreRowModel(),
+    // Kept exactly as it was. It is INERT here — no filter state is ever set on this table and all
+    // Activities filtering is server-side via URL params — but removing it is an unrelated change.
     getFilteredRowModel: getFilteredRowModel(),
   })
 
@@ -496,7 +541,12 @@ export function ActivityList({
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length}
+                  /*
+                    Read from the TABLE, not from the `columns` array: that array no longer counts
+                    the prepended checkbox column, so a `columns.length` span would leave the empty
+                    state one cell short and the row would not span the header.
+                  */
+                  colSpan={table.getAllLeafColumns().length}
                   className="h-24 text-center text-muted-foreground"
                 >
                   {t('noActivitiesFound')}

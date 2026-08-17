@@ -9,6 +9,7 @@ import { getActivityTypes, getActivities } from "./actions"
 import { Button } from "@/components/ui/button"
 import { Plus, Calendar, List } from "lucide-react"
 import { ActivitiesClient } from "./activities-client"
+import { readTrashRetentionDays } from "@/lib/trash/settings"
 import { getTranslations } from 'next-intl/server'
 
 const PAGE_SIZE = 50
@@ -99,7 +100,14 @@ export default async function ActivitiesPage({
   filters.limit = PAGE_SIZE * pageNum + 1
 
   // Fetch activities, types, deals, and users
-  const [activitiesResult, typesResult, dealsForDropdown, ownersResult] = await Promise.all([
+  const [
+    activitiesResult,
+    typesResult,
+    dealsForDropdown,
+    ownersResult,
+    bulkOwnersResult,
+    retentionDays,
+  ] = await Promise.all([
     getActivities(filters),
     getActivityTypes(),
     getDealsForDropdown(),
@@ -112,6 +120,25 @@ export default async function ActivitiesPage({
       },
       orderBy: [users.name],
     }),
+    /*
+      A SECOND, SEPARATE users query, and the separation is the point. The array above feeds both
+      the ActivityFilters owner dropdown and the ActivityDialog, so adding a `status` predicate to
+      it would silently drop options from two existing controls — a behaviour change outside this
+      phase. A bulk reassign target, by contrast, must be an active principal: transferring
+      ownership to a pending or rejected account hands records to someone who cannot sign in
+      (T-38-06). Two reads against one table in the same Promise.all is the cost of not breaking
+      the other two consumers.
+    */
+    db.query.users.findMany({
+      where: and(isNull(users.deletedAt), eq(users.status, "approved")),
+      columns: {
+        id: true,
+        name: true,
+        email: true,
+      },
+      orderBy: [users.name],
+    }),
+    readTrashRetentionDays(),
   ])
 
   // Handle errors
@@ -170,6 +197,13 @@ export default async function ActivitiesPage({
     name: u.name || "Unknown",
   }))
 
+  // Reassign targets for the bulk action bar only — never passed to ActivityFilters or
+  // ActivityDialog, which keep the unfiltered list above.
+  const bulkOwners = bulkOwnersResult.map((u) => ({
+    id: u.id,
+    name: u.name || "Unknown",
+  }))
+
   // Users list for assignee select and filter (same pool as owners)
   const usersForAssignee = ownersResult.map((u) => ({
     id: u.id,
@@ -187,6 +221,12 @@ export default async function ActivitiesPage({
     dateTo: params.dateTo || null,
   }
 
+  /*
+    `retentionDays` is handed to the client exactly as read. `null` means the pruner is purging
+    nothing — the window is unset, corrupted or out of range — and the bulk delete dialog has a
+    branch for precisely that state. Any numeric default here would make the UI promise a window
+    nobody is enforcing (T-38-10).
+  */
   return (
     <div className="container py-8 max-w-7xl">
       <ActivitiesClient
@@ -195,6 +235,8 @@ export default async function ActivitiesPage({
         deals={dealsForDropdown}
         owners={owners}
         users={usersForAssignee}
+        bulkOwners={bulkOwners}
+        retentionDays={retentionDays}
         activeFilters={activeFilters}
         hasMore={hasMore}
         search={search}
