@@ -31,7 +31,16 @@ import { KanbanColumn } from "./kanban-column"
 import { DealCard, type Deal } from "./deal-card"
 import { DealDialog } from "./deal-dialog"
 import { DealFilters } from "./deal-filters"
-import { reorderDeals } from "./actions"
+import {
+  reorderDeals,
+  bulkDeleteDeals,
+  bulkReassignDealOwner,
+  exportSelectedDeals,
+} from "./actions"
+import { BulkActionBar } from "@/components/bulk/bulk-action-bar"
+import { BulkFailureReport } from "@/components/bulk/bulk-failure-report"
+import { BULK_MAX_IDS } from "@/lib/bulk/limits"
+import type { BulkOutcome } from "@/lib/bulk/types"
 import { toast } from "sonner"
 import { formatCurrency, sumDealValues } from "@/lib/currency"
 import { cn } from "@/lib/utils"
@@ -53,6 +62,15 @@ interface KanbanBoardProps {
   defaultStageId?: string
   owners: Array<{ id: string; name: string }>
   users: { id: string; name: string | null; email: string }[]
+  /**
+   * The bulk reassign picker's options — a SEPARATE list from `owners`, which is the filter dropdown's
+   * and is built without a `status` predicate. Handing ownership to a deleted or unapproved account
+   * transfers records to a principal who cannot act on them, so this one is filtered on both
+   * (T-38-06).
+   */
+  bulkOwners: Array<{ id: string; name: string }>
+  /** `null` means nothing is purged automatically. NEVER defaulted to a number anywhere (T-38-10). */
+  retentionDays: number | null
   activeFilters: { stage?: string; owner?: string; assignee?: string; dateFrom?: string; dateTo?: string }
 }
 
@@ -64,6 +82,8 @@ export function KanbanBoard({
   defaultStageId,
   owners,
   users,
+  bulkOwners,
+  retentionDays,
   activeFilters,
 }: KanbanBoardProps) {
   const router = useRouter()
@@ -74,15 +94,167 @@ export function KanbanBoard({
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
 
+  /**
+   * BULK SELECTION LIVES HERE, AND THIS IS THE PHASE'S ONE DECLARED EXCEPTION to "selection lives in
+   * TanStack `rowSelection`". `/deals` is a kanban, not a table — there is no `useReactTable` on this
+   * surface to hold the state — so the board owns a set of deal ids directly.
+   */
+  const [selectedDealIds, setSelectedDealIds] = useState<Set<string>>(new Set())
+  const [outcome, setOutcome] = useState<BulkOutcome | null>(null)
+
   // Sync state when server data changes
   useEffect(() => {
     setDealsByStage(initialDealsByStage)
   }, [initialDealsByStage])
 
+  /**
+   * CLEAR THE SELECTION WHEN THE PIPELINE CHANGES, AND KEY IT ON THE PIPELINE ID ALONE.
+   *
+   * Deliberately NOT keyed on `dealsByStage` or on `initialDealsByStage`. The sync effect directly
+   * above already watches that array, and Phase 35 measured that `revalidatePath` re-renders the
+   * current client tree regardless of which path it names — so a clear keyed on the deal array would
+   * fire in the middle of a bulk action and wipe the failed-id selection that SC-3 requires to
+   * SURVIVE the call (T-38-33). Succeeded ids are removed explicitly in the outcome handler instead,
+   * never by an effect.
+   */
+  useEffect(() => {
+    setSelectedDealIds(new Set())
+    setOutcome(null)
+  }, [selectedPipelineId])
+
   // Separate open stages from won/lost
   const openStages = stages.filter(s => s.type === 'open')
   const wonStage = stages.find(s => s.type === 'won')
   const lostStage = stages.find(s => s.type === 'lost')
+
+  const selectedIds = useMemo(() => Array.from(selectedDealIds), [selectedDealIds])
+
+  /**
+   * Every deal id currently on the board, across the OPEN stages only — the won and lost stages
+   * render summary tiles and no cards, so nothing there is ever selectable.
+   */
+  const renderedIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const stage of openStages) {
+      for (const deal of dealsByStage[stage.id] || []) {
+        ids.add(deal.id)
+      }
+    }
+    return ids
+  }, [openStages, dealsByStage])
+
+  /**
+   * THE DEFENSIVE PRUNE, and it is what the bar actually submits.
+   *
+   * A deal that left the board — deleted by a previous bulk call, or filtered out by the next server
+   * render — must not linger in the count or reach a destructive action as a phantom id (T-38-37).
+   * Intersecting the selection with what is really rendered makes that structurally impossible rather
+   * than a matter of remembering to clean up after every path that removes a card.
+   */
+  const submittedIds = useMemo(
+    () => selectedIds.filter(id => renderedIds.has(id)),
+    [selectedIds, renderedIds]
+  )
+
+  /**
+   * Per-stage tri-state, computed once per render rather than inside the column map, so a column does
+   * not have to walk the selection itself.
+   */
+  const stageSelectionState = useMemo(() => {
+    const byStage: Record<string, { all: boolean; some: boolean }> = {}
+    for (const stage of openStages) {
+      const stageDeals = dealsByStage[stage.id] || []
+      const count = stageDeals.reduce((n, deal) => n + (selectedDealIds.has(deal.id) ? 1 : 0), 0)
+      byStage[stage.id] = {
+        all: stageDeals.length > 0 && count === stageDeals.length,
+        some: count > 0 && count < stageDeals.length,
+      }
+    }
+    return byStage
+  }, [openStages, dealsByStage, selectedDealIds])
+
+  /** A NEW `Set` every time: mutating in place would not re-render. */
+  const handleBulkSelectChange = (id: string, next: boolean) => {
+    setSelectedDealIds(prev => {
+      const updated = new Set(prev)
+      if (next) {
+        updated.add(id)
+      } else {
+        updated.delete(id)
+      }
+      return updated
+    })
+  }
+
+  /**
+   * SELECT-ALL-IN-STAGE, CAPPED AGAINST THE RUNNING TOTAL — not against the stage's own size.
+   *
+   * The cap is checked on `updated.size`, which is the WHOLE current selection, so ticking a second
+   * stage cannot push the total past the limit either. It does not throw and the control is not
+   * disabled: the column header's accessible name already states both real numbers above the cap, and
+   * the bar's count then reads exactly "100 selected", which is precise rather than misleading. This
+   * is the runtime half of that copy (T-38-03), and it matters in the ordinary case here because
+   * `/deals` has no pagination and its largest single stage holds 10,495 deals.
+   *
+   * Ids are taken in RENDERED ORDER, so "the first 100" in the label means the first 100 the user can
+   * actually see.
+   */
+  const handleSelectAllInStage = (stageId: string, next: boolean) => {
+    const stageDeals = dealsByStage[stageId] || []
+    setSelectedDealIds(prev => {
+      const updated = new Set(prev)
+      if (!next) {
+        for (const deal of stageDeals) {
+          updated.delete(deal.id)
+        }
+        return updated
+      }
+      for (const deal of stageDeals) {
+        if (updated.size >= BULK_MAX_IDS) break
+        updated.add(deal.id)
+      }
+      return updated
+    })
+  }
+
+  /**
+   * Resolves a deal title for the failure report. Falls back to the raw id, which still NAMES the
+   * record — a generic stand-in would not, and SC-3 asks for the record to be named.
+   */
+  const getDealLabel = (id: string) => {
+    for (const stageDeals of Object.values(dealsByStage)) {
+      const deal = stageDeals.find(d => d.id === id)
+      if (deal) return deal.title
+    }
+    return id
+  }
+
+  /**
+   * DESELECT THE SUCCEEDED IDS AND KEEP THE FAILED ONES SELECTED, both explicitly and here — never
+   * through an effect watching the deal array, which would fire on the server re-render and take the
+   * failed ids with it.
+   *
+   * Everything not in `succeeded` survives, which is precisely the failed ids plus anything the user
+   * selected while the call was in flight. The user's next act on a failure is to retry it, so the
+   * selection they need is already in place.
+   */
+  const handleOutcome = (next: BulkOutcome) => {
+    setSelectedDealIds(prev => {
+      const updated = new Set(prev)
+      for (const id of next.succeeded) {
+        updated.delete(id)
+      }
+      return updated
+    })
+    setOutcome(next.failed.length > 0 ? next : null)
+    // The board's existing refresh convention, matched rather than a new callback prop invented.
+    router.refresh()
+  }
+
+  const handleClearSelection = () => {
+    setSelectedDealIds(new Set())
+    setOutcome(null)
+  }
 
   // Deal edit handler (moved above keyboard hook so it can reference it)
   const handleEditDeal = (deal: Deal) => {
@@ -313,6 +485,20 @@ export function KanbanBoard({
         />
       </Suspense>
 
+      {/*
+        The per-record failure report, mounted ABOVE the board and below the filter row. It is a report
+        to read rather than a control to press, and it can run to several lines, so it must not go
+        inside the fixed bar that has to stay one compact cluster at every viewport.
+      */}
+      {outcome !== null && outcome.failed.length > 0 && (
+        <BulkFailureReport
+          kind={outcome.kind}
+          failures={outcome.failed}
+          labelById={outcome.labelById}
+          onDismiss={() => setOutcome(null)}
+        />
+      )}
+
       {/* Empty state when filters return no results */}
       {hasActiveFilters && totalDeals === 0 ? (
         <div className="text-center py-12 text-muted-foreground border rounded-lg">
@@ -337,6 +523,9 @@ export function KanbanBoard({
                 key={stage.id}
                 stage={stage}
                 deals={dealsByStage[stage.id] || []}
+                allInStageSelected={stageSelectionState[stage.id]?.all}
+                someInStageSelected={stageSelectionState[stage.id]?.some}
+                onSelectAllInStage={handleSelectAllInStage}
               >
                 <SortableContext
                   items={(dealsByStage[stage.id] || []).map(d => d.id)}
@@ -348,6 +537,8 @@ export function KanbanBoard({
                       deal={deal}
                       onEdit={handleEditDeal}
                       isSelected={getItemProps(columnIndex, itemIndex)["data-selected"]}
+                      isBulkSelected={selectedDealIds.has(deal.id)}
+                      onBulkSelectChange={handleBulkSelectChange}
                       data-kanban-col={columnIndex}
                       data-kanban-item={itemIndex}
                     />
@@ -357,7 +548,15 @@ export function KanbanBoard({
             ))}
           </div>
 
-          {/* Won/Lost Footer Row */}
+          {/*
+            Won/Lost Footer Row.
+
+            NO CHECKBOX AND NO SELECT-ALL HERE, AND THAT IS CORRECT RATHER THAN AN OVERSIGHT. These two
+            stages render count-and-value SUMMARY TILES with no `DealCard` children at all — there is no
+            per-record row to attach a checkbox to, and a header select-all over an unrendered set would
+            select records the user cannot see (T-38-43). None of the new selection props is passed down
+            here, deliberately.
+          */}
           {(wonStage || lostStage) && (
             <div className="flex gap-4 pt-4 border-t">
               {wonStage && (
@@ -440,6 +639,28 @@ export function KanbanBoard({
         users={users}
         defaultStageId={defaultStageId}
         onRecordSaved={handleDealSaved}
+      />
+
+      {/*
+        THE BULK ACTION BAR IS THE LAST ELEMENT OF THIS STACK, AND THE ORDER IS LOAD-BEARING.
+        The bar renders its own `h-20` sibling spacer to buy back the space its `fixed` position
+        covers. Mounted anywhere higher, that spacer would inject 80px into the MIDDLE of the board
+        instead of below everything, moving the very cards the user is aiming at.
+
+        `selectedIds` is the PRUNED list, so a deal that has left the board cannot reach a destructive
+        action.
+      */}
+      <BulkActionBar
+        entityType="deal"
+        selectedIds={submittedIds}
+        getLabel={getDealLabel}
+        retentionDays={retentionDays}
+        owners={bulkOwners}
+        onDelete={bulkDeleteDeals}
+        onReassign={bulkReassignDealOwner}
+        onExport={exportSelectedDeals}
+        onOutcome={handleOutcome}
+        onClear={handleClearSelection}
       />
     </div>
   )
