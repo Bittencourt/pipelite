@@ -311,10 +311,18 @@ import { CheckIcon, MinusIcon } from "lucide-react"   // MinusIcon is the alias 
 ```
 
 …with `group/checkbox` added to the Root's `className`. **This is behaviour-neutral for every
-existing consumer** — verified 2026-08-17: the 8 modules importing `Checkbox`
+existing consumer** — verified 2026-08-17: the **10** modules importing `Checkbox`
 (`import-preview.tsx`, `boolean-field.tsx`, `notification-form.tsx`, `admin/export/export-form.tsx`,
-`select-entities-step.tsx`, `webhook-dialog.tsx`, `all-users-client.tsx`, `login/page.tsx`) pass
+`select-entities-step.tsx`, `webhook-dialog.tsx`, `all-users-client.tsx`, `login/page.tsx`,
+`admin/fields/[entityType]/field-dialog.tsx`, `admin/fields/[entityType]/fields-list.tsx`) pass
 **no** `indeterminate` value, so the new branch is unreachable for all of them.
+
+> **CORRECTED during execution of plan 38-05.** This census originally said 8 and omitted the two
+> `admin/fields/[entityType]/` modules, which arrived in `a108448 feat(44-08)` and import with
+> **single quotes** — a double-quote-only grep does not see them, which is how the count went stale.
+> The conclusion is unchanged and now stronger: `grep -rn "indeterminate" src/` returns **0**
+> repo-wide, so all ten are provably unable to reach the new branch. Any gate asserting this count
+> must assert 10.
 (auto-accepted recommended, autonomous mode — the alternative, dropping indeterminate and relying on
 the count alone, ships a header control that lies about its own state.)
 
@@ -1318,9 +1326,11 @@ knowingly rather than discover them.
    report. A raw server message string cannot be rendered — it is untranslatable and may leak
    internals. If the mutation layer cannot distinguish the cases, collapse to `unknown` **in the
    plan, in writing** — do not map a permission failure onto "try again".
-5. **The additive `checkbox.tsx` patch is behaviour-neutral.** Verified by reading all 8 importing
-   modules on 2026-08-17: none passes `indeterminate`. If a ninth consumer appears before this phase
-   lands, re-check it rather than assuming.
+5. **The additive `checkbox.tsx` patch is behaviour-neutral.** Verified by reading all **10** importing
+   modules on 2026-08-17: none passes `indeterminate`, and `grep -rn "indeterminate" src/` is 0
+   repo-wide. If an eleventh consumer appears before this phase lands, re-check it rather than
+   assuming. (Count corrected from 8 during plan 38-05 — two single-quote imports under
+   `admin/fields/[entityType]/` were missing from the original census; see § Surface 1.)
 6. **`toast.warning` is available** on the installed `sonner@2.0.7` and the app's `Toaster` does not
    suppress it. If the wrapper turns out to restrict variants, use `toast.error` for the partial case
    and keep `bulk.partial`'s wording unchanged — the wording, not the severity, is the contract.
