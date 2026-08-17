@@ -1000,9 +1000,17 @@ live Docker Postgres, or `[CITED]` to a specific file and line.
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **What should "select all in stage" do on a stage with 10,495 deals?**
+> All three were resolved at their recommended answers under the autonomous run's standing
+> auto-accept instruction, and all three are implemented in the plans:
+> **Q1 RESOLVED** → cap at `BULK_MAX_IDS` with the 44th copy key `bulk.selectAllInStageCapped`,
+> added to `REQUIRED_BULK_KEYS` in the same commit (plans 38-01, 38-18).
+> **Q2 RESOLVED** → do not filter the picker; the owner mutations early-return idempotently on an
+> unchanged `ownerId`, so a same-owner reassign writes no audit row by design (plans 38-02, 38-08).
+> **Q3 RESOLVED** → deep-link the Trash tab via the existing `ENTITY_TO_TRASH_TAB` (plan 38-10).
+
+1. **What should "select all in stage" do on a stage with 10,495 deals?** — **RESOLVED (capped)**
    - *What we know:* `/deals` has no pagination; the largest live stage holds 10,495 deals; the cap is
      100. `38-CONTEXT.md`'s justification for the cap ("page size is 50, so the cap is never hit
      through the UI") does not hold on Deals, and the copy catalogue has no truncation string.
@@ -1020,7 +1028,7 @@ live Docker Postgres, or `[CITED]` to a specific file and line.
      say so in the plan; do **not** ship an uncapped select-all that puts the bar permanently in its
      error state.
 
-2. **Should the reassign picker exclude the records' current owner?**
+2. **Should the reassign picker exclude the records' current owner?** — **RESOLVED (no filter)**
    - *What we know:* with 1 approved user, the only option *is* the current owner of every record, and
      reassigning to the same owner is a correct no-op that writes no audit row.
    - *Recommendation:* do **not** filter — a mixed selection has no single current owner, so filtering
@@ -1029,7 +1037,7 @@ live Docker Postgres, or `[CITED]` to a specific file and line.
      reassign produces no audit row **by design**. Combined with the second-user prerequisite
      (Pitfall 15), SC-5 stays demonstrable.
 
-3. **Does the success toast's `Open Trash` action need the right tab?**
+3. **Does the success toast's `Open Trash` action need the right tab?** — **RESOLVED (deep-link)**
    - *What we know:* `bulk.openTrash` is in the key catalogue; `ENTITY_TO_TRASH_TAB`
      (`src/lib/trash/entity-types.ts:47`) already maps `EntityType → TrashTab`, and `/trash` parses
      a tab param via `parseTrashTab`.
