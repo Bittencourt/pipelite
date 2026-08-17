@@ -33,6 +33,22 @@ interface DataTableProps {
   search?: string
   currentPage?: number
   refresh?: () => void
+  /**
+   * The configured trash retention window, or `null` when nothing is purged automatically.
+   *
+   * Required, and NEVER defaulted at any point on the way down: `null` is what selects the bulk
+   * delete dialog's no-retention copy, so a coalesced number here would have the dialog promise a
+   * window the pruner is not enforcing (T-38-10).
+   */
+  retentionDays: number | null
+  /**
+   * Reassignment targets — active users only, `deleted_at IS NULL` AND `status = 'approved'`.
+   *
+   * Named `bulkOwners` rather than `owners` so it cannot be conflated with a future owner FILTER
+   * list on this surface. The predicate is the server page's responsibility and the bulk reassign
+   * action re-validates the chosen target once before its write loop.
+   */
+  bulkOwners: { id: string; name: string }[]
 }
 
 export function DataTable({ columns, data, hasMore = false, search = "", currentPage = 1, refresh }: DataTableProps) {
