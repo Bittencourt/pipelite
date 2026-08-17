@@ -10,6 +10,8 @@ import { runWithActor } from "@/lib/audit/actor-context"
 import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
 import type { BulkFailure, BulkWriteResult } from "@/lib/bulk/types"
+import { fetchFilteredData } from "@/lib/export/formatters"
+import type { ExportResult } from "@/lib/export/types"
 import {
   createActivityMutation,
   updateActivityMutation,
@@ -378,6 +380,62 @@ export async function bulkReassignActivityOwner(
   }
 
   return { success: true, ...outcome }
+}
+
+/**
+ * Export exactly the selected activities as CSV (BULK-04).
+ *
+ * THE SIGNATURE IS THE SECURITY CONTROL. The only other export action, `getExportData`, is gated on
+ * an admin role and takes a full options object. This one is open to every signed-in user, because
+ * exporting rows you can already see in a list discloses nothing new — but that is only true while
+ * the caller cannot widen the scope. An action that accepted a filters or options argument and
+ * received `{}` would return every activity in the table, which is the admin-gated export reachable
+ * without the gate (T-38-01). So there is no format parameter, no filters parameter, no entity
+ * parameter and no object argument: every field of the request below is a literal written here.
+ *
+ * NO DATE WINDOW IS PASSED, deliberately and against the grain of this entity: activities are
+ * date-scoped nearly everywhere else in the app, and the filter type declares a window. A selection
+ * is already a complete description of what to export, and a window intersected with it could only
+ * ever silently drop rows the user explicitly ticked.
+ *
+ * THE SLUG IS THE ENGLISH PLURAL AND IS NEVER TRANSLATED — the same `activities` that
+ * `fetchFilteredData` derives for this entity type, so a scoped file and a full file sort together
+ * and are recognisable to the same importer. The count comes from the fetch RESULT, not from the
+ * submitted list: the two differ whenever a selected record was trashed between render and submit,
+ * and the filename must describe the file's contents.
+ */
+export async function exportSelectedActivities(ids: string[]): Promise<ExportResult> {
+  const session = await auth()
+
+  // Verify authentication
+  if (!session?.user?.id) {
+    return { success: false, error: "Not authenticated" }
+  }
+
+  const uniqueIds = parseBulkIds(ids)
+
+  if (!uniqueIds || uniqueIds.length === 0) {
+    return { success: false, error: "No records selected" }
+  }
+
+  if (uniqueIds.length > BULK_MAX_IDS) {
+    return { success: false, error: "Too many records" }
+  }
+
+  const result = await fetchFilteredData({
+    entityType: "activity",
+    format: "csv",
+    includeCustomFields: true,
+    filters: { ids: uniqueIds },
+  })
+
+  if (!result.success) {
+    return result
+  }
+
+  const date = new Date().toISOString().split("T")[0]
+
+  return { ...result, filename: `activities-selected-${result.count}-${date}.csv` }
 }
 
 /**
