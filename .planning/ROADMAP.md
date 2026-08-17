@@ -69,7 +69,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 34: Formula Reactivity** - Server-side, dependency-aware recalc so stored formula values stop going stale (completed 2026-08-14)
 - [x] **Phase 35: Notes & Record Timeline** - Append-only attributed notes plus one chronological timeline per record (completed 2026-08-15)
 - [x] **Phase 36: Audit Log** - Field-level change history with actor kind, fed by crmBus, with retention (completed 2026-08-16)
-- [ ] **Phase 37: Trash & Restore** - Make soft-deleted records visible, restorable, and eventually purged
+- [x] **Phase 37: Trash & Restore** - Make soft-deleted records visible, restorable, and eventually purged (completed 2026-08-17)
 - [ ] **Phase 38: Bulk Operations** - Multi-select with bulk delete, owner reassignment, and scoped export
 - [ ] **Phase 39: Duplicate Detection & Merge** - Warn on likely duplicates and merge without orphaning children
 - [ ] **Phase 40: Saved Views & Shared Filters** - Persist, share, default, and export named filter sets
@@ -346,7 +346,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 37-15-PLAN.md — scripts/trash-checks.sql, full phase gates and cross-surface UAT
+- [x] 37-15-PLAN.md — scripts/trash-checks.sql, full phase gates and cross-surface UAT
 
 ### Phase 38: Bulk Operations
 
@@ -485,7 +485,7 @@ Plans:
 | 34. Formula Reactivity | 13/13 | Complete   | 2026-08-15 |
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
-| 37. Trash & Restore | 14/15 | In Progress|  |
+| 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
 | 38. Bulk Operations | 0/? | Not started | - |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
