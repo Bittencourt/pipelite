@@ -74,6 +74,7 @@ vi.mock("@/db", () => ({
 }))
 
 import { auth } from "@/auth"
+import { readStrippedSource } from "@/components/custom-fields/__tests__/source-scan"
 import { db } from "@/db"
 import { revalidatePath } from "next/cache"
 import { runWithActor } from "@/lib/audit/actor-context"
@@ -319,8 +320,11 @@ describe("bulkDeleteActivities", () => {
   })
 
   it("A.11 opens exactly ONE actor scope for the whole loop, carrying the session identity", async () => {
-    const ids = idList(5)
-    rowsInOrder(...ids.map(id => activity(id, OWNER)))
+    // A TWELVE-ID BATCH ON PURPOSE. With one or two records, "wrapped once around the loop" and
+    // "wrapped once per record" produce the same call count and the assertion is vacuous. Nine
+    // successes make the defective shape fail loudly (9 calls, not 1).
+    const ids = idList(12)
+    rowsInOrder(...ids.map((id, index) => activity(id, index < 9 ? OWNER : OTHER)))
 
     await bulkDeleteActivities(ids)
 
@@ -329,11 +333,15 @@ describe("bulkDeleteActivities", () => {
   })
 
   it("A.12a revalidates exactly ONCE after a partially successful loop", async () => {
-    rowsInOrder(activity("a1", OWNER), activity("a2", OTHER), activity("a3", OWNER))
+    // Nine successes, for the same anti-vacuity reason as A.11: a revalidation moved inside the loop
+    // must produce 9 calls here, not the 1 a two-id batch would have hidden.
+    const ids = idList(12)
+    rowsInOrder(...ids.map((id, index) => activity(id, index < 9 ? OWNER : OTHER)))
 
-    await bulkDeleteActivities(["a1", "a2", "a3"])
+    await bulkDeleteActivities(ids)
 
     expect(mockRevalidatePath).toHaveBeenCalledTimes(1)
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/activities")
   })
 
   it("A.12b does not revalidate when nothing succeeded", async () => {
@@ -462,15 +470,18 @@ describe("bulkReassignActivityOwner", () => {
     expect(result.failed.every(failure => failure.reason === "notPermitted")).toBe(true)
   })
 
-  it("B.7 opens one actor scope and revalidates once after the loop", async () => {
-    const ids = idList(4)
-    rowsInOrder(...ids.map(id => activity(id, OWNER)))
+  it("B.7 opens one actor scope and revalidates once after a 9-of-12 loop", async () => {
+    // Nine successes, so a per-record actor scope or a per-record revalidation cannot hide behind a
+    // batch small enough to make one call the correct answer either way.
+    const ids = idList(12)
+    rowsInOrder(...ids.map((id, index) => activity(id, index < 9 ? OWNER : OTHER)))
 
     await bulkReassignActivityOwner(ids, NEW_OWNER)
 
     expect(mockRunWithActor).toHaveBeenCalledTimes(1)
     expect(mockRunWithActor.mock.calls[0][0]).toEqual({ kind: "user", userId: OWNER })
     expect(mockRevalidatePath).toHaveBeenCalledTimes(1)
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/activities")
   })
 
   it("B.8 dispatches with (entityType, id, newOwnerId, actorId) in that exact order", async () => {
@@ -573,5 +584,160 @@ describe("exportSelectedActivities", () => {
       success: false,
       error: "Export failed. Please try again.",
     })
+  })
+})
+
+/**
+ * D. SOURCE GATE — COMMENT-BLIND, OVER PRECISELY-ANCHORED DECLARATION SLICES.
+ *
+ * The runtime cases above prove the paths they drive. This gate covers the paths they do NOT drive:
+ * a future edit that smuggles an out-of-scope column write, an admin clause, a transaction or a
+ * `Promise.all` into a branch no test happens to exercise.
+ *
+ * IT READS COMMENT-STRIPPED SOURCE, always. A gate that greps raw source is satisfied by its own
+ * prose, and this collision has fired ELEVEN times across phases 37 and 38 — every time on a
+ * comment that merely NAMED the banned token while explaining why it is banned. Comments are removed
+ * before any assertion runs, and the comments in `actions.ts` additionally avoid spelling the banned
+ * identifiers so that even a future raw-source variant of this gate would not trip on prose. When a
+ * gate trips, the fix is to reword the comment, never to weaken the gate.
+ *
+ * THE SLICER IS THE PART THAT CAN SILENTLY INVALIDATE EVERYTHING (T-38-35). `actions.ts` exports
+ * eight functions, so a missing anchor would widen a slice to the whole enclosing module and every
+ * negative assertion below would then be evaluated against `getActivities` too — passing perfectly
+ * while detecting nothing. `indexOf(needle, -1)` behaves exactly like `indexOf(needle, 0)`, so the
+ * widening is silent (WR-13). The anchor index is therefore asserted `> -1` with a named message
+ * BEFORE the slice is taken, and every slice is asserted strictly shorter than the whole file.
+ */
+const ACTIONS_PATH = "src/app/activities/actions.ts"
+const actionsSource = readStrippedSource(ACTIONS_PATH)
+
+function sliceDeclaration(source: string, name: string): string {
+  const anchor = `export async function ${name}`
+  const start = source.indexOf(anchor)
+
+  expect(
+    start,
+    `anchor "${anchor}" not found in ${ACTIONS_PATH} — the slice would widen to the whole module and every negative assertion below would be vacuous`
+  ).toBeGreaterThan(-1)
+
+  const end = source.indexOf("\nexport ", start + 1)
+  return end === -1 ? source.slice(start) : source.slice(start, end)
+}
+
+const WRITE_ACTIONS = ["bulkDeleteActivities", "bulkReassignActivityOwner"] as const
+
+describe("D. source gate over the three bulk declarations", () => {
+  it("D.0 anti-vacuity: read the file, found all three anchors, and none of the slices widened", () => {
+    expect(actionsSource.length, `${ACTIONS_PATH} read empty`).toBeGreaterThan(0)
+
+    for (const name of [...WRITE_ACTIONS, "exportSelectedActivities"]) {
+      const slice = sliceDeclaration(actionsSource, name)
+      expect(slice.length, `${name} slice is empty`).toBeGreaterThan(0)
+      expect(
+        slice.length,
+        `${name} slice is as long as the whole module — it widened past the next export`
+      ).toBeLessThan(actionsSource.length)
+      // A widened slice would swallow the list readers, which are the nearest neighbours.
+      expect(slice).not.toContain("getActivityTypes")
+      expect(slice).not.toContain("findMany")
+    }
+  })
+
+  it("D.1 both write slices open an actor scope", () => {
+    for (const name of WRITE_ACTIONS) {
+      expect(sliceDeclaration(actionsSource, name)).toContain("runWithActor")
+    }
+  })
+
+  it("D.2 the export slice cannot express anything but a selection", () => {
+    const slice = sliceDeclaration(actionsSource, "exportSelectedActivities")
+
+    for (const banned of [
+      "ExportFilters",
+      "ExportOptions",
+      "ExportFormat",
+      "pipedrive",
+      "getExportData",
+      "role",
+      "dateFrom",
+      "dateTo",
+    ]) {
+      expect(slice, `exportSelectedActivities must not mention ${banned}`).not.toContain(banned)
+    }
+  })
+
+  it("D.3 the export signature is a single ids parameter, by construction", () => {
+    // ANTI-VACUOUS BY CONSTRUCTION, not by token ban. D.2 fails only if a banned word appears; this
+    // fails if the declaration is missing, renamed, or grows ANY second parameter — including one
+    // whose name nobody thought to ban. That is the assertion that actually pins T-38-01, because
+    // the signature is the security control.
+    const slice = sliceDeclaration(actionsSource, "exportSelectedActivities")
+    const signature = slice.match(/^export async function exportSelectedActivities\(([^)]*)\)/)
+
+    expect(signature, "could not read the exportSelectedActivities parameter list").not.toBeNull()
+    expect(signature![1].replace(/\s+/g, " ").trim()).toBe("ids: string[]")
+  })
+
+  it("D.4 neither write slice touches the out-of-scope column or an escape hatch", () => {
+    for (const name of WRITE_ACTIONS) {
+      const slice = sliceDeclaration(actionsSource, name)
+
+      for (const banned of [
+        "assigneeId",
+        "assignee",
+        "Promise.all",
+        "db.transaction",
+        "session.user.role",
+        "updateActivityMutation",
+        "auditLog",
+      ]) {
+        expect(slice, `${name} must not mention ${banned}`).not.toContain(banned)
+      }
+    }
+  })
+
+  it("D.5 each write slice has exactly one actor scope and exactly one revalidation, after the loop", () => {
+    for (const name of WRITE_ACTIONS) {
+      const slice = sliceDeclaration(actionsSource, name)
+
+      expect(slice.match(/runWithActor\(/g) ?? []).toHaveLength(1)
+      expect(slice.match(/revalidatePath\(/g) ?? []).toHaveLength(1)
+
+      // The revalidation must sit after the loop's own return, which is the last statement inside
+      // the actor callback — so a revalidation moved inside the loop fails here as well as failing
+      // the call-count assertions above.
+      const loopReturn = slice.indexOf("return { succeeded, failed }")
+      expect(loopReturn, `${name} does not close its loop with the outcome return`).toBeGreaterThan(
+        -1
+      )
+      expect(slice.indexOf("revalidatePath(")).toBeGreaterThan(loopReturn)
+      expect(slice.indexOf("revalidatePath(")).toBeGreaterThan(slice.indexOf("runWithActor("))
+    }
+  })
+
+  it("D.6 both write slices carry activities' own predicate, verbatim and without an admin clause", () => {
+    for (const name of WRITE_ACTIONS) {
+      const slice = sliceDeclaration(actionsSource, name)
+      expect(slice).toContain("if (activity.ownerId !== session.user.id) {")
+      expect(slice).not.toContain('!== "admin"')
+    }
+  })
+
+  it("D.7 the reassign slice validates its target against BOTH predicates, before the actor scope", () => {
+    const slice = sliceDeclaration(actionsSource, "bulkReassignActivityOwner")
+
+    expect(slice).toContain("isNull(users.deletedAt)")
+    expect(slice).toContain('eq(users.status, "approved")')
+    expect(slice.indexOf('eq(users.status, "approved")')).toBeLessThan(
+      slice.indexOf("runWithActor(")
+    )
+    // Exactly one target lookup: once per call, never once per record.
+    expect(slice.match(/db\.query\.users\.findFirst/g) ?? []).toHaveLength(1)
+  })
+
+  it("D.8 the cap is enforced in all three actions", () => {
+    for (const name of [...WRITE_ACTIONS, "exportSelectedActivities"]) {
+      expect(sliceDeclaration(actionsSource, name)).toContain("BULK_MAX_IDS")
+    }
   })
 })
