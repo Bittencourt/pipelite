@@ -34,7 +34,7 @@
  *      cannot sail through.
  */
 import { describe, expect, it } from "vitest"
-import { readdirSync } from "node:fs"
+import { existsSync, readdirSync } from "node:fs"
 import path from "node:path"
 
 import { readStrippedSource } from "@/components/custom-fields/__tests__/source-scan"
@@ -226,6 +226,34 @@ const IMPORTS_CHECKBOX = /import\s*\{[^}]*\bCheckbox\b[^}]*\}\s*from\s*['"]@\/co
 const MIXED_STATE_TOKEN = "indeterminate"
 
 /**
+ * PHASE-38 BULK SELECTION SURFACES THAT LIVE OUTSIDE `src/components/bulk`, named by exact path.
+ *
+ * The `EXCLUDED_SUBTREE` above covers this phase's selection modules by DIRECTORY, which works for
+ * every surface whose selection lives in a shared component. It does not work for `/deals`: that
+ * surface is a kanban with no `useReactTable`, so it is the phase's one declared exception, and its
+ * selection controls necessarily live in the kanban's own files rather than in a shared bulk module.
+ * Without this list, plan 38-18's two new checkboxes would be counted as PRE-EXISTING consumers and
+ * asserted never to reach the mixed state — which inverts the gate's meaning for the one surface that
+ * reaches it on purpose.
+ *
+ * BOTH WERE HAND-CHECKED BEFORE BEING ADDED, which is the obligation the exact count exists to force:
+ *   - `kanban-column.tsx` DOES pass the mixed value, deliberately: the per-stage select-all is
+ *     tri-state, and this is exactly the case the primitive was patched for.
+ *   - `deal-card.tsx` does NOT. Its per-card checkbox is passed a strict boolean (`!!isBulkSelected`),
+ *     so it cannot reach the new branch at all; it is listed here only because it is a phase-38
+ *     selection consumer rather than a pre-existing one.
+ *
+ * ADDING A PATH HERE IS NOT A WAY TO SILENCE THE COUNT. Anything not part of this phase's selection
+ * work stays in `CHECKBOX_CONSUMERS` and must still prove it never reaches the mixed state, and
+ * `EXPECTED_CONSUMER_COUNT` is deliberately left at its pre-phase-38 value so an unrelated eleventh
+ * consumer still turns this gate red.
+ */
+const PHASE_38_SELECTION_CONSUMERS = new Set([
+  path.join("src", "app", "deals", "deal-card.tsx"),
+  path.join("src", "app", "deals", "kanban-column.tsx"),
+])
+
+/**
  * Every non-test, non-bulk module importing `Checkbox`, resolved once, comment-blind.
  *
  * OBSERVED 2026-08-17 on the phase-38 base commit: TEN modules, not the eight recorded in
@@ -239,6 +267,7 @@ const MIXED_STATE_TOKEN = "indeterminate"
  */
 const CHECKBOX_CONSUMERS = walkSources(SRC_ROOT)
   .map(file => path.relative(REPO_ROOT, file))
+  .filter(rel => !PHASE_38_SELECTION_CONSUMERS.has(rel))
   .filter(rel => IMPORTS_CHECKBOX.test(readStrippedSource(rel)))
   .sort()
 
@@ -267,6 +296,23 @@ describe("consumer safety: the new branch is unreachable for existing Checkbox u
     expect(
       offenders,
       `these existing consumers reference the mixed state: ${offenders.join(", ")}. The indeterminate patch was justified as behaviour-neutral precisely because no pre-phase-38 consumer reaches the new branch; each of these must be re-inspected before that claim can be repeated`
+    ).toEqual([])
+  })
+
+  /**
+   * The allow-list above removes files from the count, so it is itself a way to weaken this gate. This
+   * assertion is what stops it rotting into one: every path listed must really exist and must really
+   * import `Checkbox`. A renamed, deleted or never-a-consumer entry therefore fails HERE, loudly, in
+   * the same run rather than silently buying an extra slot in the count for some unrelated module.
+   */
+  it("keeps the phase-38 selection allow-list honest — every entry is a real Checkbox consumer", () => {
+    const stale = Array.from(PHASE_38_SELECTION_CONSUMERS).filter(
+      rel => !existsSync(path.join(REPO_ROOT, rel)) || !IMPORTS_CHECKBOX.test(readStrippedSource(rel))
+    )
+
+    expect(
+      stale,
+      `these allow-listed paths are not live Checkbox consumers: ${stale.join(", ")}. An entry that no longer matches a real importing module silently grants a free slot in the exact consumer count, which is the one thing that count exists to prevent`
     ).toEqual([])
   })
 })
