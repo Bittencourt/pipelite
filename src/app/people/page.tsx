@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card"
 import { Users } from "lucide-react"
 import { getTranslations } from 'next-intl/server'
+import { readTrashRetentionDays } from "@/lib/trash/settings"
 
 const PAGE_SIZE = 50
 
@@ -77,7 +78,37 @@ export default async function PeoplePage({
 
   const t = await getTranslations('people')
 
-  const { rows: peopleData, hasMore } = await getPeople(search || undefined, pageNum)
+  /**
+   * Three independent reads. The owners list is a SEPARATE query rather than a widening of
+   * `getPeople`'s `leftJoin`: that join resolves the owner OF each row for the Owner column,
+   * while this one is the pool of users a bulk reassign may target — a different question with
+   * a different predicate, and folding them together would make one of the two wrong.
+   *
+   * BOTH predicates on that pool are load-bearing. `deletedAt IS NULL` alone (the shape
+   * `activities/page.tsx` and `deals/page.tsx` use for their own dropdowns) would offer users
+   * who are still pending verification or outright rejected, and handing them up to a hundred
+   * records is a data defect no per-record failure could report, because the write SUCCEEDS.
+   * The bulk reassign action re-validates the target once before its loop; this is the half
+   * that keeps the picker from ever proposing it (T-38-06).
+   */
+  const [{ rows: peopleData, hasMore }, retentionDays, ownerRows] = await Promise.all([
+    getPeople(search || undefined, pageNum),
+    readTrashRetentionDays(),
+    db.query.users.findMany({
+      where: and(isNull(users.deletedAt), eq(users.status, "approved")),
+      columns: {
+        id: true,
+        name: true,
+        email: true,
+      },
+      orderBy: [users.name],
+    }),
+  ])
+
+  const bulkOwners = ownerRows.map((u) => ({
+    id: u.id,
+    name: u.name || "Unknown",
+  }))
 
   return (
     <div className="container py-8">
@@ -102,12 +133,25 @@ export default async function PeoplePage({
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {/*
+              `retentionDays` is passed STRAIGHT THROUGH, and is `null` whenever the window is
+              unset, corrupted or out of range. There is deliberately no numeric default here or
+              anywhere else in this file: `readTrashRetentionDays` fails closed, nothing is purged
+              automatically in that state, and the bulk delete dialog's no-retention copy is what
+              keeps the UI from promising a window the pruner is not enforcing (T-38-10).
+
+              Both new props are plain serializable values, and no bulk UI module is imported
+              into this server file — the bar, its two dialogs and the failure report all mount
+              inside the `'use client'` table.
+            */}
             <DataTable
               columns={columns}
               data={peopleData}
               hasMore={hasMore}
               search={search}
               currentPage={pageNum}
+              retentionDays={retentionDays}
+              bulkOwners={bulkOwners}
             />
           </CardContent>
         </Card>
