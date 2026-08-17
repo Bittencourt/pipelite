@@ -79,13 +79,8 @@ import { revalidatePath } from "next/cache"
 import { runWithActor } from "@/lib/audit/actor-context"
 import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
-import { fetchFilteredData } from "@/lib/export/formatters"
 
-import {
-  bulkDeleteActivities,
-  bulkReassignActivityOwner,
-  exportSelectedActivities,
-} from "./actions"
+import { bulkDeleteActivities, bulkReassignActivityOwner } from "./actions"
 
 /** The row shape the per-record read returns, carrying BOTH user-valued columns. */
 type ActivityRow = {
@@ -102,7 +97,6 @@ const mockAuth = vi.mocked(auth as unknown as () => Promise<Session | null>)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockDelete = vi.mocked(deleteRecordByType)
 const mockUpdateOwner = vi.mocked(updateRecordOwnerByType)
-const mockFetchFiltered = vi.mocked(fetchFilteredData)
 const mockRunWithActor = vi.mocked(runWithActor)
 const mockActivityFindFirst = vi.mocked(
   db.query.activities.findFirst as unknown as (
@@ -146,7 +140,14 @@ function idList(count: number): string[] {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  // `resetAllMocks`, NOT `clearAllMocks`. `mockClear` empties `mock.calls` but leaves any queued
+  // `mockResolvedValueOnce` values in place, and the refusal cases below deliberately queue rows
+  // that are never consumed (the action returns before its loop). Under `clearAllMocks` those
+  // leftovers survive into the next test and shift its queue by one — observed here as an ownership
+  // case passing an owned row and "succeeding" when it must be refused. A leaking queue makes a
+  // later negative assertion test the wrong row, which is exactly the class of silent
+  // self-invalidation this file exists to prevent.
+  vi.resetAllMocks()
   vi.spyOn(console, "error").mockImplementation(() => {})
 
   mockRunWithActor.mockImplementation((_actor, fn) => fn())
