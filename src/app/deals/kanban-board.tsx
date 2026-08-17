@@ -199,16 +199,37 @@ export function KanbanBoard({
    * Ids are taken in RENDERED ORDER, so "the first 100" in the label means the first 100 the user can
    * actually see.
    */
-  const handleSelectAllInStage = (stageId: string, next: boolean) => {
+  /*
+   * THE EMITTED VALUE IS DELIBERATELY IGNORED, and that is the fix for CR-01.
+   *
+   * Because the cap makes "all selected" unreachable on any stage larger than BULK_MAX_IDS, the
+   * header checkbox is pinned at `indeterminate` — and per the installed Radix, an indeterminate
+   * CONTROLLED checkbox emits `true` on EVERY click. Branching on that value therefore took the
+   * select path forever: measured live on the 3,466-deal stage, click 1 selected 100 and clicks 2
+   * and 3 did nothing at all, leaving the stage impossible to deselect except via "Clear selection",
+   * which also discards every other stage. Nine live stages are over the cap, so this was the
+   * ordinary case, not an edge case.
+   *
+   * Deriving the intent from the CURRENT selection instead makes the control a true toggle and makes
+   * it independent of how the primitive reports an indeterminate click.
+   *
+   * The emitted boolean is not merely unused — the parameter is GONE. The column still calls this with
+   * two arguments, which is fine in both TS and JS, and dropping it means no reader can mistake the
+   * primitive's report for something this handler consults.
+   */
+  const handleSelectAllInStage = (stageId: string) => {
     const stageDeals = dealsByStage[stageId] || []
     setSelectedDealIds(prev => {
       const updated = new Set(prev)
-      if (!next) {
+      const anySelectedInStage = stageDeals.some(deal => updated.has(deal.id))
+
+      if (anySelectedInStage) {
         for (const deal of stageDeals) {
           updated.delete(deal.id)
         }
         return updated
       }
+
       for (const deal of stageDeals) {
         if (updated.size >= BULK_MAX_IDS) break
         updated.add(deal.id)
