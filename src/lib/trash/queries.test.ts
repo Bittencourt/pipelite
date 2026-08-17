@@ -32,6 +32,7 @@ import {
   findTrashedParents,
   countTrashed,
   listTrashed,
+  listTrashedWindow,
   TRASH_PAGE_SIZE,
   type TrashViewer,
 } from "./queries"
@@ -49,6 +50,7 @@ interface RecordedSelect {
   where?: SQL
   orderBy: unknown[]
   limit?: number
+  offset?: number
 }
 
 interface SelectBuilder extends PromiseLike<unknown[]> {
@@ -57,6 +59,7 @@ interface SelectBuilder extends PromiseLike<unknown[]> {
   where(condition: SQL): SelectBuilder
   orderBy(...order: unknown[]): SelectBuilder
   limit(rows: number): SelectBuilder
+  offset(rows: number): SelectBuilder
 }
 
 /** Every `db.select` the module issued during the current test, in call order. */
@@ -94,6 +97,10 @@ function installSelectMock(): void {
       },
       limit(rows) {
         recorded.limit = rows
+        return builder
+      },
+      offset(rows) {
+        recorded.offset = rows
         return builder
       },
       then(onFulfilled, onRejected) {
@@ -819,6 +826,76 @@ describe("listTrashed", () => {
     const result = await listTrashed("deals", 1, MEMBER)
 
     // An empty success would render "Trash is empty" over a broken query, which is a lie.
+    expect(result.ok).toBe(false)
+    expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
+  })
+
+  /*
+   * The cumulative read is what `MAX_TRASH_PAGE` has to bound, so pin that it IS cumulative —
+   * otherwise a later change to offset-based paging would silently turn "Load more" into a pager
+   * that drops the rows already on screen, and no assertion would notice (WR-03).
+   */
+  it("reads from offset 0 on every page, because Load more appends rather than replaces", async () => {
+    queueSelects([dealRow("d1")])
+
+    await listTrashed("deals", 3, MEMBER)
+
+    expect(selectCalls[0].offset).toBe(0)
+    expect(selectCalls[0].limit).toBe(TRASH_PAGE_SIZE * 3 + 1)
+  })
+})
+
+/*
+ * WR-03 / IN-04. The REST route used to convert its offset into a cumulative `listTrashed` page and
+ * slice the window back out, so `?offset=9950` fetched 10,000 rows and bound 10,000 ids in one array
+ * parameter to serve 50 — per request, from any authenticated caller. `listTrashedWindow` is the
+ * non-cumulative primitive that replaces it: constant work in `limit`, independent of `offset`, and
+ * no slice afterwards to disagree with the offset arithmetic.
+ */
+describe("listTrashedWindow", () => {
+  it("reads EXACTLY the requested window rather than everything up to it", async () => {
+    queueSelects([dealRow("d1"), dealRow("d2")])
+    mockExecute.mockResolvedValue([])
+
+    const result = await listTrashedWindow("deals", 50, 9950, MEMBER)
+
+    // The whole point: 50 rows asked for at offset 9,950, not 10,000 rows fetched and 9,950 thrown
+    // away. No probe row either — this reader answers no hasMore question.
+    expect(selectCalls[0].limit).toBe(50)
+    expect(selectCalls[0].offset).toBe(9950)
+    if (!result.ok) throw new Error("expected ok")
+    expect(result.rows).toHaveLength(2)
+  })
+
+  it("carries the same owner scope as the cumulative reader", async () => {
+    queueSelects([dealRow("d1")])
+    mockExecute.mockResolvedValue([])
+
+    await listTrashedWindow("deals", 10, 0, MEMBER)
+
+    const { sql, params } = renderedWhere()
+
+    expect(sql).toContain("is not null")
+    expect(sql).not.toMatch(/(^| )is null/)
+    expect(sql).toContain("owner_id")
+    expect(params).toContain("u1")
+  })
+
+  it("resolves the whole window's deleted-by in EXACTLY ONE query", async () => {
+    queueSelects(Array.from({ length: 100 }, (_, i) => dealRow(`d${i}`)))
+    mockExecute.mockResolvedValue([])
+
+    await listTrashedWindow("deals", 100, 0, MEMBER)
+
+    // The shared `attribute` helper is what keeps the N+1 out of BOTH readers.
+    expect(mockExecute).toHaveBeenCalledTimes(1)
+  })
+
+  it("returns ok:false when the query rejects, so a REST caller gets a 500 not an empty page", async () => {
+    queueSelects(new Error("connection reset"))
+
+    const result = await listTrashedWindow("deals", 50, 0, MEMBER)
+
     expect(result.ok).toBe(false)
     expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
   })

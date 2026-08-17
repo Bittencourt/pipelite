@@ -79,7 +79,7 @@ describe("parseTrashPage", () => {
   it("parses a plain positive integer", () => {
     expect(parseTrashPage("1")).toBe(1)
     expect(parseTrashPage("3")).toBe(3)
-    expect(parseTrashPage("200")).toBe(200)
+    expect(parseTrashPage("20")).toBe(20)
   })
 
   /**
@@ -107,10 +107,16 @@ describe("parseTrashPage", () => {
     expect(parseTrashPage(raw)).toBe(1)
   })
 
+  /*
+   * The clamp bounds the SIZE OF ONE REQUEST, not just the depth of the view: `listTrashed` is
+   * cumulative, so the ceiling multiplied by the page size is how many rows one authenticated GET
+   * can be made to fetch, bind and render. 20 keeps that at ~1,000 (WR-03).
+   */
   it("clamps above so a crafted page cannot ask for an unbounded offset", () => {
-    expect(parseTrashPage("201")).toBe(200)
-    expect(parseTrashPage("99999999")).toBe(200)
-    expect(parseTrashPage("9".repeat(40))).toBe(200)
+    expect(parseTrashPage("21")).toBe(20)
+    expect(parseTrashPage("201")).toBe(20)
+    expect(parseTrashPage("99999999")).toBe(20)
+    expect(parseTrashPage("9".repeat(40))).toBe(20)
   })
 
   it("takes the first element of a repeated search param", () => {

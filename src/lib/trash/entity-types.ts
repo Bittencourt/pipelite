@@ -114,9 +114,29 @@ export function parseTrashTab(raw: string | string[] | null | undefined): TrashT
   return TRASH_TABS.find((tab) => tab === value) ?? DEFAULT_TRASH_TAB
 }
 
-/** The first page, and the deepest page a caller may ask for. */
+/**
+ * The first page, and the deepest page a caller may ask for.
+ *
+ * `MAX_TRASH_PAGE` IS A COST CONTROL, NOT A COURTESY, because `listTrashed` is CUMULATIVE: the
+ * "Load more" idiom this surface is built on means page *N* fetches `50 × N + 1` rows, feeds every
+ * one of their ids into `resolveDeletedBy` as a single array bind, and server-renders them all into
+ * one HTML document. So the ceiling is not "how deep may you look", it is "how large may one
+ * authenticated GET be".
+ *
+ * Lowered from 200 (10,001 rows and a 10,000-element bind per request, reachable by editing a URL
+ * with no privilege at all) to 20. The original value was justified as "far past any reachable
+ * trash view" — which is an argument that it is safe to LOWER, not that it is safe to keep. 20
+ * pages is 1,000 records deep, still far past any trash view a human pages through by clicking
+ * "Load more" twenty times, and one tenth of the worst-case work.
+ *
+ * The cumulative read itself is deliberately NOT replaced with an offset window here: that would
+ * make each page constant-cost but would also turn "Load more" into numbered pagination, dropping
+ * rows 1..N-1 out of the view on every click. The idiom is locked in 37-UI-SPEC, so the ceiling is
+ * the part that moves. `/api/v1/trash` has no such constraint and does use a true offset window —
+ * see the note at `pageWindow` in its route.
+ */
 const MIN_TRASH_PAGE = 1
-const MAX_TRASH_PAGE = 200
+const MAX_TRASH_PAGE = 20
 
 /**
  * `?page=` becomes an OFFSET, so it is bounded on both ends (T-37-02).
@@ -128,7 +148,7 @@ const MAX_TRASH_PAGE = 200
  *
  * The UPPER clamp is not cosmetic: without it a crafted `?page=99999999` asks the database to
  * skip millions of rows, which is both an unbounded scan and a timing signal about how much
- * data exists. 200 pages at 50 rows is 10,000 records, far past any reachable trash view.
+ * data exists. See `MAX_TRASH_PAGE` above for why the bound is 20 pages rather than 200.
  */
 export function parseTrashPage(raw: string | string[] | null | undefined): number {
   const value = firstParam(raw)

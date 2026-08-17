@@ -497,7 +497,11 @@ function collectTrashedParents(
   return names
 }
 
-async function listTrashedDeals(limit: number, viewer: TrashViewer): Promise<UnattributedRow[]> {
+async function listTrashedDeals(
+  limit: number,
+  offset: number,
+  viewer: TrashViewer
+): Promise<UnattributedRow[]> {
   const rows = await db
     .select({
       id: deals.id,
@@ -524,6 +528,7 @@ async function listTrashedDeals(limit: number, viewer: TrashViewer): Promise<Una
     .where(trashScope(deals.deletedAt, deals.ownerId, viewer))
     .orderBy(desc(deals.deletedAt))
     .limit(limit)
+    .offset(offset)
 
   const built: UnattributedRow[] = []
 
@@ -552,7 +557,11 @@ async function listTrashedDeals(limit: number, viewer: TrashViewer): Promise<Una
   return built
 }
 
-async function listTrashedPeople(limit: number, viewer: TrashViewer): Promise<UnattributedRow[]> {
+async function listTrashedPeople(
+  limit: number,
+  offset: number,
+  viewer: TrashViewer
+): Promise<UnattributedRow[]> {
   const rows = await db
     .select({
       id: people.id,
@@ -573,6 +582,7 @@ async function listTrashedPeople(limit: number, viewer: TrashViewer): Promise<Un
     .where(trashScope(people.deletedAt, people.ownerId, viewer))
     .orderBy(desc(people.deletedAt))
     .limit(limit)
+    .offset(offset)
 
   const built: UnattributedRow[] = []
 
@@ -596,6 +606,7 @@ async function listTrashedPeople(limit: number, viewer: TrashViewer): Promise<Un
 
 async function listTrashedOrganizations(
   limit: number,
+  offset: number,
   viewer: TrashViewer
 ): Promise<UnattributedRow[]> {
   const rows = await db
@@ -611,6 +622,7 @@ async function listTrashedOrganizations(
     .where(trashScope(organizations.deletedAt, organizations.ownerId, viewer))
     .orderBy(desc(organizations.deletedAt))
     .limit(limit)
+    .offset(offset)
 
   const built: UnattributedRow[] = []
 
@@ -631,6 +643,7 @@ async function listTrashedOrganizations(
 
 async function listTrashedActivities(
   limit: number,
+  offset: number,
   viewer: TrashViewer
 ): Promise<UnattributedRow[]> {
   const rows = await db
@@ -648,6 +661,7 @@ async function listTrashedActivities(
     .where(trashScope(activities.deletedAt, activities.ownerId, viewer))
     .orderBy(desc(activities.deletedAt))
     .limit(limit)
+    .offset(offset)
 
   const built: UnattributedRow[] = []
 
@@ -674,17 +688,18 @@ async function listTrashedActivities(
 function listRowsForTab(
   tab: TrashTab,
   limit: number,
+  offset: number,
   viewer: TrashViewer
 ): Promise<UnattributedRow[]> {
   switch (tab) {
     case "deals":
-      return listTrashedDeals(limit, viewer)
+      return listTrashedDeals(limit, offset, viewer)
     case "people":
-      return listTrashedPeople(limit, viewer)
+      return listTrashedPeople(limit, offset, viewer)
     case "organizations":
-      return listTrashedOrganizations(limit, viewer)
+      return listTrashedOrganizations(limit, offset, viewer)
     case "activities":
-      return listTrashedActivities(limit, viewer)
+      return listTrashedActivities(limit, offset, viewer)
     default: {
       // A fifth tab is a compile error here rather than an empty table at runtime.
       const unhandled: never = tab
@@ -718,23 +733,73 @@ export async function listTrashed(
   const pageRows = TRASH_PAGE_SIZE * page
 
   try {
-    const fetched = await listRowsForTab(tab, pageRows + 1, viewer)
+    // Offset 0 — this read is CUMULATIVE by design, because "Load more" appends to a list the user
+    // is already looking at. `MAX_TRASH_PAGE` in entity-types.ts is what bounds the resulting cost.
+    const fetched = await listRowsForTab(tab, pageRows + 1, 0, viewer)
 
     const hasMore = fetched.length > pageRows
     const kept = hasMore ? fetched.slice(0, pageRows) : fetched
 
-    const attribution = await resolveDeletedBy(
-      TRASH_TAB_TO_ENTITY[tab],
-      kept.map((row) => row.id)
-    )
-
-    return {
-      ok: true,
-      rows: kept.map((row) => ({ ...row, deletedBy: presentDeletedBy(attribution.get(row.id)) })),
-      hasMore,
-    }
+    return { ok: true, rows: await attribute(tab, kept), hasMore }
   } catch (error) {
     console.error(`${LOG_PREFIX} listTrashed failed for ${tab} page ${page}:`, error)
     return { ok: false }
   }
+}
+
+/**
+ * ONE OFFSET WINDOW OF A TAB — the non-cumulative read, for a caller that pages by offset.
+ *
+ * `/api/v1/trash` used to convert its `offset`/`limit` into a `listTrashed` PAGE and slice the
+ * window back out of it, which meant serving `?offset=9950` fetched 10,000 rows, bound 10,000 ids
+ * into one array parameter and threw 9,950 of them away — per request, from any authenticated
+ * caller, reachable by editing a URL (WR-03). It also made the response silently short in the band
+ * where the page cap truncated the fetched window while `meta.total` still reported the full count
+ * (IN-04). Both were artefacts of borrowing a cumulative read for an offset-based contract.
+ *
+ * So the REST surface gets the primitive it actually wants: `LIMIT`/`OFFSET` straight through to
+ * the same scoped, ordered query. The cost is CONSTANT in `limit` and independent of `offset`, and
+ * the row set needs no slicing afterwards, so there is no arithmetic left to disagree with itself.
+ *
+ * The offset is NOT clamped here, deliberately — bounding how deep a caller may page is the route's
+ * decision and it is made there, where the `limit` is also bounded. What this function guarantees is
+ * that a large offset costs an index skip rather than a large result set.
+ *
+ * Same failure posture as `listTrashed`: `{ ok: false }`, never an empty success, so the caller can
+ * tell "nothing in trash" from "the query broke".
+ */
+export async function listTrashedWindow(
+  tab: TrashTab,
+  limit: number,
+  offset: number,
+  viewer: TrashViewer
+): Promise<{ ok: true; rows: TrashRow[] } | { ok: false }> {
+  try {
+    const fetched = await listRowsForTab(tab, limit, offset, viewer)
+
+    return { ok: true, rows: await attribute(tab, fetched) }
+  } catch (error) {
+    console.error(
+      `${LOG_PREFIX} listTrashedWindow failed for ${tab} limit ${limit} offset ${offset}:`,
+      error
+    )
+    return { ok: false }
+  }
+}
+
+/**
+ * Resolve "deleted by" for a whole window in ONE query and attach it.
+ *
+ * Shared by both readers above so the N+1 that `resolveDeletedBy` exists to prevent cannot come
+ * back through whichever of the two a later change happens to touch. `presentDeletedBy` runs for
+ * every row including the absent case, so a record with no audit row says "not recorded" rather
+ * than being collapsed into an unknown user (T-37-REP2).
+ */
+async function attribute(tab: TrashTab, rows: UnattributedRow[]): Promise<TrashRow[]> {
+  const attribution = await resolveDeletedBy(
+    TRASH_TAB_TO_ENTITY[tab],
+    rows.map((row) => row.id)
+  )
+
+  return rows.map((row) => ({ ...row, deletedBy: presentDeletedBy(attribution.get(row.id)) }))
 }

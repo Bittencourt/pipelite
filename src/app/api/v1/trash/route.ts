@@ -13,15 +13,20 @@ import {
   parseTrashTab,
   type TrashTab,
 } from "@/lib/trash/entity-types"
-import { TRASH_PAGE_SIZE, countTrashed, listTrashed, type TrashRow } from "@/lib/trash/queries"
+import {
+  TRASH_PAGE_SIZE,
+  countTrashed,
+  listTrashedWindow,
+  type TrashRow,
+} from "@/lib/trash/queries"
 import type { DeletedByPresentation } from "@/lib/trash/present"
 
 /**
  * GET /api/v1/trash — the REST half of TRASH-01.
  *
  * OWNER-OR-ADMIN, AND THE SCOPE IS IN THE QUERY. A member sees only records they own; an admin
- * sees everything. That decision is made inside `listTrashed` / `countTrashed`, which share one
- * composed `trashScope` predicate, so the count in the envelope and the rows under it can never be
+ * sees everything. That decision is made inside `listTrashedWindow` / `countTrashed`, which share
+ * one composed `trashScope` predicate, so the count in the envelope and the rows under it can never be
  * scoped differently and no row a caller may not see is ever fetched and then filtered away
  * (T-37-02).
  *
@@ -58,34 +63,38 @@ const trashQuerySchema = z.object({
 /**
  * The upper bound on how deep a caller may page.
  *
- * `parsePagination` clamps `limit` but deliberately leaves `offset` unbounded (it is only ever
- * fed to a `.offset()` on an indexed query elsewhere). Here the offset is converted into a
- * `listTrashed` page, and an unclamped `?offset=99999999` would ask for millions of rows, so the
- * ceiling is re-applied. 200 pages of 50 is 10,000 records — the same bound `MAX_TRASH_PAGE` in
- * entity-types.ts puts on the UI surface, restated rather than imported because that constant is
- * module-private there and widening its export to satisfy this route would be the wrong trade.
+ * `parsePagination` clamps `limit` to 100 but deliberately leaves `offset` unbounded (it is only
+ * ever fed to a `.offset()` on an indexed query elsewhere), so the ceiling is re-applied here. 200
+ * pages of 50 is 10,000 records; the equivalent UI bound in entity-types.ts is restated rather than
+ * imported because that constant is module-private there and widening its export to satisfy this
+ * route would be the wrong trade.
+ *
+ * THIS CAP IS NOW ONLY ABOUT DEPTH, WHICH IS THE WHOLE POINT OF THE CHANGE BELOW. It used to be a
+ * cost control as well, and a poor one: the route converted `offset` into a CUMULATIVE `listTrashed`
+ * page and sliced the window out of it, so serving `?offset=9950` fetched 10,000 rows and bound
+ * 10,000 ids into one array parameter before discarding 9,950 of them — per request, from any
+ * authenticated caller, reachable by editing a URL (WR-03). `listTrashedWindow` reads a true
+ * `LIMIT`/`OFFSET` window instead, so the work is constant in `limit` and independent of `offset`,
+ * and the UI's much lower ceiling no longer has to be mirrored here to keep the cost sane.
  */
 const MAX_TRASH_API_PAGE = 200
 const MAX_TRASH_API_OFFSET = TRASH_PAGE_SIZE * MAX_TRASH_API_PAGE
 
 /**
- * Offset/limit → the `listTrashed` page that contains that window.
+ * The offset actually read, bounded.
  *
- * `listTrashed(tab, page, viewer)` is CUMULATIVE: it returns rows 1..(page × TRASH_PAGE_SIZE),
- * because the UI it was built for is a "Load more" list rather than a numbered pager. This route
- * therefore asks for the smallest page that covers `offset + limit` and slices the window out of
- * it. The slice is a PRESENTATION step, never an authorization one — every row it discards was
- * already inside the caller's scope, because the scope is in the WHERE clause.
+ * One clamp, applied ONCE, and the value it returns is the value the query uses — there is no
+ * second derivation left to disagree with it. The previous shape clamped the offset while computing
+ * a page and then sliced with the RAW offset, so for `offset` in (9950, 10000] with `limit=100` the
+ * response came back short of `limit` while `meta.total` still reported the full count (IN-04). The
+ * pagination contract was simply wrong in that band, and it was wrong because the same quantity was
+ * computed twice.
  *
- * The cost is honest: serving `offset=9950` fetches 10,000 rows. That is bounded and acceptable
- * for a trash view, and the fix if it ever bites is an offset-based read in
- * src/lib/trash/queries.ts, not a second scoped query written here.
+ * A caller past the ceiling gets an empty `data` with a truthful `meta.total`, which is how it can
+ * tell "you have paged past the cap" from "there is nothing here".
  */
-function pageCovering(offset: number, limit: number): number {
-  const bounded = Math.min(offset, MAX_TRASH_API_OFFSET)
-  const needed = Math.ceil((bounded + limit) / TRASH_PAGE_SIZE)
-
-  return Math.min(MAX_TRASH_API_PAGE, Math.max(1, needed))
+function boundedOffset(offset: number): number {
+  return Math.min(Math.max(0, offset), MAX_TRASH_API_OFFSET)
 }
 
 /**
@@ -245,7 +254,7 @@ export async function GET(request: NextRequest) {
       const viewer = { userId: actor.userId, role: actor.role }
 
       const [listed, counts] = await Promise.all([
-        listTrashed(tab, pageCovering(offset, limit), viewer),
+        listTrashedWindow(tab, limit, boundedOffset(offset), viewer),
         countTrashed(viewer),
       ])
 
@@ -262,12 +271,13 @@ export async function GET(request: NextRequest) {
         return Problems.internalError()
       }
 
-      // `listTrashed` is cumulative, so the requested window is sliced out of it. Discarding rows
-      // here is never an access-control step — see `pageCovering`.
-      const window = listed.rows.slice(offset, offset + limit)
-
+      // NO SLICE. `listTrashedWindow` returns exactly the requested window, so there is nothing
+      // to trim and — more to the point — no second piece of offset arithmetic that can disagree
+      // with the first (IN-04). `offset` is echoed back as the caller sent it, because that is what
+      // it asked for; what it was SERVED from is `boundedOffset(offset)`, and an offset past the cap
+      // is visible as empty `data` against a non-zero `meta.total`.
       return paginatedResponse(
-        window.map((row) => serializeTrashRow(row, entityType, tab)),
+        listed.rows.map((row) => serializeTrashRow(row, entityType, tab)),
         counts[tab],
         offset,
         limit
