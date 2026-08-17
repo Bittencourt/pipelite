@@ -76,6 +76,7 @@ import {
 import {
   createOrganizationMutation,
   updateOrganizationMutation,
+  updateOrganizationOwnerMutation,
   deleteOrganizationMutation,
   restoreOrganizationMutation,
   purgeOrganizationMutation,
@@ -193,6 +194,168 @@ describe("updateOrganizationMutation", () => {
     const result = await updateOrganizationMutation("org-missing", { name: "X" }, "u1")
 
     expect(result).toEqual({ success: false, error: "Organization not found" })
+  })
+})
+
+/*
+ * BULK-03 — the owner reassign path (D-15).
+ *
+ * Why a dedicated mutation exists at all, since the answer decides whether these tests are
+ * theatre: `ownerId` is NOT a key of `organizationSchema`, and zod's default object mode drops
+ * unknown keys without complaint, so `updateOrganizationSchema.safeParse({ ownerId: "u2" })`
+ * resolves to `{ success: true, data: {} }`. Routing a reassign through
+ * `updateOrganizationMutation` would therefore write nothing but `updatedAt`, emit a payload
+ * whose diff is empty, and have the change-history row dropped downstream — while returning
+ * `{ success: true }` and leaving this whole suite green. Every assertion below exists to make
+ * that silent no-op impossible to reintroduce.
+ */
+describe("updateOrganizationOwnerMutation", () => {
+  const existingOrg = {
+    id: "org1",
+    name: "Acme Corp",
+    website: "https://acme.com",
+    industry: "Tech",
+    notes: null,
+    ownerId: "u1",
+    defaultCurrency: "USD",
+    customFields: { Origem: ["Outbound Manual"] } as Record<string, unknown>,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-08-01T00:00:00.000Z"),
+    deletedAt: null,
+  }
+
+  /** The row the real `.returning()` would hand back: the same row with the new owner. */
+  const reassignedOrg = { ...existingOrg, ownerId: "u2", updatedAt: new Date("2026-08-17T00:00:00.000Z") }
+
+  function stubUpdate(row: Record<string, unknown> = reassignedOrg) {
+    const returningFn = vi.fn().mockResolvedValue([row])
+    const whereFn = vi.fn().mockReturnValue({ returning: returningFn })
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    return { setFn, whereFn, returningFn }
+  }
+
+  const updatedPayload = () => {
+    const call = mockEmit.mock.calls.find((c) => c[0] === "organization.updated")
+    return call?.[1] as {
+      data: Record<string, unknown>
+      previous?: Record<string, unknown>
+      changedFields: string[] | null
+    }
+  }
+
+  it("writes ownerId and returns success", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(existingOrg)
+    const { setFn } = stubUpdate()
+
+    const result = await updateOrganizationOwnerMutation("org1", "u2", "u9")
+
+    expect(result).toEqual({ success: true })
+    expect(mockDb.update).toHaveBeenCalledTimes(1)
+    const written = setFn.mock.calls[0][0] as Record<string, unknown>
+    expect(written.ownerId).toBe("u2")
+    expect(written.updatedAt).toBeInstanceOf(Date)
+    // Only the owner and the timestamp. A reassign is not a general-purpose save.
+    expect(Object.keys(written).sort()).toEqual(["ownerId", "updatedAt"])
+  })
+
+  it("emits organization.updated exactly once with changedFields ['ownerId']", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(existingOrg)
+    stubUpdate()
+
+    await updateOrganizationOwnerMutation("org1", "u2", "u9")
+
+    expect(mockEmit).toHaveBeenCalledTimes(1)
+    expect(mockEmit).toHaveBeenCalledWith("organization.updated", expect.objectContaining({
+      entity: "organization",
+      entityId: "org1",
+      action: "updated",
+      userId: "u9",
+    }))
+    expect(updatedPayload().changedFields).toEqual(["ownerId"])
+  })
+
+  it("carries the full post-write row as data and the untouched pre-read row as previous", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(existingOrg)
+    stubUpdate()
+
+    await updateOrganizationOwnerMutation("org1", "u2", "u9")
+
+    const { data, previous } = updatedPayload()
+
+    // The whole row, not `{ id, ownerId }`. `buildChanges` skips native keys that are absent
+    // from `data` on an update, so a narrow payload silently narrows the recorded change set.
+    expect(data).toEqual(reassignedOrg)
+    expect(Object.keys(data).sort()).toEqual(Object.keys(existingOrg).sort())
+    expect(data.ownerId).toBe("u2")
+
+    // `previous` is the pre-read row, unmutated — it is the only source of before-values.
+    expect(previous).toEqual(existingOrg)
+    expect(previous?.ownerId).toBe("u1")
+  })
+
+  it("writes nothing and emits nothing when the requested owner is already the owner (D-15)", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(existingOrg)
+    stubUpdate()
+
+    const result = await updateOrganizationOwnerMutation("org1", "u1", "u9")
+
+    // Reported as success: the caller asked for a state that already holds. No write means no
+    // change-history row, which is correct and is why the picker need not exclude the current owner.
+    expect(result).toEqual({ success: true })
+    expect(mockDb.update).not.toHaveBeenCalled()
+    expect(mockEmit).not.toHaveBeenCalled()
+  })
+
+  it("returns 'Organization not found' for a missing or trashed row, without writing or emitting", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(undefined)
+    stubUpdate()
+
+    const result = await updateOrganizationOwnerMutation("org-missing", "u2", "u9")
+
+    expect(result).toEqual({ success: false, error: "Organization not found" })
+    expect(mockDb.update).not.toHaveBeenCalled()
+    expect(mockEmit).not.toHaveBeenCalled()
+  })
+
+  it("scopes the pre-read to live rows via isNull(deletedAt)", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(existingOrg)
+    stubUpdate()
+
+    await updateOrganizationOwnerMutation("org1", "u2", "u9")
+
+    const { where } = mockDb.query.organizations.findFirst.mock.calls[0][0]
+    expect(renderSql(where)).toContain("is null")
+    expect(renderSql(where)).not.toContain("is not null")
+  })
+
+  it("returns an error and emits nothing when the write throws", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(existingOrg)
+    const returningFn = vi.fn().mockRejectedValue(new Error("boom"))
+    const whereFn = vi.fn().mockReturnValue({ returning: returningFn })
+    const setFn = vi.fn().mockReturnValue({ where: whereFn })
+    mockDb.update.mockReturnValue({ set: setFn })
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await updateOrganizationOwnerMutation("org1", "u2", "u9")
+
+    expect(result).toEqual({ success: false, error: "Failed to reassign organization owner" })
+    expect(mockEmit).not.toHaveBeenCalled()
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
+  it("evaluates no formulas: ownerId is not a referenceable native attribute", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(existingOrg)
+    stubUpdate()
+
+    await updateOrganizationOwnerMutation("org1", "u2", "u9")
+
+    // ENTITY_NATIVE_ATTRIBUTES.organization holds Name/Website/Industry/Notes and nothing else,
+    // so a recalculation here would scope to zero evaluations. The call is omitted rather than
+    // made and wasted; this asserts against the real (importOriginal) map.
+    expect(Object.values(ENTITY_NATIVE_ATTRIBUTES.organization)).not.toContain("ownerId")
+    expect(recalculateFormulas).not.toHaveBeenCalled()
   })
 })
 
