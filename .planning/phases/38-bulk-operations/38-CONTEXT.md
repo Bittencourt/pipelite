@@ -44,12 +44,23 @@ table view, reassigning Activity `assigneeId`, and any new export format.
 - Deletion is **per-record and sequential** through the existing entity soft-delete mutations,
   best-effort — NOT one all-or-nothing transaction. Success criterion 3 requires per-record failure
   to be named, which a single aborting transaction structurally cannot do.
-- The server enforces a hard cap of **100 ids per bulk call** and rejects an over-cap request with a
-  count-aware error. Page size is 50, so the cap is never hit through the UI and exists to bound the
-  API surface.
+- The server enforces a hard cap of **100 ids per bulk call** (`BULK_MAX_IDS`) and rejects an
+  over-cap request with a count-aware error. **Corrected during 38-RESEARCH:** the original claim
+  that "the cap is never hit through the UI" is false on Deals — `/deals` has no pagination at all,
+  there are 25,195 live deals, and the largest single stage holds 10,495. A per-stage select-all
+  there is over-cap in the normal case, not an edge case. Select-all therefore selects at most
+  `BULK_MAX_IDS` rows and says so through a dedicated copy key, which must land in
+  `REQUIRED_BULK_KEYS` in the same commit (auto-accepted recommended, autonomous mode).
 - Partial failure surfaces twice: a toast summary ("9 deleted, 3 failed") and an inline list naming
   each failed record and its reason. Failed records stay selected so a retry is one click; succeeded
   records are deselected.
+- The post-delete affordance deep-links the correct Trash tab using the existing
+  `ENTITY_TO_TRASH_TAB` map rather than landing on `/trash` generically (auto-accepted recommended,
+  autonomous mode).
+- **A second user must be restored as a plan task.** The live database has exactly one approved,
+  non-deleted user owning all 46,054 organizations, so SC-3 (per-record failure named) and SC-5
+  (reassignment in change history) are literally unverifiable as-is — reassigning to the same owner
+  correctly writes no audit row. A second user unlocks a genuine partial-failure scenario.
 
 ### Bulk Reassign Owner
 - The reassigned field is `ownerId`, which all four entities carry (`organizations.ownerId`,
@@ -66,11 +77,34 @@ table view, reassigning Activity `assigneeId`, and any new export format.
   `deletedAt` alone and can therefore offer an unapproved user — that file is not touched here).
 - **No email is sent on bulk reassign.** A per-record notification would emit up to 100 emails from
   one click; a digest email is deferred, not built.
-- Reassignment routes through the existing per-entity update mutations, so each record produces its
-  own `audit_log` UPDATE row carrying the real actor. Success criterion 5 is satisfied by reuse — no
-  bulk-specific audit row and no new audit code.
+- Each reassigned record produces its own `audit_log` UPDATE row carrying the real actor, so success
+  criterion 5 is satisfied without any bulk-specific audit row and without new audit code.
+  **Corrected during 38-RESEARCH:** this decision originally said "routes through the existing
+  per-entity update mutations", and taking that literally would ship a silent no-op.
+  `ownerId` is absent from `organizationSchema`, `personSchema` and `activitySchema`, and Zod strips
+  unknown keys silently — `updateOrganizationSchema.safeParse({ownerId:"user-1"})` returns
+  `{success:true, data:{}}`, so the mutation writes only `updatedAt`, emits an empty diff, and
+  `subscribers/audit.ts` drops the row. The whole suite would stay green while SC-3 and SC-5 both
+  fail. Separately, `updateDealMutation(id, {ownerId})` unconditionally deletes every
+  `deal_assignees` row before deciding what to re-insert (`deals.ts:406`), because `.partial()`
+  preserves `assigneeIds`' `.default([])` — currently zero blast radius (`deal_assignees` is empty)
+  but a latent data-loss bug. The phase therefore adds four narrow
+  `update{Entity}OwnerMutation(id, ownerId, userId)` functions; the `update` prefix keeps them inside
+  Phase 36's per-function SC-5 gate for free. This also avoids `updateDealMutation`'s assignee-email
+  side effect, which is how "no email on bulk reassign" stays true.
+- The reassign picker does NOT exclude the current owner; the mutation early-returns idempotently
+  when the new owner equals the old one, which is also why reassigning to the same owner correctly
+  writes no audit row (auto-accepted recommended, autonomous mode).
+- Per-record authorization is NOT uniform across the four entities and must be copied verbatim, not
+  unified: the deals server action carries `&& session.user.role !== "admin"`; organizations,
+  people and activities do not. Unifying it either grants a privilege escalation or introduces a
+  regression.
 
 ### Scoped CSV Export
+- The scoped-export server action takes **`(ids: string[])` and nothing else**. It must NOT accept an
+  `ExportFilters` object: the only existing export action is admin-gated, and a non-admin action that
+  took filters and received `{}` would return all 46,054 organizations — an admin-gate bypass
+  (found in 38-RESEARCH).
 - A server action receives the selected ids, reuses `fetchFilteredData` / the flatteners in
   `src/lib/export/formatters.ts`, and returns CSV text; the client downloads it via Blob +
   ObjectURL. This follows the Phase 30 precedent ("Export is pure client-side via Blob/ObjectURL").
