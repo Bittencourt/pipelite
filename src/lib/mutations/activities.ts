@@ -507,6 +507,74 @@ export async function purgeActivityMutation(
   }
 }
 
+/**
+ * Reassign an activity's owner, and nothing else (BULK-03).
+ *
+ * NEVER route an owner change through `updateActivityMutation`. `activitySchema` does not declare
+ * `ownerId` and Zod strips unknown keys silently, so `updateActivitySchema.safeParse({ ownerId })`
+ * returns `{ success: true, data: {} }` — the generic path would then write only `updatedAt`, emit
+ * an empty diff, and have the audit subscriber drop the row. A silent no-op, with every test in
+ * this suite still green. That is why this narrow function exists, and why `activities.test.ts`
+ * pins `activitySchema`'s omission of `ownerId` as a standing assertion.
+ *
+ * The `set()` object carries exactly two keys. Activities' separate assignee column is scoped out
+ * of this phase by D-11 and must not be touched here; a source-slice assertion in the test suite
+ * enforces that over every path, not only the ones the suite drives.
+ *
+ * The same-owner request returns early, before the `try`, with no write and no event (D-15) —
+ * reassigning to the current owner correctly leaves no timeline row, because nothing changed.
+ *
+ * The `update` prefix in the name is deliberate: it is what puts this function inside the
+ * per-function SC-5 gate in `src/lib/audit/no-mutation-coupling.test.ts`.
+ */
+export async function updateActivityOwnerMutation(
+  id: string,
+  ownerId: string,
+  userId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  // Unprojected, so it doubles as the event's before-value at no extra query cost.
+  const activity = await db.query.activities.findFirst({
+    where: and(eq(activities.id, id), isNull(activities.deletedAt)),
+  })
+
+  if (!activity) {
+    return { success: false, error: "Activity not found" }
+  }
+
+  // D-15, outside the try: nothing to write, so nothing to fail and nothing to report.
+  if (activity.ownerId === ownerId) {
+    return { success: true }
+  }
+
+  try {
+    // Exactly two columns. No formula pass runs for this write: `ownerId` is absent from
+    // ENTITY_NATIVE_ATTRIBUTES.activity, so a scoped pass would evaluate nothing at all.
+    const [updated] = await db
+      .update(activities)
+      .set({ ownerId, updatedAt: new Date() })
+      .where(eq(activities.id, id))
+      .returning()
+
+    // The FULL post-write row, not a hand-built `{ id, ownerId }`: `buildChanges` reads `data`
+    // for an update and skips native keys absent from it, so a partial payload would silently
+    // narrow the diff.
+    crmBus.emit("activity.updated", buildEventPayload(
+      id,
+      "updated",
+      updated as unknown as Record<string, unknown>,
+      userId,
+      ["ownerId"],
+      // The pre-write row, from the existence check at the top of this function.
+      activity as unknown as Record<string, unknown>,
+    ))
+
+    return { success: true }
+  } catch (error) {
+    console.error("Failed to reassign activity owner:", error)
+    return { success: false, error: "Failed to reassign activity owner" }
+  }
+}
+
 export async function toggleActivityCompletionMutation(
   id: string,
   userId: string,
