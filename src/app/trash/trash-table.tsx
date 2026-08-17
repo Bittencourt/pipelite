@@ -171,6 +171,16 @@ export function TrashTable({
         // parent list: a parent the caller may not touch is skipped by design, so the two can
         // legitimately differ and the toast must not overstate what came back.
         toast.success(t("restoredWithLinked", { count: result.count }))
+
+        // AND THE SHORTFALL, when there is one. Without this second toast the user asked for
+        // three records, was told "1 record restored." and got no account of the other two —
+        // while the badge that offered the affordance is still on screen after the refresh,
+        // which reads as a broken button rather than as a permission boundary. A count only:
+        // naming the parents would disclose records this user may not see.
+        if (result.unrestoredParents > 0) {
+          toast.warning(t("linkedNotRestored", { count: result.unrestoredParents }))
+        }
+
         settle()
       } catch {
         toast.error(t("error.restoreFailed"))

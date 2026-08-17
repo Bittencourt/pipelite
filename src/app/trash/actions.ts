@@ -187,11 +187,27 @@ export async function restoreRecord(
  * still come back; a member whose deal hangs off a colleague's organization is the common case, not
  * an attack. The skipped parent is excluded from `count`, so the toast never claims more records
  * came back than actually did (T-37-28).
+ *
+ * AND THE SHORTFALL IS REPORTED, not merely excluded. Keeping a refused or failed parent out of
+ * `count` stops the toast OVERSTATING, but on its own it left the user with `1 record restored.`
+ * after asking for three, no mention of the other two, and the badge that offered the affordance
+ * still on screen after the refresh — which reads as a bug rather than as a permission boundary.
+ * `unrestoredParents` is what lets the client say so. It is a COUNT and nothing more: naming which
+ * parents were refused would disclose the existence of records this caller may not see, which is
+ * the same leak the per-parent re-check below exists to prevent.
  */
 export async function restoreWithLinked(
   tab: TrashTab,
   id: string
-): Promise<TrashActionResult<{ name: string; tab: TrashTab; count: number }>> {
+): Promise<
+  TrashActionResult<{
+    name: string
+    tab: TrashTab
+    count: number
+    /** Parents that were refused or failed. Never which ones — see the note above. */
+    unrestoredParents: number
+  }>
+> {
   const session = await auth()
   if (!session?.user?.id) {
     return { success: false, code: "NOT_AUTHENTICATED" }
@@ -269,6 +285,7 @@ export async function restoreWithLinked(
     name: record.name,
     tab: trashTab,
     count: outcome.restoredParents + 1,
+    unrestoredParents: skipped.length + failed.length,
   }
 }
 

@@ -434,6 +434,7 @@
     "deleting": "Deleting…",
     "restored": "{name} is back in {list}.",
     "restoredWithLinked": "{count, plural, one {# record restored} other {# records restored}}.",
+    "linkedNotRestored": "{count, plural, one {# linked record wasn't restored. You may not have access to it.} other {# linked records weren't restored. You may not have access to them.}}",
     "openRecord": "Open",
     "purged": "{name} was permanently deleted.",
     "error": {

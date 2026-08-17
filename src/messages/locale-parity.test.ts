@@ -176,8 +176,8 @@ export const REQUIRED_AUDIT_KEYS: string[] = [
  * the exact-contract assertion below turns "forgot to add it" into a red suite rather than a string
  * that ships gated by nothing.
  *
- * 58 keys in the `trash` namespace, plus the 2 dashboard-tile keys in the pre-existing
- * `admin.dashboard` namespace and the 1 sidebar entry in `nav` — 61 total. The per-group counts in
+ * 59 keys in the `trash` namespace, plus the 2 dashboard-tile keys in the pre-existing
+ * `admin.dashboard` namespace and the 1 sidebar entry in `nav` — 62 total. The per-group counts in
  * the comments are load-bearing: they are how a reader sees at a glance that a group lost a key.
  */
 export const REQUIRED_TRASH_KEYS: string[] = [
@@ -214,9 +214,13 @@ export const REQUIRED_TRASH_KEYS: string[] = [
   "trash.deletePermanently",
   "trash.deleting",
 
-  // Results — 4
+  // Results — 5. linkedNotRestored is the SHORTFALL sentence, and it is a separate string rather
+  // than a clause inside restoredWithLinked because the two are separate toasts with separate
+  // severities: a partial restore succeeded at what the user clicked and fell short on what it
+  // offered, and collapsing that into one line would either overstate or bury it.
   "trash.restored",
   "trash.restoredWithLinked",
+  "trash.linkedNotRestored",
   "trash.openRecord",
   "trash.purged",
 

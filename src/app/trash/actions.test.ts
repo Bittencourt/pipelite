@@ -229,7 +229,14 @@ describe("restoreWithLinked", () => {
 
     const result = await restoreWithLinked("deals", "d1")
 
-    expect(result).toEqual({ success: true, name: "Acme renewal", tab: "deals", count: 3 })
+    expect(result).toEqual({
+      success: true,
+      name: "Acme renewal",
+      tab: "deals",
+      count: 3,
+      // Nothing fell short, so the client renders no second toast.
+      unrestoredParents: 0,
+    })
 
     // Order is load-bearing, not incidental: `cascadeToChildren` filters on the child relation's
     // null `deleted_at`, so a parent restored AFTER its child means the child's formula cascade
@@ -262,8 +269,17 @@ describe("restoreWithLinked", () => {
 
     const result = await restoreWithLinked("deals", "d1")
 
-    // The count reports what ACTUALLY came back — never what was attempted (T-37-28).
-    expect(result).toEqual({ success: true, name: "Acme renewal", tab: "deals", count: 2 })
+    // The count reports what ACTUALLY came back — never what was attempted (T-37-28) — and the
+    // shortfall is REPORTED rather than merely excluded (WR-07 companion): a silent omission left
+    // the user with "1 record restored." and no account of the parent they asked for, next to a
+    // badge that was still on screen. A count only, never which parent.
+    expect(result).toEqual({
+      success: true,
+      name: "Acme renewal",
+      tab: "deals",
+      count: 2,
+      unrestoredParents: 1,
+    })
     expect(orderedCalls(mockRestore).map((call) => call.args)).toEqual([
       ["person", "p1"],
       ["deal", "d1"],
@@ -284,6 +300,7 @@ describe("restoreWithLinked", () => {
       name: "Acme renewal",
       tab: "deals",
       count: 3,
+      unrestoredParents: 0,
     })
   })
 
@@ -297,8 +314,16 @@ describe("restoreWithLinked", () => {
 
     const result = await restoreWithLinked("deals", "d1")
 
-    // Claiming a total failure would be a lie about the record that DID come back.
-    expect(result).toEqual({ success: true, name: "Acme renewal", tab: "deals", count: 2 })
+    // Claiming a total failure would be a lie about the record that DID come back — and a failed
+    // parent counts toward the shortfall exactly as a refused one does. The user does not need to
+    // know which of the two it was; they need to know it did not come back.
+    expect(result).toEqual({
+      success: true,
+      name: "Acme renewal",
+      tab: "deals",
+      count: 2,
+      unrestoredParents: 1,
+    })
     expect(errorLines().some((line) => line.includes("[trash-actions]"))).toBe(true)
   })
 
@@ -311,6 +336,7 @@ describe("restoreWithLinked", () => {
       name: "Acme renewal",
       tab: "deals",
       count: 1,
+      unrestoredParents: 0,
     })
     expect(mockRestore).toHaveBeenCalledTimes(1)
     expect(mockRestore).toHaveBeenCalledWith("deal", "d1")

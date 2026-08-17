@@ -434,6 +434,7 @@
     "deleting": "Eliminando…",
     "restored": "{name} está de nuevo en {list}.",
     "restoredWithLinked": "{count, plural, one {# registro restaurado} other {# registros restaurados}}.",
+    "linkedNotRestored": "{count, plural, one {# registro vinculado no se restauró. Puede que no tengas acceso a él.} other {# registros vinculados no se restauraron. Puede que no tengas acceso a ellos.}}",
     "openRecord": "Abrir",
     "purged": "{name} se eliminó permanentemente.",
     "error": {
