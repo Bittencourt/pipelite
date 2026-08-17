@@ -620,9 +620,24 @@ Contrast with `src/app/organizations/columns.tsx`, which exports a **static** ar
 
 ### 9. The three TanStack surfaces
 
-#### 9a. `src/app/organizations/data-table.tsx` (and `people/data-table.tsx`, byte-identical)
+#### 9a. `src/app/organizations/data-table.tsx` (and `people/data-table.tsx`, structural twins)
 
-**Verified this session:** `diff <(sed 's/Organization/Person/;s/organizations/people/' organizations/data-table.tsx) people/data-table.tsx` → **identical**. Whatever is done to one is done to the other verbatim.
+> **CORRECTED during execution of plan 38-16, and re-verified by the orchestrator.** The original
+> claim here — that the sed-normalised diff returns *identical*, so the two files are byte-identical —
+> **was already false at the phase base commit.** Re-measured at the wave-3 merge point:
+> `diff <(sed -e 's/Organization/Person/g' -e 's/organization/person/g' organizations/data-table.tsx) people/data-table.tsx`
+> reports **40 differing lines (20 pairs)**. The differences are local identifier abbreviations that no
+> entity-name substitution can bridge (`editingOrg` vs `editingPerson`, `orgToDelete` vs
+> `personToDelete`, the `org`/`person` parameter names), the `organization-dialog` filename, and a
+> genuinely different `DeleteDialog` name prop — people have `firstName`/`lastName`, organizations have
+> a single `name`.
+>
+> They are **structural** twins, not textual ones: the same edit applies to both, but the two files are
+> not interchangeable text. **Consequence for any gate:** do NOT assert byte parity between them.
+> Plans 38-15 and 38-16 both left these pre-existing differences alone rather than normalising a file
+> another agent was editing concurrently, which was the right call.
+
+Whatever is done to one is done to the other in substance.
 
 **The `useReactTable` call to extend** (`:125-134`):
 
