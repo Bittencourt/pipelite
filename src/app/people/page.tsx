@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation"
+import { auth } from "@/auth"
 import { db } from "@/db"
 import { people, organizations, users } from "@/db/schema"
 import { isNull, desc, eq, and, or, ilike } from "drizzle-orm"
@@ -72,6 +74,21 @@ export default async function PeoplePage({
 }: {
   searchParams: Promise<{ search?: string; page?: string }>
 }) {
+  // This route had NO session check until phase 38's UAT (finding G5). `/deals`, `/activities` and
+  // `/trash` each gate themselves exactly like this in their own page component; organizations and
+  // people did not, so both answered 200 to a request carrying no cookie while their three siblings
+  // answered 307. `src/middleware.ts` matches these paths but does not enforce authentication.
+  //
+  // No record ever actually leaked — the page rendered its empty state — but that was INCIDENTAL,
+  // not enforced: nothing in this file made the absence of a session mean the absence of data, so
+  // any later change to the queries below could have turned a shell into a disclosure. The gate is
+  // what makes it intentional.
+  const session = await auth()
+
+  if (!session?.user?.id) {
+    redirect("/login")
+  }
+
   const params = await searchParams
   const pageNum = Math.max(1, parseInt(params.page ?? "1"))
   const search = params.search ?? ""

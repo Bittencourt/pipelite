@@ -451,7 +451,25 @@ export function BulkActionBar({
         </div>
       </div>
 
-      <div aria-hidden className="h-20" />
+      {/*
+       * Reserves the space the fixed bar would otherwise cover, so the last of the page stays
+       * reachable. The height must track how tall the bar actually is, and the bar WRAPS on a narrow
+       * viewport — it is `flex-wrap` by design, because a fixed element that overflows still
+       * contributes to `document.scrollWidth`.
+       *
+       * A flat `h-20` (80px) was wrong and was measured wrong, in a real 320px same-origin iframe
+       * (the only honest way to test this here — `resize_window` cannot change `window.innerWidth` in
+       * this environment, a Phase 37 finding): at `innerWidth` 317 the bar wraps to three rows and
+       * stands **130px** tall, so 80px left a 50px shortfall and the bar covered `Load More`.
+       * Measured the same run: bar width 269 vs clientWidth 301, i.e. the bar itself adds no
+       * horizontal overflow — the page's `scrollWidth 415 > 301` is the pre-existing app-wide header
+       * overflow (37-UAT G5) and is not this component's.
+       *
+       * Sized generously at the narrow end rather than exactly: the row count depends on the
+       * translated button labels, and pt-BR runs longer than en-US. From `sm` up the bar is a single
+       * row and 80px is correct.
+       */}
+      <div aria-hidden className="h-40 sm:h-20" />
 
       <BulkDeleteDialog
         open={deleteOpen}
