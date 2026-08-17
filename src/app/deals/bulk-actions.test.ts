@@ -46,6 +46,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { Session } from "next-auth"
 
+import { readStrippedSource, stripComments } from "@/components/custom-fields/__tests__/source-scan"
+
 vi.mock("@/db", () => ({
   db: {
     query: {
@@ -338,6 +340,19 @@ describe("bulkDeleteDeals", () => {
 
     await bulkDeleteDeals(["x1", "x2"])
     expect(mockRevalidatePath).not.toHaveBeenCalled()
+
+    // TWELVE successes and still ONE call: the count above could be satisfied by a per-record
+    // revalidate in a run that happened to succeed once, so the N-success case is the one that
+    // actually distinguishes "after the loop" from "inside it".
+    vi.clearAllMocks()
+    mockRunWithActor.mockImplementation((_actor, fn) => fn())
+    mockAuth.mockResolvedValue(sessionFor(OWNER))
+    const ids = idsOf(12)
+    queueDeals(ids.map(id => row(id)))
+    mockDelete.mockResolvedValue({ success: true })
+
+    await bulkDeleteDeals(ids)
+    expect(mockRevalidatePath).toHaveBeenCalledTimes(1)
   })
 
   it("sends NO email, even after a fully successful 12-id delete (D-13)", async () => {
@@ -619,5 +634,206 @@ describe("exportSelectedDeals", () => {
     mockAuth.mockResolvedValue(sessionFor(OTHER, "member"))
 
     expect((await exportSelectedDeals(["d1"])).success).toBe(true)
+  })
+})
+
+/**
+ * SOURCE GATE — READS COMMENT-STRIPPED SOURCE, AND THAT IS NOT OPTIONAL.
+ *
+ * A grep-based acceptance gate that searched RAW file text collided with an explanatory COMMENT nine
+ * times in Phase 37 alone (three more in Phase 35), including once with a plan's own suggested
+ * wording. THIS FILE IS THE MOST EXPOSED CASE IN THE PHASE, because its single most important rule
+ * is a NEGATIVE ABOUT A FUNCTION NAME — the general deal update must never be reached with a partial
+ * owner payload, since its schema is a `.partial()` that preserves the assignee list's `.default([])`
+ * and therefore clears every join row, unaudited — and that rule is exactly the kind of thing a
+ * maintainer will explain in a comment right beside the call site. A raw-text gate would then fail on
+ * the WARNING against the bug rather than on the bug. If a gate below ever trips on a comment, reword
+ * the comment; never weaken the gate.
+ *
+ * The stripper is the shared string-aware one, so `href="https://…"` and any `//` inside a string
+ * literal cannot swallow the rest of a line.
+ *
+ * THE POSITIVE ASSERTIONS COME FIRST, deliberately. A gate made only of absences passes perfectly
+ * when its anchor moves and its slice collapses to nothing — so each slice is proven non-empty and
+ * proven to contain the markers it must contain before anything is asserted missing.
+ */
+const ACTIONS_PATH = "src/app/deals/actions.ts"
+const ACTIONS = readStrippedSource(ACTIONS_PATH)
+
+/** A word that exists ONLY inside a comment in the action file, so stripping is provable. */
+const COMMENT_ONLY_SENTINEL = "T-38-01"
+
+/**
+ * The source of one exported action: its declaration up to the next top-level `export`.
+ *
+ * The anchor assertion is WR-13 discipline and it is load-bearing: `indexOf(x, -1)` silently behaves
+ * as `indexOf(x, 0)`, so a helper handed a missing anchor widens to the enclosing module and every
+ * negative assertion below quietly stops detecting anything.
+ */
+function sliceExport(name: string): string {
+  const declaration = `export async function ${name}`
+  const start = ACTIONS.indexOf(declaration)
+
+  expect(
+    start,
+    `${declaration} not found in ${ACTIONS_PATH} (comment-stripped). Every assertion in this gate would widen to the whole module and stop detecting anything — WR-13.`
+  ).toBeGreaterThan(-1)
+
+  const end = ACTIONS.indexOf("\nexport ", start + 1)
+  return end === -1 ? ACTIONS.slice(start) : ACTIONS.slice(start, end)
+}
+
+const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1
+
+/** The last statement of the per-record loop's callback: everything after it runs ONCE. */
+const LOOP_CALLBACK_END = "return { succeeded, failed }"
+
+/** The admin clause deals carries and the other three entities do not. */
+const ADMIN_CLAUSE = 'session.user.role !== "admin"'
+
+const WRITE_ACTIONS = ["bulkDeleteDeals", "bulkReassignDealOwner"] as const
+
+/**
+ * Forbidden in either bulk WRITE slice.
+ *
+ * The first six are the silent-data-destruction family (T-38-05) and the no-notification guarantee
+ * (T-38-14): the owner transfer must reach the owner-only mutation and nothing else. The last three
+ * are the loop-shape guarantees — a wrapping transaction cannot name WHICH record failed, a parallel
+ * fan-out defeats the sequential cap, and the audit row is written by the mutation layer, never here.
+ */
+const FORBIDDEN_IN_WRITES = [
+  "updateDealMutation",
+  "dealAssignees",
+  "assigneeIds",
+  "newAssigneeUserIds",
+  "dealTitle",
+  "sendDealAssignedEmail",
+  "db.transaction",
+  "Promise.all",
+  "auditLog",
+]
+
+/**
+ * Forbidden in the scoped export slice (T-38-01).
+ *
+ * Every one of these would widen the signature past "a list of ids": an options or filter type in the
+ * parameter list turns a `{}` from any browser into "export everything", a format parameter re-opens
+ * the deferred Pipedrive variants, reaching the admin export action re-imports its gate, and a `role`
+ * or `stage` read means the scope came from somewhere other than the selection.
+ */
+const FORBIDDEN_IN_EXPORT = [
+  "ExportFilters",
+  "ExportOptions",
+  "ExportFormat",
+  "pipedrive",
+  "getExportData",
+  "role",
+  "stage",
+]
+
+describe("source gate: deals/actions.ts (comment-stripped)", () => {
+  it("really read the action file, and really stripped its comments", () => {
+    expect(ACTIONS.length, `${ACTIONS_PATH} read as empty`).toBeGreaterThan(0)
+    expect(ACTIONS).toContain("export async function bulkDeleteDeals")
+    // Present in the raw file, inside a comment. Its absence here is the proof that every negative
+    // assertion below is reading code and not prose.
+    expect(
+      ACTIONS.includes(COMMENT_ONLY_SENTINEL),
+      `${COMMENT_ONLY_SENTINEL} survived stripping, so this gate is reading raw text and would trip on comments`
+    ).toBe(false)
+
+    // Belt and braces, so the sentinel above cannot go vacuous if that one comment is ever
+    // reworded: the stripper demonstrably removes both comment forms, and no doc-comment opener
+    // survives in what this gate actually reads.
+    expect(stripComments("const a = 1 // T-38-01\n/** T-38-01 */\n")).not.toContain(
+      COMMENT_ONLY_SENTINEL
+    )
+    expect(ACTIONS, "a doc-comment opener survived, so this source was not stripped").not.toContain(
+      "/**"
+    )
+  })
+
+  it("finds all three bulk declarations, each as a non-empty slice narrower than the module", () => {
+    for (const name of [...WRITE_ACTIONS, "exportSelectedDeals"]) {
+      const slice = sliceExport(name)
+      expect(slice.length, `${name} slice is empty`).toBeGreaterThan(0)
+      expect(slice.length, `${name} slice widened to the whole module`).toBeLessThan(ACTIONS.length)
+      expect(slice).toContain(name)
+    }
+  })
+
+  it("carries deals' admin clause EXACTLY ONCE in each bulk write — the phase's one asymmetry", () => {
+    // POSITIVE, and it is what makes this gate deals-specific rather than a copy of the sibling
+    // suites, where the same assertion is an absence.
+    for (const name of WRITE_ACTIONS) {
+      expect(occurrences(sliceExport(name), ADMIN_CLAUSE), `${name} must carry deals' admin clause exactly once`).toBe(1)
+    }
+  })
+
+  it("opens exactly one actor scope and revalidates exactly once, after the loop", () => {
+    for (const name of WRITE_ACTIONS) {
+      const slice = sliceExport(name)
+
+      expect(occurrences(slice, "runWithActor"), `${name} must open exactly one actor scope`).toBe(1)
+      expect(occurrences(slice, "revalidatePath"), `${name} must revalidate exactly once`).toBe(1)
+
+      const loopEnd = slice.indexOf(LOOP_CALLBACK_END)
+      expect(loopEnd, `${name}: loop-callback anchor "${LOOP_CALLBACK_END}" not found, so the ordering assertion below cannot be trusted`).toBeGreaterThan(-1)
+      expect(
+        slice.indexOf("revalidatePath"),
+        `${name} must revalidate AFTER the loop callback returns, never inside the loop`
+      ).toBeGreaterThan(loopEnd)
+    }
+  })
+
+  it("checks the cap against the shared constant in every bulk action", () => {
+    for (const name of [...WRITE_ACTIONS, "exportSelectedDeals"]) {
+      expect(sliceExport(name), `${name} must check the shared id cap server-side`).toContain(
+        "BULK_MAX_IDS"
+      )
+    }
+  })
+
+  it("keeps every destructive and notifying identifier out of both bulk writes", () => {
+    for (const name of WRITE_ACTIONS) {
+      const slice = sliceExport(name)
+      for (const token of FORBIDDEN_IN_WRITES) {
+        expect(slice, `${name} must not reference ${token}`).not.toContain(token)
+      }
+    }
+  })
+
+  it("validates the reassign target against BOTH predicates, before the actor scope opens", () => {
+    const slice = sliceExport("bulkReassignDealOwner")
+
+    for (const predicate of ['eq(users.status, "approved")', "isNull(users.deletedAt)"]) {
+      expect(slice, `the reassign target lookup must carry ${predicate}`).toContain(predicate)
+      expect(
+        slice.indexOf(predicate),
+        `${predicate} must be evaluated BEFORE the actor scope opens, so an invalid target establishes no actor`
+      ).toBeLessThan(slice.indexOf("runWithActor"))
+    }
+  })
+
+  it("admits nothing but ids into the scoped export", () => {
+    const slice = sliceExport("exportSelectedDeals")
+
+    expect(
+      /export async function exportSelectedDeals\(\s*ids:\s*string\[\]\s*\)/.test(slice),
+      "exportSelectedDeals must take a single ids parameter: an options or filter argument handed {} would export every deal in the database (T-38-01)"
+    ).toBe(true)
+
+    for (const token of FORBIDDEN_IN_EXPORT) {
+      expect(slice, `exportSelectedDeals must not reference ${token}`).not.toContain(token)
+    }
+  })
+
+  it("builds the export options as server-side literals", () => {
+    const slice = sliceExport("exportSelectedDeals")
+
+    expect(slice).toContain('entityType: "deal"')
+    expect(slice).toContain('format: "csv"')
+    expect(slice).toContain("includeCustomFields: true")
+    expect(slice).toContain("filters: { ids: uniqueIds }")
   })
 })
