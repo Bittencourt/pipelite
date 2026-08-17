@@ -632,6 +632,12 @@ export async function restoreDealMutation(
  * ORPHAN STATE, STATED PLAINLY: the detach is the one operation in this phase that mutates a
  * LIVE row the caller did not select. The mitigation is the per-child audit row below, so an
  * unlinked activity can be traced back to the deal that was purged out from under it.
+ *
+ * DERIVED VALUES ON THE DETACHED CHILDREN ARE NOT REPAIRED, AND NOTHING WILL EVER REPAIR THEM.
+ * See the note at the detach itself; the short version is that the delete path may defer this
+ * because a restore brings the parent back live and repairs the children on the way down, and a
+ * purged deal never comes back. Do not read the absence of a recalculation here as the same
+ * deferral `deleteDealMutation` makes — it is a permanent limitation, recorded rather than fixed.
  */
 export async function purgeDealMutation(
   id: string,
@@ -669,6 +675,32 @@ export async function purgeDealMutation(
       await tx.delete(dealStageHistory).where(eq(dealStageHistory.dealId, id))
 
       // 3. Independent entities that merely reference this deal — detach, never delete.
+      //
+      //    NO FORMULA RECALCULATION RUNS FOR THESE CHILDREN, AND THERE IS NO LATER REPAIR POINT.
+      //    `activities.dealId` is one of the foreign keys `CASCADE_CHILD_RELATIONS` walks to feed
+      //    `Deal.*` dotted references into an activity's formulas. `deleteDealMutation` is allowed
+      //    to skip recalculation because a restore brings the deal back live and the cascade then
+      //    repairs every child on the way down. That argument does NOT carry here: the deal is
+      //    gone for good, so a `Deal.*` value a detached activity is holding stays wrong forever.
+      //
+      //    Recorded as a limitation rather than fixed, because the fix is not local to this
+      //    function and the two obvious local attempts are both worse than the staleness:
+      //
+      //      - `changedFields: ["dealId"]` selects NOTHING. A foreign key is not in
+      //        `ENTITY_NATIVE_ATTRIBUTES`, and a dotted ref is admitted by
+      //        `scopeFormulasToChangedFields` only through `changedRelatedFields` — so the
+      //        one-line call that looks like the fix is a silent no-op (RESEARCH Pitfall 1),
+      //        which is the worst of the three outcomes because it also looks fixed.
+      //      - `changedRelatedFields: { Deal: [...] }` does select those formulas, but the
+      //        recalculation has no parent row to resolve them against and the engine has no
+      //        representation for "this link is null" — an unresolvable dotted ref is stored as an
+      //        internal error string on the child. Writing that onto live records the admin never
+      //        selected, from the least reversible path in the phase, is not an improvement.
+      //
+      //    The same gap already exists wherever a child's own foreign key is cleared through the
+      //    UI, so this is a recalculation-scoping limitation that purge makes permanent rather
+      //    than one purge introduces. Closing it means teaching the engine a null parent link and
+      //    scoping dotted refs on a foreign-key change — follow-up work, see `.planning/STATE.md`.
       const detachedActivities = await tx
         .update(activities)
         .set({ dealId: null, updatedAt: new Date() })

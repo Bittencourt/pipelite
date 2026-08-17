@@ -498,6 +498,16 @@ export async function purgeOrganizationMutation(
         .where(and(eq(notes.entityType, ENTITY), eq(notes.entityId, id)))
 
       // 2. Detach the deals. `.returning()` because each unlink needs its own audit row.
+      //
+      //    NO FORMULA RECALCULATION RUNS FOR EITHER SET OF DETACHED CHILDREN, AND NOTHING LATER
+      //    WILL. `deals.organizationId` and `people.organizationId` are two of the foreign keys the
+      //    formula cascade walks to feed `Organization.*` dotted references downward, which is
+      //    exactly what `restoreOrganizationMutation` above relies on — and exactly what a purge
+      //    cannot rely on, because the organization never comes back. Every detached deal and
+      //    person therefore keeps an `Organization.*` value derived from a record that no longer
+      //    exists, permanently. Recorded rather than fixed: see the full reasoning at the
+      //    corresponding step of `purgeDealMutation` in ./deals.ts for why the two recalculation
+      //    calls available here are each worse than the staleness.
       const detachedDeals = await tx
         .update(deals)
         .set({ organizationId: null, updatedAt: new Date() })

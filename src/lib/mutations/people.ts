@@ -531,6 +531,15 @@ export async function purgePersonMutation(
         .where(and(eq(notes.entityType, ENTITY), eq(notes.entityId, id)))
 
       // 2. Detach the deals. `.returning()` because each unlink needs its own audit row.
+      //
+      //    NO FORMULA RECALCULATION RUNS FOR THE DETACHED DEALS, AND NOTHING LATER WILL.
+      //    `deals.personId` is one of the foreign keys the formula cascade walks to feed
+      //    `Person.*` dotted references into a deal's formulas, so every detached deal keeps a
+      //    value derived from a person who no longer exists. The delete path defers this to the
+      //    restore, which repairs the children on the way down; a purged person never comes back,
+      //    so here the staleness is permanent. It is recorded rather than fixed — see the full
+      //    reasoning at the corresponding step of `purgeDealMutation` in ./deals.ts, including why
+      //    both locally available recalculation calls are worse than the staleness.
       const detachedDeals = await tx
         .update(deals)
         .set({ personId: null, updatedAt: new Date() })
