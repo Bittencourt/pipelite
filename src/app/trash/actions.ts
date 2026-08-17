@@ -24,10 +24,12 @@
  * wrap the audit subscriber's documented `actor?.kind ?? "system"` fallback silently attributes
  * every restore and purge to the system.
  *
- * NOTHING HERE TRUSTS THE `tab` ARGUMENT. It is narrowed through the real `parseTrashTab` before
- * it indexes `TRASH_TAB_TO_ENTITY`, so a hostile string resolves to `deals` rather than reaching
- * an arbitrary table (T-37-03). The parameter is typed `TrashTab` for the UI's benefit; a type is
- * not a runtime control on a value that arrived over the wire.
+ * NOTHING HERE TRUSTS EITHER ARGUMENT, AND THAT MEANS BOTH OF THEM. `tab` is narrowed through the
+ * real `parseTrashTab` before it indexes `TRASH_TAB_TO_ENTITY`, so a hostile string resolves to
+ * `deals` rather than reaching an arbitrary table (T-37-03); `id` is narrowed through
+ * `parseRecordId` before it reaches a query. The parameters are typed `TrashTab` and `string` for
+ * the UI's benefit, and a type is not a runtime control on a value that arrived over the wire — a
+ * rule that is worth nothing if it is stated in the plural and then applied to one argument.
  */
 
 import { revalidatePath } from "next/cache"
@@ -90,6 +92,31 @@ function toErrorCode(error: string): TrashErrorCode {
 }
 
 /**
+ * THE `id` ARGUMENT IS NARROWED AT RUNTIME, for exactly the reason stated in the header about
+ * `tab`: a server action is a POST endpoint, so `id: string` is an annotation and not a control.
+ * A caller can send a number, `null`, an object or an array, and it would otherwise flow straight
+ * into `eq(deals.id, id)` inside `findTrashedRecord`.
+ *
+ * That was already survivable and is now closed. `findTrashedRecord` wraps its query and returns
+ * `null`, so a malformed id already surfaced as `NOT_IN_TRASH` — but by ACCIDENT, one refactor
+ * away from reaching `restoreRecordByType` / `purgeRecordByType` directly. Narrowing here makes
+ * the containment deliberate rather than incidental.
+ *
+ * A bare shape test, not a UUID pattern. Every id this surface handles is a `uuid` column today,
+ * but a parser that encodes that assumption becomes wrong the moment one entity changes key type,
+ * and the value's only job here is to be a bindable parameter. The 64-character ceiling stops a
+ * megabyte string being carried into a query and a log line; the non-empty test stops `""`, which
+ * is a legal `string` and matches nothing.
+ */
+const MAX_RECORD_ID_LENGTH = 64
+
+function parseRecordId(raw: unknown): string | null {
+  return typeof raw === "string" && raw.length > 0 && raw.length <= MAX_RECORD_ID_LENGTH
+    ? raw
+    : null
+}
+
+/**
  * Restore one trashed record.
  *
  * Non-destructive, so there is no confirmation dialog above it — but "non-destructive" is not
@@ -107,11 +134,18 @@ export async function restoreRecord(
 
   const caller: Caller = { userId: session.user.id, role: session.user.role }
 
-  // Narrowed FIRST, so no unnarrowed argument ever indexes the entity map.
+  // BOTH arguments narrowed FIRST, so no unnarrowed value indexes the entity map or reaches a
+  // query. A malformed id joins the live/missing/already-purged answer below — it names nothing
+  // restorable, which is the same fact from the caller's position.
   const trashTab = parseTrashTab(tab)
   const entityType = TRASH_TAB_TO_ENTITY[trashTab]
 
-  const record = await findTrashedRecord(entityType, id)
+  const recordId = parseRecordId(id)
+  if (recordId === null) {
+    return { success: false, code: "NOT_IN_TRASH" }
+  }
+
+  const record = await findTrashedRecord(entityType, recordId)
   if (!record) {
     // Live, missing, or already purged — one answer, because none of the three is restorable and
     // distinguishing them here would build an existence oracle out of the difference.
@@ -123,7 +157,7 @@ export async function restoreRecord(
   }
 
   const result = await runWithActor({ kind: "user", userId: caller.userId }, () =>
-    restoreRecordByType(entityType, id)
+    restoreRecordByType(entityType, recordId)
   )
 
   if (!result.success) {
@@ -168,7 +202,12 @@ export async function restoreWithLinked(
   const trashTab = parseTrashTab(tab)
   const entityType = TRASH_TAB_TO_ENTITY[trashTab]
 
-  const record = await findTrashedRecord(entityType, id)
+  const recordId = parseRecordId(id)
+  if (recordId === null) {
+    return { success: false, code: "NOT_IN_TRASH" }
+  }
+
+  const record = await findTrashedRecord(entityType, recordId)
   if (!record) {
     return { success: false, code: "NOT_IN_TRASH" }
   }
@@ -179,7 +218,7 @@ export async function restoreWithLinked(
     return { success: false, code: "NOT_AUTHORIZED" }
   }
 
-  const parents = await findTrashedParents(entityType, id)
+  const parents = await findTrashedParents(entityType, recordId)
 
   const skipped: string[] = []
   const failed: string[] = []
@@ -205,14 +244,14 @@ export async function restoreWithLinked(
     }
 
     // The record itself LAST, inside the same actor scope.
-    return { restoredParents, record: await restoreRecordByType(entityType, id) }
+    return { restoredParents, record: await restoreRecordByType(entityType, recordId) }
   })
 
   if (skipped.length > 0 || failed.length > 0) {
     // Identifiers and counts only, never record contents — the rule `formula-recalc.ts:927`
     // established for this codebase (T-37-27).
     console.error(
-      `${LOG_PREFIX} restoreWithLinked ${entityType} ${id}: skipped ${skipped.length} ` +
+      `${LOG_PREFIX} restoreWithLinked ${entityType} ${recordId}: skipped ${skipped.length} ` +
         `[${skipped.join(", ")}], failed ${failed.length} [${failed.join(", ")}]`
     )
   }
@@ -260,13 +299,21 @@ export async function purgeRecord(
   const trashTab = parseTrashTab(tab)
   const entityType: EntityType = TRASH_TAB_TO_ENTITY[trashTab]
 
-  const record = await findTrashedRecord(entityType, id)
+  // AFTER the admin gate, never before. The gate's whole point is that a non-admin gets exactly
+  // one answer whatever the id names, and answering a malformed id first would hand back a second
+  // distinguishable response for free.
+  const recordId = parseRecordId(id)
+  if (recordId === null) {
+    return { success: false, code: "NOT_IN_TRASH" }
+  }
+
+  const record = await findTrashedRecord(entityType, recordId)
   if (!record) {
     return { success: false, code: "NOT_IN_TRASH" }
   }
 
   const result = await runWithActor({ kind: "user", userId: session.user.id }, () =>
-    purgeRecordByType(entityType, id)
+    purgeRecordByType(entityType, recordId)
   )
 
   if (!result.success) {
