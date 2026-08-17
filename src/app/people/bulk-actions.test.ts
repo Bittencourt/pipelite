@@ -80,7 +80,7 @@ import { BULK_MAX_IDS } from "@/lib/bulk/limits"
 import { fetchFilteredData } from "@/lib/export/formatters"
 import { updatePersonMutation } from "@/lib/mutations/people"
 
-import { bulkDeletePeople, bulkReassignPersonOwner } from "./actions"
+import { bulkDeletePeople, bulkReassignPersonOwner, exportSelectedPeople } from "./actions"
 
 type AnyMock = ReturnType<typeof vi.fn>
 
@@ -458,5 +458,82 @@ describe("bulkReassignPersonOwner", () => {
 
     expect(mockUpdatePerson).not.toHaveBeenCalled()
     expect(mockFetchFiltered).not.toHaveBeenCalled()
+  })
+})
+
+describe("exportSelectedPeople", () => {
+  /** A fetch result whose row count deliberately DISAGREES with the number of ids submitted. */
+  const FETCHED = {
+    success: true as const,
+    data: "First Name,Last Name\nA,B\n",
+    filename: "people-2026-01-01.csv",
+    count: 7,
+  }
+
+  beforeEach(() => {
+    mockFetchFiltered.mockResolvedValue(FETCHED)
+  })
+
+  it("refuses an unauthenticated caller without fetching anything", async () => {
+    mockAuth.mockResolvedValue(null)
+
+    const result = await exportSelectedPeople(["p1"])
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error.length).toBeGreaterThan(0)
+    expect(mockFetchFiltered).not.toHaveBeenCalled()
+  })
+
+  it("refuses an empty selection rather than exporting the whole table", async () => {
+    // THE POINT OF THE WHOLE SIGNATURE. The only other export action is admin-gated; a non-admin
+    // action that could express "no filter" would return every person in the database (T-38-01).
+    const result = await exportSelectedPeople([])
+
+    expect(result.success).toBe(false)
+    expect(mockFetchFiltered).not.toHaveBeenCalled()
+  })
+
+  it("refuses an over-cap selection without fetching", async () => {
+    const result = await exportSelectedPeople(ids(BULK_MAX_IDS + 1))
+
+    expect(result.success).toBe(false)
+    expect(mockFetchFiltered).not.toHaveBeenCalled()
+  })
+
+  it("builds every field of the export options server-side, from no parameter but the ids", async () => {
+    await exportSelectedPeople(["p1", "p2", "p2"])
+
+    expect(mockFetchFiltered).toHaveBeenCalledTimes(1)
+    expect(mockFetchFiltered).toHaveBeenCalledWith({
+      entityType: "person",
+      format: "csv",
+      includeCustomFields: true,
+      filters: { ids: ["p1", "p2"] },
+    })
+  })
+
+  it("names the file from the FETCHED count, so the name and the row count cannot disagree", async () => {
+    const result = await exportSelectedPeople(["p1", "p2", "p3"])
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.filename).toMatch(/^people-selected-\d+-\d{4}-\d{2}-\d{2}\.csv$/)
+    // 7, from the fetch result — not 3, the number of ids submitted.
+    expect(result.filename).toContain(`people-selected-${FETCHED.count}-`)
+    expect(result.filename).not.toContain("people-selected-3-")
+    // The slug is the untranslated English plural from the formatter's own mapping.
+    expect(result.filename.startsWith("people-")).toBe(true)
+    expect(result.data).toBe(FETCHED.data)
+    expect(result.count).toBe(FETCHED.count)
+  })
+
+  it("passes a fetch failure straight through", async () => {
+    mockFetchFiltered.mockResolvedValue({ success: false, error: "Unknown entity type" })
+
+    expect(await exportSelectedPeople(["p1"])).toEqual({
+      success: false,
+      error: "Unknown entity type",
+    })
   })
 })
