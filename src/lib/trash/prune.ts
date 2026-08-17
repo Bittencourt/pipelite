@@ -41,9 +41,29 @@ export const TICK_INTERVAL = 24 * 60 * 60 * 1000
  * Deliberately far smaller than the audit pruner's 5,000.
  *
  * That module deletes from one table with one bulk statement. A trash purge is an ORDERED
- * MULTI-STATEMENT TEARDOWN inside its own transaction per row — notes, files, custom-field rows
- * and up to six foreign-key detachments — so the per-record cost is orders of magnitude higher
- * and a 5,000-row batch would be a very long series of write transactions.
+ * MULTI-STATEMENT TEARDOWN inside its own transaction per row, so the per-record cost is orders
+ * of magnitude higher and a 5,000-row batch would be a very long series of write transactions.
+ *
+ * WHAT THE TEARDOWN ACTUALLY COVERS, stated exhaustively so nobody has to infer it (an earlier
+ * revision of this comment overstated it, which is how the gap below went unnoticed):
+ *
+ *   - the record's own row, and its `notes` rows (polymorphic, no foreign key, so explicit);
+ *   - `deal_assignees` and `deal_stage_history`, for a deal only;
+ *   - the foreign keys of LIVE children, nulled rather than cascaded: `activities.deal_id` for a
+ *     deal, `deals.person_id` for a person, `deals.organization_id` AND `people.organization_id`
+ *     for an organization (two statements — the widest teardown). An activity detaches nothing.
+ *
+ * Custom-field VALUES need no statement of their own: they live in the record's own `customFields`
+ * JSONB column and go with the row.
+ *
+ * NOT COVERED — UPLOADED FILE BLOBS ARE NOT REMOVED. A file custom field stores its bytes under
+ * `${UPLOAD_DIR}/${entityId}/${fieldName}/${storedName}` and is referenced only from that JSONB
+ * column, so purging the row destroys the REFERENCE and leaves the BYTES on disk (or in S3). The
+ * blob therefore survives a "permanent" delete and stays reachable to anyone holding its URL.
+ * This is a known scope gap, deliberately not closed here: irreversible disk deletion inside the
+ * most dangerous code path in the phase needs its own plan, and doing it wrong is unrecoverable.
+ * Tracked as follow-up work — see `.planning/STATE.md`. Do not read the batch size below, or
+ * anything else in this module, as evidence that blobs are handled.
  *
  * This is a TUNABLE and it has not been measured. It should be timed once against a seeded batch
  * of real records and adjusted; 200 is a conservative starting point chosen to keep one batch
