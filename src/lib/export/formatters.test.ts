@@ -1,11 +1,28 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import Papa from "papaparse"
+import { PgDialect } from "drizzle-orm/pg-core"
+import type { SQL } from "drizzle-orm"
 
 // formatters.ts imports the drizzle client at module scope for its fetch* helpers.
-// None of the pure formatting functions under test touch it, so a bare stub is enough
-// and keeps this suite DB-free.
+// None of the PURE formatting functions under test touch it, so the stub below never
+// opens a connection and this suite stays DB-free.
+//
+// The stub is SHAPED rather than bare (it was `{ query: {} }` before Phase 38) so the
+// `fetchFilteredData` dispatch and the `where` predicate each fetcher builds can be
+// asserted without a database. Every `findMany` resolves `[]`, which is what the
+// flattener suites below rely on: none of them reads the database at all.
+const dbSpies = vi.hoisted(() => {
+  const table = () => ({ findMany: vi.fn(async () => [] as unknown[]) })
+  return {
+    organizations: table(),
+    people: table(),
+    deals: table(),
+    activities: table(),
+  }
+})
+
 vi.mock("@/db", () => ({
-  db: { query: {} },
+  db: { query: dbSpies },
 }))
 
 import {
@@ -14,6 +31,7 @@ import {
   flattenOrganization,
   exportToCSV,
   exportToJSON,
+  fetchFilteredData,
 } from "./formatters"
 import { exportToPipedriveCSV, toPipedriveFormat } from "./pipedrive"
 
@@ -303,5 +321,62 @@ describe("exportToPipedriveCSV column derivation across all rows", () => {
     ).meta.fields!
 
     expect(headers.slice(0, nativeOrder.length)).toEqual(nativeOrder)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ExportFilters.ids narrowing (BULK-04)
+// ---------------------------------------------------------------------------
+
+const dialect = new PgDialect()
+
+/** Render a fetcher's `where` predicate to the SQL text + bound params it would execute. */
+function renderWhere(where: unknown): { sql: string; params: unknown[] } {
+  const q = dialect.sqlToQuery(where as SQL)
+  return { sql: q.sql, params: q.params }
+}
+
+function whereOf(spy: { mock: { calls: unknown[][] } }): { sql: string; params: unknown[] } {
+  const arg = spy.mock.calls[0][0] as { where?: unknown }
+  return renderWhere(arg.where)
+}
+
+describe("fetchFilteredData id narrowing", () => {
+  beforeEach(() => {
+    for (const table of Object.values(dbSpies)) table.findMany.mockClear()
+  })
+
+  it("adds an id predicate binding every id for organizations", async () => {
+    await fetchFilteredData({
+      entityType: "organization",
+      format: "csv",
+      includeCustomFields: true,
+      filters: { ids: ["a", "b"] },
+    })
+
+    const { sql, params } = whereOf(dbSpies.organizations.findMany)
+    expect(sql).toContain(" in ")
+    expect(params).toEqual(["a", "b"])
+  })
+
+  it("still adds a predicate for an empty id list — never a bare full-table read", async () => {
+    await fetchFilteredData({
+      entityType: "organization",
+      format: "csv",
+      includeCustomFields: true,
+      filters: { ids: [] },
+    })
+    const scoped = whereOf(dbSpies.organizations.findMany)
+
+    dbSpies.organizations.findMany.mockClear()
+    await fetchFilteredData({
+      entityType: "organization",
+      format: "csv",
+      includeCustomFields: true,
+    })
+    const unscoped = whereOf(dbSpies.organizations.findMany)
+
+    expect(scoped.sql).not.toBe(unscoped.sql)
+    expect(scoped.sql).toContain("false")
   })
 })
