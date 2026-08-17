@@ -57,6 +57,11 @@ vi.mock("@/db", () => ({
   },
 }))
 
+import {
+  callArguments,
+  readStrippedSource,
+} from "@/components/custom-fields/__tests__/source-scan"
+
 import { auth } from "@/auth"
 import { db } from "@/db"
 import { revalidatePath } from "next/cache"
@@ -256,9 +261,12 @@ describe("bulkDeleteOrganizations", () => {
   })
 
   it("revalidates once for a partial success and not at all when nothing succeeded", async () => {
-    queueRows([org("o1", OWNER), org("o2", OTHER)])
+    // NINE successes, not one: a revalidation moved inside the loop would be invisible to a
+    // single-success batch, so the count assertion is only load-bearing above one.
+    const ids = mixedIds(12)
+    queueRows(ids.map((id, index) => org(id, index < 9 ? OWNER : OTHER)))
 
-    await bulkDeleteOrganizations(["o1", "o2"])
+    await bulkDeleteOrganizations(ids)
     expect(mockRevalidatePath).toHaveBeenCalledTimes(1)
     expect(mockRevalidatePath).toHaveBeenCalledWith("/organizations")
 
@@ -425,5 +433,182 @@ describe("exportSelectedOrganizations", () => {
       success: false,
       error: "Export failed. Please try again.",
     })
+  })
+})
+
+/**
+ * THE SOURCE GATE — COMMENT-BLIND, AND THAT IS THE WHOLE POINT.
+ *
+ * Every assertion below goes through `readStrippedSource`, never through a raw file read. Phase 37
+ * shipped NINE separate collisions in which a gate matched its own explanatory prose — a header
+ * sentence naming the very token the gate banned, satisfying or breaking it without a line of code
+ * changing. A gate that can be satisfied by a comment is self-invalidating. The rule that came out of
+ * it: when a gate trips on a comment, REWORD THE COMMENT, never weaken the gate. Reading through the
+ * shared stripper is what removes the failure mode instead of dodging it.
+ *
+ * This very header was rewritten once for exactly that reason: it named the unstripped read helper in
+ * prose, and the plan's acceptance gate counts occurrences of that name in this file and expects none.
+ * The comment moved; the gate did not.
+ *
+ * POSITIVE MARKERS COME FIRST IN EVERY BLOCK. A gate made only of absences passes triumphantly when
+ * handed an empty string — which is exactly what a slicing helper returns when its anchor moves. So
+ * each slice is proved to be the real declaration (its own name, a body of real length, the call it is
+ * built around) BEFORE anything is asserted absent from it.
+ */
+
+/**
+ * The text of one top-level declaration, from its `export async function <name>` to the next top-level
+ * `export `.
+ *
+ * WR-13: the anchor index is asserted `> -1` with a named message BEFORE it is used. `indexOf(x, -1)`
+ * silently behaves as `indexOf(x, 0)`, so a helper handed a missing anchor does not throw — it widens
+ * to the enclosing block, and every absence assertion downstream stops detecting anything.
+ */
+function declarationSlice(source: string, name: string): string {
+  const anchor = `export async function ${name}`
+  const start = source.indexOf(anchor)
+  expect(start, `declaration anchor not found in actions.ts: ${anchor}`).toBeGreaterThan(-1)
+
+  const end = source.indexOf("\nexport ", start + anchor.length)
+  return end === -1 ? source.slice(start) : source.slice(start, end)
+}
+
+/** Index just past the closing paren of the first `${callee}(` call, matched string-aware. */
+function callCloseIndex(slice: string, callee: string): number {
+  const marker = `${callee}(`
+  const at = slice.indexOf(marker)
+  expect(at, `call not found in slice: ${marker}`).toBeGreaterThan(-1)
+
+  let i = at + marker.length
+  let depth = 1
+  let quote: string | null = null
+
+  while (i < slice.length && depth > 0) {
+    const ch = slice[i]
+
+    if (quote) {
+      if (ch === "\\") {
+        i += 2
+        continue
+      }
+      if (ch === quote) quote = null
+      i += 1
+      continue
+    }
+
+    if (ch === '"' || ch === "'" || ch === "`") quote = ch
+    else if (ch === "(") depth += 1
+    else if (ch === ")") depth -= 1
+
+    i += 1
+  }
+
+  expect(depth, `unterminated ${marker} call in slice`).toBe(0)
+  return i
+}
+
+function occurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1
+}
+
+const ACTIONS_PATH = "src/app/organizations/actions.ts"
+
+describe("source gate on the organizations bulk actions", () => {
+  const stripped = readStrippedSource(ACTIONS_PATH)
+  const deleteSlice = declarationSlice(stripped, "bulkDeleteOrganizations")
+  const reassignSlice = declarationSlice(stripped, "bulkReassignOrganizationOwner")
+  const exportSlice = declarationSlice(stripped, "exportSelectedOrganizations")
+  const writeSlices: Array<[string, string]> = [
+    ["bulkDeleteOrganizations", deleteSlice],
+    ["bulkReassignOrganizationOwner", reassignSlice],
+  ]
+
+  it("sliced three real declarations, not empty strings", () => {
+    expect(deleteSlice).toContain("bulkDeleteOrganizations")
+    expect(reassignSlice).toContain("bulkReassignOrganizationOwner")
+    expect(exportSlice).toContain("exportSelectedOrganizations")
+
+    expect(deleteSlice.length).toBeGreaterThan(400)
+    expect(reassignSlice.length).toBeGreaterThan(400)
+    expect(exportSlice.length).toBeGreaterThan(200)
+
+    expect(deleteSlice).toContain("deleteRecordByType")
+    expect(reassignSlice).toContain("updateRecordOwnerByType")
+    expect(exportSlice).toContain("fetchFilteredData")
+
+    // The gate below is over-cap on the delete slice unless the two write slices are DISTINCT.
+    expect(deleteSlice).not.toContain("updateRecordOwnerByType")
+    expect(reassignSlice).not.toContain("deleteRecordByType")
+  })
+
+  it("gives the scoped export exactly one ids parameter and no options object", () => {
+    const parameterLists = callArguments(stripped, "exportSelectedOrganizations")
+
+    expect(parameterLists).toHaveLength(1)
+    expect(parameterLists[0].replace(/\s+/g, " ").trim()).toBe("ids: string[]")
+  })
+
+  it("keeps the admin-gated full-export vocabulary out of the scoped export (T-38-01)", () => {
+    for (const banned of [
+      "ExportFilters",
+      "ExportOptions",
+      "ExportFormat",
+      "pipedrive",
+      "getExportData",
+      "role",
+    ]) {
+      expect(exportSlice, `scoped export must not mention ${banned}`).not.toContain(banned)
+    }
+  })
+
+  it("keeps the two write loops sequential, best effort, and free of an admin bypass", () => {
+    for (const [name, slice] of writeSlices) {
+      expect(slice).toContain("runWithActor")
+
+      for (const banned of [
+        "Promise.all",
+        "db.transaction",
+        "session.user.role",
+        "updateOrganizationMutation",
+        "auditLog",
+        "sendDeal",
+      ]) {
+        expect(slice, `${name} must not mention ${banned}`).not.toContain(banned)
+      }
+    }
+  })
+
+  it("opens exactly one actor scope and revalidates exactly once per write action", () => {
+    for (const [name, slice] of writeSlices) {
+      expect(occurrences(slice, "runWithActor"), `${name} actor scopes`).toBe(1)
+      expect(occurrences(slice, "revalidatePath"), `${name} revalidations`).toBe(1)
+    }
+  })
+
+  it("places the revalidation after the actor scope closes, never inside the loop", () => {
+    for (const [name, slice] of writeSlices) {
+      const scopeClosedAt = callCloseIndex(slice, "runWithActor")
+      const revalidatedAt = slice.indexOf("revalidatePath")
+
+      expect(revalidatedAt, `${name} revalidation position`).toBeGreaterThan(scopeClosedAt)
+    }
+  })
+
+  it("validates the reassign target against both predicates before any actor scope opens (T-38-06)", () => {
+    expect(reassignSlice).toContain('eq(users.status, "approved")')
+    expect(reassignSlice).toContain("isNull(users.deletedAt)")
+
+    const targetReadAt = reassignSlice.indexOf("db.query.users.findFirst")
+    expect(targetReadAt, "reassign target read").toBeGreaterThan(-1)
+    expect(reassignSlice.indexOf("runWithActor")).toBeGreaterThan(targetReadAt)
+  })
+
+  it("keeps both write signatures to the documented shape", () => {
+    expect(
+      callArguments(stripped, "bulkDeleteOrganizations")[0].replace(/\s+/g, " ").trim()
+    ).toBe("ids: string[]")
+    expect(
+      callArguments(stripped, "bulkReassignOrganizationOwner")[0].replace(/\s+/g, " ").trim()
+    ).toBe("ids: string[], ownerId: string")
   })
 })
