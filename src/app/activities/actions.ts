@@ -2,11 +2,16 @@
 
 import { auth } from "@/auth"
 import { db } from "@/db"
-import { activities, activityTypes } from "@/db/schema"
+import { activities, activityTypes, users } from "@/db/schema"
 import { eq, and, isNull, asc, or, ilike } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { runWithActor } from "@/lib/audit/actor-context"
+import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
+import { BULK_MAX_IDS } from "@/lib/bulk/limits"
+import type { BulkFailure, BulkWriteResult } from "@/lib/bulk/types"
+import { fetchFilteredData } from "@/lib/export/formatters"
+import type { ExportResult } from "@/lib/export/types"
 import {
   createActivityMutation,
   updateActivityMutation,
@@ -143,6 +148,294 @@ export async function deleteActivity(
   revalidatePath("/activities")
 
   return { success: true }
+}
+
+/**
+ * Longest id string a bulk call may carry, and the runtime narrowing that enforces the shape.
+ *
+ * A server action is a POST endpoint, so `ids: string[]` is an annotation and NOT a control: a
+ * caller can send a number, `null`, an object, or an array of objects, and it would otherwise flow
+ * straight into `eq(activities.id, id)`. This is `parseRecordId`'s reasoning
+ * (`src/app/trash/actions.ts:111-117`) applied to a list — a bare shape test rather than a UUID
+ * pattern, because the value's only job here is to be a bindable parameter, and a parser that
+ * encoded today's key type becomes wrong the moment one entity changes it. The ceiling stops a
+ * megabyte string being carried into a query and a log line; the non-empty test stops `""`, which
+ * is a legal `string` and matches nothing.
+ *
+ * A malformed argument returns `null`, which every caller maps to `no_selection`. Dropping only the
+ * bad entries and proceeding would act on a selection the user never made.
+ *
+ * Deduplication happens here so the cap is checked against DISTINCT ids: the same id twice must not
+ * consume two of the caller's hundred, and must not be dispatched twice.
+ */
+const MAX_BULK_ID_LENGTH = 64
+
+function parseBulkIds(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) {
+    return null
+  }
+
+  const malformed = raw.some(
+    id => typeof id !== "string" || id.length === 0 || id.length > MAX_BULK_ID_LENGTH
+  )
+
+  return malformed ? null : Array.from(new Set(raw as string[]))
+}
+
+/**
+ * Soft-delete many activities in one call (BULK-02).
+ *
+ * BEST-EFFORT AND PER-RECORD, NOT TRANSACTIONAL. One aborting transaction structurally cannot name
+ * which record failed, and naming them is the whole contract (`BulkWriteResult.failed`), so the loop
+ * is sequential and continues past a failure. `success: true` with a non-empty `failed` is an
+ * ordinary outcome meaning the call ran.
+ *
+ * THE OWNERSHIP PREDICATE BELOW IS THIS FILE'S OWN, COPIED VERBATIM from `deleteActivity` above and
+ * deliberately NOT shared with the other three entities. `src/app/deals/actions.ts` carries an
+ * additional admin clause and this file does not; a unified helper would either grant activities a
+ * bypass they do not have today (a privilege escalation) or strip deals of one they do. The bulk
+ * predicate therefore sits adjacent to the single-record predicate it must match.
+ *
+ * The predicate compares the OWNER column and nothing else. Activities carry a second user-valued
+ * column which D-11 scopes out of this phase entirely — it is neither an authorization subject nor
+ * a write target here, and the suite in `bulk-actions.test.ts` gates both directions.
+ *
+ * `alreadyDeleted` is unreachable on this path by construction: the read below already carries
+ * `isNull(activities.deletedAt)`, so a record already in Trash simply does not match and is reported
+ * as `notFound`. Telling the two apart would cost a second query per id purely for a nicer label
+ * (38-RESEARCH A6).
+ *
+ * A dispatch refusal collapses to `unknown`: the mutation's own `error` string is written for a
+ * server log and may name a table or a constraint, so it stops here and never crosses to the client
+ * (T-38-07).
+ */
+export async function bulkDeleteActivities(ids: string[]): Promise<BulkWriteResult> {
+  const session = await auth()
+
+  // Verify authentication
+  if (!session?.user?.id) {
+    return { success: false, error: "not_authenticated" }
+  }
+
+  const uniqueIds = parseBulkIds(ids)
+
+  if (!uniqueIds || uniqueIds.length === 0) {
+    return { success: false, error: "no_selection" }
+  }
+
+  // The server enforces the cap. The bulk bar mirrors the same constant, but a client-side cap on a
+  // POST endpoint is a hint and not a limit.
+  if (uniqueIds.length > BULK_MAX_IDS) {
+    return { success: false, error: "too_many", max: BULK_MAX_IDS }
+  }
+
+  // The actor scope opens AFTER the session check above, never before it, so an unauthenticated
+  // call establishes no actor at all (T-36-02). It wraps the WHOLE loop exactly once: one bulk
+  // click is one operation by one identity, and `userId` is `session.user.id` and nothing else.
+  const outcome = await runWithActor({ kind: "user", userId: session.user.id }, async () => {
+    const succeeded: string[] = []
+    const failed: BulkFailure[] = []
+
+    for (const id of uniqueIds) {
+      const activity = await db.query.activities.findFirst({
+        where: and(
+          eq(activities.id, id),
+          isNull(activities.deletedAt)
+        ),
+      })
+
+      if (!activity) {
+        failed.push({ id, reason: "notFound" })
+        continue
+      }
+
+      if (activity.ownerId !== session.user.id) {
+        failed.push({ id, reason: "notPermitted" })
+        continue
+      }
+
+      const result = await deleteRecordByType("activity", id, session.user.id)
+
+      if (result.success) {
+        succeeded.push(id)
+      } else {
+        failed.push({ id, reason: "unknown" })
+      }
+    }
+
+    return { succeeded, failed }
+  })
+
+  // ONCE, after the loop closes, and only when something actually changed. The same path string
+  // `deleteActivity` revalidates.
+  if (outcome.succeeded.length > 0) {
+    revalidatePath("/activities")
+  }
+
+  return { success: true, ...outcome }
+}
+
+/**
+ * Transfer ownership of many activities in one call (BULK-03).
+ *
+ * Same seven steps as the bulk delete, with the target-user validation added between the cap check
+ * and the loop. That validation runs EXACTLY ONCE for the whole call: the target does not change
+ * per record, and a per-record lookup would issue a hundred identical queries.
+ *
+ * BOTH TARGET PREDICATES ARE REQUIRED. Handing ownership to a soft-deleted or not-yet-approved
+ * account hides the records from every list without deleting them (T-38-06). Note that
+ * `activities/page.tsx` filters its owner picker on the soft-delete column alone; that query feeds a
+ * filter dropdown and a dialog, is not an authorization boundary, and is deliberately neither copied
+ * nor modified here.
+ *
+ * The write routes through `updateRecordOwnerByType`, never the generic activity update: the owner
+ * column is absent from `activitySchema` and Zod strips unknown keys, so the generic path would
+ * write only `updatedAt`, emit an empty diff, and have the audit subscriber drop the row — a silent
+ * success no-op (T-38-09).
+ */
+export async function bulkReassignActivityOwner(
+  ids: string[],
+  ownerId: string
+): Promise<BulkWriteResult> {
+  const session = await auth()
+
+  // Verify authentication
+  if (!session?.user?.id) {
+    return { success: false, error: "not_authenticated" }
+  }
+
+  const uniqueIds = parseBulkIds(ids)
+
+  if (!uniqueIds || uniqueIds.length === 0) {
+    return { success: false, error: "no_selection" }
+  }
+
+  if (uniqueIds.length > BULK_MAX_IDS) {
+    return { success: false, error: "too_many", max: BULK_MAX_IDS }
+  }
+
+  // Narrowed for the same reason the id list is, and refused as an invalid target rather than as an
+  // empty selection: the selection was fine, the destination was not.
+  if (
+    typeof ownerId !== "string" ||
+    ownerId.length === 0 ||
+    ownerId.length > MAX_BULK_ID_LENGTH
+  ) {
+    return { success: false, error: "invalid_owner" }
+  }
+
+  const target = await db.query.users.findFirst({
+    where: and(
+      eq(users.id, ownerId),
+      isNull(users.deletedAt),
+      eq(users.status, "approved")
+    ),
+  })
+
+  if (!target) {
+    return { success: false, error: "invalid_owner" }
+  }
+
+  // One scope for the whole loop, opened only once the call is known to be admissible.
+  const outcome = await runWithActor({ kind: "user", userId: session.user.id }, async () => {
+    const succeeded: string[] = []
+    const failed: BulkFailure[] = []
+
+    for (const id of uniqueIds) {
+      const activity = await db.query.activities.findFirst({
+        where: and(
+          eq(activities.id, id),
+          isNull(activities.deletedAt)
+        ),
+      })
+
+      if (!activity) {
+        failed.push({ id, reason: "notFound" })
+        continue
+      }
+
+      // Verbatim from this file's update path (:84) and delete path (:131) — the same string, with
+      // no admin clause.
+      if (activity.ownerId !== session.user.id) {
+        failed.push({ id, reason: "notPermitted" })
+        continue
+      }
+
+      // `ownerId` is the NEW owner; the last argument is the ACTOR. Both are strings and adjacent,
+      // so the order is pinned by an exact-arguments assertion in the suite rather than by types.
+      const result = await updateRecordOwnerByType("activity", id, ownerId, session.user.id)
+
+      if (result.success) {
+        succeeded.push(id)
+      } else {
+        failed.push({ id, reason: "unknown" })
+      }
+    }
+
+    return { succeeded, failed }
+  })
+
+  if (outcome.succeeded.length > 0) {
+    revalidatePath("/activities")
+  }
+
+  return { success: true, ...outcome }
+}
+
+/**
+ * Export exactly the selected activities as CSV (BULK-04).
+ *
+ * THE SIGNATURE IS THE SECURITY CONTROL. The only other export action, `getExportData`, is gated on
+ * an admin role and takes a full options object. This one is open to every signed-in user, because
+ * exporting rows you can already see in a list discloses nothing new — but that is only true while
+ * the caller cannot widen the scope. An action that accepted a filters or options argument and
+ * received `{}` would return every activity in the table, which is the admin-gated export reachable
+ * without the gate (T-38-01). So there is no format parameter, no filters parameter, no entity
+ * parameter and no object argument: every field of the request below is a literal written here.
+ *
+ * NO DATE WINDOW IS PASSED, deliberately and against the grain of this entity: activities are
+ * date-scoped nearly everywhere else in the app, and the filter type declares a window. A selection
+ * is already a complete description of what to export, and a window intersected with it could only
+ * ever silently drop rows the user explicitly ticked.
+ *
+ * THE SLUG IS THE ENGLISH PLURAL AND IS NEVER TRANSLATED — the same `activities` that
+ * `fetchFilteredData` derives for this entity type, so a scoped file and a full file sort together
+ * and are recognisable to the same importer. The count comes from the fetch RESULT, not from the
+ * submitted list: the two differ whenever a selected record was trashed between render and submit,
+ * and the filename must describe the file's contents.
+ */
+export async function exportSelectedActivities(ids: string[]): Promise<ExportResult> {
+  const session = await auth()
+
+  // Verify authentication
+  if (!session?.user?.id) {
+    return { success: false, error: "Not authenticated" }
+  }
+
+  const uniqueIds = parseBulkIds(ids)
+
+  if (!uniqueIds || uniqueIds.length === 0) {
+    return { success: false, error: "No records selected" }
+  }
+
+  if (uniqueIds.length > BULK_MAX_IDS) {
+    return { success: false, error: "Too many records" }
+  }
+
+  const result = await fetchFilteredData({
+    entityType: "activity",
+    format: "csv",
+    includeCustomFields: true,
+    filters: { ids: uniqueIds },
+  })
+
+  if (!result.success) {
+    return result
+  }
+
+  const date = new Date().toISOString().split("T")[0]
+
+  return { ...result, filename: `activities-selected-${result.count}-${date}.csv` }
 }
 
 /**
