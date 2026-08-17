@@ -152,6 +152,22 @@ function referencedColumns(node: unknown, out: Set<string> = new Set()): Set<str
 
 beforeEach(() => {
   vi.clearAllMocks()
+
+  // `vi.clearAllMocks()` clears call records but does NOT drain a pending one-time queue, and
+  // assigning a default with `mockResolvedValue` does not drain it either — the queue is consumed
+  // first. Any test whose action short-circuits early (an over-cap rejection, an unauthenticated
+  // caller) therefore leaves unconsumed rows behind, and the NEXT test silently reads them instead
+  // of its own fixture. Plan 38-14 hit exactly that: a leftover row shifted an ownership assertion
+  // onto an owned record, so the test passed while asserting the wrong thing. Every mock that a
+  // test queues onto must be reset explicitly here.
+  //
+  // Measured 2026-08-17: this suite passes with or without these two lines, so the leak is LATENT
+  // here rather than currently manifesting — the tests that queue happen to consume what they
+  // queue today. It manifested for real in the activities suite. These resets exist so that adding
+  // one short-circuiting case later cannot silently corrupt a downstream assertion.
+  mockPersonFindFirst.mockReset()
+  mockDelete.mockReset()
+
   mockRunWithActor.mockImplementation((_actor: unknown, fn: () => unknown) => fn())
   mockAuth.mockResolvedValue(sessionFor(OWNER))
   mockDelete.mockResolvedValue({ success: true })
