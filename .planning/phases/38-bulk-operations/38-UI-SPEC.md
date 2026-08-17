@@ -982,11 +982,30 @@ confirmation either.
 | `Escape` while the bar is visible and no dialog is open | Clears the selection |
 | Nothing selected | The bar is **absent** from the DOM, along with its `h-20` spacer. No reserved strip, no ghost bar |
 
-**The clear-on-filter-change effect must be keyed on the filter STRING, never on the `data` array.**
+**The clear-on-filter-change reset must be keyed on the filter STRING, never on the `data` array.**
 
-```ts
-useEffect(() => { setRowSelection({}) }, [search])   // NOT [data]
-```
+> **CORRECTED during execution of plan 38-15.** This spec originally wrote the reset as
+> `useEffect(() => { setRowSelection({}) }, [search])`, and that exact code is a **lint ERROR** in this
+> repo — `react-hooks/set-state-in-effect`, "Avoid calling setState() directly within an effect",
+> proven with a throwaway probe rather than assumed. Following it literally would have failed the
+> plan's own "lint 0 errors" gate, and the three existing suppressions of that rule in this codebase
+> are all logged as deferrals, so a fourth was not acceptable. Plan 38-08 hit the same rule
+> independently on the dialog's owner reset.
+>
+> Use React's documented adjust-state-on-prop-change pattern instead — there is **no effect at all**:
+>
+> ```ts
+> const [prevSearch, setPrevSearch] = useState(search)
+> if (prevSearch !== search) {
+>   setPrevSearch(search)
+>   setRowSelection({})
+> }
+> ```
+>
+> This is also marginally stronger than the effect: the reset lands in the same render that first sees
+> the new search, rather than one render later. **Consequence for any gate:** do NOT assert that a
+> `useEffect` exists in these files — it cannot. Assert the contract instead (`data` absent from any
+> clear-on-filter position).
 
 Phase 35 measured that `revalidatePath` **re-renders the current client tree regardless of the path
 argument** (Next 16.1.6), and every bulk server action calls it. An effect keyed on `data` would
