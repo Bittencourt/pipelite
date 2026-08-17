@@ -65,7 +65,8 @@ blocked: 1
 ## Gaps
 
 ### G1 — Purge dialog does not mention that live children are detached
-status: failed
+status: resolved (code review WR-08, commit 57394ad)
+resolution: `countPurgeImpact` now counts exactly what the teardown detaches, an admin-gated `previewPurgeImpact` reads it before the write, and the dialog states the number of records that will be unlinked. A separate `descriptionUnknownImpact` string exists so a failed count cannot render as "0", which the dialog asserts as fact. 37-UI-SPEC's copy table was amended to match the shipped strings.
 severity: low-medium
 The dialog reads `<name> and its notes will be permanently deleted. This can't be undone. Its change history is kept.` It says nothing about live child records being unlinked. Observed directly: a live person silently lost its organization with no warning in the dialog that authorised it. 37-04 flagged this as an open question; it is now confirmed behaviour, not a prediction. Fixing it needs a UI-SPEC copy amendment (the string is locked there), so it is deliberately NOT patched here.
 
