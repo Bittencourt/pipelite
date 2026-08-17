@@ -10,6 +10,8 @@ import { runWithActor } from "@/lib/audit/actor-context"
 import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
 import type { BulkFailure, BulkWriteResult } from "@/lib/bulk/types"
+import { fetchFilteredData } from "@/lib/export/formatters"
+import type { ExportResult } from "@/lib/export/types"
 import {
   createOrganizationMutation,
   updateOrganizationMutation,
@@ -338,4 +340,60 @@ export async function bulkReassignOrganizationOwner(
   }
 
   return { success: true, ...outcome }
+}
+
+/**
+ * Export exactly the selected organizations as CSV (BULK-04).
+ *
+ * THE SIGNATURE TAKES A LIST OF IDS AND NOTHING ELSE, and that is a security boundary rather than a
+ * style preference (T-38-01). The only other export action in the repo is gated on the admin role and
+ * accepts a whole options object; a NON-admin action that accepted the same object and received `{}`
+ * would fetch every organization in the table — an admin-gate bypass reachable by anyone with a
+ * session, because a server action is a POST endpoint and the caller controls the argument. Every
+ * field of the fetch request is therefore a literal written here: the entity, the format and the
+ * custom-field flag cannot be influenced from outside, and the only caller-supplied value is the id
+ * list, which is narrowed, deduped and capped first. A comment-blind source gate in
+ * `bulk-actions.test.ts` asserts this declaration never grows an options parameter.
+ *
+ * Any authenticated user may export their own selection; there is no admin gate on the SCOPED export.
+ *
+ * The filename is generated here rather than in `fetchFilteredData`, which keeps a widely shared
+ * function untouched. Its slug is the English plural from that function's own mapping and is NEVER
+ * translated: a locale-dependent name on disk is unsupportable, and the es-ES / pt-BR plurals carry
+ * diacritics that survive round trips poorly. Its count comes from the fetch RESULT, not from the
+ * submitted id count, so the name cannot disagree with the rows in the file — a row the caller
+ * selected may have been trashed between the list render and the submit.
+ */
+export async function exportSelectedOrganizations(ids: string[]): Promise<ExportResult> {
+  const session = await auth()
+
+  // Verify authentication
+  if (!session?.user?.id) {
+    return { success: false, error: "Not authenticated" }
+  }
+
+  const uniqueIds = parseIdList(ids)
+
+  if (!uniqueIds || uniqueIds.length === 0) {
+    return { success: false, error: "No records selected" }
+  }
+
+  if (uniqueIds.length > BULK_MAX_IDS) {
+    return { success: false, error: "Too many records" }
+  }
+
+  const result = await fetchFilteredData({
+    entityType: "organization",
+    format: "csv",
+    includeCustomFields: true,
+    filters: { ids: uniqueIds },
+  })
+
+  if (!result.success) {
+    return result
+  }
+
+  const date = new Date().toISOString().split("T")[0]
+
+  return { ...result, filename: `organizations-selected-${result.count}-${date}.csv` }
 }
