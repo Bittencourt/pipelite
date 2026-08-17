@@ -289,6 +289,91 @@ export const REQUIRED_TRASH_KEYS: string[] = [
 ]
 
 /**
+ * The copy contract from 38-UI-SPEC.md § Copywriting Contract → New key inventory. Same rule as the
+ * three lists above: adding a `bulk.*` string to the UI means adding its dot-path here first, and the
+ * exact-contract assertion below turns a string that skipped this list into a red suite rather than
+ * copy that ships gated by nothing.
+ *
+ * 44 keys, all inside the `bulk` namespace — unlike `trash`, this phase adds nothing to `nav` or
+ * `admin.dashboard`, which is why `bulkKeys` below needs no `*_EXTRA_KEYS` sibling. The per-group
+ * counts in the comments are load-bearing: they are how a reader sees at a glance that a group lost
+ * a key.
+ */
+export const REQUIRED_BULK_KEYS: string[] = [
+  // Selection — 4. The capped variant is a plain-placeholder string rather than an ICU plural
+  // because {max} is always BULK_MAX_IDS and therefore never singular. It exists because /deals has
+  // no pagination and its largest single stage holds 10,495 deals, so a per-stage select-all is
+  // over-cap in the normal case and has to say so (D-07).
+  "bulk.selectRow",
+  "bulk.selectAllLoaded",
+  "bulk.selectAllInStage",
+  "bulk.selectAllInStageCapped",
+
+  // Action bar — 7. actionBarLabel is the region's accessible name, separate from the visible
+  // `selected` count because a screen reader needs the noun the bare "12 selected" omits.
+  "bulk.selected",
+  "bulk.actionBarLabel",
+  "bulk.reassignOwner",
+  "bulk.exportCsv",
+  "bulk.delete",
+  "bulk.clearSelection",
+  "bulk.exporting",
+
+  // Delete dialog — 6. descriptionNoRetention is the fail-closed variant, exactly as
+  // trash.empty.bodyNoRetention is: readTrashRetentionDays() returns null when the setting is unset
+  // or unparseable, and a `?? 30` in the consumer would make the dialog promise a restore window the
+  // pruner is not enforcing (T-38-10).
+  "bulk.deleteDialog.title",
+  "bulk.deleteDialog.description",
+  "bulk.deleteDialog.descriptionNoRetention",
+  "bulk.deleteDialog.cancel",
+  "bulk.deleteDialog.confirm",
+  "bulk.deleteDialog.deleting",
+
+  // Reassign dialog — 8. noEmailNotice is required copy, not a nicety: the single-record reassign
+  // path does email the new assignee, so silence here would be an implied promise (T-38-11).
+  "bulk.reassignDialog.title",
+  "bulk.reassignDialog.description",
+  "bulk.reassignDialog.ownerLabel",
+  "bulk.reassignDialog.ownerPlaceholder",
+  "bulk.reassignDialog.noEmailNotice",
+  "bulk.reassignDialog.cancel",
+  "bulk.reassignDialog.confirm",
+  "bulk.reassignDialog.reassigning",
+
+  // Results — 6. `partial` is a separate string from the three all-succeeded lines because a partial
+  // result is a different claim, and collapsing them would either overstate or bury the failures.
+  "bulk.deleted",
+  "bulk.reassigned",
+  "bulk.exported",
+  "bulk.partial",
+  "bulk.openTrash",
+  "bulk.working",
+
+  // Failure report — 4
+  "bulk.failures.deleteTitle",
+  "bulk.failures.reassignTitle",
+  "bulk.failures.retryHint",
+  "bulk.failures.dismiss",
+
+  // Errors — 5. tooMany states both the cap and the selected count, so the user is not left
+  // guessing how far over the limit they are.
+  "bulk.error.tooMany",
+  "bulk.error.deleteFailed",
+  "bulk.error.reassignFailed",
+  "bulk.error.exportFailed",
+  "bulk.error.notPermitted",
+
+  // Per-record failure reasons — 4, and a CLOSED set. The server returns one of these four codes,
+  // never prose, so no server error text can reach the failure report (T-38-07). A fifth reason
+  // means a fifth key here first.
+  "bulk.reason.notFound",
+  "bulk.reason.notPermitted",
+  "bulk.reason.alreadyDeleted",
+  "bulk.reason.unknown",
+]
+
+/**
  * Keys whose translation is legitimately byte-identical to the en-US string in BOTH other
  * locales — proper nouns, brand names, units. Empty today. A key only belongs here after a
  * human decides the identical string is correct, not because a translation was skipped.
@@ -342,6 +427,7 @@ const allKeys = Object.fromEntries(LOCALES.map((l) => [l, flattenKeys(messages[l
 const NOTES_NAMESPACE = "notes"
 const AUDIT_NAMESPACE = "audit"
 const TRASH_NAMESPACE = "trash"
+const BULK_NAMESPACE = "bulk"
 
 /** The two audit strings that live outside the audit namespace, in the admin dashboard tile. */
 const AUDIT_DASHBOARD_KEYS = ["admin.dashboard.auditLog", "admin.dashboard.auditLogDescription"]
@@ -372,6 +458,8 @@ const auditKeys = keysMatching(
 const trashKeys = keysMatching(
   (key) => inNamespace(TRASH_NAMESPACE)(key) || TRASH_EXTRA_KEYS.includes(key),
 )
+// No EXTRA_KEYS sibling on purpose: 38-UI-SPEC adds zero bulk strings outside the namespace.
+const bulkKeys = keysMatching(inNamespace(BULK_NAMESPACE))
 
 const emptyPerLocale = Object.fromEntries(LOCALES.map((l) => [l, [] as string[]])) as Record<
   Locale,
@@ -381,8 +469,8 @@ const emptyPerLocale = Object.fromEntries(LOCALES.map((l) => [l, [] as string[]]
 /*
  * The five assertion bodies below are shared by every copy contract in this file, so a contract is
  * gated by calling them rather than by copying an `it` block. REQUIRED_NOTE_KEYS,
- * REQUIRED_AUDIT_KEYS and REQUIRED_TRASH_KEYS are passed separately — never concatenated — so a
- * failure diff names which contract broke and lists only its keys.
+ * REQUIRED_AUDIT_KEYS, REQUIRED_TRASH_KEYS and REQUIRED_BULK_KEYS are passed separately — never
+ * concatenated — so a failure diff names which contract broke and lists only its keys.
  */
 
 /** Contract keys absent from each locale file. */
@@ -444,17 +532,19 @@ function expectIdenticalKeySets(scoped: Record<Locale, string[]>, label: string)
 }
 
 describe("locale parity", () => {
-  it("every required notes, audit and trash key exists in every locale", () => {
+  it("every required notes, audit, trash and bulk key exists in every locale", () => {
     // Keyed by locale so a failure diff names the offending file and the exact missing keys.
     expect(missingIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
     expect(missingIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
     expect(missingIn(REQUIRED_TRASH_KEYS)).toEqual(emptyPerLocale)
+    expect(missingIn(REQUIRED_BULK_KEYS)).toEqual(emptyPerLocale)
   })
 
-  it("the notes, audit and trash namespaces have identical key sets across all three locales", () => {
+  it("the notes, audit, trash and bulk namespaces have identical key sets across all three locales", () => {
     expectIdenticalKeySets(noteKeys, NOTES_NAMESPACE)
     expectIdenticalKeySets(auditKeys, AUDIT_NAMESPACE)
     expectIdenticalKeySets(trashKeys, TRASH_NAMESPACE)
+    expectIdenticalKeySets(bulkKeys, BULK_NAMESPACE)
 
     // Stronger than cross-locale identity, and the reason the contract list is checked in: the
     // shipped audit key set must equal REQUIRED_AUDIT_KEYS exactly, so a string added to the
@@ -475,28 +565,42 @@ describe("locale parity", () => {
         `${TRASH_NAMESPACE} key set in ${locale}.json diverges from the checked-in contract`,
       ).toEqual(trashContract)
     }
+
+    // Same exact-contract rule for bulk. The bulk contract is entirely inside its own namespace, so
+    // this comparison is total: a 45th bulk string that never made it into REQUIRED_BULK_KEYS fails
+    // here, which is the half a missing-key check cannot see.
+    const bulkContract = [...REQUIRED_BULK_KEYS].sort()
+    for (const locale of LOCALES) {
+      expect(
+        bulkKeys[locale],
+        `${BULK_NAMESPACE} key set in ${locale}.json diverges from the checked-in contract`,
+      ).toEqual(bulkContract)
+    }
   })
 
-  it("every required notes, audit and trash value is a non-empty string", () => {
+  it("every required notes, audit, trash and bulk value is a non-empty string", () => {
     expect(blankIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
     expect(blankIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
     expect(blankIn(REQUIRED_TRASH_KEYS)).toEqual(emptyPerLocale)
+    expect(blankIn(REQUIRED_BULK_KEYS)).toEqual(emptyPerLocale)
   })
 
-  it("no required notes, audit or trash string was left untranslated in both es-ES and pt-BR", () => {
+  it("no required notes, audit, trash or bulk string was left untranslated in both es-ES and pt-BR", () => {
     // An English string copied verbatim into BOTH other locales is a skipped translation, not a
     // coincidence. Matching one locale is plausible (cognates); matching both is not.
     expect(untranslatedInBoth(REQUIRED_NOTE_KEYS)).toEqual([])
     expect(untranslatedInBoth(REQUIRED_AUDIT_KEYS)).toEqual([])
     expect(untranslatedInBoth(REQUIRED_TRASH_KEYS)).toEqual([])
+    expect(untranslatedInBoth(REQUIRED_BULK_KEYS)).toEqual([])
   })
 
-  it("interpolation placeholders survive translation for every required notes, audit and trash key", () => {
+  it("interpolation placeholders survive translation for every required notes, audit, trash and bulk key", () => {
     // next-intl throws at render time when a message references a placeholder the caller did not
     // pass, so a translator dropping `{from}` breaks the Spanish UI and only the Spanish UI.
     expect(placeholderDrift(REQUIRED_NOTE_KEYS)).toEqual({})
     expect(placeholderDrift(REQUIRED_AUDIT_KEYS)).toEqual({})
     expect(placeholderDrift(REQUIRED_TRASH_KEYS)).toEqual({})
+    expect(placeholderDrift(REQUIRED_BULK_KEYS)).toEqual({})
   })
 
   it("all three locales have identical whole-file key sets", () => {
