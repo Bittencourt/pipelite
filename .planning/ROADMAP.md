@@ -367,11 +367,11 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 38-01-PLAN.md — the 44-key `bulk.*` copy contract in three locales + `REQUIRED_BULK_KEYS` (BULK-01..04)
-- [ ] 38-02-PLAN.md — `updateOrganizationOwnerMutation` + `updatePersonOwnerMutation` + the `buildChanges` ownerId gate (BULK-03)
-- [ ] 38-03-PLAN.md — `updateDealOwnerMutation` + `updateActivityOwnerMutation` + the `deal_assignees` regression gate (BULK-03)
-- [ ] 38-04-PLAN.md — `ExportFilters.ids` narrowing across all four fetchers + a live-database probe (BULK-04)
-- [ ] 38-05-PLAN.md — `checkbox.tsx` indeterminate branch + the 8-consumer safety gate (BULK-01)
+- [x] 38-01-PLAN.md — the 44-key `bulk.*` copy contract in three locales + `REQUIRED_BULK_KEYS` (BULK-01..04)
+- [x] 38-02-PLAN.md — `updateOrganizationOwnerMutation` + `updatePersonOwnerMutation` + the `buildChanges` ownerId gate (BULK-03)
+- [x] 38-03-PLAN.md — `updateDealOwnerMutation` + `updateActivityOwnerMutation` + the `deal_assignees` regression gate (BULK-03)
+- [x] 38-04-PLAN.md — `ExportFilters.ids` narrowing across all four fetchers + a live-database probe (BULK-04)
+- [x] 38-05-PLAN.md — `checkbox.tsx` indeterminate branch + the 8-consumer safety gate (BULK-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -525,7 +525,7 @@ Plans:
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
-| 38. Bulk Operations | 0/20 | Planned | - |
+| 38. Bulk Operations | 5/20 | In Progress|  |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
