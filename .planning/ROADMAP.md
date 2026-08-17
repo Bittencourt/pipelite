@@ -361,8 +361,47 @@ Plans:
   4. User exports only the selected records to CSV, not the whole table
   5. Bulk deletes and reassignments appear in each affected record's change history
 
-**Plans**: TBD
+**Plans**: 20 plans in 6 waves
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+
+- [ ] 38-01-PLAN.md — the 44-key `bulk.*` copy contract in three locales + `REQUIRED_BULK_KEYS` (BULK-01..04)
+- [ ] 38-02-PLAN.md — `updateOrganizationOwnerMutation` + `updatePersonOwnerMutation` + the `buildChanges` ownerId gate (BULK-03)
+- [ ] 38-03-PLAN.md — `updateDealOwnerMutation` + `updateActivityOwnerMutation` + the `deal_assignees` regression gate (BULK-03)
+- [ ] 38-04-PLAN.md — `ExportFilters.ids` narrowing across all four fetchers + a live-database probe (BULK-04)
+- [ ] 38-05-PLAN.md — `checkbox.tsx` indeterminate branch + the 8-consumer safety gate (BULK-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 38-06-PLAN.md — `src/lib/bulk/{limits,types,dispatch}.ts` + the dispatch mis-wiring test (BULK-02, BULK-03)
+- [ ] 38-07-PLAN.md — the shared checkbox column: `buildSelectColumn` (pure) + `useSelectColumn` (BULK-01)
+- [ ] 38-08-PLAN.md — the bulk delete and reassign dialogs + their comment-stripped source gate (BULK-02, BULK-03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 38-09-PLAN.md — the per-record failure report, uncapped and scroll-bounded (BULK-02, BULK-03)
+- [ ] 38-10-PLAN.md — the floating bulk action bar at `z-[60]`, its handlers and the CSV download (BULK-02..04)
+- [ ] 38-11-PLAN.md — Organizations bulk delete / reassign / scoped export + session-swapping suite (BULK-02..04)
+- [ ] 38-12-PLAN.md — People bulk delete / reassign / scoped export + session-swapping suite (BULK-02..04)
+- [ ] 38-13-PLAN.md — Deals bulk actions incl. the admin-bypass asymmetry and the no-email gate (BULK-02..04)
+- [ ] 38-14-PLAN.md — Activities bulk actions incl. the `assigneeId` boundary gate (BULK-02..04)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 38-15-PLAN.md — Organizations surface: rowSelection, select column, bar/spacer/report (BULK-01..04)
+- [ ] 38-16-PLAN.md — People surface, kept byte-identical to its Organizations twin (BULK-01..04)
+- [ ] 38-17-PLAN.md — Activities surface with `rowSelection` lifted to `ActivitiesClient` (BULK-01..04)
+- [ ] 38-18-PLAN.md — Deals kanban: card checkbox, per-stage capped select-all, board mount (BULK-01..04)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 38-19-PLAN.md — the cross-surface select-wiring gate + the phase-wide suite/typecheck/lint run (BULK-01..04)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 38-20-PLAN.md — second approved user, live-database probes, and browser UAT across all four surfaces (BULK-01..04)
 
 ### Phase 39: Duplicate Detection & Merge
 
@@ -426,7 +465,7 @@ Plans:
 ### Phase 43: Type Safety & Deployment Docs
 
 **Goal**: No standing type suppressions, and a self-hoster can recover their data
-**Depends on**: Phase 38 (BULK-01 adds a checkbox column to the same `organizations/columns.tsx` and `people/columns.tsx` files POLISH-01 retypes)
+**Depends on**: Phase 38 — but the anticipated file collision was DESIGNED OUT during Phase 38 planning: 38-UI-SPEC § Surface 1 puts the bulk checkbox column in a shared `src/components/bulk/select-column.tsx` consumed inside each table's client component, so `organizations/columns.tsx` and `people/columns.tsx` are explicitly NOT edited by Phase 38 and POLISH-01's retype has no merge surface with it. The dependency is retained only as an ordering preference, not a blocker.
 **Requirements**: POLISH-01, POLISH-02
 **Success Criteria** (what must be TRUE):
 
@@ -486,7 +525,7 @@ Plans:
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
-| 38. Bulk Operations | 0/? | Not started | - |
+| 38. Bulk Operations | 0/20 | Planned | - |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
@@ -665,4 +704,4 @@ The evidence captured with each backlog item is preserved in the v1.3 requiremen
 (`.planning/REQUIREMENTS.md`) — each category there names its originating backlog item.
 
 ---
-*Roadmap updated: 2026-08-15 -- Phase 44 added from the browser E2E pass (999.25-999.27 promoted); v1.3 is now Phases 32-44*
+*Roadmap updated: 2026-08-17 -- Phase 38 planned (20 plans, 6 waves); the anticipated Phase 43 collision on `organizations/columns.tsx` and `people/columns.tsx` was designed out*
