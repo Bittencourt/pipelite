@@ -235,16 +235,32 @@ async function selectExpiredIds(entityType: EntityType, days: number): Promise<s
 
 /**
  * postgres.js hands back a row list; a driver swap would hand back `{ rows }`. Anything else
- * degrades to "found nothing this batch" — which stops the loop — rather than to an exception
- * inside a background timer, and a row without a string id is skipped rather than passed to a
- * purge as `undefined`.
+ * still degrades to "found nothing this batch" — which stops the loop — rather than to an
+ * exception inside a background timer, and a row without a string id is skipped rather than
+ * passed to a purge as `undefined`.
+ *
+ * But the degradation is LOGGED, and that log line is the point. Returning `[]` silently makes a
+ * tick whose driver shape changed emit `purged 0 record(s)` — byte-identical to a tick with an
+ * empty trash — so a retention policy that has stopped running looks exactly like one with
+ * nothing to do. This module's header exists because a silently non-running processor already
+ * shipped in this repo once; an unrecognised shape here is that same failure one level deeper,
+ * and it must announce itself.
  */
 function toIds(result: unknown): string[] {
   const rows = Array.isArray(result)
     ? result
     : Array.isArray((result as { rows?: unknown })?.rows)
       ? ((result as { rows: unknown[] }).rows)
-      : []
+      : null
+
+  if (rows === null) {
+    // Shape only — never the value, which could carry record content into the log.
+    console.error(
+      "[trash-prune] unrecognised expiry-query result shape — purging nothing this batch; " +
+        `expected an array or { rows: [] }, got ${result === null ? "null" : typeof result}`
+    )
+    return []
+  }
 
   const ids: string[] = []
 
