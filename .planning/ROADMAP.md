@@ -390,10 +390,10 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 38-15-PLAN.md — Organizations surface: rowSelection, select column, bar/spacer/report (BULK-01..04)
-- [ ] 38-16-PLAN.md — People surface, kept byte-identical to its Organizations twin (BULK-01..04)
-- [ ] 38-17-PLAN.md — Activities surface with `rowSelection` lifted to `ActivitiesClient` (BULK-01..04)
-- [ ] 38-18-PLAN.md — Deals kanban: card checkbox, per-stage capped select-all, board mount (BULK-01..04)
+- [x] 38-15-PLAN.md — Organizations surface: rowSelection, select column, bar/spacer/report (BULK-01..04)
+- [x] 38-16-PLAN.md — People surface, kept byte-identical to its Organizations twin (BULK-01..04)
+- [x] 38-17-PLAN.md — Activities surface with `rowSelection` lifted to `ActivitiesClient` (BULK-01..04)
+- [x] 38-18-PLAN.md — Deals kanban: card checkbox, per-stage capped select-all, board mount (BULK-01..04)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -525,7 +525,7 @@ Plans:
 | 35. Notes & Record Timeline | 15/15 | Complete   | 2026-08-15 |
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
-| 38. Bulk Operations | 14/20 | In Progress|  |
+| 38. Bulk Operations | 18/20 | In Progress|  |
 | 39. Duplicate Detection & Merge | 0/? | Not started | - |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |

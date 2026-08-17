@@ -3,6 +3,25 @@
 Out-of-scope discoveries logged during execution. Nothing here was fixed; each entry names the
 plan that found it and why it is not that plan's work.
 
+## From plans 38-13 and 38-18
+
+### The Deals owner filter can offer an unapproved user
+
+- **File:** `src/app/deals/page.tsx:159-163` (the `allUsers` query)
+- **Symptom:** it filters owners on `deletedAt IS NULL` **alone**, with no
+  `status = 'approved'` predicate, so a `pending_verification` or `rejected` user can be *offered* in
+  the owner controls fed by it.
+- **Why it is not a security hole:** `bulkReassignDealOwner` independently validates the target
+  against `deletedAt IS NULL AND status = 'approved'` and refuses with `invalid_owner`, so the write
+  cannot land. The defect is that the UI presents an impossible choice, not that it permits a bad one.
+- **Why out of scope here:** this query feeds `DealFilters` and `DealDialog`, not just a bulk control.
+  Tightening it would drop an unapproved deal-owner from the owner *filter*, making that user's
+  existing deals unfindable — a different regression. Plan 38-18 confirmed that wiring `bulkOwners`
+  never required touching it, so it was left alone deliberately; `bulkOwners` carries both predicates
+  and the loose one was not copied into any new code.
+- **Where it belongs:** Phase 43 (POLISH). The fix needs a decision about filter-vs-picker semantics,
+  which is a product question, not a mechanical tightening.
+
 ## From plan 38-03
 
 ### ~~`condition-evaluator.test.ts` T-34-20 linearity assertion is flaky under full-suite load~~ — **RESOLVED**
