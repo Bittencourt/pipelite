@@ -104,8 +104,10 @@ export const REQUIRED_AUDIT_KEYS: string[] = [
   "audit.unknownActor",
   "audit.entry.noVisibleChanges",
 
-  // Field labels — 20, covering every audited native column across the four entities. Custom
+  // Field labels — 22, covering every audited native column across the four entities. Custom
   // fields are never translated; they render customFieldDefinitions.name verbatim.
+  // movedToTrash/restoredFromTrash are FLAT siblings, not a nested object: AUDIT_FIELD_LABELS in
+  // src/lib/audit/present.ts maps a column name to a flat dot-path and a nested value breaks it.
   "audit.field.title",
   "audit.field.name",
   "audit.field.firstName",
@@ -126,6 +128,8 @@ export const REQUIRED_AUDIT_KEYS: string[] = [
   "audit.field.type",
   "audit.field.dueDate",
   "audit.field.completedAt",
+  "audit.field.movedToTrash",
+  "audit.field.restoredFromTrash",
 
   // Filter toggle — 5. emptyHidden.body quotes the toggle's own label, so a locale whose body
   // stops matching its own filter label points the user at a control they cannot find.
@@ -350,10 +354,16 @@ export const REQUIRED_BULK_KEYS: string[] = [
   "bulk.openTrash",
   "bulk.working",
 
-  // Failure report — 4
+  // Failure report — 6. Three mutually exclusive hint branches, one per truth condition, because
+  // the panel must state only what is true about the selection after the caller's prune:
+  // `retryHint` when every failed row survived, `retryHintPartial` when some did, `prunedHint` when
+  // none did. 45-CONTEXT.md § Bulk Failure Copy — retrying rows the table can no longer render is
+  // what the prune exists to prevent, so the copy branches instead of the selection being restored.
   "bulk.failures.deleteTitle",
   "bulk.failures.reassignTitle",
   "bulk.failures.retryHint",
+  "bulk.failures.retryHintPartial",
+  "bulk.failures.prunedHint",
   "bulk.failures.dismiss",
 
   // Errors — 5. tooMany states both the cap and the selected count, so the user is not left
@@ -374,11 +384,77 @@ export const REQUIRED_BULK_KEYS: string[] = [
 ]
 
 /**
- * Keys whose translation is legitimately byte-identical to the en-US string in BOTH other
- * locales — proper nouns, brand names, units. Empty today. A key only belongs here after a
- * human decides the identical string is correct, not because a translation was skipped.
+ * The copy contract from 45-UI-SPEC.md § New message keys. Same rule as the four lists above: a
+ * shell string reaching the UI means its dot-path is added here first. This one exists because the
+ * admin sidebar shipped eleven English literals that no gate could see — the whole-file key-set
+ * parity check catches a MISSING key, but an English string pasted into pt-BR.json passes it.
+ *
+ * 16 keys: the 12 `admin.nav.*` sidebar/drawer strings and the 4 `theme.*` toggle strings.
+ *
+ * The `nav` half of the shell contract is carried separately in SHELL_EXTRA_KEYS rather than by
+ * scoping this list to the `nav` namespace: `nav` already holds 12 pre-existing keys, so a
+ * whole-namespace exact-set contract would drag all of them in and make this list a rewrite of a
+ * namespace this phase adds two strings to. TRASH_EXTRA_KEYS below is the precedent for the shape.
  */
-const IDENTICAL_TRANSLATION_ALLOWED: string[] = []
+export const REQUIRED_SHELL_KEYS: string[] = [
+  // Admin sidebar / drawer — 12. The first 11 are the entries that were English literals in
+  // src/components/admin-sidebar.tsx; `openMenu` is the accessible name of the new mobile
+  // hamburger trigger, which has no visible label at all.
+  "admin.nav.title",
+  "admin.nav.dashboard",
+  "admin.nav.users",
+  "admin.nav.pipelines",
+  "admin.nav.customFields",
+  "admin.nav.webhooks",
+  "admin.nav.auditLog",
+  "admin.nav.trash",
+  "admin.nav.exportData",
+  "admin.nav.pipedriveImport",
+  "admin.nav.backToApp",
+  "admin.nav.openMenu",
+
+  // Theme toggle — 4, a new top-level namespace rather than `nav.theme.*`: the theme is app-wide
+  // state and a future appearance section in /settings reads the same four strings.
+  "theme.label",
+  "theme.light",
+  "theme.dark",
+  "theme.system",
+]
+
+/** The two shell strings that live outside the shell namespaces, in the pre-existing `nav`. */
+const SHELL_EXTRA_KEYS = [
+  "nav.workflows",
+  "nav.searchDescription",
+]
+
+/** The whole shell contract, namespaced keys plus the `nav` extras, as one list to gate. */
+const SHELL_CONTRACT_KEYS = [...REQUIRED_SHELL_KEYS, ...SHELL_EXTRA_KEYS]
+
+/**
+ * Keys whose translation is legitimately byte-identical to the en-US string in BOTH other
+ * locales — proper nouns, brand names, units. A key only belongs here after a human decides the
+ * identical string is correct, not because a translation was skipped.
+ *
+ * The three entries are product nouns, and each is here for a stated reason:
+ *
+ * - `admin.nav.pipelines` — "Pipelines" is the product's own noun for a funnel. The precedent is
+ *   inside this very catalog: `nav.pipelines` is already "Pipelines" in all three locales, and the
+ *   sidebar entry and the main-nav entry point at the same route, so they must not disagree (V-1).
+ * - `admin.nav.webhooks` — same: `admin.webhooks.title` is already "Webhooks" in all three.
+ * - `nav.workflows` — the locked decision (45-CONTEXT.md § Shell Translation) is that the link must
+ *   call `t()`; the defect being fixed is a literal in JSX. Translating the WORD would send a pt-BR
+ *   user to a workflows surface that has no `workflows` message namespace at all — the entire
+ *   Phase 24-30 UI is English — i.e. trade a visible literal for a language cliff. This key is
+ *   where the label changes once that surface is localised, which is why it moves here now.
+ *
+ * Without these three, the `untranslatedInBoth(SHELL_CONTRACT_KEYS)` assertion below fails on
+ * copy that is correct.
+ */
+const IDENTICAL_TRANSLATION_ALLOWED: string[] = [
+  "admin.nav.pipelines",
+  "admin.nav.webhooks",
+  "nav.workflows",
+]
 
 type LocaleMessages = { [key: string]: string | LocaleMessages }
 
@@ -428,6 +504,9 @@ const NOTES_NAMESPACE = "notes"
 const AUDIT_NAMESPACE = "audit"
 const TRASH_NAMESPACE = "trash"
 const BULK_NAMESPACE = "bulk"
+/** The shell contract spans two namespaces; `nav.*` is carried by SHELL_EXTRA_KEYS instead. */
+const SHELL_NAMESPACES = ["admin.nav", "theme"]
+const SHELL_LABEL = "shell"
 
 /** The two audit strings that live outside the audit namespace, in the admin dashboard tile. */
 const AUDIT_DASHBOARD_KEYS = ["admin.dashboard.auditLog", "admin.dashboard.auditLogDescription"]
@@ -460,6 +539,9 @@ const trashKeys = keysMatching(
 )
 // No EXTRA_KEYS sibling on purpose: 38-UI-SPEC adds zero bulk strings outside the namespace.
 const bulkKeys = keysMatching(inNamespace(BULK_NAMESPACE))
+const shellKeys = keysMatching(
+  (key) => SHELL_NAMESPACES.some((ns) => inNamespace(ns)(key)) || SHELL_EXTRA_KEYS.includes(key),
+)
 
 const emptyPerLocale = Object.fromEntries(LOCALES.map((l) => [l, [] as string[]])) as Record<
   Locale,
@@ -469,8 +551,16 @@ const emptyPerLocale = Object.fromEntries(LOCALES.map((l) => [l, [] as string[]]
 /*
  * The five assertion bodies below are shared by every copy contract in this file, so a contract is
  * gated by calling them rather than by copying an `it` block. REQUIRED_NOTE_KEYS,
- * REQUIRED_AUDIT_KEYS, REQUIRED_TRASH_KEYS and REQUIRED_BULK_KEYS are passed separately — never
- * concatenated — so a failure diff names which contract broke and lists only its keys.
+ * REQUIRED_AUDIT_KEYS, REQUIRED_TRASH_KEYS, REQUIRED_BULK_KEYS and SHELL_CONTRACT_KEYS are passed
+ * separately — never concatenated — so a failure diff names which contract broke and lists only
+ * its keys.
+ *
+ * The per-contract calls use `expect.soft` rather than `expect`. Plain `expect` throws on the first
+ * failure, so with five contracts in one `it` block only the earliest-listed broken contract is
+ * ever reported and the other four are invisible until it is fixed — which is exactly the outcome
+ * the "passed separately" rule above exists to avoid. Soft assertions still fail the test; they
+ * just let every broken contract name itself in a single run. `expect` (hard) is kept for the
+ * standalone ICU assertion, which gates one key and has nothing to run alongside it.
  */
 
 /** Contract keys absent from each locale file. */
@@ -523,35 +613,61 @@ function placeholderDrift(required: string[]): Record<string, Record<string, str
   return mismatched
 }
 
+/**
+ * The two substrings an ICU plural wrapper cannot lose. `placeholders()` above matches
+ * `/\{[a-zA-Z0-9_]+\}/g`, which CANNOT match `{count, plural, one {# …} other {# …}}` — the comma,
+ * the spaces and the `#` all fall outside that character class — so `placeholderDrift()` computes
+ * an empty expected set for such a message and `continue`s without checking anything. The generic
+ * placeholder gate therefore does NOT cover ICU plural syntax, for this key or any other. The
+ * dedicated assertion below is the only thing defending the wrapper.
+ */
+const ICU_PLURAL_MARKERS = ["{count,", "plural,"]
+
+/** Per-locale verdict on one message's ICU plural wrapper: "ok", "absent", or what it lost. */
+function icuPluralReport(key: string): Record<Locale, string> {
+  return Object.fromEntries(
+    LOCALES.map((locale) => {
+      const value = resolve(messages[locale], key)
+      if (typeof value !== "string") return [locale, "absent"]
+      const lost = ICU_PLURAL_MARKERS.filter((marker) => !value.includes(marker))
+      return [locale, lost.length === 0 ? "ok" : `lost ${lost.join(" and ")}`]
+    }),
+  ) as Record<Locale, string>
+}
+
+const icuOkPerLocale = Object.fromEntries(LOCALES.map((l) => [l, "ok"])) as Record<Locale, string>
+
 /** Every locale carries the same scoped key set as the reference locale. */
 function expectIdenticalKeySets(scoped: Record<Locale, string[]>, label: string): void {
   const reference = scoped[REFERENCE_LOCALE]
   for (const locale of LOCALES) {
-    expect(scoped[locale], `${label} key set differs in ${locale}.json`).toEqual(reference)
+    expect.soft(scoped[locale], `${label} key set differs in ${locale}.json`).toEqual(reference)
   }
 }
 
 describe("locale parity", () => {
-  it("every required notes, audit, trash and bulk key exists in every locale", () => {
+  it("every required notes, audit, trash, bulk and shell key exists in every locale", () => {
     // Keyed by locale so a failure diff names the offending file and the exact missing keys.
-    expect(missingIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
-    expect(missingIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
-    expect(missingIn(REQUIRED_TRASH_KEYS)).toEqual(emptyPerLocale)
-    expect(missingIn(REQUIRED_BULK_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(missingIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(missingIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(missingIn(REQUIRED_TRASH_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(missingIn(REQUIRED_BULK_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(missingIn(SHELL_CONTRACT_KEYS)).toEqual(emptyPerLocale)
   })
 
-  it("the notes, audit, trash and bulk namespaces have identical key sets across all three locales", () => {
+  it("the notes, audit, trash, bulk and shell namespaces have identical key sets across all three locales", () => {
     expectIdenticalKeySets(noteKeys, NOTES_NAMESPACE)
     expectIdenticalKeySets(auditKeys, AUDIT_NAMESPACE)
     expectIdenticalKeySets(trashKeys, TRASH_NAMESPACE)
     expectIdenticalKeySets(bulkKeys, BULK_NAMESPACE)
+    expectIdenticalKeySets(shellKeys, SHELL_LABEL)
 
     // Stronger than cross-locale identity, and the reason the contract list is checked in: the
     // shipped audit key set must equal REQUIRED_AUDIT_KEYS exactly, so a string added to the
     // namespace without its dot-path going into the list fails here instead of shipping ungated.
     const auditContract = [...REQUIRED_AUDIT_KEYS].sort()
     for (const locale of LOCALES) {
-      expect(
+      expect.soft(
         auditKeys[locale],
         `${AUDIT_NAMESPACE} key set in ${locale}.json diverges from the checked-in contract`,
       ).toEqual(auditContract)
@@ -560,7 +676,7 @@ describe("locale parity", () => {
     // Same exact-contract rule for trash, and the same reason.
     const trashContract = [...REQUIRED_TRASH_KEYS].sort()
     for (const locale of LOCALES) {
-      expect(
+      expect.soft(
         trashKeys[locale],
         `${TRASH_NAMESPACE} key set in ${locale}.json diverges from the checked-in contract`,
       ).toEqual(trashContract)
@@ -571,36 +687,63 @@ describe("locale parity", () => {
     // here, which is the half a missing-key check cannot see.
     const bulkContract = [...REQUIRED_BULK_KEYS].sort()
     for (const locale of LOCALES) {
-      expect(
+      expect.soft(
         bulkKeys[locale],
         `${BULK_NAMESPACE} key set in ${locale}.json diverges from the checked-in contract`,
       ).toEqual(bulkContract)
     }
+
+    // Same exact-contract rule for the shell. Total for `admin.nav.*` and `theme.*` plus the two
+    // `nav` extras: a 13th admin.nav string that never made it into REQUIRED_SHELL_KEYS fails here.
+    // It is NOT total for `nav` — the other 12 nav keys are outside this contract by design.
+    const shellContract = [...SHELL_CONTRACT_KEYS].sort()
+    for (const locale of LOCALES) {
+      expect.soft(
+        shellKeys[locale],
+        `${SHELL_LABEL} key set in ${locale}.json diverges from the checked-in contract`,
+      ).toEqual(shellContract)
+    }
   })
 
-  it("every required notes, audit, trash and bulk value is a non-empty string", () => {
-    expect(blankIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
-    expect(blankIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
-    expect(blankIn(REQUIRED_TRASH_KEYS)).toEqual(emptyPerLocale)
-    expect(blankIn(REQUIRED_BULK_KEYS)).toEqual(emptyPerLocale)
+  it("every required notes, audit, trash, bulk and shell value is a non-empty string", () => {
+    expect.soft(blankIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(blankIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(blankIn(REQUIRED_TRASH_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(blankIn(REQUIRED_BULK_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(blankIn(SHELL_CONTRACT_KEYS)).toEqual(emptyPerLocale)
   })
 
-  it("no required notes, audit, trash or bulk string was left untranslated in both es-ES and pt-BR", () => {
+  it("no required notes, audit, trash, bulk or shell string was left untranslated in both es-ES and pt-BR", () => {
     // An English string copied verbatim into BOTH other locales is a skipped translation, not a
     // coincidence. Matching one locale is plausible (cognates); matching both is not.
-    expect(untranslatedInBoth(REQUIRED_NOTE_KEYS)).toEqual([])
-    expect(untranslatedInBoth(REQUIRED_AUDIT_KEYS)).toEqual([])
-    expect(untranslatedInBoth(REQUIRED_TRASH_KEYS)).toEqual([])
-    expect(untranslatedInBoth(REQUIRED_BULK_KEYS)).toEqual([])
+    expect.soft(untranslatedInBoth(REQUIRED_NOTE_KEYS)).toEqual([])
+    expect.soft(untranslatedInBoth(REQUIRED_AUDIT_KEYS)).toEqual([])
+    expect.soft(untranslatedInBoth(REQUIRED_TRASH_KEYS)).toEqual([])
+    expect.soft(untranslatedInBoth(REQUIRED_BULK_KEYS)).toEqual([])
+    // The three product nouns in IDENTICAL_TRANSLATION_ALLOWED are exempt here, and only here.
+    expect.soft(untranslatedInBoth(SHELL_CONTRACT_KEYS)).toEqual([])
   })
 
-  it("interpolation placeholders survive translation for every required notes, audit, trash and bulk key", () => {
+  it("interpolation placeholders survive translation for every required notes, audit, trash, bulk and shell key", () => {
     // next-intl throws at render time when a message references a placeholder the caller did not
     // pass, so a translator dropping `{from}` breaks the Spanish UI and only the Spanish UI.
-    expect(placeholderDrift(REQUIRED_NOTE_KEYS)).toEqual({})
-    expect(placeholderDrift(REQUIRED_AUDIT_KEYS)).toEqual({})
-    expect(placeholderDrift(REQUIRED_TRASH_KEYS)).toEqual({})
-    expect(placeholderDrift(REQUIRED_BULK_KEYS)).toEqual({})
+    expect.soft(placeholderDrift(REQUIRED_NOTE_KEYS)).toEqual({})
+    expect.soft(placeholderDrift(REQUIRED_AUDIT_KEYS)).toEqual({})
+    expect.soft(placeholderDrift(REQUIRED_TRASH_KEYS)).toEqual({})
+    expect.soft(placeholderDrift(REQUIRED_BULK_KEYS)).toEqual({})
+    expect.soft(placeholderDrift(SHELL_CONTRACT_KEYS)).toEqual({})
+  })
+
+  it("the ICU plural wrapper on bulk.failures.retryHintPartial survives translation", () => {
+    // This is a SEPARATE gate, not a stronger reading of the one above. placeholderDrift() cannot
+    // see ICU plural syntax at all (see ICU_PLURAL_MARKERS): its regex matches `{word}` only, so
+    // `{count, plural, one {# …} other {# …}}` yields an empty expected set and is skipped. A
+    // translator flattening the wrapper to a bare sentence would pass every other assertion in this
+    // file while making the pt-BR panel say "1 records" — or, once the `#` is gone, no count at all.
+    expect(
+      icuPluralReport("bulk.failures.retryHintPartial"),
+      "bulk.failures.retryHintPartial must keep its {count, plural, …} wrapper in every locale",
+    ).toEqual(icuOkPerLocale)
   })
 
   it("all three locales have identical whole-file key sets", () => {
