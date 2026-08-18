@@ -347,9 +347,28 @@ describe("labels", () => {
     expect(change.label).toBe("Some new column")
   })
 
-  it("documents the unmapped-column fallback as an unreachable path", () => {
+  it("documents which columns actually reach the unmapped-column fallback", () => {
+    // RAW, not comment-stripped, and deliberately so: the doc comment IS what is under test.
+    // The fallback used to assert it could never be reached; `deletedAt` reaches it on every
+    // restore, which is how a user came to be reading a database identifier in the timeline.
+    // A reader who believed that claim would look for the soft-delete sentence in the label map
+    // above and conclude it was missing, rather than that it lives in the renderer by necessity.
     const source = readFileSync(new URL("./present.ts", import.meta.url), "utf8")
-    expect(source).toMatch(/unreachable/i)
+
+    expect(
+      /THIS PATH SHOULD BE UNREACHABLE/.test(source),
+      "present.ts must not claim the unmapped-column fallback is unreachable. It is reached, by `deletedAt`, on every soft delete and every restore — the claim is what let a raw column name ship to a user for the whole of phases 36-38"
+    ).toBe(false)
+
+    expect(
+      source,
+      "the rewritten comment must NAME deletedAt as the column that reaches the fallback. A comment corrected only to the extent of dropping the false claim leaves the next reader exactly where the false one did"
+    ).toContain("deletedAt")
+
+    expect(
+      source,
+      "the rewritten comment must point at src/components/timeline/audit-entry.tsx, where the soft-delete sentence is chosen. AUDIT_FIELD_LABELS holds ONE key per column and `describeField` never sees the from/to pair, so a direction cannot be expressed in this module and the pointer is the only way a reader of this file finds the decision"
+    ).toContain("audit-entry.tsx")
   })
 
   it("renders a custom field's user-authored name verbatim, unescaped", () => {
@@ -595,5 +614,117 @@ describe("action semantics", () => {
     for (const action of ["created", "updated", "deleted"] as AuditAction[]) {
       expect(buildAuditFieldChanges("deal", action, {}, resolution())).toEqual([])
     }
+  })
+})
+
+/**
+ * Every key of `AUDIT_FIELD_LABELS`, in the insertion order it carried when this guard was
+ * checked in (45-06).
+ *
+ * THIS ARRAY IS NOT A DUPLICATE OF THE `labels` DESCRIBE ABOVE. That block asserts the map's
+ * CONTENTS with `toEqual`, which compares objects by key/value and is entirely blind to order.
+ * This one asserts ORDER, and order is the load-bearing property: `NATIVE_ORDER` is built from
+ * `Object.keys(AUDIT_FIELD_LABELS)` and its index becomes each native column's `rank`, which is
+ * the display order of native fields in EVERY record timeline in the app — deals, people,
+ * organizations and activities alike, on the four Phase 35/36/37 surfaces that share the
+ * component. Only the first three rows render before the disclosure, so a reordering silently
+ * changes which three fields a reader sees first and nothing else in the suite would notice.
+ */
+const NATIVE_ORDER_PREFIX = [
+  "title",
+  "name",
+  "firstName",
+  "lastName",
+  "email",
+  "phone",
+  "website",
+  "industry",
+  "defaultCurrency",
+  "value",
+  "stageId",
+  "expectedCloseDate",
+  "organizationId",
+  "personId",
+  "dealId",
+  "ownerId",
+  "assigneeId",
+  "typeId",
+  "dueDate",
+  "completedAt",
+]
+
+describe("the native display order", () => {
+  it("appends new columns rather than inserting them", () => {
+    expect(
+      Object.keys(AUDIT_FIELD_LABELS).slice(0, NATIVE_ORDER_PREFIX.length),
+      "the first 20 keys of AUDIT_FIELD_LABELS must still be in their checked-in order. NATIVE_ORDER is derived from this object's INSERTION ORDER (present.ts, immediately below the map) and that index is the display order of native columns in every record timeline; inserting a key rather than appending one silently reorders every timeline in the app, and because only the first three rows render collapsed it changes which fields a reader sees at all. A new column goes at the END"
+    ).toEqual(NATIVE_ORDER_PREFIX)
+  })
+
+  it("still derives that order from the map rather than from a second list", () => {
+    // Anti-vacuity for the guard above: if the map were emptied or renamed, `slice(0, 20)` of
+    // nothing would be `[]` and would not equal the prefix — but a map that GREW a 21st key
+    // still passes, which is the point. The guard defends the prefix, never the length.
+    expect(
+      Object.keys(AUDIT_FIELD_LABELS).length,
+      "AUDIT_FIELD_LABELS must have at least as many keys as the pinned prefix, or the order guard above would be comparing against a truncated slice"
+    ).toBeGreaterThanOrEqual(NATIVE_ORDER_PREFIX.length)
+  })
+})
+
+/* -----------------------------------------------------------------------------------------
+ * THE SOFT-DELETE COLUMN (45-06)
+ *
+ * `deletedAt` is audited but is deliberately ABSENT from `AUDIT_FIELD_LABELS`: that map is one
+ * message key per column, and a `deleted_at` transition needs two — which direction it went.
+ * The sentence is therefore chosen in `src/components/timeline/audit-entry.tsx`, where the
+ * from/to pair is in hand, and gated by
+ * `src/components/timeline/__tests__/deleted-at-wiring.test.ts`.
+ *
+ * What belongs HERE is the half that is a pure function: how the stored value is TYPED. Before
+ * this plan `nativeKind("deletedAt")` returned `"auto"`, `inferValue` saw a string, and the row
+ * rendered the raw ISO instant verbatim. Classifying it as a date is defence in depth — the
+ * renderer no longer prints the value at all, but any future path that does will format it in
+ * the viewer's locale rather than hand them a database representation.
+ * ----------------------------------------------------------------------------------------- */
+describe("the soft-delete column", () => {
+  it("types a stored deleted_at as a date carrying its time of day", () => {
+    expect(
+      valueOf("deletedAt", "2026-08-18T13:45:00.000Z"),
+      'deletedAt must resolve to a `date` value with withTime true. Untyped it falls to inferValue, which sees a string and returns { type: "text" } — that is literally the raw ISO instant reaching the screen, and a moment of deletion without its time of day is not a useful fact'
+    ).toEqual({ type: "date", iso: "2026-08-18T13:45:00.000Z", withTime: true })
+  })
+
+  it("still reports a cleared deleted_at as empty rather than as a date", () => {
+    // The restore direction. `null` is an absence in every column, and the date classification
+    // must not turn one into an invented instant.
+    expect(
+      valueOf("deletedAt", null),
+      "a cleared deleted_at must stay an `empty` value: it is what the renderer branches on to tell a restore from a soft delete"
+    ).toEqual({ type: "empty" })
+  })
+
+  it("keeps deletedAt out of the label map, so no single key claims a direction", () => {
+    expect(
+      AUDIT_FIELD_LABELS.deletedAt,
+      "deletedAt must NOT have an entry in AUDIT_FIELD_LABELS. One column maps to one key there and `describeField` emits one label with no sight of the from/to pair, so any entry would state a single direction for a transition that has two — and the entry would also take a rank in NATIVE_ORDER"
+    ).toBeUndefined()
+  })
+
+  it("orders deletedAt after every mapped native column, as an unmapped one", () => {
+    const changes = buildAuditFieldChanges(
+      "deal",
+      "updated",
+      {
+        deletedAt: { from: "2026-08-18T13:45:00.000Z", to: null },
+        title: { from: "Antigo", to: "Novo" },
+      },
+      resolution()
+    )
+
+    expect(
+      fieldsOf(changes),
+      "an unmapped native column sorts after every mapped one (group 1 vs group 0), so leaving deletedAt out of the label map costs it no position it would otherwise have held"
+    ).toEqual(["title", "deletedAt"])
   })
 })
