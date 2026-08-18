@@ -70,7 +70,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 35: Notes & Record Timeline** - Append-only attributed notes plus one chronological timeline per record (completed 2026-08-15)
 - [x] **Phase 36: Audit Log** - Field-level change history with actor kind, fed by crmBus, with retention (completed 2026-08-16)
 - [x] **Phase 37: Trash & Restore** - Make soft-deleted records visible, restorable, and eventually purged (completed 2026-08-17)
-- [ ] **Phase 38: Bulk Operations** - Multi-select with bulk delete, owner reassignment, and scoped export
+- [x] **Phase 38: Bulk Operations** - Multi-select with bulk delete, owner reassignment, and scoped export (completed 2026-08-17; the one remaining human check — dragging a Deals kanban card by its body with a real mouse — is instrument-blocked and carried into Phase 45)
 - [ ] **Phase 39: Duplicate Detection & Merge** - Warn on likely duplicates and merge without orphaning children
 - [ ] **Phase 40: Saved Views & Shared Filters** - Persist, share, default, and export named filter sets
 - [ ] **Phase 41: Workflow Operator Affordances** - Replay, dry-run, failure alerting, and the single-instance constraint documented
