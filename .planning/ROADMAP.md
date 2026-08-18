@@ -731,7 +731,7 @@ The evidence captured with each backlog item is preserved in the v1.3 requiremen
 
   - Deals kanban: drag a card by its body while another card is checked. Playwright's `browser_drag` times out on mouse-up because dnd-kit's pointer sensor needs an activation constraint (distance/delay plus intermediate `pointermove`) that a simple move-and-up does not satisfy. Synthetic pointer events were deliberately refused as evidence, because regression G1 in that same session proved synthetic dispatch hides a real defect on this exact component. Close it with a human at a real mouse, or by adding an e2e runner that can emit a held pointer sequence — the latter would also give the repo somewhere to pin G1's behaviour, which no current test can defend.
 
-**Plans:** 8/11 plans executed
+**Plans:** 9/11 plans executed
 
 Plans:
 - [x] 45-01-PLAN.md — 22 message keys x 3 locales + the locale-parity contract lists that gate them
@@ -743,7 +743,7 @@ Plans:
 - [x] 45-07-PLAN.md — CommandDialog forwards shouldFilter/loop; the search results tree lifted into SearchResults
 - [x] 45-08-PLAN.md — the three e2e specs (viewport-320 proven RED, deals-drag, theme)
 - [ ] 45-09-PLAN.md — admin shell: translated sidebar, one shared item renderer, Sheet drawer below md, min-w-0 content column
-- [ ] 45-10-PLAN.md — header collapse below md, mobile search dialog, min-w-0 on both clusters, t("workflows")
+- [x] 45-10-PLAN.md — header collapse below md, mobile search dialog, min-w-0 on both clusters, t("workflows")
 - [ ] 45-11-PLAN.md — the single Docker rebuild, the full e2e run, and the human dark-palette walk
 
 ---
