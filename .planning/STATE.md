@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-18T09:34:35.023Z"
+last_updated: "2026-08-18T09:48:43.961Z"
 last_activity: 2026-08-18
 progress:
   total_phases: 14
   completed_phases: 8
   total_plans: 112
-  completed_plans: 103
+  completed_plans: 104
   percent: 57
 ---
 
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 45 - Cross-Cutting UI Repair and UAT Closure
-Plan: 2 of 11 complete
+Plan: 3 of 11 complete
 Status: Ready to execute
 Last activity: 2026-08-18
 
-Progress: [█████████░] 92%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [█████████░] 92%
 | Phase 44 P08 | 15min | 2 tasks | 6 files |
 | Phase 45 P01 | 10min | 2 tasks | 4 files |
 | Phase 45 P02 | 34min | 3 tasks | 8 files |
+| Phase 45 P07 | 12min | 3 tasks | 5 files |
 
 ## Decisions
 
@@ -190,6 +191,9 @@ Progress: [█████████░] 92%
 - [Phase ?]: [Phase 45]: 45-02: the e2e seed's dev-database guard is a hostname allow-list (localhost / 127.0.0.1) parsed from E2E_DATABASE_URL — proven by a RUN negative proof, as was the missing-E2E_ADMIN_PASSWORD guard
 - [Phase ?]: [Phase 45]: 45-02: @playwright/test has no postinstall by design, so browser binaries are a machine-local step (./node_modules/.bin/playwright install chromium, ~300MB into ~/.cache/ms-playwright) — that is the property that keeps CI from downloading browsers it never uses (V-3)
 - [Phase ?]: [Phase 45]: 45-02: auth.setup.ts asserts BOTH the h1 and the final pathname on /admin/audit before saving storageState — a non-admin session is redirected to /?error=unauthorized, which also renders an h1, so the heading alone would not distinguish them
+- [Phase ?]: [Phase 45]: 45-07: CommandDialog spread ...props onto the Radix Dialog root, so shouldFilter could never reach the inner <Command> — and cmdk defaults it to true while filtering on each item's value, which in this app is always a UUID. Both shouldFilter and loop are now destructured OUT of the rest spread and passed explicitly; a prop added to the type alone reproduces the bug while looking correct in a diff
+- [Phase ?]: [Phase 45]: 45-07: the lifted SearchResults name collided with global-search.tsx's own local 'interface SearchResults' — an import binds both a type and a value, so the payload type moved into search-results.tsx as the exported SearchResultsData
+- [Phase ?]: [Phase 45]: 45-07: the move-not-copy gate is 'CommandGroup appears ZERO times in global-search.tsx' — a count of zero is the only formulation that distinguishes an extraction from a duplication, and duplication is how the popover and the future dialog would silently drift
 
 ### Quick Tasks Completed
 
@@ -263,11 +267,12 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 
 - 2026-08-18: 45-01 complete -- 22 new message keys (admin.nav.* x12, theme.* x4, nav.workflows/searchDescription, bulk.failures.retryHintPartial/prunedHint, audit.field.movedToTrash/restoredFromTrash) in all three locales; 770 -> 792 identical leaves. locale-parity.test.ts gained REQUIRED_SHELL_KEYS (16) + SHELL_EXTRA_KEYS (2), extended REQUIRED_BULK_KEYS (44->46) and REQUIRED_AUDIT_KEYS (79->81), IDENTICAL_TRANSLATION_ALLOWED populated with the three product nouns, and a dedicated ICU-plural assertion closing the placeholderDrift blind spot. Per-contract assertions made soft so every broken contract reports in one run. 7/7 locale tests, 2091 suite pass, typecheck 0, lint 0 errors.
 - 2026-08-18: 45-02 complete -- Playwright harness foundation. @playwright/test@^1.62.1 in devDependencies (+ test:e2e script; npm test and ci.yml deliberately untouched, V-3), playwright.config.ts with ignoreDefaultArgs --hide-scrollbars (V-1, measured 320-vs-305 clientWidth recorded inline) and NO webServer block, e2e/seed-admin.ts (idempotent argon2id upsert, loopback-only E2E_DATABASE_URL guard) and e2e/auth.setup.ts (one real-form login, /admin/audit anti-vacuity, writes the gitignored e2e/.auth/admin.json). /e2e/.auth/ + /playwright-report/ + /test-results/ gitignored BEFORE any token was written (V-2); e2e + playwright.config.ts dockerignored. Setup project green 4x, idempotency proven by branch, both env-guard negative proofs RUN. typecheck 0, lint 0 errors, 2091+8 tests pass.
+- 2026-08-18: 45-07 complete -- CommandDialog now forwards shouldFilter and loop to its inner <Command> (both destructured out of the rest spread, which lands on the Radix Dialog root), unblocking any search surface from cmdk's UUID-blind default filter. The three result groups and the CommandEmpty fallback moved -- not copied -- into src/components/global-search/search-results.tsx (named export, plus the exported SearchResultsData payload type); CommandGroup now appears ZERO times in global-search.tsx, which is otherwise behaviour-neutral (same outer shouldFilter={false}, same / hotkey, same w-64 input, same fetch). Gated by src/components/ui/__tests__/command-dialog-wiring.test.ts, a comment-blind source gate that extracts the inner <Command> opening tag so a prop forwarded to the wrong element cannot pass. RED 10 failed/6 passed -> GREEN 16/16; typecheck 0, lint 0 errors (127 warnings, unchanged), 96 files + RSC project green.
 
 ## Current Position
 
 Phase: 38 (Bulk Operations) — EXECUTING
-Plan: 2 of 11 complete
+Plan: 3 of 11 complete
 Status: Ready to execute
 Last activity: 2026-08-18
 
