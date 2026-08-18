@@ -98,6 +98,24 @@ shell, theme, copy, and one bulk component — it must not collide with Phases 3
   Escape regression. This is not a migration of the existing 2086-test suite, and the harness must
   not become a prerequisite for the remaining feature phases.
 
+### Post-Research Decisions (added 2026-08-18, accepted by the user after 45-RESEARCH.md)
+
+- **The e2e harness authenticates by seeding a dedicated admin.** Create `pipelite-e2e@local`
+  (argon2id, password supplied from an environment variable, never hardcoded), log in ONCE through
+  the real login form in a Playwright global-setup, and reuse the resulting `storageState` for every
+  spec. Rationale: this exercises the real auth path, so a broken login page fails the suite —
+  a forged Auth.js JWT would bypass exactly the code most worth defending. Accepted consequence:
+  this writes one user row to the dev database. The seed must be idempotent and must never run
+  against a non-dev database.
+- **Add a `REQUIRED_SHELL_KEYS` contract list** to the locale gate, mirroring the existing
+  `REQUIRED_BULK_KEYS` / `REQUIRED_AUDIT_KEYS` pattern, covering the new `admin.nav.*` and `theme.*`
+  keys — so the new shell keys get the same presence guarantee the bulk and audit namespaces have.
+  Add the three legitimately-identical product nouns (`admin.nav.pipelines`, `admin.nav.webhooks`,
+  `nav.workflows`) to `IDENTICAL_TRANSLATION_ALLOWED`, which is currently `[]`. Also extend
+  `REQUIRED_BULK_KEYS` and `REQUIRED_AUDIT_KEYS` with the four new keys this phase adds
+  (`bulk.failures.retryHintPartial`, `bulk.failures.prunedHint`, `audit.field.movedToTrash`,
+  `audit.field.restoredFromTrash`) — 45-RESEARCH.md establishes that omitting them fails CI.
+
 ### Claude's Discretion
 
 - Exact hamburger placement and Sheet width for the admin drawer.
