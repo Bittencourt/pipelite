@@ -88,6 +88,14 @@ const DATE_COLUMNS: Record<string, boolean> = {
   completedAt: true,
   // A close date is a day, not an instant: showing 00:00 next to it would invent precision.
   expectedCloseDate: false,
+  // DEFENCE IN DEPTH, not a display decision. `deletedAt` has no entry in the label map above
+  // and the renderer replaces its row with a translated sentence carrying no value at all
+  // (see `humaniseColumn` below), so this classification should never be consulted. Listing it
+  // means `nativeKind` returns "date" if any future path DOES render the value, and the viewer
+  // gets it in their own locale instead of the stored ISO instant - which is exactly what they
+  // were shown before 45-06. `true`, because the moment of a deletion without its time of day
+  // is not a useful fact.
+  deletedAt: true,
 }
 
 /** `deals.value` is `numeric`, which node-postgres hands back as a string. */
@@ -276,10 +284,24 @@ interface FieldDescriptor {
 /**
  * A column name split on capitals and sentence-cased: `someNewColumn` to "Some new column".
  *
- * THIS PATH SHOULD BE UNREACHABLE. Every audited native column has an entry in the label
- * map above, so reaching this function means a column was added to the schema and audited
- * without its label being added - and the user is now reading a raw identifier. It exists
- * so that oversight degrades into an ugly label rather than a blank one.
+ * THIS PATH IS REACHED, and by exactly one column today. The comment here used to assert the
+ * opposite, and that assertion is why a raw database identifier sat in the record timeline
+ * beside an unformatted instant for the whole of phases 36-38: a reader who believed it went
+ * looking for the missing label in the map above and concluded there was nothing to fix.
+ *
+ * The column is `deletedAt`, and its absence from the map is DELIBERATE. `AUDIT_FIELD_LABELS`
+ * holds one message key per column and `describeField` emits one `label` with no sight of the
+ * from/to pair, but a `deleted_at` transition has two directions - a value appearing is a soft
+ * delete, a value being cleared is a restore - and they are different sentences. So the choice
+ * is made where the pair is in hand, in `AuditFieldRow` in
+ * `src/components/timeline/audit-entry.tsx`, which intercepts the column before this label is
+ * used. Adding an entry here would also take a rank in `NATIVE_ORDER`, whose insertion order is
+ * the display order of native fields in every record timeline.
+ *
+ * For any OTHER column, reaching this function still means what it always meant: a column was
+ * added to the schema and audited without its label being added, and a user is now reading a
+ * raw identifier. It exists so that oversight degrades into an ugly label rather than a blank
+ * one - never as a licence to skip the map.
  */
 function humaniseColumn(column: string): string {
   const words = column.replace(/([A-Z])/g, " $1").trim().toLowerCase()

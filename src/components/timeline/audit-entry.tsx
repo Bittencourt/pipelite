@@ -107,6 +107,47 @@ const CUSTOM_CHANGE_PREFIX = "custom:"
 const MESSAGE_NAMESPACE_PREFIX = "audit."
 const FIELD_LABEL_KEY_PREFIX = "audit.field."
 
+/**
+ * The soft-delete column, and WHY its decision lives here rather than in `AUDIT_FIELD_LABELS`.
+ *
+ * That map holds ONE message key per column and `describeField` emits a single `label` with no
+ * access to the from/to pair — but a `deleted_at` transition has two directions, and which one
+ * it went is the whole content of the sentence. Two keys for one column do not fit a
+ * one-to-one map. The map's INSERTION ORDER is separately load-bearing: `NATIVE_ORDER` is
+ * derived from it and is the display order of native fields in every record timeline, so an
+ * entry there is never a local edit. `AuditFieldRow` is the one place the pair is in hand.
+ *
+ * Before this branch existed the column fell through to `humaniseColumn` and this row printed
+ * the database identifier beside an unformatted ISO instant — in English, to every reader.
+ */
+const DELETED_AT_COLUMN = "deletedAt"
+
+/**
+ * Which sentence a `deleted_at` pair asks for, as a full message key — or `null` when the pair
+ * states no direction and the row must not render at all.
+ *
+ * The null case is not defensive padding. A create diffs the new row against nothing, so a
+ * server-action create records `deletedAt: null` as a change with BOTH sides empty; the row
+ * used to draw the column name beside a blank on every record ever created. Neither sentence is
+ * true of it, so it is dropped — here and, so the disclosure count stays honest, in `AuditEntry`.
+ *
+ * A soft delete recorded as `deleted` never reaches this function: `buildAuditFieldChanges`
+ * returns `[]` for that action and `AuditEntry` draws no field list, so the row is already
+ * suppressed where it would be pure redundancy beside "deleted this deal". What survives is a
+ * soft delete recorded as an UPDATE, which is the only case needing the first key.
+ *
+ * `change.to` is never null — only `change.from` is, and only on a create — so both directions
+ * are read off `type !== "empty"` rather than off a null test that would never fire.
+ */
+function deletedAtDirectionKey(change: AuditFieldChange): string | null {
+  const wasInTrash = change.from !== null && change.from.type !== "empty"
+  const isInTrash = change.to.type !== "empty"
+
+  if (isInTrash && !wasInTrash) return "audit.field.movedToTrash"
+  if (wasInTrash && !isInTrash) return "audit.field.restoredFromTrash"
+  return null
+}
+
 /** A diff needs the value that was STORED, not how long ago it was — so never RelativeTime. */
 const DATE_OPTIONS = { year: "numeric", month: "short", day: "numeric" } as const
 const DATE_TIME_OPTIONS = { ...DATE_OPTIONS, hour: "numeric", minute: "2-digit" } as const
@@ -222,6 +263,25 @@ function AuditValueText({ value, muted }: AuditValueTextProps) {
 function AuditFieldRow({ change }: { change: AuditFieldChange }) {
   const t = useTranslations("audit")
 
+  if (change.field === DELETED_AT_COLUMN) {
+    const directionKey = deletedAtDirectionKey(change)
+    if (directionKey === null) return null
+
+    // ONE line, at the Label typography role, and nothing else: no arrow, no before/after pair,
+    // no timestamp. The sentence already carries the direction in words, and the entry header
+    // above already carries who and when — the stored value IS that same instant, so a second
+    // copy of it would add precision without adding a fact. The key is resolved by this file's
+    // usual convention, slicing the namespace off a stored `audit.` key, because `t` is scoped
+    // to the `audit` namespace and the full path would resolve to `audit.audit.field.…`.
+    return (
+      <div className="flex flex-wrap items-baseline gap-2">
+        <dt className="text-muted-foreground text-xs">
+          {t(directionKey.slice(MESSAGE_NAMESPACE_PREFIX.length))}
+        </dt>
+      </div>
+    )
+  }
+
   const isCustomField = change.field.startsWith(CUSTOM_CHANGE_PREFIX)
   const label =
     !isCustomField && change.label.startsWith(FIELD_LABEL_KEY_PREFIX)
@@ -324,7 +384,18 @@ export function AuditEntry({ entry }: AuditEntryProps) {
     minute: "numeric",
   })
 
-  const changes = entry.changes
+  /**
+   * A `deleted_at` pair stating no direction renders nothing (see `deletedAtDirectionKey`), so
+   * it is dropped from the LIST as well as from the row. The row returning null is not enough:
+   * `hiddenFieldCount` is derived from this array's length, so an invisible member would promise
+   * "show 1 more" and then produce nothing, and the defensive empty-list branch below would
+   * never fire for an entry whose only recorded change is one of these.
+   *
+   * Scoped to that one column by design — no other field is filtered out of the history here.
+   */
+  const changes = entry.changes.filter(
+    (change) => change.field !== DELETED_AT_COLUMN || deletedAtDirectionKey(change) !== null
+  )
   const hiddenFieldCount = changes.length - VISIBLE_FIELD_COUNT
   const visibleChanges = expanded ? changes : changes.slice(0, VISIBLE_FIELD_COUNT)
   const fieldListId = `audit-fields-${entry.id}`
