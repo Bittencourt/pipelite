@@ -206,6 +206,7 @@ Progress: [██████████] 97%
 - Deferred v1.1 scope captured as backlog 2026-08-12: 999.1 formula reactivity, 999.2 bulk operations
 - Post-v1.2 codebase review 2026-08-13: 10 findings captured as backlog 999.3-999.12 (CI, indexes, notes timeline, audit log, dedup, saved views, trash/restore, workflow ops, observability, polish)
 - v1.3 roadmap created 2026-08-13: all 12 backlog items promoted into Phases 32-43, 37 requirements mapped, backlog now empty
+- Phase 45 added 2026-08-18: Cross-Cutting UI Repair and UAT Closure. Not a feature phase — it collects the five app-wide defects found on 2026-08-18 when the outstanding Phase 36-38 human UAT was finally re-run in a real authenticated browser (header overflow at 320px, admin sidebar not collapsing, dark mode unreachable because no ThemeProvider is mounted, untranslated admin/dialog shell strings, and a bulk failure panel that claims records are still selected when they are not), plus the one deals-drag check no available tool can drive. Depends on nothing and can run in parallel with Phases 39-43. That same sweep took cross-phase UAT debt from 10 items to 1 and fixed regression G1 (commit c413198).
 
 ### Research Flags
 
