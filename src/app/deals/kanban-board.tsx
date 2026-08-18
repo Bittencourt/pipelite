@@ -591,7 +591,15 @@ export function KanbanBoard({
             here, deliberately.
           */}
           {(wonStage || lostStage) && (
-            <div className="flex gap-4 pt-4 border-t">
+            /*
+              The two summary tiles are `min-w-[280px]` each, so this row is 576px wide whenever both
+              stages exist and it must scroll for the same reason the open-stage row above does.
+              Measured on the one pipeline in this database that defines a won AND a lost stage:
+              without `overflow-x-auto` the document reported scrollWidth 608 vs clientWidth 305 at a
+              320px viewport, permanently rather than transiently. The SC-1 spec never caught it
+              because it exercises the default pipeline, which defines neither stage.
+            */
+            <div className="flex gap-4 pt-4 border-t overflow-x-auto">
               {wonStage && (
                 <div
                   className={cn(
