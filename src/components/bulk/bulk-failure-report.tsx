@@ -25,6 +25,28 @@
  * which server prose reaches the browser. The sibling gate additionally proves every member of that
  * union has a copy key, so widening the union cannot ship an untranslated raw key.
  *
+ * THE CLOSING HINT USED TO BE ONE UNCONDITIONAL SENTENCE, AND IT WAS SOMETIMES FALSE. It read
+ * "these records are still selected — fix the problem and try again" for every outcome. But the
+ * caller keeps failed ids in `rowSelection` while its EFFECTIVE selection is that map intersected
+ * with the ids still rendered, so for the `no longer exists` reason code the failed rows have left
+ * the table and the effective selection is empty: nothing checked, the bulk bar unmounted, and this
+ * paragraph still instructing a retry against records that are gone. That was not an artefact of a
+ * forced test — it is exactly what happens when another user deletes the records concurrently.
+ *
+ * SO THE HINT IS NOW THREE MUTUALLY EXCLUSIVE BRANCHES OVER `stillSelected`, and they are jointly
+ * exhaustive: all survived keeps the original retry sentence unchanged; some survived names how many
+ * and points at a refresh for the rest; none survived says the records have left the list and
+ * carries NO retry advice in any form, because there is nothing left to retry against. The count is
+ * a number this component is TOLD. It is never a row array and never an intersection computed here:
+ * the caller owns `data`, so the caller is the only scope that knows what is on screen. Deciding it
+ * here would mean guessing, and a component that guesses about the selection is how the false
+ * sentence got shipped in the first place.
+ *
+ * THE OTHER FIX WAS REJECTED AND STAYS REJECTED. Re-selecting the vanished ids would make the old
+ * sentence true, and it would do so by reintroducing ids the table cannot render — which is
+ * precisely what the caller's prune exists to prevent. That trades a false sentence for a broken
+ * selection.
+ *
  * IT DOES NOT DISAPPEAR ON ITS OWN. There is deliberately no timer of any kind in this file: a list
  * of records that failed is the one thing on this surface a user may need to write down before
  * acting. It goes away when the user presses Dismiss, when the next bulk result replaces it, or when
@@ -60,6 +82,14 @@ export interface BulkFailureReportProps {
   failures: BulkFailure[]
   /** id -> display name, captured AT SUBMIT TIME by the caller. */
   labelById: Record<string, string>
+  /**
+   * How many of `failures` are still on screen — i.e. |failures ∩ the caller's rendered ids|.
+   *
+   * The CALLER owns this computation because the caller owns `data`. This component must not be
+   * handed the row array and must not recompute the intersection: it renders a truth it is told.
+   * Selecting the hint is the only thing the number does.
+   */
+  stillSelected: number
   onDismiss: () => void
 }
 
@@ -67,6 +97,7 @@ export function BulkFailureReport({
   kind,
   failures,
   labelById,
+  stillSelected,
   onDismiss,
 }: BulkFailureReportProps) {
   const t = useTranslations("bulk")
@@ -98,7 +129,18 @@ export function BulkFailureReport({
             </li>
           ))}
         </ul>
-        <p className="text-muted-foreground mt-2 text-xs">{t("failures.retryHint")}</p>
+        {/*
+          Same inline-ternary-in-JSX idiom as the title two elements above, and `retryHintPartial`
+          takes its ICU argument in the same second parameter. The zero branch is tested explicitly
+          rather than left as the trailing default, so it reads as a decision instead of a leftover.
+        */}
+        <p className="text-muted-foreground mt-2 text-xs">
+          {stillSelected === failures.length
+            ? t("failures.retryHint")
+            : stillSelected === 0
+              ? t("failures.prunedHint")
+              : t("failures.retryHintPartial", { count: stillSelected })}
+        </p>
       </AlertDescription>
       <Button
         variant="ghost"
