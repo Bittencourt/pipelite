@@ -46,3 +46,10 @@ next-env.d.ts
 /.cocoindex_code/
 # Playwright MCP logs/screenshots
 .playwright-mcp/
+
+# Playwright e2e
+# /e2e/.auth/ holds a LIVE Auth.js JWT session cookie (7-day maxAge) written by
+# e2e/auth.setup.ts. Committing it would publish a working admin session.
+/e2e/.auth/
+/playwright-report/
+/test-results/

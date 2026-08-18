@@ -48,3 +48,12 @@ docker-compose*
 
 # Planning
 .planning
+
+# E2E
+# The Dockerfile does COPY . . and next build typechecks everything it finds
+# (next.config.ts sets no typescript.ignoreBuildErrors), so the Playwright specs
+# and config must never enter the build context.
+e2e
+playwright.config.ts
+playwright-report
+test-results
