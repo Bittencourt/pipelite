@@ -107,7 +107,9 @@
     "userManagement": "Gerenciamento de Usuários",
     "team": "Equipe",
     "analytics": "Análises",
-    "trash": "Lixeira"
+    "trash": "Lixeira",
+    "workflows": "Workflows",
+    "searchDescription": "Busque empresas, pessoas e negócios pelo nome."
   },
   "auth": {
     "login": "Entrar",
@@ -359,7 +361,9 @@
       "assignee": "Responsável",
       "type": "Tipo",
       "dueDate": "Data de vencimento",
-      "completedAt": "Concluída"
+      "completedAt": "Concluída",
+      "movedToTrash": "Movido para a Lixeira",
+      "restoredFromTrash": "Restaurado da Lixeira"
     },
     "filter": {
       "label": "Mostrar alterações de campo",
@@ -521,7 +525,9 @@
       "deleteTitle": "{count, plural, one {# registro não foi excluído} other {# registros não foram excluídos}}",
       "reassignTitle": "{count, plural, one {# registro não foi reatribuído} other {# registros não foram reatribuídos}}",
       "retryHint": "Estes registros continuam selecionados. Corrija o problema e tente novamente.",
-      "dismiss": "Descartar"
+      "dismiss": "Descartar",
+      "retryHintPartial": "{count, plural, one {# destes registros continua selecionado} other {# destes registros continuam selecionados}}. Os demais saíram desta lista — atualize para ver o que há agora.",
+      "prunedHint": "Estes registros saíram desta lista. Atualize para ver o que há agora."
     },
     "error": {
       "tooMany": "Você pode agir sobre no máximo {max} registros por vez. Há {count} selecionados.",
@@ -846,6 +852,20 @@
       "backToWebhooks": "Voltar para Webhooks",
       "webhookNotFound": "Webhook nao encontrado",
       "webhookDetail": "Detalhe do Webhook"
+    },
+    "nav": {
+      "title": "Painel de Administração",
+      "dashboard": "Visão geral",
+      "users": "Gerenciamento de Usuários",
+      "pipelines": "Pipelines",
+      "customFields": "Campos Personalizados",
+      "webhooks": "Webhooks",
+      "auditLog": "Registro de auditoria",
+      "trash": "Lixeira",
+      "exportData": "Exportar Dados",
+      "pipedriveImport": "Importar do Pipedrive",
+      "backToApp": "Voltar ao app",
+      "openMenu": "Abrir menu de administração"
     }
   },
   "import": {
@@ -936,5 +956,11 @@
       "upcomingActivities": "Próximas esta semana: {count}",
       "buttonText": "Ir para o Painel"
     }
+  },
+  "theme": {
+    "label": "Tema",
+    "light": "Claro",
+    "dark": "Escuro",
+    "system": "Sistema"
   }
 }

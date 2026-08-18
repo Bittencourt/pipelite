@@ -107,7 +107,9 @@
     "userManagement": "User Management",
     "team": "Team",
     "analytics": "Analytics",
-    "trash": "Trash"
+    "trash": "Trash",
+    "workflows": "Workflows",
+    "searchDescription": "Search organizations, people and deals by name."
   },
   "auth": {
     "login": "Login",
@@ -359,7 +361,9 @@
       "assignee": "Assignee",
       "type": "Type",
       "dueDate": "Due date",
-      "completedAt": "Completed"
+      "completedAt": "Completed",
+      "movedToTrash": "Moved to Trash",
+      "restoredFromTrash": "Restored from Trash"
     },
     "filter": {
       "label": "Show field changes",
@@ -521,7 +525,9 @@
       "deleteTitle": "{count, plural, one {# record wasn't deleted} other {# records weren't deleted}}",
       "reassignTitle": "{count, plural, one {# record wasn't reassigned} other {# records weren't reassigned}}",
       "retryHint": "These records are still selected. Fix the problem and try again.",
-      "dismiss": "Dismiss"
+      "dismiss": "Dismiss",
+      "retryHintPartial": "{count, plural, one {# of these records is still selected} other {# of these records are still selected}}. The rest have left this list — refresh to see what's there now.",
+      "prunedHint": "These records have left this list. Refresh to see what's there now."
     },
     "error": {
       "tooMany": "You can act on at most {max} records at once. {count} are selected.",
@@ -846,6 +852,20 @@
       "backToWebhooks": "Back to Webhooks",
       "webhookNotFound": "Webhook not found",
       "webhookDetail": "Webhook Detail"
+    },
+    "nav": {
+      "title": "Admin Panel",
+      "dashboard": "Dashboard",
+      "users": "User Management",
+      "pipelines": "Pipelines",
+      "customFields": "Custom Fields",
+      "webhooks": "Webhooks",
+      "auditLog": "Audit Log",
+      "trash": "Trash",
+      "exportData": "Export Data",
+      "pipedriveImport": "Pipedrive Import",
+      "backToApp": "Back to App",
+      "openMenu": "Open admin menu"
     }
   },
   "import": {
@@ -936,5 +956,11 @@
       "upcomingActivities": "Upcoming this week: {count}",
       "buttonText": "Go to Dashboard"
     }
+  },
+  "theme": {
+    "label": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
   }
 }
