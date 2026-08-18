@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-18T10:26:47.154Z"
+last_updated: "2026-08-18T10:56:40.501Z"
 last_activity: 2026-08-18
 progress:
   total_phases: 14
   completed_phases: 8
   total_plans: 112
-  completed_plans: 107
+  completed_plans: 108
   percent: 57
 ---
 
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 45 - Cross-Cutting UI Repair and UAT Closure
-Plan: 6 of 11 complete
+Plan: 7 of 11 complete
 Status: Ready to execute
 Last activity: 2026-08-18
 
@@ -59,6 +59,7 @@ Progress: [██████████] 96%
 | Phase 45 P03 | 10min | 2 tasks | 3 files |
 | Phase 45 P04 | 12min | 3 tasks | 3 files |
 | Phase 45 P05 | 12min | 3 tasks | 6 files |
+| Phase 45 P06 | 26min | 2 tasks | 4 files |
 
 ## Decisions
 
@@ -206,6 +207,12 @@ Progress: [██████████] 96%
 - [Phase ?]: [Phase 45]: 45-05: the surviving count intersects failed against loadedIds/renderedIds and NEVER against rowSelection — handleOutcome re-asserts every failed id into rowSelection unconditionally, so rowSelection[failedId] is always true and that intersection would report the old false number while looking like a fix
 - [Phase ?]: [Phase 45]: 45-05: caller-gate assertions are scoped to the extracted <BulkFailureReport> element, not the file — kanban-board.tsx already contains selectedDealIds.has(deal.id) on a card and calls its selection setter five times legitimately, so a file-wide check is answered by unrelated code
 - [Phase ?]: [Phase 45]: 45-05: looped copy-key assertions use expect.soft — with a hard expect the RED run stopped at retryHintPartial and never named prunedHint, the exact Phase 38 failure mode
+- [Phase ?]: [Phase 45]: 45-06: deletedAt is deliberately NOT in AUDIT_FIELD_LABELS — the map is one key per column, describeField never sees the from/to pair, and NATIVE_ORDER is derived from its insertion order, so an entry there reorders every record timeline in the app
+- [Phase ?]: [Phase 45]: 45-06: change.to is NEVER null (only change.from is, and only on a create), so the soft-delete direction is read off both sides' type !== empty — a to === null test would be dead code and every restore would be labelled a deletion
+- [Phase ?]: [Phase 45]: 45-06: deletedAt is not in IGNORED_COLUMNS, so every server-action create records deletedAt: null against a row that did not exist — a both-sides-empty pair states no direction, returns null, and is filtered out of AuditEntry's change list too because hiddenFieldCount is derived from the array length
+- [Phase ?]: [Phase 45]: 45-06: the soft-delete suppression beside 'deleted this deal' was already STRUCTURAL in two layers (buildAuditFieldChanges returns [] for the deleted action, AuditEntry renders no field list for it), so no action was passed down to AuditFieldRow — the gate now asserts both pre-existing suppressions
+- [Phase ?]: [Phase 45]: 45-06: source-gate negatives for ArrowRight/AuditValueText are scoped to a quote-aware brace-matched branch region, never to the file — those tokens are how every OTHER field row works, and anti-vacuity 4 asserts each is still PRESENT elsewhere so deleting it app-wide cannot turn the gate green
+- [Phase ?]: [Phase 45]: 45-06: one deliberate RAW (non-stripped) read per gate — THIS PATH SHOULD BE UNREACHABLE only ever lived in a comment, so asserting its absence in comment-stripped source is vacuously true forever. The inverse of the phases 37-38 collision lesson
 
 ### Quick Tasks Completed
 
@@ -282,11 +289,12 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - 2026-08-18: 45-07 complete -- CommandDialog now forwards shouldFilter and loop to its inner <Command> (both destructured out of the rest spread, which lands on the Radix Dialog root), unblocking any search surface from cmdk's UUID-blind default filter. The three result groups and the CommandEmpty fallback moved -- not copied -- into src/components/global-search/search-results.tsx (named export, plus the exported SearchResultsData payload type); CommandGroup now appears ZERO times in global-search.tsx, which is otherwise behaviour-neutral (same outer shouldFilter={false}, same / hotkey, same w-64 input, same fetch). Gated by src/components/ui/__tests__/command-dialog-wiring.test.ts, a comment-blind source gate that extracts the inner <Command> opening tag so a prop forwarded to the wrong element cannot pass. RED 10 failed/6 passed -> GREEN 16/16; typecheck 0, lint 0 errors (127 warnings, unchanged), 96 files + RSC project green.
 - 2026-08-18: 45-03 complete -- dark mode is reachable. ThemeProvider mounted in src/app/layout.tsx between NextIntlClientProvider and HotkeysProvider (so its inline ThemeScript is the first DOM node in <body>) with exactly attribute="class", defaultTheme="system", enableSystem, disableTransitionOnChange, imported straight from next-themes with no wrapper module; suppressHydrationWarning on <html> for both the class and the color-scheme attribute enableColorScheme writes. UserMenu gained a three-value DropdownMenuRadioGroup (light/dark/system, Sun/Moon/Monitor, copy from 45-01's theme.* keys) with value={theme ?? "system"} because theme is undefined during SSR, and NO mounted/useEffect/useState gate -- a closed Radix menu portal renders nothing, so the rows first mount on a click. C-1 landed: sign-out moved from text-red-600 (~3.4:1 on the dark popover) to text-destructive. sonner.tsx's useTheme() now resolves for real with zero edits (T-7); globals.css untouched. Gated by src/app/__tests__/theme-wiring.test.ts (RED 8 failed/5 passed naming next-themes -> GREEN 13/13). typecheck 0, lint 0 errors, 2120+8 tests pass. No Docker rebuild (V-7 -- 45-11 pays it).
 - 2026-08-18: 45-05 complete -- the bulk failure panel stops asserting a selection state that is not true. BulkFailureReport takes stillSelected: number and renders exactly one of three mutually exclusive sentences: failures.retryHint when all failed rows survived (text unchanged), failures.retryHintPartial with { count: stillSelected } when some did, failures.prunedHint when none did -- and the zero branch carries no retry advice in any form, because the records are gone. All four callers pass outcome.failed.filter((f) => <set>.has(f.id)).length against their OWN rendered set (loadedIds for organizations/people/activities, renderedIds for the kanban, which covers open stages only), one added line per file, handleOutcome untouched and no setRowSelection/setSelectedDealIds added -- the caller diff is 4 insertions, 0 deletions. New src/components/bulk/__tests__/bulk-caller-wiring.test.ts scopes its assertions to the extracted <BulkFailureReport /> element (a file-wide check is answered by kanban's own selectedDealIds.has(deal.id) at line 561). FAILURE_KEYS 4 -> 6. RED 7 failed/30 passed -> GREEN; typecheck 0 (exactly 4 predicted TS2741 at the intermediate commit), lint 0 errors, 2154+8 tests pass. No Docker rebuild (V-7 -- 45-11 pays it).
+- 2026-08-18: 45-06 complete -- the record timeline stops printing a database column name. A deleted_at transition now reads as a translated sentence chosen from the from/to pair: audit.field.movedToTrash when a value appears, audit.field.restoredFromTrash when one is cleared, one <dt> line at Label typography with no arrow, no value cell and no timestamp (the entry header already carries when, and the stored instant IS that value). deletedAt deliberately NOT added to AUDIT_FIELD_LABELS -- one key per column, describeField never sees the pair, and NATIVE_ORDER is that object's insertion order. present.ts gained deletedAt: true in DATE_COLUMNS (the value used to resolve to { type: 'text' } -- the raw ISO instant verbatim) and humaniseColumn's false THIS PATH SHOULD BE UNREACHABLE comment was rewritten to name the column and point at audit-entry.tsx. Two bugs found beyond the plan: every server-action create records deletedAt: null against a row that did not exist, so a both-sides-empty pair (which the plan's rule would have labelled 'Moved to Trash') now returns null and is filtered out of AuditEntry's list as well, since hiddenFieldCount is derived from the array length; and present.test.ts's own 'unreachable path' test enforced the false comment and was rewritten. New src/components/timeline/__tests__/deleted-at-wiring.test.ts brace-matches the branch region so the ArrowRight/AuditValueText negatives are scoped (they are how every other row works). First checked-in NATIVE_ORDER order guard, negative proof RUN: an insertion produces 4 failures. RED 11 failed/54 passed -> GREEN 65/65; typecheck 0, lint 0 errors, 2178+8 tests pass. No Docker rebuild (V-7 -- 45-11 pays it).
 
 ## Current Position
 
 Phase: 38 (Bulk Operations) — EXECUTING
-Plan: 6 of 11 complete
+Plan: 7 of 11 complete
 Status: Ready to execute
 Last activity: 2026-08-18
 
