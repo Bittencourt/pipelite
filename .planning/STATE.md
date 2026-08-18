@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-18T10:56:40.501Z"
+last_updated: "2026-08-18T11:32:38.679Z"
 last_activity: 2026-08-18
 progress:
   total_phases: 14
   completed_phases: 8
   total_plans: 112
-  completed_plans: 108
+  completed_plans: 109
   percent: 57
 ---
 
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 45 - Cross-Cutting UI Repair and UAT Closure
-Plan: 7 of 11 complete
+Plan: 8 of 11 complete
 Status: Ready to execute
 Last activity: 2026-08-18
 
-Progress: [██████████] 96%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [██████████] 96%
 | Phase 45 P04 | 12min | 3 tasks | 3 files |
 | Phase 45 P05 | 12min | 3 tasks | 6 files |
 | Phase 45 P06 | 26min | 2 tasks | 4 files |
+| Phase 45 P08 | 95min | 3 tasks | 3 files |
 
 ## Decisions
 
@@ -213,6 +214,8 @@ Progress: [██████████] 96%
 - [Phase ?]: [Phase 45]: 45-06: the soft-delete suppression beside 'deleted this deal' was already STRUCTURAL in two layers (buildAuditFieldChanges returns [] for the deleted action, AuditEntry renders no field list for it), so no action was passed down to AuditFieldRow — the gate now asserts both pre-existing suppressions
 - [Phase ?]: [Phase 45]: 45-06: source-gate negatives for ArrowRight/AuditValueText are scoped to a quote-aware brace-matched branch region, never to the file — those tokens are how every OTHER field row works, and anti-vacuity 4 asserts each is still PRESENT elsewhere so deleting it app-wide cannot turn the gate green
 - [Phase ?]: [Phase 45]: 45-06: one deliberate RAW (non-stripped) read per gate — THIS PATH SHOULD BE UNREACHABLE only ever lived in a comment, so asserting its absence in comment-stripped source is vacuously true forever. The inverse of the phases 37-38 collision lesson
+- [Phase ?]: [Phase 45]: 45-08: the kanban drag e2e targets the LAST open stage — dnd-kit auto-scroll pins the board to its scroll extreme at 320px, making every other stage unreachable by a rightward gesture
+- [Phase ?]: [Phase 45]: 45-08: e2e specs that mutate data create and hard-delete their own fixture rows rather than borrowing and restoring a user's record
 
 ### Quick Tasks Completed
 
@@ -294,7 +297,7 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 ## Current Position
 
 Phase: 38 (Bulk Operations) — EXECUTING
-Plan: 7 of 11 complete
+Plan: 8 of 11 complete
 Status: Ready to execute
 Last activity: 2026-08-18
 
