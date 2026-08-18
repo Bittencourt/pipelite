@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-18T09:18:22.406Z"
+last_updated: "2026-08-18T09:34:35.023Z"
 last_activity: 2026-08-18
 progress:
   total_phases: 14
   completed_phases: 8
   total_plans: 112
-  completed_plans: 102
+  completed_plans: 103
   percent: 57
 ---
 
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 45 - Cross-Cutting UI Repair and UAT Closure
-Plan: 1 of 11 complete
-Status: Executing Phase 45
+Plan: 2 of 11 complete
+Status: Ready to execute
 Last activity: 2026-08-18
 
-Progress: [█████████░] 91%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [█████████░] 91%
 | Phase 44 P07 | 9min | 2 tasks | 2 files |
 | Phase 44 P08 | 15min | 2 tasks | 6 files |
 | Phase 45 P01 | 10min | 2 tasks | 4 files |
+| Phase 45 P02 | 34min | 3 tasks | 8 files |
 
 ## Decisions
 
@@ -185,6 +186,10 @@ Progress: [█████████░] 91%
 - [Phase 45]: IDENTICAL_TRANSLATION_ALLOWED populated with exactly three product nouns (admin.nav.pipelines, admin.nav.webhooks, nav.workflows), each with a recorded reason rather than a blanket exemption
 - [Phase 45]: ICU plural structure gated by a dedicated assertion, not placeholderDrift — its placeholder regex cannot match {count, plural, ...} and silently checked nothing
 - [Phase 45]: locale-parity.test.ts per-contract assertions use expect.soft so every broken contract names itself in one run instead of only the earliest-listed one
+- [Phase ?]: [Phase 45]: 45-02: the e2e admin is pipelite-e2e@local.test, NOT @local — the login form validates with z.string().email() whose zod-4 regex demands a dotted domain, so @local is rejected client-side and never reaches authorize(). .test is an RFC 2606 reserved TLD, so the address stays non-routable
+- [Phase ?]: [Phase 45]: 45-02: the e2e seed's dev-database guard is a hostname allow-list (localhost / 127.0.0.1) parsed from E2E_DATABASE_URL — proven by a RUN negative proof, as was the missing-E2E_ADMIN_PASSWORD guard
+- [Phase ?]: [Phase 45]: 45-02: @playwright/test has no postinstall by design, so browser binaries are a machine-local step (./node_modules/.bin/playwright install chromium, ~300MB into ~/.cache/ms-playwright) — that is the property that keeps CI from downloading browsers it never uses (V-3)
+- [Phase ?]: [Phase 45]: 45-02: auth.setup.ts asserts BOTH the h1 and the final pathname on /admin/audit before saving storageState — a non-admin session is redirected to /?error=unauthorized, which also renders an h1, so the heading alone would not distinguish them
 
 ### Quick Tasks Completed
 
@@ -257,12 +262,13 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - 2026-08-14: Phase 33 COMPLETE (3 plans) -- 11 plain single-column btree indexes declared in `src/db/schema/{deals,activities,people,organizations}.ts` and delivered via one generated migration, `drizzle/0012_typical_radioactive_man.sql`. BEFORE plans captured and committed before any DDL (D-07). Kanban query (BDR - Base Fria default pipeline): `Seq Scan on deals` cost 2729.07 / 2414 buffers -> `Bitmap Heap Scan` fed by `Bitmap Index Scan on deals_stage_id_idx` cost 2613.98 / 426 buffers. Reminder cron: `Seq Scan on activities` cost 5072.02 / 3294 buffers -> literal `Index Scan using activities_due_date_idx` cost 12.21 / 5 buffers (415x cheaper, 659x fewer buffers). All 11 target columns catalog-proven `index_backed = t`. Cost: 7328 kB index storage, ~1.08s write-blocking ShareLock per deploy. Zero rows mutated on the 25,206-deal real-data DB, zero `*.test.ts` touched, all three gates green (41 files / 461 passed / 4 skipped).
 
 - 2026-08-18: 45-01 complete -- 22 new message keys (admin.nav.* x12, theme.* x4, nav.workflows/searchDescription, bulk.failures.retryHintPartial/prunedHint, audit.field.movedToTrash/restoredFromTrash) in all three locales; 770 -> 792 identical leaves. locale-parity.test.ts gained REQUIRED_SHELL_KEYS (16) + SHELL_EXTRA_KEYS (2), extended REQUIRED_BULK_KEYS (44->46) and REQUIRED_AUDIT_KEYS (79->81), IDENTICAL_TRANSLATION_ALLOWED populated with the three product nouns, and a dedicated ICU-plural assertion closing the placeholderDrift blind spot. Per-contract assertions made soft so every broken contract reports in one run. 7/7 locale tests, 2091 suite pass, typecheck 0, lint 0 errors.
+- 2026-08-18: 45-02 complete -- Playwright harness foundation. @playwright/test@^1.62.1 in devDependencies (+ test:e2e script; npm test and ci.yml deliberately untouched, V-3), playwright.config.ts with ignoreDefaultArgs --hide-scrollbars (V-1, measured 320-vs-305 clientWidth recorded inline) and NO webServer block, e2e/seed-admin.ts (idempotent argon2id upsert, loopback-only E2E_DATABASE_URL guard) and e2e/auth.setup.ts (one real-form login, /admin/audit anti-vacuity, writes the gitignored e2e/.auth/admin.json). /e2e/.auth/ + /playwright-report/ + /test-results/ gitignored BEFORE any token was written (V-2); e2e + playwright.config.ts dockerignored. Setup project green 4x, idempotency proven by branch, both env-guard negative proofs RUN. typecheck 0, lint 0 errors, 2091+8 tests pass.
 
 ## Current Position
 
 Phase: 38 (Bulk Operations) — EXECUTING
-Plan: 1 of 20
-Status: Executing Phase 38
-Last activity: 2026-08-17 -- Phase 38 execution started
+Plan: 2 of 11 complete
+Status: Ready to execute
+Last activity: 2026-08-18
 
 - 2026-08-17: Phase 37 COMPLETE (15 plans, 6 waves) — Trash & Restore. `/trash` with four scoped tabs, `/admin/trash` retention (1..365, default 30, seeded as data, fail-closed with NO `?? 30`), restore + ordered transactional purge for all four CRM entities, three REST endpoints, and a daily pruner PROVEN running in the container (`[trash-prune] Starting with initial delay of 60s, ticking daily`, all six processors announcing from the merged-master build). Suite 1549 -> 1703 passing, typecheck 0, lint 0 errors throughout. Verified 4/4 success criteria plus a live browser walkthrough (8/10 UAT steps, both "deleted by" strings, manual tab activation, restore with children intact, purge detaching a live child with both audit rows). Code review: 1 critical + 9 warnings, all in-scope findings fixed; CR-01 deliberately scoped to correcting a false comment. The 320px check found and fixed a real tablist overflow defect. Autonomous run STOPPED here by user — phases 38-43 remain.

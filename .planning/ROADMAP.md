@@ -731,11 +731,11 @@ The evidence captured with each backlog item is preserved in the v1.3 requiremen
 
   - Deals kanban: drag a card by its body while another card is checked. Playwright's `browser_drag` times out on mouse-up because dnd-kit's pointer sensor needs an activation constraint (distance/delay plus intermediate `pointermove`) that a simple move-and-up does not satisfy. Synthetic pointer events were deliberately refused as evidence, because regression G1 in that same session proved synthetic dispatch hides a real defect on this exact component. Close it with a human at a real mouse, or by adding an e2e runner that can emit a held pointer sequence — the latter would also give the repo somewhere to pin G1's behaviour, which no current test can defend.
 
-**Plans:** 1/11 plans executed
+**Plans:** 2/11 plans executed
 
 Plans:
 - [x] 45-01-PLAN.md — 22 message keys x 3 locales + the locale-parity contract lists that gate them
-- [ ] 45-02-PLAN.md — Playwright harness: devDependency, config, e2e admin seed, authenticated storageState, ignore-file entries
+- [x] 45-02-PLAN.md — Playwright harness: devDependency, config, e2e admin seed, authenticated storageState, ignore-file entries
 - [ ] 45-03-PLAN.md — ThemeProvider mounted, three-way light/dark/system toggle in UserMenu, C-1 destructive-token repair
 - [ ] 45-04-PLAN.md — dialog.tsx close labels from common.close (both sites) + the new sheet.tsx, translated at creation
 - [ ] 45-05-PLAN.md — bulk failure panel: three truth-conditional branches + all four callers passing the surviving count
