@@ -3,6 +3,7 @@
 import * as React from "react"
 import { XIcon } from "lucide-react"
 import { Dialog as DialogPrimitive } from "radix-ui"
+import { useTranslations } from "next-intl"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -51,10 +52,20 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  closeLabel,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  closeLabel?: string
 }) {
+  // The default is bound HERE, at the primitive, rather than required of each caller: one edit
+  // gives every dialog in the app an accessible name in the active locale, whereas asking the
+  // roughly sixteen call sites to each pass a label is what let the English literal survive in
+  // the first place, and would let the seventeenth reintroduce it. closeLabel stays available
+  // for a caller with a more specific word than the generic one.
+  const t = useTranslations("common")
+  const label = closeLabel ?? t("close")
+
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -73,7 +84,7 @@ function DialogContent({
             className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{label}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>
@@ -94,11 +105,21 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
 function DialogFooter({
   className,
   showCloseButton = false,
+  closeLabel,
   children,
   ...props
 }: React.ComponentProps<"div"> & {
   showCloseButton?: boolean
+  closeLabel?: string
 }) {
+  // The second close control, and the one that is easy to miss: it is VISIBLE, and it sits
+  // behind this component's own showCloseButton prop, which defaults to false and is a
+  // different prop from DialogContent's. Same defect class, so it gets its own namespace
+  // binding and its own override rather than borrowing DialogContent's, which is not in scope
+  // here.
+  const t = useTranslations("common")
+  const label = closeLabel ?? t("close")
+
   return (
     <div
       data-slot="dialog-footer"
@@ -111,7 +132,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <Button variant="outline">Close</Button>
+          <Button variant="outline">{label}</Button>
         </DialogPrimitive.Close>
       )}
     </div>
