@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-17T13:42:35.196Z"
-last_activity: 2026-08-17
+last_updated: "2026-08-18T09:18:22.406Z"
+last_activity: 2026-08-18
 progress:
-  total_phases: 13
-  completed_phases: 7
-  total_plans: 101
-  completed_plans: 81
-  percent: 54
+  total_phases: 14
+  completed_phases: 8
+  total_plans: 112
+  completed_plans: 102
+  percent: 57
 ---
 
 # Session State
@@ -20,16 +20,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 38 — Bulk Operations
+**Current focus:** Phase 45 — Cross-Cutting UI Repair and UAT Closure
 
 ## Position
 
-Phase: 44 - Custom Field UI Repair (complete — 9/9 plans)
-Plan: 9 of 9 complete
-Status: Executing Phase 38
-Last activity: 2026-08-17
+Phase: 45 - Cross-Cutting UI Repair and UAT Closure
+Plan: 1 of 11 complete
+Status: Executing Phase 45
+Last activity: 2026-08-18
 
-Progress: [██████████] 97%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [██████████] 97%
 | Phase 44 P06 | 12min | 2 tasks | 3 files |
 | Phase 44 P07 | 9min | 2 tasks | 2 files |
 | Phase 44 P08 | 15min | 2 tasks | 6 files |
+| Phase 45 P01 | 10min | 2 tasks | 4 files |
 
 ## Decisions
 
@@ -180,6 +181,10 @@ Progress: [██████████] 97%
 - [Phase 38]: `ownerId` is absent from `organizationSchema`, `personSchema` and `activitySchema`, and **Zod strips unknown keys silently** — `safeParse({ownerId:"u1"})` returns `{success:true, data:{}}`. Routing an owner write through the generic update mutations writes only `updatedAt`, emits an empty diff, and the audit subscriber drops the row: a silent no-op with the whole suite green. This is why the four narrow `update{Entity}OwnerMutation` functions exist
 - [Phase 38]: **Per-entity authorization is NOT uniform and must be copied verbatim.** `src/app/deals/actions.ts` guards with `ownerId !== session.user.id && session.user.role !== "admin"`; organizations, people and activities guard with the ownership half ALONE. Unifying them is a privilege escalation on three entities or a regression on one. Proven live: 9/12 `notPermitted` on organizations vs 12/12 success on deals for the same admin
 - [Phase 38]: An artifact that says "verified this session" is a CLAIM, not a guarantee — 38-PATTERNS asserted the two data-table twins were byte-identical when the sed-normalised diff already had 20 differing line pairs at the phase base. Re-measure before writing a gate on someone else's measurement
+- [Phase 45]: Phase 45 shell copy contract scoped to admin.nav.* + theme.*, with nav.workflows/nav.searchDescription carried as SHELL_EXTRA_KEYS so the 12 pre-existing nav keys stay out of an exact-set contract
+- [Phase 45]: IDENTICAL_TRANSLATION_ALLOWED populated with exactly three product nouns (admin.nav.pipelines, admin.nav.webhooks, nav.workflows), each with a recorded reason rather than a blanket exemption
+- [Phase 45]: ICU plural structure gated by a dedicated assertion, not placeholderDrift — its placeholder regex cannot match {count, plural, ...} and silently checked nothing
+- [Phase 45]: locale-parity.test.ts per-contract assertions use expect.soft so every broken contract names itself in one run instead of only the earliest-listed one
 
 ### Quick Tasks Completed
 
@@ -250,6 +255,8 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - 2026-08-12: Backlog review -- captured deferred v1.1 scope as 999.1 (formula reactivity) and 999.2 (bulk operations); removed stale 27-action-nodes/deferred-items.md (http.test.ts fixed, 14/14 pass)
 - 2026-08-14: Phase 32 COMPLETE (6 plans) -- `npm test`/`typecheck` scripts, vitest scoped to src/, suite green (455 pass), 0 eslint errors, `.github/workflows/ci.yml`, and an active `master protection` ruleset (id 20851119) requiring the `ci` check. First CI run on GitHub hardware: 71s, success. Merge gate proven behaviourally via throwaway PR #10 (red `ci`, `mergeStateStatus: BLOCKED`), closed unmerged. Direct push to master retained via one repository-admin bypass actor (D-07 option B).
 - 2026-08-14: Phase 33 COMPLETE (3 plans) -- 11 plain single-column btree indexes declared in `src/db/schema/{deals,activities,people,organizations}.ts` and delivered via one generated migration, `drizzle/0012_typical_radioactive_man.sql`. BEFORE plans captured and committed before any DDL (D-07). Kanban query (BDR - Base Fria default pipeline): `Seq Scan on deals` cost 2729.07 / 2414 buffers -> `Bitmap Heap Scan` fed by `Bitmap Index Scan on deals_stage_id_idx` cost 2613.98 / 426 buffers. Reminder cron: `Seq Scan on activities` cost 5072.02 / 3294 buffers -> literal `Index Scan using activities_due_date_idx` cost 12.21 / 5 buffers (415x cheaper, 659x fewer buffers). All 11 target columns catalog-proven `index_backed = t`. Cost: 7328 kB index storage, ~1.08s write-blocking ShareLock per deploy. Zero rows mutated on the 25,206-deal real-data DB, zero `*.test.ts` touched, all three gates green (41 files / 461 passed / 4 skipped).
+
+- 2026-08-18: 45-01 complete -- 22 new message keys (admin.nav.* x12, theme.* x4, nav.workflows/searchDescription, bulk.failures.retryHintPartial/prunedHint, audit.field.movedToTrash/restoredFromTrash) in all three locales; 770 -> 792 identical leaves. locale-parity.test.ts gained REQUIRED_SHELL_KEYS (16) + SHELL_EXTRA_KEYS (2), extended REQUIRED_BULK_KEYS (44->46) and REQUIRED_AUDIT_KEYS (79->81), IDENTICAL_TRANSLATION_ALLOWED populated with the three product nouns, and a dedicated ICU-plural assertion closing the placeholderDrift blind spot. Per-contract assertions made soft so every broken contract reports in one run. 7/7 locale tests, 2091 suite pass, typecheck 0, lint 0 errors.
 
 ## Current Position
 
