@@ -31,12 +31,12 @@ export function NavHeader({ user }: NavHeaderProps) {
     <>
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-14 items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link href="/" className="font-semibold text-xl">
+          <div className="flex min-w-0 items-center gap-6">
+            <Link href="/" className="min-w-0 font-semibold text-xl">
               Pipelite
             </Link>
             {user && (
-              <nav className="hidden md:flex items-center gap-4">
+              <nav className="hidden md:flex min-w-0 items-center gap-4">
                 <Link
                   href="/organizations"
                   className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
@@ -84,17 +84,17 @@ export function NavHeader({ user }: NavHeaderProps) {
                   className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <Workflow className="h-4 w-4" />
-                  Workflows
+                  {t("workflows")}
                 </Link>
               </nav>
             )}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 items-center gap-4">
             {user && <GlobalSearch />}
             {user ? (
               <UserMenu user={user} />
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <a href="/login">
                   <Button variant="ghost">{tAuth("login")}</Button>
                 </a>
