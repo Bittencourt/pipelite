@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-18T11:47:34.046Z"
+last_updated: "2026-08-18T12:01:11.584Z"
 last_activity: 2026-08-18
 progress:
   total_phases: 14
   completed_phases: 8
   total_plans: 112
-  completed_plans: 110
+  completed_plans: 111
   percent: 57
 ---
 
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 45 - Cross-Cutting UI Repair and UAT Closure
-Plan: 9 of 11 complete
+Plan: 10 of 11 complete
 Status: Ready to execute
 Last activity: 2026-08-18
 
-Progress: [██████████] 98%
+Progress: [██████████] 99%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [██████████] 98%
 | Phase 45 P06 | 26min | 2 tasks | 4 files |
 | Phase 45 P08 | 95min | 3 tasks | 3 files |
 | Phase 45 P10 | 12min | 3 tasks | 3 files |
+| Phase 45 P09 | 13min | 3 tasks | 4 files |
 
 ## Decisions
 
@@ -221,6 +222,9 @@ Progress: [██████████] 98%
 - [Phase ?]: [Phase 45]: 45-10: min-w-0 goes AFTER 'hidden md:flex' on the nav, never between the two — the gate's contiguity assertion caught the split, and that class pair is the single collapse point the whole responsive contract pins to
 - [Phase ?]: [Phase 45]: 45-10: the breakpoint is read at EVENT TIME via window.matchMedia inside the / handler — global-search.tsx contains zero useEffect, zero useMediaQuery and zero window.innerWidth, so the two-target hotkey costs neither a hydration mismatch nor a react-hooks/set-state-in-effect error
 - [Phase ?]: [Phase 45]: 45-10: the CommandDialog's title/description/shouldFilter/showCloseButton are asserted on the SAME extracted opening tag — a title on one element and a description on another satisfies a file-wide check while leaving a hardcoded English default in place
+- [Phase ?]: [Phase 45]: 45-09: the eleven admin items are declared ONCE and the gate proves it by counting to zero — pipedriveImport must appear 0 times in admin-mobile-bar.tsx and each href exactly once across the two files; a toContain on the sidebar passes just as happily with a second copy in the drawer
+- [Phase ?]: [Phase 45]: 45-09: 'hidden md:flex' lives in BOTH admin-sidebar.tsx and app/admin/layout.tsx deliberately — on the aside it states the flex row has two children above md and one below; on the rail's own column md:flex is load-bearing (the flex-1 nav needs a flex context) while the hidden half is belt-and-braces for a fixed 256px block
+- [Phase ?]: [Phase 45]: 45-09: the stale 'half-migrating a single entry' justification is gated by the ONE deliberately RAW (non-stripped) read in the file — the sentence only ever lived in a comment, so asserting its absence in comment-stripped source would be vacuously true forever
 
 ### Quick Tasks Completed
 
@@ -299,11 +303,12 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - 2026-08-18: 45-05 complete -- the bulk failure panel stops asserting a selection state that is not true. BulkFailureReport takes stillSelected: number and renders exactly one of three mutually exclusive sentences: failures.retryHint when all failed rows survived (text unchanged), failures.retryHintPartial with { count: stillSelected } when some did, failures.prunedHint when none did -- and the zero branch carries no retry advice in any form, because the records are gone. All four callers pass outcome.failed.filter((f) => <set>.has(f.id)).length against their OWN rendered set (loadedIds for organizations/people/activities, renderedIds for the kanban, which covers open stages only), one added line per file, handleOutcome untouched and no setRowSelection/setSelectedDealIds added -- the caller diff is 4 insertions, 0 deletions. New src/components/bulk/__tests__/bulk-caller-wiring.test.ts scopes its assertions to the extracted <BulkFailureReport /> element (a file-wide check is answered by kanban's own selectedDealIds.has(deal.id) at line 561). FAILURE_KEYS 4 -> 6. RED 7 failed/30 passed -> GREEN; typecheck 0 (exactly 4 predicted TS2741 at the intermediate commit), lint 0 errors, 2154+8 tests pass. No Docker rebuild (V-7 -- 45-11 pays it).
 - 2026-08-18: 45-06 complete -- the record timeline stops printing a database column name. A deleted_at transition now reads as a translated sentence chosen from the from/to pair: audit.field.movedToTrash when a value appears, audit.field.restoredFromTrash when one is cleared, one <dt> line at Label typography with no arrow, no value cell and no timestamp (the entry header already carries when, and the stored instant IS that value). deletedAt deliberately NOT added to AUDIT_FIELD_LABELS -- one key per column, describeField never sees the pair, and NATIVE_ORDER is that object's insertion order. present.ts gained deletedAt: true in DATE_COLUMNS (the value used to resolve to { type: 'text' } -- the raw ISO instant verbatim) and humaniseColumn's false THIS PATH SHOULD BE UNREACHABLE comment was rewritten to name the column and point at audit-entry.tsx. Two bugs found beyond the plan: every server-action create records deletedAt: null against a row that did not exist, so a both-sides-empty pair (which the plan's rule would have labelled 'Moved to Trash') now returns null and is filtered out of AuditEntry's list as well, since hiddenFieldCount is derived from the array length; and present.test.ts's own 'unreachable path' test enforced the false comment and was rewritten. New src/components/timeline/__tests__/deleted-at-wiring.test.ts brace-matches the branch region so the ArrowRight/AuditValueText negatives are scoped (they are how every other row works). First checked-in NATIVE_ORDER order guard, negative proof RUN: an insertion produces 4 failures. RED 11 failed/54 passed -> GREEN 65/65; typecheck 0, lint 0 errors, 2178+8 tests pass. No Docker rebuild (V-7 -- 45-11 pays it).
 - 2026-08-18: 45-10 complete -- the global header fits a 320px viewport. The inline search input's wrapper is `relative hidden md:block`, so below md the whole 256px control leaves the flex row rather than shrinking into 84% of the viewport; a ghost size="icon-lg" (40px) Search trigger, md:hidden, opens a CommandDialog carrying title={t("search")}, description={tNav("searchDescription")} (S-7), showCloseButton={false}, shouldFilter={false} and loop, rendering the SAME SearchResults tree the popover renders. The / hotkey reads window.matchMedia("(min-width: 768px)") at EVENT TIME inside the handler -- two targets, zero viewport state, zero useEffect. min-w-0 landed 5 times in nav-header.tsx (both clusters plus the three classed flex children) and the last hardcoded label became {t("workflows")} (S-5). The dialog keeps its own query state because the popover is anchored to a display:none wrapper below md, and resets + cancels on BOTH edges of onOpenChange so a closed dialog never searches and a late response cannot leave stale results behind an empty query. New src/components/__tests__/header-shell-wiring.test.ts asserts the four dialog props on the SAME extracted opening tag and polices the nav label by its JSX forms only. RED 10 failed/11 passed -> GREEN 21/21; typecheck 0, lint 0 errors (127 warnings, unchanged), 101 files + RSC project green. No Docker rebuild (V-7 -- 45-11 pays it), so e2e/viewport-320.spec.ts stays RED until then by design.
+- 2026-08-18: 45-09 complete -- the admin shell collapses below md and speaks the user's language. All eleven English literals (Admin Panel, Dashboard, User Management, Pipelines, Custom Fields, Webhooks, Audit Log, Trash, Export Data, Pipedrive Import, Back to App) moved into admin.nav.*; the array's title field became labelKey so a reader cannot mistake a key for copy, and the stale 'half-migrating a single entry' justification is gone. admin-sidebar.tsx now exports adminNavItems, AdminNavItems (with an optional onNavigate) and AdminBackToApp, and the new 'use client' admin-mobile-bar.tsx consumes all three: an h-12 md:hidden bar with a ghost size="icon-lg" Menu trigger named from admin.nav.openMenu, opening a SheetContent side="left" className="w-64 gap-0 p-0" aria-describedby={undefined} whose SheetTitle renders admin.nav.title VISIBLY with no leading-none. app/admin/layout.tsx became a hidden md:flex w-64 aside beside a min-w-0 flex-1 content column, the mobile bar above <main> and outside its p-6. The auth block, both redirects and middleware.ts have zero changed lines -- the drawer is presentation, the server gate stays authoritative. New src/components/__tests__/admin-shell-wiring.test.ts checks each literal in THREE forms (quoted value, >between tags<, alone on its own JSX line) because the file carried two of those shapes already, and proves the shared array by counting pipedriveImport to ZERO in the drawer. RED 18 failed/7 passed -> GREEN 25/25; typecheck 0, lint 0 errors (127 warnings, unchanged), 102 files + RSC project green (2224 passed). No Docker rebuild (V-7 -- 45-11 pays it).
 
 ## Current Position
 
 Phase: 38 (Bulk Operations) — EXECUTING
-Plan: 9 of 11 complete
+Plan: 10 of 11 complete
 Status: Ready to execute
 Last activity: 2026-08-18
 
