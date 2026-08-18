@@ -253,10 +253,8 @@
       "task": "Tarefa",
       "email": "E-mail"
     },
-    "assignee": "Responsável",
     "assignedTo": "Atribuído a",
-    "noAssignee": "Sem responsável",
-    "allAssignees": "Todos os responsáveis"
+    "noAssignee": "Sem responsável"
   },
   "notes": {
     "timeline": "Linha do tempo",
@@ -677,7 +675,15 @@
         "cancel": "Cancelar",
         "inviteSent": "Convite enviado com sucesso",
         "inviteFailed": "Falha ao enviar convite",
-        "invalidEmail": "Por favor, insira um endereco de e-mail valido"
+        "invalidEmail": "Por favor, insira um endereco de e-mail valido",
+        "pendingInvitations": "Convites Pendentes",
+        "pendingInvitationsDescription": "Convites enviados que ainda não foram aceitos",
+        "email": "E-mail",
+        "invitedBy": "Convidado por",
+        "sent": "Enviado",
+        "expires": "Expira em",
+        "pending": "Pendente",
+        "noPendingInvites": "Nenhum convite pendente"
       }
     },
     "pipelines": {

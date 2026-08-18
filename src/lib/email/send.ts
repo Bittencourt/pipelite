@@ -75,7 +75,7 @@ export async function sendInviteEmail(
   inviterName: string,
   locale: string = "en-US"
 ): Promise<void> {
-  const inviteUrl = `${appUrl}/register?invite=${token}`
+  const inviteUrl = `${appUrl}/signup?invite=${token}`
   const host = new URL(appUrl).host
   const template = await getInviteUserTemplate(inviteUrl, host, inviterName, locale)
   await safeSend(email, template)

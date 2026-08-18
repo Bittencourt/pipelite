@@ -81,7 +81,7 @@ describe('sendInviteEmail', () => {
       })
     )
     const call = mockSendMail.mock.calls[0][0]
-    expect(call.html).toContain('https://app.test/register?invite=abc123')
+    expect(call.html).toContain('https://app.test/signup?invite=abc123')
     expect(call.html).toContain('John Doe')
     expect(call.subject).toContain('app.test')
     logSpy.mockRestore()

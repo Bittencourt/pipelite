@@ -253,10 +253,8 @@
       "task": "Task",
       "email": "Email"
     },
-    "assignee": "Assignee",
     "assignedTo": "Assigned to",
-    "noAssignee": "No assignee",
-    "allAssignees": "All assignees"
+    "noAssignee": "No assignee"
   },
   "notes": {
     "timeline": "Timeline",
@@ -677,7 +675,15 @@
         "cancel": "Cancel",
         "inviteSent": "Invitation sent successfully",
         "inviteFailed": "Failed to send invitation",
-        "invalidEmail": "Please enter a valid email address"
+        "invalidEmail": "Please enter a valid email address",
+        "pendingInvitations": "Pending Invitations",
+        "pendingInvitationsDescription": "Invitations that have been sent but not yet accepted",
+        "email": "Email",
+        "invitedBy": "Invited by",
+        "sent": "Sent",
+        "expires": "Expires",
+        "pending": "Pending",
+        "noPendingInvites": "No pending invitations"
       }
     },
     "pipelines": {

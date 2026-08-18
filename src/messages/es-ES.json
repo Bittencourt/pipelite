@@ -234,8 +234,8 @@
     "allStatuses": "Todos los estados",
     "all": "Todos",
     "allOwners": "Todos los propietarios",
-    "assignee": "Responsable",
-    "allAssignees": "Todos los responsables",
+    "assignee": "Asignado",
+    "allAssignees": "Todos los asignados",
     "assigneeLabel": "Responsable",
     "dueDateRange": "Rango de Vencimiento",
     "from": "Desde",
@@ -253,10 +253,8 @@
       "task": "Tarea",
       "email": "Correo electrónico"
     },
-    "assignee": "Asignado",
     "assignedTo": "Asignado a",
-    "noAssignee": "Sin asignado",
-    "allAssignees": "Todos los asignados"
+    "noAssignee": "Sin asignado"
   },
   "notes": {
     "timeline": "Cronología",
@@ -677,7 +675,15 @@
         "cancel": "Cancelar",
         "inviteSent": "Invitacion enviada exitosamente",
         "inviteFailed": "Error al enviar la invitacion",
-        "invalidEmail": "Por favor, ingrese un correo electronico valido"
+        "invalidEmail": "Por favor, ingrese un correo electronico valido",
+        "pendingInvitations": "Invitaciones Pendientes",
+        "pendingInvitationsDescription": "Invitaciones enviadas que aún no han sido aceptadas",
+        "email": "Correo electrónico",
+        "invitedBy": "Invitado por",
+        "sent": "Enviado",
+        "expires": "Caduca",
+        "pending": "Pendiente",
+        "noPendingInvites": "No hay invitaciones pendientes"
       }
     },
     "pipelines": {
