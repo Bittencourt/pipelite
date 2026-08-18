@@ -4,42 +4,23 @@ import { useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useDebouncedCallback } from "use-debounce"
 import { useTranslations } from "next-intl"
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command"
+import { Command, CommandList } from "@/components/ui/command"
 import {
   Popover,
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover"
-import { Search, Loader2, Building2, User, DollarSign } from "lucide-react"
-import { SearchResultItem } from "./search-result-item"
+import { Search, Loader2 } from "lucide-react"
+import { SearchResults, type SearchResultsData } from "./search-results"
 import { Input } from "@/components/ui/input"
 import { useHotkeys } from "react-hotkeys-hook"
-
-interface SearchResults {
-  organizations: Array<{ id: string; name: string }>
-  people: Array<{
-    id: string
-    firstName: string
-    lastName: string
-    organizationId: string | null
-    organizationName: string | null
-  }>
-  deals: Array<{ id: string; title: string; stageId: string; stageName: string }>
-}
 
 export function GlobalSearch() {
   const router = useRouter()
   const t = useTranslations("common")
-  const tNav = useTranslations("nav")
   const inputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState("")
-  const [results, setResults] = useState<SearchResults | null>(null)
+  const [results, setResults] = useState<SearchResultsData | null>(null)
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
 
@@ -59,7 +40,7 @@ export function GlobalSearch() {
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(term)}`)
       if (res.ok) {
-        const data: SearchResults = await res.json()
+        const data: SearchResultsData = await res.json()
         setResults(data)
         setOpen(true)
       }
@@ -144,68 +125,12 @@ export function GlobalSearch() {
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <CommandList>
-            {hasResults ? (
-              <>
-                {results!.organizations.length > 0 && (
-                  <CommandGroup heading={tNav("organizations")}>
-                    {results!.organizations.map((org) => (
-                      <CommandItem
-                        key={org.id}
-                        value={org.id}
-                        onSelect={() => handleSelect(`/organizations/${org.id}`)}
-                      >
-                        <Building2 className="mr-2 h-4 w-4 text-muted-foreground" />
-                        <SearchResultItem
-                          label={org.name}
-                          detail={tNav("organizations")}
-                          query={query}
-                        />
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-                {results!.people.length > 0 && (
-                  <CommandGroup heading={tNav("people")}>
-                    {results!.people.map((person) => (
-                      <CommandItem
-                        key={person.id}
-                        value={person.id}
-                        onSelect={() => handleSelect(`/people/${person.id}`)}
-                      >
-                        <User className="mr-2 h-4 w-4 text-muted-foreground" />
-                        <SearchResultItem
-                          label={`${person.firstName} ${person.lastName}`}
-                          detail={person.organizationName || t("noResults")}
-                          query={query}
-                        />
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-                {results!.deals.length > 0 && (
-                  <CommandGroup heading={tNav("deals")}>
-                    {results!.deals.map((deal) => (
-                      <CommandItem
-                        key={deal.id}
-                        value={deal.id}
-                        onSelect={() => handleSelect(`/deals/${deal.id}`)}
-                      >
-                        <DollarSign className="mr-2 h-4 w-4 text-muted-foreground" />
-                        <SearchResultItem
-                          label={deal.title}
-                          detail={deal.stageName}
-                          query={query}
-                        />
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-              </>
-            ) : (
-              <CommandEmpty>
-                {t("noResults")}
-              </CommandEmpty>
-            )}
+            <SearchResults
+              results={results}
+              hasResults={Boolean(hasResults)}
+              query={query}
+              onSelect={handleSelect}
+            />
           </CommandList>
         </PopoverContent>
       </Popover>
