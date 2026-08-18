@@ -1,15 +1,16 @@
 ---
-status: partial
+status: complete
 phase: 37-trash-restore
 source: [37-15-PLAN.md Task 3]
 started: 2026-08-16
-updated: 2026-08-16
+updated: 2026-08-18T02:11:06Z
 executed_by: assistant (browser automation against the live Docker app)
+resumed: 2026-08-18 — steps 7 and 9 closed with Playwright-MCP at a real 320px viewport and a real member account
 ---
 
 ## Current Test
 
-Steps 7 (320px) and 9 (member visibility) remain — see Gaps.
+[testing complete]
 
 ## Tests
 
@@ -39,7 +40,7 @@ result: PASS — a throwaway trashed org with one live child person was purged. 
 
 ### 7. Dark mode at 320px
 expected: legible in dark mode at a 320px viewport with no horizontal page scroll
-result: PARTIAL — dark mode renders correctly at desktop width (dark ground, legible text, destructive red still readable). **320px NOT verified**: `resize_window` reported success but `window.innerWidth` stayed 2133, so no narrow viewport was ever achieved. Structural finding instead: the table is wrapped in `relative w-full overflow-x-auto` (scrolls internally, correct), but the tablist is `flex-wrap: nowrap` with `overflow-x: visible` at 494px — at 320px that would overflow the page rather than scroll internally. Unconfirmed; needs a real narrow viewport.
+result: PASS (re-verified 2026-08-18 at a REAL 320px viewport) — the instrument block is gone: Playwright's `browser_resize` genuinely sets `window.innerWidth` to 320, which `resize_window` never could. Re-measured on `/trash` after the G3 fix: the tablist is `overflow-x: auto` with `scrollWidth 365 > clientWidth 226` and its right edge at 273px, comfortably inside the 305px client width — it scrolls itself and contributes NO page overflow, confirming the G3 fix holds. The table is likewise contained: its right edge measures 619px but `document.scrollWidth` is only 416px, so its `overflow-x-auto` wrapper is clipping it correctly. The expected criterion — "table content scrolls internally; the page itself does not scroll horizontally" — is met for everything this phase owns. Residual page overflow (416 vs 305) is entirely the global header and is G5, not this page. Dark mode confirmed legible at 320px by screenshot (dark ground, light text, no clipping of the content column). **NEW FINDING, logged as G6:** dark mode is not reachable by any user — there is no ThemeProvider and no toggle, so `<html>` never receives `.dark`; both this check and the earlier desktop one only render dark because the class was forced by hand.
 
 ### 8. Both non-English locales
 expected: all trash copy translated, no English fallthrough
@@ -47,7 +48,7 @@ result: PASS — pt-BR: `Lixeira`, tabs `Negócios / Pessoas / Empresas / Ativid
 
 ### 9. A member does not see the purge control
 expected: the "Delete permanently" control is hidden (not disabled) for a non-admin, on screen
-result: NOT VERIFIED — see Gaps. Server-side enforcement IS covered (unit tests in `src/app/trash/actions.test.ts`, and 37-12 proved the REST purge returns 403 for a member key against a real database). What is unproven is only the client-side hiding.
+result: PASS (verified 2026-08-18) — G2's blocker is gone: the user supplied a real live `member` account, so no role was mutated and no credential was invented. Setup mattered: `/trash` is viewer-scoped (`listTrashed(tab, page, viewer)`), so the member initially saw zero rows and an absent button would have proved nothing. The member was made owner of one organization, deleted it themselves, and then saw it in their own trash. ADMIN baseline on that same row: `Restaurar | Excluir permanentemente`, purge button count 1. MEMBER on the same row: `Restaurar` only, purge button count 0. **Absent, not disabled, proven properly** — every non-`<script>` leaf element was scanned for "Excluir permanentemente" and returned 0 hits; the string occurs exactly once in the whole document, inside the RSC script payload (the i18n message bundle shipped to every client), never as a control. Matches `trash-table.tsx:335` `isAdmin ? (...) : null`. Bonus server-side confirmation observed the same session: when the member tried to bulk-delete a record they did NOT own, the server refused — "Nenhum registro foi excluído." with the per-record reason "— Você não tem acesso".
 
 ### 10. /admin/trash retention form (beyond the plan's list)
 expected: bounds agree across schema/input/copy, stats read live, shortening is confirmed, cancel changes nothing
@@ -56,11 +57,19 @@ result: PASS — help text `Enter a whole number of days between 1 and 365` agre
 ## Summary
 
 total: 10
-passed: 8
-issues: 1
+passed: 10
+issues: 0
 pending: 0
 skipped: 0
-blocked: 1
+blocked: 0
+
+<!-- 2026-08-16: 8 passed, 1 issue (G1), 1 blocked (G2).
+     2026-08-18: G1 was already resolved in code review (WR-08); G2 and the 320px half of
+     step 7 were both closed by re-verification, so every step now has a definitive PASS.
+     G4 (missing tests for the three /api/v1/trash routes) and G5 (app-wide header overflow)
+     remain open by explicit decision — neither is a step result, and G5 is not this phase's
+     code. G6 is new and also app-wide. -->
+
 
 ## Gaps
 
@@ -71,7 +80,8 @@ severity: low-medium
 The dialog reads `<name> and its notes will be permanently deleted. This can't be undone. Its change history is kept.` It says nothing about live child records being unlinked. Observed directly: a live person silently lost its organization with no warning in the dialog that authorised it. 37-04 flagged this as an open question; it is now confirmed behaviour, not a prediction. Fixing it needs a UI-SPEC copy amendment (the string is locked there), so it is deliberately NOT patched here.
 
 ### G2 — Member-visibility of the purge control not observed on screen
-status: blocked
+status: resolved (2026-08-18)
+resolution: The user supplied a real live `member` login, which removed the whole dilemma described below — no role was mutated and no credential was invented, so the safety concern never arose. Observed on screen: the member's row renders `Restaurar` alone (purge button count 0) where the admin's identical row renders `Restaurar | Excluir permanentemente` (count 1). Absence was proven rather than assumed: a scan of every non-`<script>` leaf element for "Excluir permanentemente" returned 0 hits, the string appearing only inside the RSC message bundle. See step 9.
 severity: low
 The dev database has exactly one live approved user and they are the admin; all six member rows are soft-deleted. Creating a member means writing a real login credential into the real dev database, which no ROLLBACK undoes. An attempt to observe it by temporarily demoting the admin account was correctly blocked by the runtime safety classifier (mutating a role then browsing is indistinguishable from privilege escalation); the role was restored immediately and no workaround was attempted. Enforcement is covered server-side; only the client-side hide/disable distinction is unproven.
 
@@ -101,7 +111,24 @@ severity: low-medium
 severity_note: cosmetic on every page, but it means the entire app has a horizontal scrollbar on a phone
 The `<header>` element measures `scrollWidth 416` against a `clientWidth 301` at a 317px viewport, on every route measured. Its widest descendant is a `flex items-center gap-4` nav row that neither wraps nor scrolls. Predates Phase 37 and is unaffected by it — surfaced here only because verifying G3 required measuring the whole document. Belongs in its own small plan, not a trash phase.
 
+**Root cause pinned 2026-08-18** (re-measured at a genuine 320px viewport, `clientWidth` 305, `document.scrollWidth` 416 — the same 416 recorded above, from a different instrument, on `/trash` and `/organizations` alike). The offending row contains a search input carrying `min-w-0 w-xs w-64`: `w-64` wins and fixes it at a computed 256px, and its wrapper is a plain `div.relative` with no shrink allowance. 256px input + 16px `gap-4` + 40px avatar = **312px of non-shrinkable content in a 305px client width**. `min-w-0` is present but cannot help while `w-64` sets an explicit width. Confirmed visually: at 320px the search box overlaps the "Pipelite" wordmark.
+
+Also measured on `/admin/audit`, which is WORSE than the routes in the table above: `scrollWidth 508` in pt-BR and **526 in es-ES** — the overflow grows with translated string length. Second cause there: the admin sidebar rail never collapses at mobile, so `<main>` itself starts at x≈206px. Recorded against Phase 36, which owns that surface.
+
+Likely fix: let the search shrink (`w-full max-w-64 min-w-0` on the input with `min-w-0 flex-1` on its wrapper), or hide it behind an icon below `sm`. Still belongs in its own small plan.
+
 ### G4 — The three /api/v1/trash routes have no checked-in test
 status: failed
 severity: medium
 `grep -rl 'api/v1/trash'` across every test file returns nothing; the post-merge suite count was unchanged by 37-12, confirming zero new tests. The routes were proven once against a live database by a probe that then deleted itself. `src/app/api/v1/audit/__tests__/route.test.ts` is a working precedent for pinning them without a database. Tracked per user decision rather than closed inside Phase 37.
+
+### G6 — Dark mode is unreachable by any user (pre-existing, app-wide)
+status: open
+severity: medium
+severity_note: not a rendering bug — a wiring gap that makes an entire shipped theme dead code, and it silently invalidates every "verify it in dark mode" UAT item in the project
+
+Found 2026-08-18 while re-verifying step 7. The dark theme is fully authored — `globals.css` defines `@custom-variant dark (&:is(.dark *))` plus a complete `.dark` token block, and 69 `dark:` utilities exist across the components — but **nothing ever puts the `dark` class on `<html>`**. `src/app/layout.tsx` renders a bare `<html lang={locale}>`, mounts no `ThemeProvider`, and a repo-wide search finds no theme toggle and no `setTheme` call anywhere. The only `next-themes` import in the entire codebase is inside `src/components/ui/sonner.tsx`, whose `useTheme()` therefore always reads the default.
+
+Verified at runtime: on a freshly loaded page `document.documentElement.className` is `""`, and forcing `.dark` by hand flips `body` from `lab(100 0 0)` to `lab(2.75381 0 0)` with text inverting correspondingly — so the CSS is correct and only the switch is missing.
+
+Consequence for verification records: every dark-mode clause in the Phase 36 and Phase 37 human-verification items was, and still is, unverifiable as a *user-reachable* state. What those checks actually establish is that the dark tokens render correctly when the class is forced. That is worth knowing, but it is a weaker claim than the items were written to make. Fixing this is a small independent plan (mount a provider, add a toggle, persist the choice); it is not Phase 37 code.

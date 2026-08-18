@@ -1,23 +1,30 @@
 ---
 phase: 37-trash-restore
 verified: 2026-08-17T09:37:35Z
-status: human_needed
-score: 4/4 success criteria verified; 2 items need human (visual) confirmation
+status: passed
+score: 4/4 success criteria verified; both human (visual) items now confirmed
 overrides_applied: 0
-human_verification:
+re_verification: true
+re_verified: 2026-08-18T02:11:06Z
+uat: 37-UAT.md
+human_verification: []
+resolved_in_uat:
+  # Closed 2026-08-18 by 37-UAT.md steps 9 and 7. Both blockers were INSTRUMENT/ENVIRONMENT
+  # limitations, not product uncertainty, and both were removed rather than worked around.
   - test: "A member (non-admin) does not see the purge control on the /trash screen"
-    expected: "The 'Delete permanently' button is absent from the DOM for a non-admin, not merely disabled"
-    why_human: "Client-side rendering visible only in a real browser session as a non-admin user; the dev database currently has no live non-admin account. Code inspection (src/app/trash/trash-table.tsx:331-335, `isAdmin ? (...) : null`) and server-side enforcement (unit tests, and a live 403 proven against the REST route in 37-12) already give strong evidence this is correct — visual confirmation is the only remaining leg."
+    result: passed
+    evidence: "The user supplied a real live member account, so the Phase 37 dilemma — that observing this meant either inventing a credential or demoting the admin — never arose. /trash is viewer-scoped, so the member had to own and delete a record before an absent button could mean anything; that was set up first. Admin baseline on the row: 'Restaurar | Excluir permanentemente' (purge count 1). Member on the same row: 'Restaurar' only (purge count 0). Absence proven, not assumed: a scan of every non-script leaf element for 'Excluir permanentemente' returned 0 hits, the string occurring once in the whole document inside the RSC message bundle. Server-side enforcement re-confirmed live: a member deleting a record they did not own was refused with '— Você não tem acesso'."
   - test: "Trash view in dark mode at a 320px viewport has no horizontal page scroll and remains legible"
-    expected: "Table content scrolls internally (it is wrapped in overflow-x-auto); the page itself does not scroll horizontally"
-    why_human: "resize_window did not change window.innerWidth in the available browser-automation environment (stuck at 2133px), so a true narrow viewport was never achieved during UAT. Structural code inspection (37-UAT.md Gap G3) flags the tablist's `flex-wrap: nowrap` / `overflow-x: visible` at 494px as a possible page-level overflow at 320px, unconfirmed either way."
+    result: passed
+    evidence: "Playwright browser_resize sets window.innerWidth to a genuine 320 (resize_window never could), so the check finally ran at a real narrow viewport. The G3 fix holds: the tablist is overflow-x:auto, scrollWidth 365 > clientWidth 226, right edge 273px inside a 305px client width, contributing no page overflow. The table is clipped correctly by its overflow-x-auto wrapper (right edge 619px vs document scrollWidth 416px). Everything this phase owns meets the criterion. The residual 416-vs-305 page overflow is the global header, already tracked as G5 and re-measured this session to its exact cause (a w-64 256px search input plus a 40px avatar and a 16px gap = 312px of non-shrinkable content)."
+    caveat: "Dark mode renders correctly ONLY when the .dark class is forced by hand. No user can reach it — there is no ThemeProvider and no toggle anywhere in the app, so <html> never receives the class. Logged as 37-UAT.md G6; it is app-wide and not Phase 37 code."
 ---
 
 # Phase 37: Trash & Restore Verification Report
 
 **Phase Goal:** Soft-deleted records are recoverable rather than merely invisible
 **Verified:** 2026-08-17T09:37:35Z
-**Status:** human_needed
+**Status:** passed (re-verified 2026-08-18 — both human items confirmed; see 37-UAT.md)
 **Re-verification:** No — initial verification
 
 ## Goal Achievement

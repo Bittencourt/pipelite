@@ -1,20 +1,37 @@
 ---
 phase: 36-audit-log
 verified: 2026-08-16T00:00:00Z
-status: human_needed
-score: 5/5 must-haves verified
+status: gaps_found
+score: 5/5 must-haves verified; cross-cutting UI check re-run 2026-08-18 and found real defects
 overrides_applied: 0
+re_verification: true
+re_verified: 2026-08-18T02:11:06Z
+uat: 36-HUMAN-UAT.md
 human_verification:
-  - test: "Cross-cutting UI check: dark mode, 320px viewport, es-ES and pt-BR locales for the audit timeline entry, run-changed-records list, and the retention form"
-    expected: "All three audit surfaces render correctly in dark mode, at a 320px viewport (no overflow/clipping), and in both es-ES and pt-BR (no missing keys, no layout breakage from longer strings)"
-    why_human: "Walkthrough step 11 (36-20-SUMMARY.md Task 3) was attempted but the browser tool's viewport resize did not take effect, so this could not be honestly verified. It remains outstanding."
+  - test: "Workflow run 'Records changed' list: dark mode, 320px viewport, es-ES and pt-BR"
+    expected: "Renders correctly in dark mode, at 320px with no overflow/clipping, and in both locales with no missing keys"
+    why_human: "STILL OPEN. The 2026-08-18 re-run covered the other two surfaces of the original bundled item but did not locate this one in the workflow UI, so it is carried forward alone rather than being marked verified by association."
+resolved_in_uat:
+  # The original single item bundled three surfaces behind one checkbox. Split in 36-HUMAN-UAT.md so
+  # partial coverage cannot read as full coverage. Two surfaces resolved, one still open above.
+  - test: "Audit timeline entry: dark mode, 320px, es-ES and pt-BR"
+    result: issue
+    evidence: "Locales PASS in both pt-BR and es-ES with no missing keys. 320px FAILS (scrollWidth 416 vs clientWidth 305), caused by the app-wide global header, not Phase 36 markup. Dark mode renders correctly only when .dark is forced. Separate minor i18n defect found: the raw DB column name 'Deleted at' renders as a field label in both locales."
+  - test: "/admin/audit retention form: dark mode, 320px, es-ES and pt-BR"
+    result: issue
+    evidence: "Locales PASS with full es-ES and pt-BR coverage of the retention copy. 320px FAILS worse than anywhere else measured — 508px in pt-BR and 526px in es-ES against a 305px client width, growing with translated string length, which is precisely the failure mode this item was written to catch. Second cause is this surface's own shell: the admin sidebar rail never collapses at mobile. Separate minor i18n defect: the entire admin sidebar is hardcoded English in both locales."
+dark_mode_premise_invalidated: >
+  Every dark-mode clause in this item assumed dark mode is a reachable user state. It is not: no
+  ThemeProvider is mounted and no toggle exists anywhere, so <html> never receives the .dark class.
+  Forcing the class shows the tokens are correct, which is a weaker claim than the item intended.
+  Tracked app-wide as 37-UAT.md G6.
 ---
 
 # Phase 36: Audit Log Verification Report
 
 **Phase Goal:** Any change to a CRM record can be traced to who or what made it, and the table does not eat the disk
 **Verified:** 2026-08-16
-**Status:** human_needed
+**Status:** gaps_found (re-verified 2026-08-18 — see 36-HUMAN-UAT.md)
 **Re-verification:** No — initial verification
 
 ## Goal Achievement

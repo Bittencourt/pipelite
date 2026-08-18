@@ -1,9 +1,20 @@
 ---
 phase: 38-bulk-operations
 verified: 2026-08-17T18:30:00Z
-status: human_needed
-score: 3/5
-re_verification: false
+status: gaps_found
+score: 5/5
+re_verification: true
+re_verified: 2026-08-18T02:11:06Z
+uat: 38-UAT.md
+re_verification_note: >
+  Browser UAT was re-run in a REAL authenticated session (Playwright-MCP against the Docker app),
+  which is what the original pass lacked — 38-20-SUMMARY.md recorded that the browser tools were
+  unavailable and that /deals, /activities and /trash all 307'd to /login. Six of the seven human
+  items are now closed by direct observation, so all five success criteria have their
+  browser-observable half proven and the score moves from 3/5 to 5/5. The status is NOT `passed`
+  because re-verification surfaced one real defect of its own (the failure panel's
+  "still selected" copy) plus one minor i18n gap, and one sub-criterion (deals drag) remains
+  instrument-blocked. See 38-UAT.md for the full evidence.
 gaps:
   - truth: "SC-1: User selects rows via checkboxes on Organizations, People, Deals, and Activities lists, including select-all from the header"
     status: partial
@@ -31,28 +42,31 @@ gaps:
     missing:
       - "A logged-in browser session driving a real 9-succeed/3-fail (or similar) bulk reassign/delete and confirming the inline report renders, scrolls (max-h-48) at 40 failures, and does not auto-dismiss"
 deferred: []
+resolved_in_uat:
+  # Closed 2026-08-18 by 38-UAT.md — real authenticated browser session.
+  - test: "Deals kanban: checkbox click, Space to select, per-stage capped select-all"
+    result: passed
+    evidence: "aria-label 'Selecionar os primeiros 100 de 3466 negócios em Base Fria - Lead'; click selected EXACTLY 100; second click deselected all 100 (CR-01 toggle confirmed live); checkbox click opened no dialog and changed no URL; a REAL Space keypress toggled the focused checkbox with scrollY still 0. Closes the T-38-41 instrument block for Space."
+  - test: "Activities list: full selection checklist"
+    result: passed
+    evidence: "Row checkbox '1 selecionado'; page-scoped header label recounted 50 -> 100 after Load More; indeterminate is data-state=indeterminate AND aria-checked=mixed; selection survived Load More; select-all gave 100 with correct plural; filter change emptied it and unmounted the bar."
+  - test: "Post-bulk-delete Trash deep link and timeline attribution"
+    result: passed
+    evidence: "Real bulk delete performed. Toast action lands on /trash?type=organizations (?type=, not ?tab=); tab 'Empresas (6)' aria-selected=true; all 6 records listed and attributed; timeline rendered 'prbitt@gmail.com excluiu esta empresa'. All test records restored afterwards."
+  - test: "Real CSV file download"
+    result: passed
+    evidence: "organizations-selected-3-2026-08-18.csv downloaded and parsed: exactly 3 rows, no [object Object], correct quoting, and 6 custom_* columns present although row 1 populated only one of them."
+  - test: "Escape-key regression G1"
+    result: passed_after_fix
+    evidence: "REPRODUCED 3/3 with a trusted key press (one Escape closed the dialog AND cleared the selection), root-caused to the gate reading React state from a document-level listener, fixed with an event-time ref released on a later macrotask, then re-verified across all five paths after a rebuild. Confirms the G1 report in 38-20-SUMMARY.md was correct and the earlier non-reproduction was an instrument artefact: the defect is invisible to synthetic KeyboardEvents."
+  - test: "Non-English locale rendering (es-ES and pt-BR)"
+    result: passed
+    evidence: "Bar counts, aria labels, both dialogs, partial-failure toast and per-reason failure sentences all render correctly in both locales, with correct plural inflection and the inverted opening question mark in es-ES. One minor gap logged: the Radix dialog close button's sr-only label stays English."
+
 human_verification:
-  - test: "Deals kanban: click a card's checkbox (does not expand the card), drag a card by its body with another card checked (drag still works, no interference), Tab to a checkbox and press Space (selects it), and per-stage select-all on the largest stage (10,495 deals in one stage on the live DB) caps at 100 and surfaces the capped-count copy"
-    expected: "Checkbox click ≠ card expand; drag unaffected by an unrelated selected card; Space toggles the checkbox for a keyboard-only user; select-all on an over-cap stage selects exactly BULK_MAX_IDS (100) and states the cap in an accessible name (e.g. 'Select the first 100 of 3466 deals in <stage>')"
-    why_human: "Requires a real authenticated session and a real keyboard/pointer; the automated UAT this phase ran was blocked by /deals redirecting an unauthenticated request to /login, and the sanctioned Claude-in-Chrome browser tools were unavailable in the session that produced 38-20-SUMMARY.md. Synthetic KeyboardEvents cannot substitute (proven: 0 key events reached the page even on a plain focused button, calibrated against a working click)."
-  - test: "Activities list: row checkbox, header select-all (page-scoped count), indeterminate minus state, selection persistence across Load More, selection clearing on filter change"
-    expected: "Same behavior already proven on Organizations/People — exact count in the bar, minus-not-check when partially selected, selection survives Load More, clears on filter change"
-    why_human: "Requires an authenticated session; /activities redirected to /login for every attempt in the UAT session"
-  - test: "Post-bulk-delete Trash deep link: the toast's 'Open Trash' link carries ?type= (not ?tab=) and lands on the correct per-entity tab; the 12 (or N) deleted records appear there; opening one record's change-history timeline shows the delete entry, attributed to the real actor"
-    expected: "Link is .../trash?type=organizations (etc.), the tab pre-selects that entity type, deleted records are listed, and the timeline renders a 'deleted' entry with the actor's name — not just the underlying audit_log row proven by psql in probe B"
-    why_human: "Requires an authenticated session to reach /trash (307'd every time in this UAT) and a rendered UI check that a database probe cannot perform — the audit rows exist (proven), but nobody has looked at the timeline component render them"
-  - test: "Real CSV file download: select N records, click Export CSV, open the downloaded file"
-    expected: "File contains exactly N data rows (not the whole table), no [object Object], custom_* columns present even if row 1 has none, and the filename is {entity}-selected-{count}-{date}.csv"
-    why_human: "The browser in this UAT never authenticated, so exportSelectedOrganizations (and its siblings) always refused with not_authenticated before a Blob/download could occur. The exact CSV content and row count were proven server-side by mirroring the query (probe A), but the actual client-side Blob+ObjectURL download mechanism was never exercised end-to-end"
-  - test: "Bulk failure report rendering at realistic failure counts (e.g. 3 failed, 40 failed) inside an authenticated session performing a real mixed-outcome bulk action"
-    expected: "The inline list names each failed record with a closed-reason sentence (never a raw server string), scrolls at max-h-48 for large failure counts, does not auto-dismiss over 30 seconds, and has a working Dismiss control; succeeded records are deselected while failed ones stay selected"
-    why_human: "Every browser attempt in the UAT hit the whole-call not_authenticated refusal before reaching a per-record partial-outcome state, so this component's real-data rendering has never been observed, only unit-tested"
-  - test: "Escape-key regression G1: with the bulk bar visible and its own Delete/Reassign dialog open, press Escape once and confirm the dialog closes but the selection (and bar) survive"
-    expected: "One Escape closes only the open dialog; the bulk selection count is unchanged and the bar remains mounted"
-    why_human: "Reported as a high-severity regression in 38-20-SUMMARY.md (G1) but the orchestrator could not reproduce it — the CDP/synthetic-event instrument used for that UAT could not deliver a real keydown reliably (calibrated: 0 real key events reached the page in that environment). This needs a human at a real keyboard, or a working automated key-input path, to confirm or refute."
-  - test: "Non-English locale rendering: es-ES and pt-BR bar count text, dialog titles/descriptions, partial-failure toast, and per-reason failure sentences"
-    expected: "All bulk.* strings render correctly in both locales at the counts and states already proven in en-US"
-    why_human: "locale-parity.test.ts only proves key presence across all three locale files; nobody has looked at the rendered pt-BR/es-ES text in a browser"
+  - test: "Deals kanban: drag a card by its body while another card is checked"
+    expected: "Drag still works and is unaffected by an unrelated selected card"
+    why_human: "STILL OPEN after the 2026-08-18 re-verification, and it is the only item that is. Playwright browser_drag times out on mouse-up because dnd-kit's pointer sensor requires an activation constraint (distance/delay plus intermediate pointermove) that a simple move-and-up does not satisfy. Synthetic pointer events were deliberately refused as evidence, because item G1 in this same session proved that synthetic dispatch hides a real defect on this exact component. Needs a human with a real mouse, or an e2e runner able to emit a held pointer sequence. Confirmed no data damage from the attempt: deal 'Robin Food' stayed in Base Fria - Lead at position 5000."
 ---
 
 # Phase 38: Bulk Operations Verification Report
