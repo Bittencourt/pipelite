@@ -29,18 +29,33 @@ function Command({
   )
 }
 
+/**
+ * `shouldFilter` and `loop` are destructured and passed to the INNER `<Command>` on purpose.
+ *
+ * Everything not destructured here lands on the Radix `Dialog` root via `...props`, so without this
+ * forwarding there is no path at all from a caller to cmdk's own options. That matters because cmdk
+ * defaults `shouldFilter` to true and filters every item against that item's `value` — and every
+ * item this app renders is keyed by a UUID. A user typing a name would therefore match no item, and
+ * the dialog would render its empty state for every query while the request that produced those
+ * matches returned 200. Destructuring is also what keeps this safe: both props leave `...props`, so
+ * neither can reach the Dialog root as an unknown DOM attribute.
+ */
 function CommandDialog({
   title = "Command Palette",
   description = "Search for a command to run...",
   children,
   className,
   showCloseButton = true,
+  shouldFilter,
+  loop,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string
   description?: string
   className?: string
   showCloseButton?: boolean
+  shouldFilter?: boolean
+  loop?: boolean
 }) {
   return (
     <Dialog {...props}>
@@ -52,7 +67,10 @@ function CommandDialog({
         className={cn("overflow-hidden p-0", className)}
         showCloseButton={showCloseButton}
       >
-        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+        <Command
+          shouldFilter={shouldFilter}
+          loop={loop}
+          className="[&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
           {children}
         </Command>
       </DialogContent>
