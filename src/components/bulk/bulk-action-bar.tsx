@@ -42,7 +42,7 @@
 import { Download, Loader2, Trash2, UserPen, X } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
-import { useEffect, useState, useTransition } from "react"
+import { useCallback, useEffect, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import { BulkDeleteDialog } from "@/components/bulk/bulk-delete-dialog"
@@ -143,11 +143,56 @@ export function BulkActionBar({
    * a stray Escape from discarding the selection out from under a request that is already running.
    * A listener registered in an effect rather than a state update in one: this repo treats a
    * synchronous state update inside an effect as a build error.
+   *
+   * THE GATE CANNOT TRUST `deleteOpen`/`reassignOpen` ALONE, AND THAT WAS REGRESSION G1.
+   * This is a document-level listener, so it runs inside the very same keydown dispatch in which
+   * Radix's dismissable layer handles Escape and calls `onOpenChange(false)`. The HTML spec drains
+   * microtasks after each listener callback, so React can flush that state update — and re-run this
+   * effect, re-registering the listener with a fresh closure — BETWEEN two listeners of one dispatch.
+   * The handler that actually ran then saw `deleteOpen === false` and cleared the selection out from
+   * under a dialog the user had only just dismissed. Observed live on /organizations: one Escape
+   * closed the dialog AND emptied the bar, three times out of three. It never reproduced under a
+   * synthetic `KeyboardEvent`, which is exactly why the unit test asserting this gate passed
+   * throughout — synthetic dispatch does not interleave the same way.
+   *
+   * So the EVENT-TIME truth lives in a ref: set synchronously the moment a dialog opens, and released
+   * only on a later macrotask when it closes. Throughout the dispatch that dismissed the dialog the
+   * ref still reads true regardless of listener order or flush timing, so that Escape is spent on the
+   * dialog alone. The next Escape finds the ref released and clears the bar as designed.
+   * `deleteOpen`/`reassignOpen` stay as the render-time truth and remain in the gate.
    */
+  const dialogOwnsEscapeRef = useRef(false)
+
+  /** Release the claim only after the current event has fully settled, never during it. */
+  const releaseEscapeAfterDispatch = useCallback(() => {
+    setTimeout(() => {
+      dialogOwnsEscapeRef.current = false
+    }, 0)
+  }, [])
+
+  const handleDeleteOpenChange = useCallback(
+    (next: boolean) => {
+      if (next) dialogOwnsEscapeRef.current = true
+      else releaseEscapeAfterDispatch()
+      setDeleteOpen(next)
+    },
+    [releaseEscapeAfterDispatch]
+  )
+
+  const handleReassignOpenChange = useCallback(
+    (next: boolean) => {
+      if (next) dialogOwnsEscapeRef.current = true
+      else releaseEscapeAfterDispatch()
+      setReassignOpen(next)
+    },
+    [releaseEscapeAfterDispatch]
+  )
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return
       if (!hasSelection || busy || deleteOpen || reassignOpen) return
+      if (dialogOwnsEscapeRef.current) return
       onClear()
     }
 
@@ -265,7 +310,7 @@ export function BulkActionBar({
         // The dialog closes on confirm either way. Progress, results and failures are reported by the
         // toast and by the inline report, both of which outlive it; keeping it open to host a failure
         // list would trap focus in a modal the user must dismiss before retrying.
-        setDeleteOpen(false)
+        handleDeleteOpenChange(false)
         setPending(null)
       }
     })
@@ -323,7 +368,7 @@ export function BulkActionBar({
       } catch {
         toast.error(t("error.reassignFailed"))
       } finally {
-        setReassignOpen(false)
+        handleReassignOpenChange(false)
         setPending(null)
       }
     })
@@ -398,7 +443,7 @@ export function BulkActionBar({
             variant="outline"
             size="sm"
             disabled={busy || overCap}
-            onClick={() => setReassignOpen(true)}
+            onClick={() => handleReassignOpenChange(true)}
           >
             {pending === "reassign" ? (
               <Loader2 className="size-4 animate-spin" />
@@ -429,7 +474,7 @@ export function BulkActionBar({
             size="sm"
             className="text-destructive hover:text-destructive"
             disabled={busy || overCap}
-            onClick={() => setDeleteOpen(true)}
+            onClick={() => handleDeleteOpenChange(true)}
           >
             {pending === "delete" ? (
               <Loader2 className="size-4 animate-spin" />
@@ -473,7 +518,7 @@ export function BulkActionBar({
 
       <BulkDeleteDialog
         open={deleteOpen}
-        onOpenChange={setDeleteOpen}
+        onOpenChange={handleDeleteOpenChange}
         count={count}
         retentionDays={retentionDays}
         isDeleting={pending === "delete"}
@@ -482,7 +527,7 @@ export function BulkActionBar({
 
       <BulkReassignDialog
         open={reassignOpen}
-        onOpenChange={setReassignOpen}
+        onOpenChange={handleReassignOpenChange}
         count={count}
         owners={owners}
         isReassigning={pending === "reassign"}

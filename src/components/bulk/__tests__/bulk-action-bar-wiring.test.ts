@@ -302,6 +302,53 @@ describe("the bar binds Escape and nothing else", () => {
   })
 })
 
+/**
+ * REGRESSION G1. One Escape with the Delete dialog open closed the dialog AND cleared the whole
+ * selection, live on /organizations, three times out of three. The gate that was supposed to prevent
+ * it read `deleteOpen`/`reassignOpen` — React state — from a DOCUMENT-level listener, and React can
+ * flush Radix's `onOpenChange(false)` and re-register this listener BETWEEN two listeners of the one
+ * keydown dispatch, so the handler that ran saw `false` and cleared.
+ *
+ * THIS DEFECT IS INVISIBLE TO A SYNTHETIC `KeyboardEvent`, which is why the Escape gate above passed
+ * throughout the regression. It follows that no jsdom or synthetic-dispatch test can defend this, and
+ * a test claiming to would be decoration. What is pinnable at the source level is the SHAPE of the
+ * fix: an event-time ref, released on a later macrotask, and dialogs wired through the wrappers that
+ * maintain it rather than through the raw setters. The behaviour itself is proven by browser UAT.
+ */
+describe("the Escape gate does not depend on React state alone (regression G1)", () => {
+  it("consults an event-time ref, not only deleteOpen/reassignOpen", () => {
+    expect(
+      BAR,
+      "the Escape handler must consult a ref for the event-time truth. React state is flushed asynchronously relative to a document-level keydown listener, so `deleteOpen`/`reassignOpen` can already read false inside the very dispatch that dismissed the dialog"
+    ).toContain("dialogOwnsEscapeRef.current")
+  })
+
+  it("releases the dialog's claim on a later macrotask, never during the dispatch", () => {
+    expect(
+      BAR,
+      "the claim must be released via setTimeout so it still reads true for the whole dispatch that dismissed the dialog; releasing it synchronously reintroduces G1 exactly"
+    ).toContain("setTimeout")
+  })
+
+  it("routes both dialogs through the wrappers that maintain the ref", () => {
+    for (const token of ["onOpenChange={handleDeleteOpenChange}", "onOpenChange={handleReassignOpenChange}"]) {
+      expect(
+        BAR,
+        `the dialogs must be wired through ${token}. A dialog wired straight to its setter never marks the ref, so Escape falls back to the stale-state gate that caused G1`
+      ).toContain(token)
+    }
+  })
+
+  it("wires neither dialog straight to its raw state setter", () => {
+    for (const token of ["onOpenChange={setDeleteOpen}", "onOpenChange={setReassignOpen}"]) {
+      expect(
+        BAR.includes(token),
+        `"${token}" must not appear in the bar. That raw wiring is precisely the G1 shape: the dialog closes without ever claiming Escape, so the document listener clears the selection in the same keypress`
+      ).toBe(false)
+    }
+  })
+})
+
 describe("the bar's export surface is ids and nothing else (T-38-01)", () => {
   it("constructs no export option, filter or format and reaches no route handler", () => {
     for (const token of [
