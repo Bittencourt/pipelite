@@ -77,7 +77,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [ ] **Phase 42: Observability** - Structured logging, opt-in error tracking, and a health endpoint that sees the processors
 - [ ] **Phase 43: Type Safety & Deployment Docs** - Clear the 14 type suppressions and document backup/restore
 - [x] **Phase 44: Custom Field UI Repair** - Restore the ability to add custom fields to Deals, and make the formula display agree with the stored value (completed 2026-08-15)
-- [ ] **Phase 45: Cross-Cutting UI Repair and UAT Closure** - Close the five app-wide defects the Phase 36-38 browser UAT surfaced: mobile overflow, unreachable dark mode, untranslated shells, a lying failure panel, and the one drag check no tool can drive
+- [x] **Phase 45: Cross-Cutting UI Repair and UAT Closure** - Close the five app-wide defects the Phase 36-38 browser UAT surfaced: mobile overflow, unreachable dark mode, untranslated shells, a lying failure panel, and the one drag check no tool can drive (completed 2026-08-18)
 
 ## Phase Details
 
@@ -731,7 +731,7 @@ The evidence captured with each backlog item is preserved in the v1.3 requiremen
 
   - Deals kanban: drag a card by its body while another card is checked. Playwright's `browser_drag` times out on mouse-up because dnd-kit's pointer sensor needs an activation constraint (distance/delay plus intermediate `pointermove`) that a simple move-and-up does not satisfy. Synthetic pointer events were deliberately refused as evidence, because regression G1 in that same session proved synthetic dispatch hides a real defect on this exact component. Close it with a human at a real mouse, or by adding an e2e runner that can emit a held pointer sequence — the latter would also give the repo somewhere to pin G1's behaviour, which no current test can defend.
 
-**Plans:** 10/11 plans executed
+**Plans:** 11/11 plans complete
 
 Plans:
 - [x] 45-01-PLAN.md — 22 message keys x 3 locales + the locale-parity contract lists that gate them
@@ -744,7 +744,7 @@ Plans:
 - [x] 45-08-PLAN.md — the three e2e specs (viewport-320 proven RED, deals-drag, theme)
 - [x] 45-09-PLAN.md — admin shell: translated sidebar, one shared item renderer, Sheet drawer below md, min-w-0 content column
 - [x] 45-10-PLAN.md — header collapse below md, mobile search dialog, min-w-0 on both clusters, t("workflows")
-- [ ] 45-11-PLAN.md — the single Docker rebuild, the full e2e run, and the human dark-palette walk
+- [x] 45-11-PLAN.md — the single Docker rebuild, the full e2e run, and the human dark-palette walk
 
 ---
 *Roadmap updated: 2026-08-18 -- Phase 45 planned (11 plans, 4 waves); UI edits batched so the Docker rebuild is paid once, in the final wave*
