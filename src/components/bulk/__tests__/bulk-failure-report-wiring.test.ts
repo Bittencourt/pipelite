@@ -85,12 +85,33 @@ const REASON_DECLARATION = /export type BulkFailureReason\s*=\s*([^\n;]+)/.exec(
 const REASON_MEMBERS =
   (REASON_DECLARATION?.[1] ?? "").match(/"([^"]+)"/g)?.map((m) => m.slice(1, -1)) ?? []
 
-/** The four copy keys the report is required to render. */
+/**
+ * The six copy keys the report is required to render.
+ *
+ * Three of the six are the mutually exclusive hint branches, and they are listed here rather than
+ * only in the branch describe below so that a branch deleted outright — not merely mis-conditioned —
+ * still trips the coverage loop.
+ */
 const FAILURE_KEYS = [
   "failures.deleteTitle",
   "failures.reassignTitle",
   "failures.retryHint",
+  "failures.retryHintPartial",
+  "failures.prunedHint",
   "failures.dismiss",
+]
+
+/**
+ * The three hint sentences, exactly one of which may render for a given outcome.
+ *
+ * Kept as its own list because the property under test is not "these strings appear somewhere" —
+ * it is that each one is reachable only under its own condition, which the branch assertions below
+ * pin by requiring both comparison boundaries to be written out.
+ */
+const HINT_BRANCH_KEYS = [
+  "failures.retryHint",
+  "failures.retryHintPartial",
+  "failures.prunedHint",
 ]
 
 /**
@@ -265,9 +286,12 @@ describe("every reason is a code with a copy key, never a server sentence", () =
     ).toContain("reason.${")
   })
 
-  it("renders all four required copy keys", () => {
+  // expect.soft, so a run names EVERY missing key rather than aborting on the earliest one. Phase 38
+  // lost a criterion to exactly this: a looped copy-key check stopped at the first gap, and the one
+  // piece of information the reader needed — which keys have no call site — was never printed.
+  it("renders all six required copy keys", () => {
     for (const key of FAILURE_KEYS) {
-      expect(
+      expect.soft(
         REPORT,
         `the report must render ${key}. All copy on this surface comes from the keys already checked into the three locale files; inventing a string here breaks the locale contract instead of failing a lookup`
       ).toContain(key)
@@ -300,6 +324,65 @@ describe("every reason is a code with a copy key, never a server sentence", () =
         `bulk.reason.${member} must exist in src/messages/en-US.json. A reason code with no copy key renders as a raw key path in the browser, and nothing else catches it: the compiler cannot, and the locale-parity gate compares the three locale files to EACH OTHER rather than to this union`
       ).toBeTruthy()
     }
+  })
+})
+
+/**
+ * THE HINT MUST NOT ASSERT A SELECTION STATE THAT IS NOT TRUE.
+ *
+ * The caller keeps every failed id in `rowSelection`, but its EFFECTIVE selection is that map
+ * intersected with the ids still rendered. For the `no longer exists` reason code the failed rows
+ * have left the table, so the effective selection is empty: nothing is checked, the bulk bar has
+ * unmounted, and a single unconditional "these records are still selected, fix the problem and try
+ * again" was still being printed underneath. That is not an artefact of a forced test — it is
+ * exactly what happens when another user deletes the records concurrently.
+ *
+ * The fix is conditional COPY, never a retained selection. Re-selecting the vanished ids to make the
+ * old sentence true would reintroduce ids the table cannot render, which is precisely what the prune
+ * exists to prevent; it would trade a false sentence for a broken selection. So the report is handed
+ * a number and states only what that number supports.
+ */
+describe("the hint states only what is true about the selection", () => {
+  it("is told the surviving count rather than working it out", () => {
+    expect(
+      REPORT,
+      "the report must declare `stillSelected: number` in its props. The caller owns `data`, so the caller owns the intersection of the failed ids with the rows still on screen; handing this component the row array instead would make it recompute a truth it is in the wrong scope to know"
+    ).toContain("stillSelected: number")
+  })
+
+  it("branches on both boundaries of the surviving count", () => {
+    expect(
+      REPORT,
+      "the report must test `stillSelected === failures.length`: the all-survived case is the ONLY one allowed to keep the original retry sentence, because it is the only one in which every named record can still be acted on"
+    ).toContain("stillSelected === failures.length")
+
+    expect(
+      REPORT,
+      "the report must test `stillSelected === 0`: when nothing survived the prune, 'fix the problem and try again' is advice about records that are no longer there, so the zero case needs a sentence of its own rather than a shared default"
+    ).toContain("stillSelected === 0")
+  })
+
+  it("passes the surviving count into the partial sentence as an ICU argument", () => {
+    expect(
+      REPORT,
+      "bulk.failures.retryHintPartial is an ICU plural keyed on `count`, so it must be called with `{ count: stillSelected }`. Called without the argument, next-intl prints the raw ICU source at the user"
+    ).toContain("{ count: stillSelected }")
+  })
+
+  it("keeps all three hint branches present", () => {
+    for (const key of HINT_BRANCH_KEYS) {
+      expect.soft(
+        REPORT,
+        `the report must still render ${key}. The three branches are mutually exclusive and jointly exhaustive over the surviving count; deleting one leaves a range of counts with no sentence at all`
+      ).toContain(key)
+    }
+  })
+
+  it("keeps the hint in the muted extra-small paragraph it has always used", () => {
+    expect(
+      REPORT,
+      'the hint must stay inside <p className="text-muted-foreground mt-2 text-xs">. Only the SENTENCE is conditional in this change; the typography role of the line is fixed and is not a branch of it'
+    ).toContain('<p className="text-muted-foreground mt-2 text-xs">')
   })
 })
 
