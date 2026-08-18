@@ -196,9 +196,9 @@ describe("the gate reads the right sources", () => {
 
   it("found the rail, the mobile bar and the authorization gate", () => {
     expect(
-      SIDEBAR,
-      "admin-sidebar.tsx must still declare its item array (sidebarItems). The array is what makes the nav data-driven and what the drawer consumes; a file without it is not the file these assertions describe"
-    ).toContain("sidebarItems")
+      /\b(adminNavItems|sidebarItems)\b/.test(SIDEBAR),
+      "admin-sidebar.tsx must still declare its item array, under either its historical name (sidebarItems) or the one it took when its values became message keys (adminNavItems). The array is what makes the nav data-driven and what the drawer consumes; a file without it is not the file these assertions describe"
+    ).toBe(true)
 
     expect(
       MOBILE_BAR,
