@@ -469,12 +469,12 @@ export function KanbanBoard({
   return (
     <div className="space-y-6">
       {/* Pipeline Selector */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         {pipelines.length > 1 ? (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Pipeline:</span>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="shrink-0 text-sm text-muted-foreground">Pipeline:</span>
             <Select value={selectedPipelineId} onValueChange={handlePipelineChange}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-[200px] min-w-0 max-w-full">
                 <SelectValue placeholder="Select pipeline" />
               </SelectTrigger>
               <SelectContent>
@@ -538,8 +538,19 @@ export function KanbanBoard({
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-          {/* Open Stages */}
-          <div className="flex gap-4 overflow-x-auto pb-4 outline-none" {...containerProps}>
+          {/*
+            Open Stages.
+
+            `relative` is LOAD-BEARING, not decoration. Radix's Checkbox renders a hidden
+            `position: absolute` bubble input, and with no positioned ancestor inside this box its
+            containing block resolves to <body> — so `overflow-x-auto` here does not clip it and the
+            board's off-screen card checkboxes extend documentElement.scrollWidth past the viewport.
+            Measured at a 320px viewport: scrollWidth 351 vs clientWidth 305 for the ~2s before
+            dnd-kit applies its own transforms (a transform creates a containing block, which is why
+            the overflow silently healed and made this look like a hydration artefact). Making this
+            box the containing block clips those inputs from the first paint.
+          */}
+          <div className="relative flex gap-4 overflow-x-auto pb-4 outline-none" {...containerProps}>
             {openStages.map((stage, columnIndex) => (
               <KanbanColumn
                 key={stage.id}

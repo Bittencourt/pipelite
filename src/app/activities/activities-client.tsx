@@ -229,12 +229,12 @@ export function ActivitiesClient({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary/10 rounded-lg">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="shrink-0 p-2 bg-primary/10 rounded-lg">
             <CheckCircle2 className="h-6 w-6 text-primary" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-3xl font-bold">{t('title')}</h1>
             <p className="text-muted-foreground">
               {t('manageActivities')}
