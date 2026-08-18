@@ -1,8 +1,8 @@
 ---
 phase: 45
 slug: cross-cutting-ui-repair-and-uat-closure
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-08-18
 ---
@@ -169,4 +169,4 @@ absent, that caller needs it derived before the surviving-count prop can be pass
 - [ ] Feedback latency < 90s on the unit path
 - [ ] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-08-18 — gsd-plan-checker VERIFICATION PASSED across all 11 plans; V-1..V-8 each confirmed honored
