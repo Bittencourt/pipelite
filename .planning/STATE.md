@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-18T09:48:43.961Z"
+last_updated: "2026-08-18T09:59:21.517Z"
 last_activity: 2026-08-18
 progress:
   total_phases: 14
   completed_phases: 8
   total_plans: 112
-  completed_plans: 104
+  completed_plans: 105
   percent: 57
 ---
 
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Position
 
 Phase: 45 - Cross-Cutting UI Repair and UAT Closure
-Plan: 3 of 11 complete
+Plan: 4 of 11 complete
 Status: Ready to execute
 Last activity: 2026-08-18
 
-Progress: [█████████░] 93%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [█████████░] 93%
 | Phase 45 P01 | 10min | 2 tasks | 4 files |
 | Phase 45 P02 | 34min | 3 tasks | 8 files |
 | Phase 45 P07 | 12min | 3 tasks | 5 files |
+| Phase 45 P03 | 10min | 2 tasks | 3 files |
 
 ## Decisions
 
@@ -194,6 +195,10 @@ Progress: [█████████░] 93%
 - [Phase ?]: [Phase 45]: 45-07: CommandDialog spread ...props onto the Radix Dialog root, so shouldFilter could never reach the inner <Command> — and cmdk defaults it to true while filtering on each item's value, which in this app is always a UUID. Both shouldFilter and loop are now destructured OUT of the rest spread and passed explicitly; a prop added to the type alone reproduces the bug while looking correct in a diff
 - [Phase ?]: [Phase 45]: 45-07: the lifted SearchResults name collided with global-search.tsx's own local 'interface SearchResults' — an import binds both a type and a value, so the payload type moved into search-results.tsx as the exported SearchResultsData
 - [Phase ?]: [Phase 45]: 45-07: the move-not-copy gate is 'CommandGroup appears ZERO times in global-search.tsx' — a count of zero is the only formulation that distinguishes an extraction from a duplication, and duplication is how the popover and the future dialog would silently drift
+- [Phase ?]: [Phase 45]: 45-03: no mounted hydration gate in user-menu.tsx — react-hooks/set-state-in-effect is severity 2 here AND a closed Radix menu portal renders nothing, so the radio items first mount on a user click, long after next-themes has read localStorage
+- [Phase ?]: [Phase 45]: 45-03: value={theme ?? "system"} is required, not defensive — next-themes' useState initializer returns undefined when typeof window is undefined, so theme is genuinely undefined during SSR and a bare value would select nothing
+- [Phase ?]: [Phase 45]: 45-03: provider nesting is gated by indexOf comparison (NextIntlClientProvider < ThemeProvider < HotkeysProvider), because a toContain check cannot express 'above' — the position is what makes ThemeScript the first DOM node in body
+- [Phase ?]: [Phase 45]: 45-03: ThemeProvider imports directly from next-themes into the async server layout (its dist ships its own client directive); no src/components/theme-provider.tsx wrapper exists and its absence is gated, since a wrapper is a second place for the four locked props to drift
 
 ### Quick Tasks Completed
 
@@ -268,11 +273,12 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - 2026-08-18: 45-01 complete -- 22 new message keys (admin.nav.* x12, theme.* x4, nav.workflows/searchDescription, bulk.failures.retryHintPartial/prunedHint, audit.field.movedToTrash/restoredFromTrash) in all three locales; 770 -> 792 identical leaves. locale-parity.test.ts gained REQUIRED_SHELL_KEYS (16) + SHELL_EXTRA_KEYS (2), extended REQUIRED_BULK_KEYS (44->46) and REQUIRED_AUDIT_KEYS (79->81), IDENTICAL_TRANSLATION_ALLOWED populated with the three product nouns, and a dedicated ICU-plural assertion closing the placeholderDrift blind spot. Per-contract assertions made soft so every broken contract reports in one run. 7/7 locale tests, 2091 suite pass, typecheck 0, lint 0 errors.
 - 2026-08-18: 45-02 complete -- Playwright harness foundation. @playwright/test@^1.62.1 in devDependencies (+ test:e2e script; npm test and ci.yml deliberately untouched, V-3), playwright.config.ts with ignoreDefaultArgs --hide-scrollbars (V-1, measured 320-vs-305 clientWidth recorded inline) and NO webServer block, e2e/seed-admin.ts (idempotent argon2id upsert, loopback-only E2E_DATABASE_URL guard) and e2e/auth.setup.ts (one real-form login, /admin/audit anti-vacuity, writes the gitignored e2e/.auth/admin.json). /e2e/.auth/ + /playwright-report/ + /test-results/ gitignored BEFORE any token was written (V-2); e2e + playwright.config.ts dockerignored. Setup project green 4x, idempotency proven by branch, both env-guard negative proofs RUN. typecheck 0, lint 0 errors, 2091+8 tests pass.
 - 2026-08-18: 45-07 complete -- CommandDialog now forwards shouldFilter and loop to its inner <Command> (both destructured out of the rest spread, which lands on the Radix Dialog root), unblocking any search surface from cmdk's UUID-blind default filter. The three result groups and the CommandEmpty fallback moved -- not copied -- into src/components/global-search/search-results.tsx (named export, plus the exported SearchResultsData payload type); CommandGroup now appears ZERO times in global-search.tsx, which is otherwise behaviour-neutral (same outer shouldFilter={false}, same / hotkey, same w-64 input, same fetch). Gated by src/components/ui/__tests__/command-dialog-wiring.test.ts, a comment-blind source gate that extracts the inner <Command> opening tag so a prop forwarded to the wrong element cannot pass. RED 10 failed/6 passed -> GREEN 16/16; typecheck 0, lint 0 errors (127 warnings, unchanged), 96 files + RSC project green.
+- 2026-08-18: 45-03 complete -- dark mode is reachable. ThemeProvider mounted in src/app/layout.tsx between NextIntlClientProvider and HotkeysProvider (so its inline ThemeScript is the first DOM node in <body>) with exactly attribute="class", defaultTheme="system", enableSystem, disableTransitionOnChange, imported straight from next-themes with no wrapper module; suppressHydrationWarning on <html> for both the class and the color-scheme attribute enableColorScheme writes. UserMenu gained a three-value DropdownMenuRadioGroup (light/dark/system, Sun/Moon/Monitor, copy from 45-01's theme.* keys) with value={theme ?? "system"} because theme is undefined during SSR, and NO mounted/useEffect/useState gate -- a closed Radix menu portal renders nothing, so the rows first mount on a click. C-1 landed: sign-out moved from text-red-600 (~3.4:1 on the dark popover) to text-destructive. sonner.tsx's useTheme() now resolves for real with zero edits (T-7); globals.css untouched. Gated by src/app/__tests__/theme-wiring.test.ts (RED 8 failed/5 passed naming next-themes -> GREEN 13/13). typecheck 0, lint 0 errors, 2120+8 tests pass. No Docker rebuild (V-7 -- 45-11 pays it).
 
 ## Current Position
 
 Phase: 38 (Bulk Operations) — EXECUTING
-Plan: 3 of 11 complete
+Plan: 4 of 11 complete
 Status: Ready to execute
 Last activity: 2026-08-18
 
