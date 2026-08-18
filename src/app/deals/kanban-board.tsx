@@ -516,6 +516,7 @@ export function KanbanBoard({
           kind={outcome.kind}
           failures={outcome.failed}
           labelById={outcome.labelById}
+          stillSelected={outcome.failed.filter((f) => renderedIds.has(f.id)).length}
           onDismiss={() => setOutcome(null)}
         />
       )}

@@ -283,6 +283,7 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
           kind={outcome.kind}
           failures={outcome.failed}
           labelById={outcome.labelById}
+          stillSelected={outcome.failed.filter((f) => loadedIds.has(f.id)).length}
           onDismiss={() => setOutcome(null)}
         />
       ) : null}
