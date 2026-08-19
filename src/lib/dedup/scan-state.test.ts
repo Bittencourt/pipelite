@@ -33,9 +33,18 @@ import {
   calculateScanProgress,
 } from "./scan-state"
 
-const findFirstMock = vi.mocked(db.query.dedupScans.findFirst)
-const insertMock = db.insert as unknown as ReturnType<typeof vi.fn>
-const updateMock = db.update as unknown as ReturnType<typeof vi.fn>
+// Cast the mocked module to a loose shape rather than `vi.mocked`, the house style in
+// `src/lib/triggers/schedule-processor.test.ts`. `vi.mocked` would type `mockResolvedValue` to the
+// exact relational-query row, which makes the partial-column fixture used by `isScanCancelled`
+// (`{ cancelled: true }`, all that `columns: { cancelled: true }` selects) a type error.
+const mockDb = db as unknown as {
+  query: { dedupScans: { findFirst: ReturnType<typeof vi.fn> } }
+  insert: ReturnType<typeof vi.fn>
+  update: ReturnType<typeof vi.fn>
+}
+const findFirstMock = mockDb.query.dedupScans.findFirst
+const insertMock = mockDb.insert
+const updateMock = mockDb.update
 
 /**
  * Every identifier and literal fragment reachable inside a drizzle `SQL` tree: column names via
