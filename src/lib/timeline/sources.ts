@@ -659,6 +659,61 @@ async function buildAuditResolution(rows: AuditChangeSource[]): Promise<AuditRes
   return resolution
 }
 
+/* -----------------------------------------------------------------------------------------
+ * THE TWO MERGE MARKERS THIS SOURCE READS BACK (39-12)
+ *
+ * `mergeRecordsMutation` (`src/lib/mutations/dedup.ts`, `MERGE_MARKER_KEYS`) records the merge
+ * as `__`-prefixed keys inside the audit row's `changes` map — a statement about the CHANGE
+ * rather than about a field, which is why `buildAuditFieldChanges` skips them (see
+ * `AUDIT_MARKER_PREFIX` in `src/lib/audit/present.ts`). Two of them are display facts the
+ * renderer needs as first-class entry fields, so they are lifted out here.
+ *
+ * THE STRINGS ARE COPIED, NOT IMPORTED, AND DELIBERATELY SO. Importing `MERGE_MARKER_KEYS`
+ * would put the whole merge mutation — the event bus, the formula recalculator, three child
+ * reparenting paths — on the timeline's READ path, for two string literals. This module is a
+ * reader; it must not depend on a writer. The drift that copying risks is closed in
+ * `./sources.test.ts`, which scans `dedup.ts` for both spellings and fails if either is renamed.
+ *
+ * `__mergedFromName` is read from the `from` SIDE and `__mergedChildren` from the `to` side,
+ * because that is how the mutation writes them: the loser's name is something that stopped
+ * existing (`{ from: name, to: null }`) and the child count is something that came into being
+ * (`{ from: null, to: n }`). Reading the wrong side of either yields `null`, silently.
+ *
+ * ONLY `__mergedFromName` FEEDS THE NAME. The LOSER's own row carries `__mergedIntoName`, which
+ * holds the SURVIVOR's name; routing it here would render the merge backwards through the
+ * `merged {name} into this record` predicate. An audit log states an honest omission rather than
+ * a confident inversion — the same rule the actor fallback follows (T-36-29).
+ * ----------------------------------------------------------------------------------------- */
+const MERGED_FROM_NAME_KEY = "__mergedFromName"
+const MERGED_CHILDREN_KEY = "__mergedChildren"
+
+/**
+ * The losing record's stored name, or `null` for anything that is not a non-empty string.
+ *
+ * `changes` is a `jsonb` column, so every value inside it is `unknown` at this boundary no
+ * matter what the writer's types claim. A row written by an older or newer shape must degrade to
+ * an unnamed merge, never take the whole record's timeline page down with it (T-39-28): the name
+ * is interpolated into an ICU message, and next-intl handed an object where it expects a string
+ * throws during render rather than skipping one row.
+ */
+function readMergedLoserName(changes: AuditChanges | null): string | null {
+  const stored = changes?.[MERGED_FROM_NAME_KEY]?.from
+  return typeof stored === "string" && stored !== "" ? stored : null
+}
+
+/**
+ * The reparented child count, or `0` for anything that is not a non-negative integer.
+ *
+ * `Number.isInteger` rather than a bare `typeof`: `NaN` and `Infinity` are both
+ * `typeof "number"`, and either one reaching the ICU plural selector produces a sentence no
+ * reader should see. A fractional count is rejected for the same reason — there is no such
+ * thing as half a linked record.
+ */
+function readMergedChildCount(changes: AuditChanges | null): number {
+  const stored = changes?.[MERGED_CHILDREN_KEY]?.to
+  return typeof stored === "number" && Number.isInteger(stored) && stored >= 0 ? stored : 0
+}
+
 export const auditSource: TimelineSource = {
   kind: "audit",
 
@@ -778,6 +833,12 @@ export const auditSource: TimelineSource = {
         // belongs to whichever plan is willing to make it.
         apiKeyName: null,
         changes: buildAuditFieldChanges(entityType, row.action, row.changes ?? {}, resolution),
+        // Both fields are populated for EVERY action, not only for `merged`. A `merged` row is
+        // the only one carrying the markers, so every other action lands on the same null/0 the
+        // guards return for a malformed one — which is what lets the renderer read them without
+        // first testing the action.
+        mergedLoserName: readMergedLoserName(row.changes),
+        mergedChildCount: readMergedChildCount(row.changes),
       }
     })
   },

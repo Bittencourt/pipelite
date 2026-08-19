@@ -150,6 +150,28 @@ export interface AuditTimelineEntry extends TimelineEntryBase {
   apiKeyName: string | null
   /** Empty on `deleted`. May be empty on `updated` — see the UI-SPEC's defensive state. */
   changes: AuditFieldChange[]
+  /**
+   * The name the LOSING record carried when it was merged away, from the `__mergedFromName`
+   * marker `mergeRecordsMutation` writes on the survivor's row (`src/lib/mutations/dedup.ts`).
+   *
+   * Read from the marker rather than looked up live, and that is not an optimisation: the losing
+   * row is soft-deleted, so a live read would need to reach into Trash, and its name may have
+   * been edited since. The marker is the fact.
+   *
+   * `null` on every action other than `merged`, and `null` on a `merged` row whose marker is
+   * missing or malformed. Required rather than optional so no consumer needs a presence check —
+   * the meaninglessness is expressed as a value, never as an absent key.
+   */
+  mergedLoserName: string | null
+  /**
+   * How many child rows the merge re-pointed at the survivor, from the `__mergedChildren` marker.
+   * Written on BOTH sides of a merge and meaning the same thing on both.
+   *
+   * `0` on every other action, and `0` on a malformed marker. It feeds an ICU plural directly, so
+   * it is a number rather than `number | null`: a nullable count would put the presence check in
+   * the renderer, which is where 45-06 recorded such checks go stale.
+   */
+  mergedChildCount: number
 }
 
 /**
