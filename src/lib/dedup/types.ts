@@ -22,10 +22,12 @@ export type DedupTier = "certain" | "likely"
 /**
  * Why a pair was reported. These four map 1:1 onto the `dedup.reason.*` message keys.
  *
- * `nameIdentity` — NOT `nameDomain`. The originally locked organization rule was "identical
- * normalized name + identical website domain"; 39-RESEARCH measured `website` as NULL on all
- * 46,054 organizations, so the domain conjunct was superseded by an admin-configured identity
- * custom field (39-CONTEXT § Post-Research Decisions). The old name must not reappear anywhere.
+ * `nameIdentity` is the organization certain-tier reason, and it REPLACES an earlier reason named
+ * after the website domain. The originally locked organization rule was "identical normalized name
+ * + identical website domain"; 39-RESEARCH then measured `website` as NULL on all 46,054
+ * organizations, so the domain conjunct was superseded by an admin-configured identity custom
+ * field (39-CONTEXT § Post-Research Decisions). The superseded identifier is deliberately not
+ * spelled anywhere in `src/lib/dedup/`, so a grep for it returns nothing and cannot mislead.
  */
 export type DedupReason = "email" | "nameIdentity" | "similarName" | "similarNamePhone"
 
