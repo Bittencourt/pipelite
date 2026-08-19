@@ -52,10 +52,14 @@
 --            and the canonical ordering asserted against the rows it actually
 --            wrote, and a dismissal proven to survive a rescan.
 --   Part 9 — the AFTER snapshot. Every count from Part 0 must be unchanged.
---   Part 10 — RESERVED FOR PLAN 39-10 (the merge probe). It sits AFTER Part 9
---            because it writes rows to tables Part 0 counted, which Part 8 does
---            not (duplicate_pairs and dedup_scans are outside Part 0's list, and
---            Part 8 carries its own before/after check at 8r).
+--   Part 10 — THE MERGE PROBE (plan 39-10). Two REAL organizations that both
+--            carry a source='migration' note, selected by query: the naive
+--            reassignment is shown RAISING 23505 on notes_migration_uniq, and
+--            the guarded demote-then-reassign sequence is shown succeeding. It
+--            sits AFTER Part 9 because it writes rows to tables Part 0 counted,
+--            which Part 8 does not (duplicate_pairs and dedup_scans are outside
+--            Part 0's list, and Part 8 carries its own before/after check at 8r);
+--            Part 10 therefore carries its own, at 10a and 10f.
 --
 -- HOW TO RUN
 --   docker compose exec -T postgres psql -U pipelite -d pipelite -f - < scripts/dedup-checks.sql
@@ -1561,24 +1565,279 @@ DROP TABLE IF EXISTS pg_temp.dedup_checks_ext_before;
 DROP TABLE IF EXISTS pg_temp.dedup_checks_plans;
 
 
--- -----------------------------------------------------------------------------
--- PART 10 IS DELIBERATELY UNUSED AND RESERVED FOR PLAN 39-10 (the merge).
---
--- It sits AFTER Part 9 rather than before it because it is the only part that
--- will write rows to a table Part 9 re-counts (Part 8 writes rows too, but only
--- to duplicate_pairs and dedup_scans, which Part 0 does not snapshot — Part 8
--- carries its own before/after comparison at 8r instead).
---
--- The merge probe 39-10 owes this file is the one a mocked test
--- cannot express at all: merge two organizations that BOTH carry a
--- source='migration' note and show that the survivor ends up with every child and
--- that notes_migration_uniq was never violated — measured at 63% of this
--- deployment's organizations, so roughly 40% of real merges hit it.
---
--- IT MUST BE WRAPPED BEGIN ... ROLLBACK, with every fixture id carrying the
--- dedupchk_ prefix. Part 9d above already counts survivors of exactly that
--- prefix, so the detector is in place before the probe that needs it.
--- -----------------------------------------------------------------------------
+\echo ''
+\echo '###############################################################################'
+\echo '# PART 10 — THE MERGE PROBE: B4 against two real organizations (plan 39-10)'
+\echo '###############################################################################'
+\echo ''
+\echo '  THIS PART IS THE SECOND, TOOL-INDEPENDENT PROOF OF B4, AND THAT IS ITS'
+\echo '  WHOLE REASON FOR EXISTING. The FIRST proof is'
+\echo '  src/lib/mutations/dedup.db.test.ts, which runs the actual'
+\echo '  mergeRecordsMutation against a real PostgreSQL in a third vitest project'
+\echo '  (npm run test:db). This one needs no vitest project, no Node, no'
+\echo '  node_modules and no environment variable: psql and this file are the'
+\echo '  entire dependency list. So if the db-test project is ever removed,'
+\echo '  renamed, or excluded from a run, B4 still has a standing proof — and if'
+\echo '  the two ever disagree, one of them is wrong and a reader has something'
+\echo '  to compare.'
+\echo ''
+\echo '  WHAT IT SHOWS, in two probes against organizations that are NOT fixtures:'
+\echo '    1. the NAIVE reassignment raising 23505 on notes_migration_uniq. This'
+\echo '       is an EXPECTED-ERROR, labelled as such, and it is the assertion a'
+\echo '       mocked db.update cannot make at all. 29,037 of the 46,054'
+\echo '        organizations on this deployment carry a source=migration note, and'
+\echo '        both members of a duplicate pair usually come from the same import,'
+\echo '        so this is the error roughly 40% of real merges would hit.'
+\echo '    2. the GUARDED sequence — demote the migration note of the losing'
+\echo '       record to source=user only when the survivor already has one, THEN'
+\echo '       reassign — succeeding, with the survivor left holding exactly one'
+\echo '       migration note and no content lost. It mirrors, statement for'
+\echo '       statement, step c of src/lib/mutations/dedup.ts.'
+\echo ''
+\echo '  THE ORGANIZATIONS ARE SELECTED BY QUERY, NEVER HARDCODED BY ID. A'
+\echo '  hardcoded id rots the first time the data changes and then silently'
+\echo '  probes nothing. Both ids are PRINTED at 10b so a reader can reproduce the'
+\echo '  exact run.'
+\echo ''
+\echo '  EACH PROBE IS ITS OWN BEGIN ... ROLLBACK, because psql aborts a'
+\echo '  transaction on error and nothing after the raising statement would run —'
+\echo '  the same structure, and the same reason, as trash-checks.sql Part 2. This'
+\echo '  is also why the whole file must be run with ON_ERROR_STOP unset.'
+\echo ''
+\echo '  Part 9 above cannot cover this part: it re-counts notes, and this part'
+\echo '  writes to notes. 10a and 10f are the before/after pair for Part 10.'
+\echo ''
+
+\echo '--- 10a. the BEFORE snapshot for this part, taken OUTSIDE any transaction ---'
+\echo '    so it survives both rollbacks below.'
+
+DROP TABLE IF EXISTS pg_temp.dedup_merge_before;
+
+CREATE TEMP TABLE dedup_merge_before AS
+            SELECT 'notes_total'         AS tbl, count(*) AS n FROM notes
+  UNION ALL SELECT 'notes_org_migration',       count(*)      FROM notes
+             WHERE entity_type = 'organization' AND source = 'migration'
+  UNION ALL SELECT 'notes_org_user',            count(*)      FROM notes
+             WHERE entity_type = 'organization' AND source = 'user'
+  UNION ALL SELECT 'organizations_total',       count(*)      FROM organizations;
+
+SELECT tbl, n AS rows_before FROM dedup_merge_before ORDER BY tbl;
+
+\echo ''
+\echo '--- 10b. the two organizations, chosen by query. Both ids are printed. -----'
+\echo '    Ordered by id so a re-run on unchanged data picks the same pair and the'
+\echo '    output is diffable. The smaller id is the survivor, arbitrarily but'
+\echo '    deterministically — the probe is about the notes, not about which row'
+\echo '    a user would keep.'
+
+DROP TABLE IF EXISTS pg_temp.dedup_merge_probe;
+
+CREATE TEMP TABLE dedup_merge_probe AS
+SELECT
+  (array_agg(id ORDER BY id))[1] AS survivor_id,
+  (array_agg(id ORDER BY id))[2] AS loser_id
+FROM (
+  SELECT o.id
+    FROM organizations o
+   WHERE o.deleted_at IS NULL
+     AND EXISTS (
+           SELECT 1
+             FROM notes n
+            WHERE n.entity_type = 'organization'
+              AND n.entity_id   = o.id
+              AND n.source      = 'migration')
+   ORDER BY o.id
+   LIMIT 2
+) candidates;
+
+SELECT
+  p.survivor_id,
+  s.name AS survivor_name,
+  p.loser_id,
+  l.name AS loser_name,
+  CASE
+    WHEN p.survivor_id IS NOT NULL AND p.loser_id IS NOT NULL THEN 'PASS'
+    ELSE 'SKIPPED — fewer than two organizations carry a source=migration note; '
+         || 'the two probes below will report nothing meaningful'
+  END AS verdict
+FROM dedup_merge_probe p
+LEFT JOIN organizations s ON s.id = p.survivor_id
+LEFT JOIN organizations l ON l.id = p.loser_id;
+
+\echo ''
+\echo '    And the precondition, asserted rather than assumed: BOTH of them really'
+\echo '    occupy the partial unique index right now. Expect 2.'
+
+SELECT
+  count(*) AS migration_notes_across_the_pair,
+  CASE WHEN count(*) = 2 THEN 'PASS'
+       ELSE 'SKIPPED — not a genuine collision, so probe 10c will not raise'
+  END AS verdict
+FROM notes
+WHERE entity_type = 'organization'
+  AND source      = 'migration'
+  AND entity_id IN (SELECT survivor_id FROM dedup_merge_probe
+                    UNION ALL
+                    SELECT loser_id    FROM dedup_merge_probe);
+
+\echo ''
+\echo '    The TOTAL note count for the pair, snapshotted outside any transaction'
+\echo '    so 10d-iii can prove the guarded sequence lost none of them.'
+
+DROP TABLE IF EXISTS pg_temp.dedup_merge_note_count;
+
+CREATE TEMP TABLE dedup_merge_note_count AS
+SELECT count(*) AS n
+  FROM notes
+ WHERE entity_type = 'organization'
+   AND entity_id IN (SELECT survivor_id FROM dedup_merge_probe
+                     UNION ALL
+                     SELECT loser_id    FROM dedup_merge_probe);
+
+SELECT n AS notes_across_the_pair_before FROM dedup_merge_note_count;
+
+\echo ''
+\echo '--- 10c. PROBE ONE, THE NAIVE REASSIGNMENT. -------------------------------'
+\echo ''
+\echo '    EXPECTED-ERROR, and the run is only correct if it appears:'
+\echo '      ERROR:  duplicate key value violates unique constraint'
+\echo '              "notes_migration_uniq"'
+\echo '      SQLSTATE 23505'
+\echo ''
+\echo '    This is the one statement in Phase 39 that a mocked test cannot'
+\echo '    reproduce, and it is what step c of src/lib/mutations/dedup.ts exists'
+\echo '    to avoid. notes_migration_uniq MAY NOT BE DROPPED OR RELAXED to make'
+\echo '    it pass — src/db/schema/notes.ts calls it "a permanent database'
+\echo '    invariant, not a one-shot script guard".'
+\echo ''
+\echo '    READING THE OUTPUT: psql writes these labels to stdout and errors to'
+\echo '    stderr, and if the two streams were merged they buffer independently —'
+\echo '    so an error can print under the WRONG heading. Match it by the'
+\echo '    DETAIL line, which names the surviving organization id printed at 10b.'
+\echo ''
+
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+
+-- No deleted_at predicate on this statement, in either direction, and that
+-- mirrors the mutation deliberately: notes_migration_uniq carries no
+-- `deleted_at is null` clause, so a SOFT-DELETED migration note still occupies
+-- the slot and filtering by deleted_at here would hide the collision rather than
+-- avoid it.
+UPDATE notes
+   SET entity_id = (SELECT survivor_id FROM dedup_merge_probe)
+ WHERE entity_type = 'organization'
+   AND entity_id   = (SELECT loser_id FROM dedup_merge_probe);
+
+ROLLBACK;
+
+\echo ''
+\echo '--- 10d. PROBE TWO, THE GUARDED SEQUENCE. Expect two UPDATEs and no error. -'
+\echo ''
+\echo '    Two statements, IN THIS ORDER. The demotion is scoped by an EXISTS on'
+\echo '    the survivor, so a loser whose survivor has no migration note keeps its'
+\echo '    own source=migration intact: only a GENUINE collision is reclassified.'
+\echo '    And it DEMOTES rather than deletes — a migration note is import'
+\echo '    provenance, and a merge must not destroy the record of where a row came'
+\echo '    from.'
+\echo ''
+
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+
+UPDATE notes
+   SET source = 'user', updated_at = now()
+ WHERE entity_type = 'organization'
+   AND entity_id   = (SELECT loser_id FROM dedup_merge_probe)
+   AND source      = 'migration'
+   AND EXISTS (
+         SELECT 1
+           FROM notes survivor_migration_note
+          WHERE survivor_migration_note.entity_type = 'organization'
+            AND survivor_migration_note.entity_id   = (SELECT survivor_id FROM dedup_merge_probe)
+            AND survivor_migration_note.source      = 'migration');
+
+UPDATE notes
+   SET entity_id = (SELECT survivor_id FROM dedup_merge_probe), updated_at = now()
+ WHERE entity_type = 'organization'
+   AND entity_id   = (SELECT loser_id FROM dedup_merge_probe);
+
+\echo ''
+\echo '    10d-i. The survivor now holds EXACTLY ONE migration note, and the'
+\echo '           provenance of the losing record survives as a source=user note.'
+
+SELECT
+  count(*) FILTER (WHERE source = 'migration') AS survivor_migration_notes,
+  count(*) FILTER (WHERE source = 'user')      AS survivor_user_notes,
+  count(*)                                     AS survivor_notes_total,
+  CASE WHEN count(*) FILTER (WHERE source = 'migration') = 1 THEN 'PASS'
+       ELSE 'FAIL — the survivor must end with exactly one source=migration note'
+  END AS verdict
+FROM notes
+WHERE entity_type = 'organization'
+  AND entity_id   = (SELECT survivor_id FROM dedup_merge_probe);
+
+\echo ''
+\echo '    10d-ii. NOTHING IS LEFT DANGLING ON THE LOSER. notes.entity_id has no'
+\echo '            foreign key — one column would have to point at four tables —'
+\echo '            so nothing at the database level catches a missed reassignment.'
+\echo '            The rows would simply dangle, forever, silently. Expect 0.'
+
+SELECT
+  count(*) AS notes_left_on_loser,
+  CASE WHEN count(*) = 0 THEN 'PASS'
+       ELSE 'FAIL — a note still points at the merged-away organization'
+  END AS verdict
+FROM notes
+WHERE entity_type = 'organization'
+  AND entity_id   = (SELECT loser_id FROM dedup_merge_probe);
+
+\echo ''
+\echo '    10d-iii. And no note content was destroyed: the note count for the'
+\echo '             pair is unchanged, they are just all on one side now.'
+
+SELECT
+  count(*) AS notes_across_the_pair,
+  CASE
+    WHEN count(*) = (SELECT n FROM dedup_merge_note_count) THEN 'PASS'
+    ELSE 'FAIL — the guarded sequence lost or duplicated a note'
+  END AS verdict
+FROM notes
+WHERE entity_type = 'organization'
+  AND entity_id IN (SELECT survivor_id FROM dedup_merge_probe
+                    UNION ALL
+                    SELECT loser_id    FROM dedup_merge_probe);
+
+ROLLBACK;
+
+\echo ''
+\echo '--- 10f. THE ROLLBACK HELD. Every count 10a took is back. ------------------'
+\echo '    notes_org_user is the sharpest of the four: the guarded sequence'
+\echo '    DEMOTES a note to source=user, so a rollback that failed to hold would'
+\echo '    show up here as +1 even if the totals matched.'
+
+SELECT
+  b.tbl,
+  b.n       AS rows_before,
+  a.n       AS rows_after,
+  a.n - b.n AS delta,
+  CASE WHEN a.n = b.n THEN 'PASS'
+       ELSE 'FAIL — PART 10 CHANGED REAL DATA; a BEGIN ... ROLLBACK wrapper did not hold'
+  END AS verdict
+FROM dedup_merge_before b
+JOIN (
+            SELECT 'notes_total'         AS tbl, count(*) AS n FROM notes
+  UNION ALL SELECT 'notes_org_migration',       count(*)      FROM notes
+             WHERE entity_type = 'organization' AND source = 'migration'
+  UNION ALL SELECT 'notes_org_user',            count(*)      FROM notes
+             WHERE entity_type = 'organization' AND source = 'user'
+  UNION ALL SELECT 'organizations_total',       count(*)      FROM organizations
+) a ON a.tbl = b.tbl
+ORDER BY b.tbl;
+
+DROP TABLE IF EXISTS pg_temp.dedup_merge_before;
+DROP TABLE IF EXISTS pg_temp.dedup_merge_note_count;
+DROP TABLE IF EXISTS pg_temp.dedup_merge_probe;
 
 
 \echo ''
