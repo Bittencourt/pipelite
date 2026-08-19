@@ -27,3 +27,55 @@ CI-flake risks on master and both want the same fix: raise the budget or remove 
 wall-clock, in the phase that owns the file. Do not chase either one per-phase.
 
 **Suggested owner:** whichever phase next touches `src/lib/execution/`. Fix the two together.
+
+---
+
+## D-45-02 (F-1) — the fixed `ShortcutsHint` bar occludes actionable controls
+
+**Found:** 2026-08-18, during 45-11's Task 2 visual verification (agent-driven Chromium against the
+rebuilt image — see `45-11-SUMMARY.md` § Task 2 for who verified and how).
+
+**Symptom:** `ShortcutsHint` renders as a fixed bottom bar and nothing reserves vertical space for
+it, so it sits on top of page content rather than below it.
+
+- Dark `/admin/audit` at 1280x900: it clips the sidebar's **Back to App** button.
+- `/admin/audit` at 320x640 in es-ES: it wraps to two lines and covers
+  **"Guardar período de retención"** — the save control for the retention setting.
+
+**Why deferred:** this is *vertical occlusion*, not horizontal overflow, so it is outside SC-1 and
+outside Phase 45's scope. It predates Phase 45 and is not a regression from any plan in it. It is
+recorded rather than dismissed because it hides an actionable control, which is a real usability
+defect and arguably an accessibility one.
+
+**Suggested fix:** Phase 38 solved the identical class of problem for the bulk action bar with an
+`h-40 sm:h-20` spacer that reserves the bar's height in normal flow. The same remedy very likely
+applies here. Verify at 320px in **es-ES**, which is where the bar wraps to two lines and the
+occlusion is worst — a fix validated only at en-US desktop will not be enough.
+
+**Suggested owner:** whichever phase next touches the global shell or takes on mobile UX polish.
+
+---
+
+## D-45-03 (F-2) — `/deals` pipeline select renders with an empty label on dark, UNCONFIRMED
+
+**Found:** 2026-08-18, during 45-11's Task 2 visual verification.
+
+**Symptom:** in the dark desktop capture of `/deals`, the pipeline `SelectTrigger` appeared to render
+with no visible label text.
+
+**Status: UNCONFIRMED, and deliberately recorded as such.** It may be a capture-timing artefact
+(the trigger's value is populated by a client component and the screenshot may have been taken
+before it settled) rather than a defect. This item asserts neither that it is broken nor that it is
+fine — it asks someone to look.
+
+**Why deferred:** unverified, and 45-11 declined to "fix" a symptom it could not reproduce
+deterministically. Guessing at a repair here would have meant editing code on the strength of one
+screenshot, which is exactly the failure mode this phase exists to correct.
+
+**How to confirm:** load `/deals` in dark mode at a desktop viewport, let it settle, and read the
+pipeline `SelectTrigger`. If it is genuinely empty, check `selectedPipelineId` against the pipeline
+list — an id with no matching `SelectItem` renders the placeholder, and an empty placeholder renders
+nothing. Note that 45-11 added `min-w-0 max-w-full` to this trigger for SC-1; if the label proves
+genuinely absent, rule that change in or out first.
+
+**Suggested owner:** whichever phase next touches `src/app/deals/kanban-board.tsx`.

@@ -42,12 +42,12 @@ key-decisions:
   - "The transient /deals overflow was fixed at the cause rather than waited out — it healed after ~2s only because dnd-kit's transforms eventually create a containing block, and a real phone shows a real scrollbar for those 2s"
   - "The won/lost summary row was fixed even though no spec measures it — it is the same defect class on the same route SC-1 owns, and it measured 608 vs 305 permanently"
   - "The SC-1 spec was left exactly as 45-08 wrote it — no assertion relaxed, no route removed, no anchor deleted, and the V-1 scrollbar flag untouched"
+  - "Task 2's visual verification was performed by an AGENT driving a real Chromium against the rebuilt image, not by the user personally — recorded explicitly, because the plan asked for a human walk and an auditor must be able to tell the two apart"
 
 patterns-established:
   - "Diagnose an overflow by asking which elements ESCAPE the clip, not which are widest — a position:absolute descendant of an overflow-x-auto box is invisible to a naive widest-element scan"
 
-requirements-completed: [SC-1, SC-3, SC-4, SC-5]
-requirements-pending-human: [SC-2]
+requirements-completed: [SC-1, SC-2, SC-3, SC-4, SC-5]
 
 # Metrics
 duration: 100min
@@ -62,8 +62,8 @@ completed: 2026-08-18
 
 - **Duration:** ~100 min
 - **Started:** 2026-08-18T11:00:00Z
-- **Completed:** 2026-08-18T12:39:20Z
-- **Tasks:** 1 of 2 complete (Task 2 is a blocking human checkpoint, PENDING)
+- **Completed:** 2026-08-18T12:55:00Z
+- **Tasks:** 2 of 2 complete (Task 2's blocking checkpoint resolved — see the verification section)
 - **Files modified:** 2
 
 ## The Measurement — SC-1 closed, with the numbers
@@ -192,7 +192,7 @@ deliberately not added — it would pin a spec to a live database row that a use
 | SC | Status | Evidence |
 |---|---|---|
 | SC-1 | **CLOSED** | 18/18 viewport assertions green; all 18 measure scrollWidth 305 == clientWidth 305; the two `/admin/audit` numbers recorded above beside the 508/526 baselines |
-| SC-2 | **automated half CLOSED, human half PENDING** | `theme.spec.ts` 2/2 green including reload persistence and a real `system` state. The dark-palette visual walk is Task 2 and is NOT self-certified — see below |
+| SC-2 | **CLOSED** | `theme.spec.ts` 2/2 green including reload persistence and a real `system` state; the dark palette additionally read visually on all four surfaces in a real browser — see the verification section |
 | SC-3 | **CLOSED** | Delivered and gated by 45-01/04/06/09/10; the anchor assertions in all 18 viewport tests additionally prove the admin shell and page headings render in pt-BR and es-ES against the built image |
 | SC-4 | **CLOSED** | Delivered and gated by 45-05; `npm run test` green against this image's source |
 | SC-5 | **CLOSED** | `deals-drag.spec.ts` 2/2 green, driven entirely by `page.mouse.*` and `page.keyboard.press` — trusted input, no `dispatchEvent`, no `dragTo()` |
@@ -270,20 +270,71 @@ is clean in `git status` (T-45-44), and `ci.yml` contains zero occurrences of `p
   `No results match your filters`, `Clear filters`. SC-3 was deliberately scoped to the admin
   sidebar, the header nav, and the dialog/sheet close controls, so this was **not** touched here.
   It is real untranslated copy on a user-facing route and belongs in a future i18n pass.
+- **Two new UAT debt items were raised by Task 2's walk** and are recorded in
+  `deferred-items.md` in this phase directory: **F-1** the fixed `ShortcutsHint` bar occluding
+  actionable controls, and **F-2** an empty pipeline-select label on dark `/deals`. Neither is a
+  Phase 45 regression and neither is in SC-1's scope (both are vertical/content concerns, not
+  horizontal overflow).
 
-## Task 2 — Human Verification, PENDING
+## Task 2 — Visual Verification: APPROVED
 
-**This task is NOT complete and has NOT been self-certified.** The specs prove the layout does not
-overflow, that the theme class flips and that the choice survives a reload. They cannot prove the
-dark palette is *readable*. No screenshot baseline exists in this repo and this phase does not add
-one. The app is rebuilt, healthy and waiting at `http://localhost:3001` for the walk described in
-the plan's `how-to-verify` block.
+**Who verified, and how — this distinction matters and is recorded deliberately.** The plan asked
+for a human walk. The user instead directed that it be validated with browser tooling, so the walk
+was performed by an **agent driving a real Chromium against the rebuilt container**, not by the user
+personally. It was *not* self-certified from source: a real browser was driven, screenshots were
+captured and read. The session reused the `e2e/.auth/admin.json` storageState this plan's setup
+project produced, so **no password was handled**. The capture spec was temporary and has been
+deleted — `e2e/` is back to exactly the three specs 45-08 created. Anyone auditing this later should
+read the evidence below as agent-observed rather than user-observed.
 
-Results will be recorded here verbatim, with a disposition for each issue reported.
+Driven at 1280x900 for the palette and 320x640 for the drawer, with `theme` forced through a
+`localStorage` init script (which is what next-themes' pre-hydration script reads) and locale
+through the `locale` cookie.
+
+### Evidence
+
+| # | Claim | Observation |
+|---|---|---|
+| 1 | Three theme options present and selectable | Opening the avatar menu renders `Theme` with Light / Dark / System, radio dot on Dark. Confirms 45-03's note that the rows do not exist until the menu is opened — a closed Radix portal renders nothing |
+| 2 | The dark class and palette actually apply | `document.documentElement.className === "dark"` and `body` background `lab(2.75381 0 0)` on `/organizations`, `/deals` and `/admin/audit` — the exact value the ROADMAP recorded when the class was forced by hand before the provider existed. Light control returned `"light"` |
+| 3 | No unreadable text, no light-mode island | All four required surfaces read visually: `/organizations`, `/deals`, `/admin/audit`, and an open **Delete Organization** dialog. The dialog sits on a lighter dark surface than the page, Cancel keeps a visible outline, the destructive Delete reads clearly, and the bulk action bar ("1 selected / Reassign owner / Export CSV / Delete / Clear selection") is legible over the dark table |
+| 4 | **C-1 confirmed** | Logout renders as a clear red against the dark popover, not a dim maroon. This is the `text-red-600` → `text-destructive` change 45-03 landed, confirmed at the pixel rather than at the class name |
+| 5 | The drawer is translated in all three locales | Read from the live `[data-slot="sheet-content"]`. en-US: Admin Panel / Dashboard / User Management / … / Back to App / **Close**. es-ES: Panel de Administración / Resumen / Gestión de Usuarios / … / Volver a la app / **Cerrar**. pt-BR: Painel de Administração / Visão geral / Gerenciamento de Usuários / … / Voltar ao app / **Fechar** |
+| 6 | The drawer navigates AND closes | Tapping "Gestión de Usuarios" at es-ES landed on `/admin/users` with `[data-slot="sheet-content"]` count back to **0** |
+| 7 | 320px shell correct in the worst locale | `/admin/audit` measured `scrollWidth=305 clientWidth=305` at en-US, es-ES and pt-BR through this **independent** path as well. Hamburger top-left, header search collapsed to the 40px icon, no horizontal scrollbar. Dark + es-ES + drawer open also renders correctly |
+
+**The single most valuable line in that table is the close label.** `Cerrar` / `Fechar` proves
+45-04's `common.close` default actually reaches the Sheet primitive **at runtime**. No source gate in
+this phase could establish that — a gate can only prove the default is written, not that it survives
+the prop chain into a rendered portal.
+
+### Findings reported, with dispositions
+
+Both are recorded in `deferred-items.md` in this phase directory.
+
+**F-1 — the keyboard-shortcuts hint bar overlaps page content.**
+`ShortcutsHint` is a fixed bottom bar and nothing reserves space for it. On dark `/admin/audit` at
+1280px it clips the sidebar's "Back to App" button; at 320px in es-ES it wraps to two lines and
+covers "Guardar período de retención".
+**Disposition: raised as new UAT debt.** It is vertical occlusion, not horizontal overflow, so it is
+outside SC-1 and outside this phase's scope. It predates Phase 45 and is not a regression. It is
+real and it hides an actionable control, so it is not dismissed either. Phase 38 solved the
+identical class of problem for the bulk bar with an `h-40 sm:h-20` spacer; the same remedy likely
+applies.
+
+**F-2 — `/deals` pipeline select renders with an empty label** in the dark desktop capture.
+**Disposition: raised as new UAT debt, unconfirmed.** Flagged as possibly a capture-timing artefact
+rather than a defect. Recorded as something for someone to confirm rather than asserted as broken —
+this plan does not claim it is a bug and does not claim it is not.
+
+### Verdict
+
+**Approved.** SC-2's readability half, and the drawer/locale halves of SC-1 and SC-3, are verified by
+direct observation of a real browser against the rebuilt image.
 
 ---
 *Phase: 45-cross-cutting-ui-repair-and-uat-closure*
-*Completed (Task 1): 2026-08-18*
+*Completed: 2026-08-18*
 
 ## Self-Check: PASSED
 
