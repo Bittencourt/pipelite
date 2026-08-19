@@ -2,6 +2,16 @@
  * Fuzzy matching for organization names.
  * Uses Levenshtein distance normalized by string length for scoring.
  * Handles variations like "Acme" vs "Acme Corp" vs "Acme Corporation".
+ *
+ * NOT the duplicate-detection normalizer, and the two deliberately DISAGREE.
+ * Duplicate detection normalizes in `src/lib/dedup/normalize` (mirroring the SQL functions
+ * `public.dedup_norm_org` / `public.dedup_norm_person`): it folds accents and strips the Brazilian
+ * legal suffixes LTDA / ME / EPP / EIRELI / S.A. / CIA / MEI. The private `normalize()` below does
+ * neither — it strips an Anglo-American list (inc/corp/ltd/llc/...) and leaves accents alone.
+ * That is wrong for this dataset but RIGHT for this module's contract, which is CSV import
+ * matching with a caller-tuned 0.85 Levenshtein threshold and a human confirmation step. The two
+ * are left separate on purpose (39-RESEARCH § The `fuzzy-match.ts` collision, option 1); do not
+ * "unify" them without re-measuring the import flow.
  */
 
 interface OrgEntry {
