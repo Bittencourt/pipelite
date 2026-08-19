@@ -120,6 +120,13 @@
       "when": 1787138899010,
       "tag": "0016_dedup_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787140508150,
+      "tag": "0017_dedup_schema",
+      "breakpoints": true
     }
   ]
 }
