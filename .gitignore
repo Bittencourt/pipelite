@@ -53,3 +53,9 @@ next-env.d.ts
 /e2e/.auth/
 /playwright-report/
 /test-results/
+
+# Claude Code agent worktrees live here (isolation="worktree" creates
+# .claude/worktrees/agent-<id> INSIDE the repo). Committing them would commit
+# a nested checkout. settings.local.json is per-machine.
+/.claude/worktrees/
+/.claude/settings.local.json
