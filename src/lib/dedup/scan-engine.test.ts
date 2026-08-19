@@ -64,40 +64,49 @@ const mockReadSimilarityThreshold = vi.mocked(readSimilarityThreshold)
 // `JSON.stringify` is unusable here for the reason scan-cleanup.test.ts records: a Column
 // back-references its table and the structure is circular. So the tree is walked.
 //
-// A `Param` is told apart from a `StringChunk` by its `encoder` property, NOT by whether
-// `value` is an array — `sql.param([...])` binds an ARRAY as one parameter, and a naive
-// "value is an array means static text" test would splice the sentinel lists into the SQL
-// text and then assert against them, which is exactly the drift this file exists to catch.
+// THE CHUNK MODEL, BECAUSE GETTING IT WRONG MAKES THIS FILE PROVE THE OPPOSITE OF WHAT IT
+// CLAIMS. `sql` pushes each interpolated value into `queryChunks` RAW — it does not wrap it
+// in a `Param` until the dialect builds the query. So a bare `${field}` arrives here as the
+// JavaScript string itself. A walker that renders an unrecognised chunk as text therefore
+// splices every bound value into the "SQL text" and then happily asserts that the SQL
+// contains no concatenated values, which is exactly backwards.
+//
+// The rule below is: only a `StringChunk` (a `value` array with no `encoder`) and a nested
+// `SQL` are TEXT. Everything else is a BOUND PARAMETER — an explicit `Param` from
+// `sql.param([...])`, or a raw interpolated primitive.
 // ---------------------------------------------------------------------------------------
 
-function renderSql(node: unknown): string {
-  if (node === null || node === undefined) return ""
-  if (typeof node === "string") return node
-  if (Array.isArray(node)) return node.map(renderSql).join("")
-  if (typeof node !== "object") return String(node)
+function isSqlNode(node: unknown): node is Record<string, unknown> {
+  return node !== null && typeof node === "object" && Array.isArray((node as { queryChunks?: unknown }).queryChunks)
+}
 
-  const record = node as Record<string, unknown>
-  if (Array.isArray(record.queryChunks)) return record.queryChunks.map(renderSql).join("")
-  if ("encoder" in record) return "$?"
-  if (Array.isArray(record.value)) return (record.value as unknown[]).map(renderSql).join("")
-  return ""
+function isStringChunk(node: unknown): node is { value: string[] } {
+  return (
+    node !== null &&
+    typeof node === "object" &&
+    !("encoder" in node) &&
+    Array.isArray((node as { value?: unknown }).value) &&
+    (node as { value: unknown[] }).value.every((part) => typeof part === "string")
+  )
+}
+
+function renderSql(node: unknown): string {
+  if (isSqlNode(node)) return (node.queryChunks as unknown[]).map(renderSql).join("")
+  if (isStringChunk(node)) return node.value.join("")
+  return "$?"
 }
 
 function collectParams(node: unknown, acc: unknown[] = []): unknown[] {
-  if (node === null || typeof node !== "object") return acc
-  if (Array.isArray(node)) {
-    for (const child of node) collectParams(child, acc)
+  if (isSqlNode(node)) {
+    for (const chunk of node.queryChunks as unknown[]) collectParams(chunk, acc)
     return acc
   }
-  const record = node as Record<string, unknown>
-  if (Array.isArray(record.queryChunks)) {
-    collectParams(record.queryChunks, acc)
+  if (isStringChunk(node)) return acc
+  if (node !== null && typeof node === "object" && "encoder" in node) {
+    acc.push((node as unknown as { value: unknown }).value)
     return acc
   }
-  if ("encoder" in record) {
-    acc.push(record.value)
-    return acc
-  }
+  acc.push(node)
   return acc
 }
 
