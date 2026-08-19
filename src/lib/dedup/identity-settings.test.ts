@@ -100,7 +100,9 @@ let warnSpy: ReturnType<typeof vi.spyOn>
 let errorSpy: ReturnType<typeof vi.spyOn>
 
 function warnLines(): string[] {
-  return warnSpy.mock.calls.map((call) => call.map((part) => String(part)).join(" "))
+  return warnSpy.mock.calls.map((call: unknown[]) =>
+    call.map((part: unknown) => String(part)).join(" ")
+  )
 }
 
 beforeEach(() => {
