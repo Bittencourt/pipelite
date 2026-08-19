@@ -432,9 +432,9 @@ Plans:
 - [x] 39-10-PLAN.md — Real-database integration tests, third vitest project, CI-exclusion story
 - [x] 39-11-PLAN.md — /duplicates admin gate, server actions, RSC page, identity-field control
 - [x] 39-12-PLAN.md — The merged audit entry: marker filter, timeline hydration, renderer
-- [ ] 39-13-PLAN.md — Progress-bar lift, scan panel, pair card
+- [x] 39-13-PLAN.md — Progress-bar lift, scan panel, pair card
 - [x] 39-14-PLAN.md — Create-time duplicate warning, end to end
-- [ ] 39-15-PLAN.md — The merge screen: radio-group, action, page, stacked field picker
+- [x] 39-15-PLAN.md — The merge screen: radio-group, action, page, stacked field picker
 - [x] 39-16-PLAN.md — Import flagged-rows notice and the two list-page entry points
 - [ ] 39-17-PLAN.md — 320px e2e for both new routes, Docker rebuild, phase gate, dark-mode checkpoint
 
@@ -547,7 +547,7 @@ Plans:
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
 | 38. Bulk Operations | 19/20 | In Progress|  |
-| 39. Duplicate Detection & Merge | 14/17 | In Progress|  |
+| 39. Duplicate Detection & Merge | 16/17 | In Progress|  |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
