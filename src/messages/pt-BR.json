@@ -328,7 +328,13 @@
         "deal": "excluiu este negócio",
         "activity": "excluiu esta atividade"
       },
-      "noVisibleChanges": "Nenhum detalhe de campo foi registrado."
+      "merged": {
+        "organization": "mesclou {name} nesta empresa",
+        "person": "mesclou {name} nesta pessoa"
+      },
+      "noVisibleChanges": "Nenhum detalhe de campo foi registrado.",
+      "mergedNoFieldChanges": "Nenhum valor de campo mudou — este registro manteve todos os seus.",
+      "mergedChildren": "{count, plural, one {# registro vinculado foi movido para este} other {# registros vinculados foram movidos para este}}"
     },
     "value": {
       "empty": "vazio",
@@ -542,6 +548,99 @@
       "alreadyDeleted": "Já está na lixeira",
       "unknown": "Não foi possível salvar"
     }
+  },
+  "dedup": {
+    "warning": {
+      "title": "{count, plural, one {Já existe um registro correspondente} other {Já existem # registros correspondentes}}",
+      "body": "Verifique se um destes é o registro que você queria. Você ainda pode criar um novo.",
+      "openExisting": "Abrir em uma nova aba",
+      "createAnyway": "Criar mesmo assim"
+    },
+    "reason": {
+      "email": "Mesmo e-mail",
+      "nameIdentity": "Mesmo nome e mesmo campo de identificação",
+      "similarName": "Nome parecido",
+      "similarNamePhone": "Nome parecido e mesmo telefone"
+    },
+    "scan": {
+      "title": "Duplicados",
+      "description": "Encontre registros que parecem ser a mesma empresa ou pessoa cadastrada duas vezes.",
+      "startOrganizations": "Analisar empresas",
+      "startPeople": "Analisar pessoas",
+      "rescan": "Analisar novamente",
+      "running": "Comparando registros…",
+      "progress": "{current} de {total} registros comparados",
+      "startedBy": "Iniciado por {name}",
+      "lastRun": "Última análise {time}",
+      "backgroundHint": "Isso é executado em segundo plano. Você pode sair desta página e voltar depois.",
+      "cancel": "Cancelar análise",
+      "failed": "A análise não foi concluída",
+      "failedBody": "Nenhum registro foi alterado. Inicie a análise novamente."
+    },
+    "review": {
+      "pairsFound": "{count, plural, one {# possível duplicado} other {# possíveis duplicados}}",
+      "confidenceCertain": "Quase certo",
+      "confidenceLikely": "Provável",
+      "merge": "Revisar e mesclar",
+      "dismiss": "Não é duplicado",
+      "dismissed": "Marcado como não duplicado.",
+      "dismissFailed": "Esse par não foi dispensado. Verifique sua conexão e tente novamente.",
+      "showDismissed": "Mostrar pares dispensados",
+      "hideDismissed": "Ocultar pares dispensados",
+      "undismiss": "Voltar para a lista",
+      "undismissed": "De volta à lista.",
+      "loadMore": "Carregar mais",
+      "emptyNeverScanned": "Nenhuma análise ainda",
+      "emptyNeverScannedBody": "Uma análise compara todos os registros deste tipo e lista os pares que parecem iguais. Ela é executada em segundo plano.",
+      "emptyNoPairs": "Nenhum duplicado encontrado",
+      "emptyNoPairsBody": "Nada correspondeu na última análise, {time}.",
+      "emptyAllDismissed": "Todos os pares foram dispensados"
+    },
+    "merge": {
+      "title": "Mesclar duplicados",
+      "description": "Escolha qual registro manter e depois qual valor vence em cada campo diferente.",
+      "survivorLegend": "Qual registro você quer manter?",
+      "survivorHelp": "O outro registro vai para a Lixeira. Alterar isso redefine todas as escolhas de campo abaixo.",
+      "keepThis": "Manter este registro",
+      "createdOn": "Criado {time}",
+      "conflictsLegend": "{count, plural, one {# campo é diferente} other {# campos são diferentes}}",
+      "filledLegend": "{count, plural, one {# campo está preenchido apenas no outro registro} other {# campos estão preenchidos apenas no outro registro}}",
+      "filledHelp": "Estes vêm do outro registro por padrão, porque o registro que você está mantendo está vazio aqui.",
+      "identical": "{count, plural, one {# campo é idêntico} other {# campos são idênticos}}",
+      "showIdentical": "Mostrar campos idênticos",
+      "hideIdentical": "Ocultar campos idênticos",
+      "whatMoves": "O que vai para o registro que você mantém",
+      "movesDeals": "{count, plural, one {# negócio} other {# negócios}}",
+      "movesNotes": "{count, plural, one {# nota} other {# notas}}",
+      "movesPeople": "{count, plural, one {# pessoa} other {# pessoas}}",
+      "activitiesFollowDeals": "As atividades continuam vinculadas aos seus negócios e vão junto com eles.",
+      "filesStayInPlace": "Os arquivos enviados permanecem onde estão e continuam funcionando a partir do registro que você mantém.",
+      "submit": "Mesclar registros",
+      "submitting": "Mesclando…",
+      "confirmTitle": "Mesclar estes registros?",
+      "confirmBody": "{loser} vai para a Lixeira e {survivor} fica com os valores que você escolheu. Você pode restaurar {loser} pela Lixeira, mas a mesclagem em si não é desfeita.",
+      "confirmAction": "Mesclar e mover para a Lixeira",
+      "success": "Registros mesclados. {loser} está na Lixeira.",
+      "failed": "Os registros não foram mesclados. Nada foi alterado — tente novamente.",
+      "gone": "Um destes registros não está mais disponível. Ele pode já ter sido mesclado ou excluído.",
+      "backToList": "Voltar para duplicados"
+    },
+    "import": {
+      "flagged": "{count, plural, one {# registro importado parece duplicado} other {# registros importados parecem duplicados}}",
+      "flaggedBody": "Eles foram importados como registros novos. Revise-os na página de duplicados.",
+      "review": "Revisar duplicados"
+    },
+    "identity": {
+      "title": "Campos de identificação da empresa",
+      "help": "Um aviso de duplicado na criação precisa de um campo que identifique a empresa de forma única, como o CNPJ. Escolha até dois campos personalizados, verificados nesta ordem. Até escolher um, novas empresas não são verificadas.",
+      "primaryLabel": "Primeiro campo de identificação",
+      "secondaryLabel": "Segundo campo de identificação (opcional)",
+      "none": "Nenhum",
+      "save": "Salvar campos de identificação",
+      "saved": "Campos de identificação salvos.",
+      "saveFailed": "Os campos de identificação não foram salvos. Nada foi alterado — tente novamente."
+    },
+    "findDuplicates": "Encontrar duplicados"
   },
   "settings": {
     "profile": {
