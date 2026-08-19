@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run && vitest run --config vitest.rsc.config.ts",
     "test:watch": "vitest",
-    "test:db": "vitest run --config vitest.db.config.ts",
+    "test:db": "bash scripts/dedup-db-test-setup.sh && vitest run --config vitest.db.config.ts",
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

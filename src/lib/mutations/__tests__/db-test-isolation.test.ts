@@ -31,6 +31,7 @@ const CI_WORKFLOW = ".github/workflows/ci.yml"
 const BASE_CONFIG = "vitest.config.ts"
 const DB_CONFIG = "vitest.db.config.ts"
 const PACKAGE_JSON = "package.json"
+const SETUP_SCRIPT = "scripts/dedup-db-test-setup.sh"
 
 /**
  * The entries of a `[...]` array literal assigned to `test.<key>` in a vitest config.
@@ -93,7 +94,11 @@ describe("the db vitest project is unreachable from `npm test`", () => {
     // exist, the four negatives in this file would describe a project nobody can run, and
     // the database tests would be dead code that no gate notices.
     const scripts = packageScripts()
-    expect(scripts["test:db"]).toBe("vitest run --config vitest.db.config.ts")
+    expect(scripts["test:db"]).toContain("vitest run --config vitest.db.config.ts")
+    // And it provisions the ISOLATED database first. Without this the suite would run
+    // against whatever DATABASE_URL happened to hold, which is the one outcome the whole
+    // arrangement exists to prevent.
+    expect(scripts["test:db"]).toContain("scripts/dedup-db-test-setup.sh")
   })
 
   it("no other script chains the db project into a broader one", () => {
@@ -187,5 +192,54 @@ describe("the db vitest project claims exactly the db glob", () => {
   it("runs its files serially — one database, shared fixtures", () => {
     const source = readStrippedSource(DB_CONFIG)
     expect(source).toMatch(/fileParallelism\s*:\s*false/)
+  })
+})
+
+describe("the db project points at an isolated database, never the development one", () => {
+  // THE HIGHEST-CONSEQUENCE ASSERTIONS IN THIS FILE. The development database holds the
+  // operator's real records, and the suite this config configures creates and HARD DELETES
+  // rows. If the config ever forwards the DEVELOPMENT connection string as DATABASE_URL,
+  // that teardown runs there. That is not a test failure, it is data loss — so the wiring
+  // is gated here, in the base project, where CI runs it.
+  const source = readStrippedSource(DB_CONFIG)
+  const setup = readFileSync(SETUP_SCRIPT, "utf8")
+
+  it("names the isolated database and DERIVES the URL rather than reusing E2E_DATABASE_URL", () => {
+    expect(source).toContain("pipelite_dedup_test")
+    // `DATABASE_URL: process.env.E2E_DATABASE_URL` is precisely the mistake this catches:
+    // it would aim the suite at the development database while every other assertion in
+    // this file still passed.
+    //
+    // THE LOOKBEHIND IS LOAD-BEARING. `DATABASE_URL` is a SUFFIX of `E2E_DATABASE_URL`, so
+    // an unanchored pattern also matches the legitimate
+    // `E2E_DATABASE_URL: process.env.E2E_DATABASE_URL` forwarding line and the gate fails
+    // on a correct config. Measured, not theorised — it did.
+    expect(source).not.toMatch(/(?<!\w)DATABASE_URL\s*:\s*process\.env\.E2E_DATABASE_URL/)
+    expect(source).toMatch(/(?<!\w)DATABASE_URL\s*:\s*isolatedConnection\(/)
+  })
+
+  it("the provisioning script rebuilds only the test database and only READS the source", () => {
+    expect(setup).toContain('TEST_DB="pipelite_dedup_test"')
+    expect(setup).toContain('SOURCE_DB="pipelite"')
+    // The source is read with pg_dump and never written to.
+    expect(setup).toContain("--schema-only")
+    // The in-session fence: the schema reset cannot execute against another database, and
+    // ON_ERROR_STOP is what makes the RAISE abort before it.
+    expect(setup).toContain("current_database() <> 'pipelite_dedup_test'")
+    expect(setup).toContain("ON_ERROR_STOP=1")
+  })
+
+  it("the provisioning script never aims a destructive statement at $SOURCE_DB", () => {
+    // Line-oriented rather than whole-file, so a sentence in the header that merely
+    // mentions the development database cannot mask a real statement, and a real statement
+    // cannot hide behind one.
+    const destructive = /\b(drop|truncate|delete)\b/i
+    for (const line of setup.split("\n")) {
+      const code = line.replace(/^\s*#.*$/, "")
+      if (!destructive.test(code)) continue
+      expect(code, `destructive statement reaches the source database: ${line.trim()}`).not.toMatch(
+        /\$\{?SOURCE_DB/
+      )
+    }
   })
 })

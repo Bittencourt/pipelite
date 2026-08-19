@@ -40,15 +40,34 @@
  *   glob, and `src/lib/mutations/__tests__/db-test-isolation.test.ts` — which
  *   runs IN CI — asserts all three of those controls.
  *
- * IT MUST LEAVE THE DATABASE EXACTLY AS IT FOUND IT
- *   The target holds 46,054 organizations, 38,348 people, 25,195 deals and
- *   75,236 notes of REAL data, and the application container is normally running
- *   against it while this file executes. So, inherited from 45-08 (V-4):
+ * IT DOES NOT RUN AGAINST THE DEVELOPMENT DATABASE, AND CANNOT BE MADE TO
+ *   `pipelite` holds 46,054 organizations, 38,348 people, 25,195 deals and
+ *   75,236 notes of the operator's REAL records, with the application container
+ *   running against it. This suite creates fixtures and HARD DELETES them, so it
+ *   is not pointed there at all — not with a prefix convention and not with a
+ *   careful teardown. It runs against `pipelite_dedup_test`, a SEPARATE database
+ *   built from a schema-only dump of the development one by
+ *   `scripts/dedup-db-test-setup.sh` (which `npm run test:db` invokes first) and
+ *   empty at the start of every run.
  *
- *     * every record this file touches, it CREATED. Nothing here updates or
- *       deletes a row it did not insert. The one exception is READ-ONLY: the
- *       owner user, a stage and an activity type are SELECTed from the live
- *       tables to satisfy NOT NULL foreign keys, and never written to.
+ *   That distinction is enforced THREE times, not documented once: the setup
+ *   script fences its own schema reset with a `current_database()` assertion,
+ *   `vitest.db.config.ts` derives `DATABASE_URL` by replacing the database name,
+ *   and `assertIsolatedConnection` below re-derives BOTH the host and the
+ *   database name from the string it was actually handed and refuses to let the
+ *   suite start otherwise. `src/lib/mutations/__tests__/db-test-isolation.test.ts`
+ *   — which runs in CI — gates the second of those.
+ *
+ *   The schema is the real one, so the constraint under test is the real one:
+ *   `notes_migration_uniq`, the three `dedup_norm_*` functions and the four
+ *   GENERATED ALWAYS columns of migration 0017 all come across in the dump, and
+ *   the setup script fails loudly if they do not.
+ *
+ *   The fixture discipline is kept anyway, inherited from 45-08 (V-4), because it
+ *   is what makes a failure legible rather than because the data is precious:
+ *
+ *     * every record this file touches, it CREATED — including the user,
+ *       pipeline, stage and activity type its NOT NULL foreign keys need.
  *     * every fixture id and every fixture name carries the `dedupdbt-` prefix,
  *       so the leftover check is a single query per table.
  *     * `afterEach` hard-deletes them in foreign-key order.
@@ -59,13 +78,10 @@
  *     * there is no TRUNCATE, no DROP TABLE and no unfiltered DELETE anywhere in
  *       this file. Every delete carries an explicit `like(column, 'dedupdbt-%')`.
  *
- *   NO CREDENTIAL IS WRITTEN INTO THIS FILE. The connection string comes from
- *   `E2E_DATABASE_URL`, forwarded to `DATABASE_URL` by `vitest.db.config.ts`
- *   because `@/db` reads that name and the value in `.env` resolves
- *   `postgres:5432` inside the Docker network, which is unreachable from here.
- *   The loopback allow-list below is the reason this file cannot be pointed at
- *   anything but a local development database (the guard in `e2e/seed-admin.ts`,
- *   same posture, same reasoning).
+ *   NO CREDENTIAL IS WRITTEN INTO THIS FILE. The connection string is derived
+ *   from `E2E_DATABASE_URL` by `vitest.db.config.ts` and arrives as
+ *   `DATABASE_URL`, which is the name `@/db` reads. The loopback allow-list below
+ *   carries the same posture and reasoning as the guard in `e2e/seed-admin.ts`.
  * =============================================================================
  */
 import { and, eq, inArray, isNull, like, sql } from "drizzle-orm"
@@ -93,35 +109,55 @@ import type { MergeRecordsInput, MergeRecordsResult } from "@/lib/mutations/dedu
  * The environment guard
  * ------------------------------------------------------------------------ */
 
+/** The one database this suite is allowed to touch. Never the development one. */
+const TEST_DATABASE = "pipelite_dedup_test"
+/** The development database, named here only so it can be refused by name. */
+const DEV_DATABASE = "pipelite"
+
 /**
- * Refuse any connection string whose host is not loopback.
+ * Refuse any connection string that is not the isolated test database on a
+ * loopback host.
  *
- * NOT DEFENSIVE BOILERPLATE. This file inserts, updates and hard-deletes rows.
- * Pointed at a shared or production database it would write fixtures into it and
- * then delete rows out of it, and the `afterEach` teardown is a hard DELETE. A
- * loopback host is the one place where the operator provably owns the target.
- * Copied in posture from `e2e/seed-admin.ts`, which guards a privileged user
- * INSERT the same way and for the same reason.
+ * NOT DEFENSIVE BOILERPLATE, AND THE DATABASE-NAME HALF MATTERS MORE THAN THE
+ * HOST HALF. This file inserts, updates and hard-deletes rows; the `afterEach`
+ * teardown is a hard DELETE. Pointed at `pipelite` it would be deleting out of
+ * the operator's real data. The loopback check is inherited from
+ * `e2e/seed-admin.ts`, which guards a privileged user INSERT the same way; the
+ * name check is what makes this suite's stronger claim — that it cannot reach the
+ * development data at all — true rather than aspirational.
  *
- * The host is named in the message deliberately: a refusal that does not say
- * what it refused sends the reader to the wrong file.
+ * Both the host and the database are named in the messages deliberately: a
+ * refusal that does not say what it refused sends the reader to the wrong file.
  */
-export function assertLoopbackConnection(connectionString: string | undefined): string {
+export function assertIsolatedConnection(connectionString: string | undefined): string {
   if (!connectionString) {
     throw new Error(
-      "E2E_DATABASE_URL is not set. It must point at the HOST-mapped dev Postgres " +
-        "(localhost:5433); the app-facing DATABASE_URL resolves postgres:5432 inside the " +
-        "Docker network and is unreachable from a test process. Run `docker compose up -d` " +
-        "and see vitest.db.config.ts."
+      "DATABASE_URL is not set for the db vitest project. It is derived from " +
+        "E2E_DATABASE_URL by vitest.db.config.ts and must name the isolated " +
+        `${TEST_DATABASE} database. Run \`npm run test:db\`, which provisions it first.`
     )
   }
 
-  const hostname = new URL(connectionString).hostname
-  if (hostname !== "localhost" && hostname !== "127.0.0.1") {
+  const url = new URL(connectionString)
+
+  if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1") {
     throw new Error(
-      `E2E_DATABASE_URL host "${hostname}" is not a local development database. ` +
+      `refusing to run: connection host "${url.hostname}" is not loopback. ` +
         "src/lib/mutations/dedup.db.test.ts creates and hard-deletes fixture rows and " +
-        "refuses to run anywhere but localhost / 127.0.0.1."
+        "runs only against a local development machine."
+    )
+  }
+
+  const database = url.pathname.replace(/^\//, "")
+  if (database !== TEST_DATABASE) {
+    throw new Error(
+      `refusing to run: connection names database "${database}", not "${TEST_DATABASE}". ` +
+        (database === DEV_DATABASE
+          ? `"${DEV_DATABASE}" is the DEVELOPMENT database and holds real records; this ` +
+            "suite hard-deletes its fixtures and must never be pointed at it. "
+          : "") +
+        "Run `npm run test:db`, which provisions the isolated database via " +
+        "scripts/dedup-db-test-setup.sh and derives the connection string for it."
     )
   }
 
@@ -129,14 +165,14 @@ export function assertLoopbackConnection(connectionString: string | undefined): 
 }
 
 /**
- * Evaluated at MODULE SCOPE, so a bad host aborts collection and the suite does
- * not run at all — no test body executes and no statement is ever sent.
+ * Evaluated at MODULE SCOPE, so a wrong target aborts collection and the suite
+ * does not run at all — no test body executes and no statement is ever sent.
  *
  * `postgres.js` connects lazily, so the client `@/db` constructs when this module
  * is imported has not yet opened a socket when this line throws. The refusal
- * therefore happens before any byte reaches the host it refused.
+ * therefore happens before any byte reaches the database it refused.
  */
-const CONNECTION = assertLoopbackConnection(process.env.E2E_DATABASE_URL)
+const CONNECTION = assertIsolatedConnection(process.env.DATABASE_URL)
 
 /* ---------------------------------------------------------------------------
  * Fixtures
@@ -167,8 +203,18 @@ function fixtureId(kind: string): string {
   return `${PREFIX}${kind}-${Date.now().toString(36)}-${sequence.toString(36)}`
 }
 
-/** Borrowed READ-ONLY to satisfy NOT NULL foreign keys. Never written to. */
+/**
+ * The base rows every fixture's NOT NULL foreign keys need, CREATED by this suite
+ * rather than borrowed.
+ *
+ * In the isolated database these tables start empty, so there is nothing to
+ * borrow — which is the point: 45-08's rule was "never borrow and mutate a real
+ * user's record", and the strongest form of that rule is a database with no real
+ * users in it. They carry the same `dedupdbt-` prefix as everything else and are
+ * torn down with it.
+ */
 let ownerId = ""
+let pipelineId = ""
 let stageId = ""
 let activityTypeId = ""
 
@@ -374,6 +420,7 @@ async function waitForTombstone(
  * hardest to notice.
  */
 async function hardDeleteFixtures(): Promise<void> {
+  await db.delete(auditLog).where(like(auditLog.actorUserId, LIKE_PREFIX))
   await db.delete(auditLog).where(like(auditLog.entityId, LIKE_PREFIX))
   await db.delete(notes).where(like(notes.id, LIKE_PREFIX))
   await db.delete(notes).where(like(notes.entityId, LIKE_PREFIX))
@@ -382,6 +429,22 @@ async function hardDeleteFixtures(): Promise<void> {
   await db.delete(deals).where(like(deals.id, LIKE_PREFIX))
   await db.delete(people).where(like(people.id, LIKE_PREFIX))
   await db.delete(organizations).where(like(organizations.id, LIKE_PREFIX))
+}
+
+/**
+ * The four base rows, removed last of all.
+ *
+ * Kept separate from `hardDeleteFixtures` because that runs after EVERY test and
+ * these must survive the whole file: `afterEach` would otherwise delete the owner
+ * that the next test's foreign keys need. Same explicit prefix predicate, same
+ * child-first order — `stages.pipeline_id` -> `pipelines`, and `pipelines.owner_id`
+ * -> `users`.
+ */
+async function hardDeleteBaseRows(): Promise<void> {
+  await db.execute(sql`delete from activity_types where id like ${LIKE_PREFIX}`)
+  await db.execute(sql`delete from stages where id like ${LIKE_PREFIX}`)
+  await db.execute(sql`delete from pipelines where id like ${LIKE_PREFIX}`)
+  await db.execute(sql`delete from users where id like ${LIKE_PREFIX}`)
 }
 
 /** Surviving prefixed rows per table, by id AND by name where the table has one. */
@@ -407,7 +470,14 @@ async function survivingFixtures(): Promise<Record<string, number>> {
     duplicate_pairs_by_record_a: await byId("duplicate_pairs", "record_a_id"),
     duplicate_pairs_by_record_b: await byId("duplicate_pairs", "record_b_id"),
     audit_log_by_entity_id: await byId("audit_log", "entity_id"),
+    audit_log_by_actor: await byId("audit_log", "actor_user_id"),
     activities_by_id: await byId("activities", "id"),
+    // The four base rows, so a teardown that forgot them fails here rather than
+    // leaving an orphaned fixture user behind for the next run to trip over.
+    users_by_id: await byId("users", "id"),
+    pipelines_by_id: await byId("pipelines", "id"),
+    stages_by_id: await byId("stages", "id"),
+    activity_types_by_id: await byId("activity_types", "id"),
   }
 }
 
@@ -464,29 +534,49 @@ beforeAll(async () => {
   // modelling a product without audit-on-delete. See waitForTombstone.
   registerAuditSubscriber()
 
-  const [owner] = await db.execute<{ value: string }>(
-    sql`select id as value from users where deleted_at is null order by id limit 1`
-  )
-  const [stage] = await db.execute<{ value: string }>(
-    sql`select id as value from stages order by id limit 1`
-  )
-  const [type] = await db.execute<{ value: string }>(
-    sql`select id as value from activity_types order by id limit 1`
-  )
-
-  expect(owner?.value, "the dev database has no user to own a fixture").toBeTruthy()
-  expect(stage?.value, "the dev database has no stage to put a fixture deal in").toBeTruthy()
-  expect(type?.value, "the dev database has no activity type").toBeTruthy()
-
-  ownerId = owner.value
-  stageId = stage.value
-  activityTypeId = type.value
-
-  // Anything left behind by an interrupted earlier run, so the parity check
-  // below measures this run rather than the last one.
+  // Anything left behind by an interrupted earlier run, before the base rows are
+  // created, so the parity snapshot below measures this run rather than the last.
+  await hardDeleteBaseRows()
   await hardDeleteFixtures()
 
-  for (const table of TOUCHED_TABLES) countsBefore.set(table, await tableCount(table))
+  // The four base rows. `users.role` and `users.status` default to values that
+  // fail login and the /admin gate, which is exactly right for a fixture account
+  // that never authenticates — it exists to be a foreign key and an audit actor.
+  ownerId = `${PREFIX}owner`
+  await db.execute(
+    sql`insert into users (id, email, name)
+        values (${ownerId}, ${`${PREFIX}owner@local.test`}, ${`${PREFIX}owner`})`
+  )
+
+  pipelineId = `${PREFIX}pipeline`
+  await db.execute(
+    sql`insert into pipelines (id, name, owner_id)
+        values (${pipelineId}, ${`${PREFIX}pipeline`}, ${ownerId})`
+  )
+
+  stageId = `${PREFIX}stage`
+  await db.execute(
+    sql`insert into stages (id, pipeline_id, name, position)
+        values (${stageId}, ${pipelineId}, ${`${PREFIX}stage`}, 1)`
+  )
+
+  activityTypeId = `${PREFIX}activity-type`
+  await db.execute(
+    sql`insert into activity_types (id, name, is_default)
+        values (${activityTypeId}, ${`${PREFIX}activity type`}, false)`
+  )
+
+  // The isolated database must really be empty of the things this suite counts.
+  // If it is not, the setup script did not run and the parity check below would
+  // be measuring somebody else's rows.
+  for (const table of TOUCHED_TABLES) {
+    const n = await tableCount(table)
+    expect(
+      n,
+      `${table} is not empty in ${TEST_DATABASE} — run scripts/dedup-db-test-setup.sh`
+    ).toBe(0)
+    countsBefore.set(table, n)
+  }
 })
 
 afterEach(async () => {
@@ -497,6 +587,7 @@ afterAll(async () => {
   // Runs even if a test failed: a red suite must not be a red suite AND a dirty
   // database.
   await hardDeleteFixtures()
+  await hardDeleteBaseRows()
 
   const surviving = await survivingFixtures()
   for (const [label, n] of Object.entries(surviving)) {
@@ -509,16 +600,16 @@ afterAll(async () => {
   }
 
   // THE ANTI-VACUITY ANCHOR FOR THE LEFTOVER CHECK. A prefix query can only see
-  // rows this suite CREATED; it is blind to a real row it accidentally mutated
-  // or deleted. Total row counts are not.
+  // rows this suite CREATED; it is blind to a row it accidentally mutated or
+  // deleted. Total row counts are not.
   //
-  // `audit_log` is reported but not failed on, and the carve-out is the same one
-  // `scripts/dedup-checks.sql` Part 9a makes for the same table and the same
-  // reason: the application container is normally running against this database
-  // and any request it serves writes audit rows that have nothing to do with
-  // this file.
+  // ALL SIX TABLES, `audit_log` INCLUDED. `scripts/dedup-checks.sql` Part 9a has
+  // to carve `audit_log` out because it runs against the development database
+  // while the application container is serving requests into it. This suite runs
+  // against an isolated database that nothing else writes to, so the stronger
+  // assertion is available and is therefore the one made: every count must
+  // return to zero.
   for (const table of TOUCHED_TABLES) {
-    if (table === "audit_log") continue
     expect(
       parity[table].after,
       `${table}: row count changed from ${parity[table].before} to ${parity[table].after} — ` +
@@ -548,40 +639,75 @@ afterAll(async () => {
  * Test 10 — the guard. First, because it is the precondition for the rest.
  * ------------------------------------------------------------------------ */
 
-describe("the loopback guard", () => {
-  it("accepts the two loopback spellings and nothing else", () => {
-    expect(assertLoopbackConnection("postgres://u:p@localhost:5433/pipelite")).toContain(
-      "localhost"
-    )
-    expect(assertLoopbackConnection("postgres://u:p@127.0.0.1:5433/pipelite")).toContain(
+describe("the isolation guard", () => {
+  const good = `postgres://u:p@localhost:5433/${TEST_DATABASE}`
+
+  it("accepts the two loopback spellings, and only for the isolated database", () => {
+    expect(assertIsolatedConnection(good)).toContain("localhost")
+    expect(assertIsolatedConnection(`postgres://u:p@127.0.0.1:5433/${TEST_DATABASE}`)).toContain(
       "127.0.0.1"
     )
   })
 
+  it("REFUSES THE DEVELOPMENT DATABASE and says why", () => {
+    // The single most important assertion in this file. `pipelite` on localhost
+    // passes every host check there is; only the database-name check stops it,
+    // and without it the teardown would be deleting the operator's real rows.
+    expect(() =>
+      assertIsolatedConnection(`postgres://u:p@localhost:5433/${DEV_DATABASE}`)
+    ).toThrow(/DEVELOPMENT database/)
+    expect(() =>
+      assertIsolatedConnection(`postgres://u:p@localhost:5433/${DEV_DATABASE}`)
+    ).toThrow(new RegExp(`names database "${DEV_DATABASE}"`))
+  })
+
+  it("refuses any other database name", () => {
+    expect(() => assertIsolatedConnection("postgres://u:p@localhost:5433/postgres")).toThrow(
+      /names database "postgres"/
+    )
+    // A name that merely CONTAINS the allowed one is not the allowed one.
+    expect(() =>
+      assertIsolatedConnection(`postgres://u:p@localhost:5433/${TEST_DATABASE}_2`)
+    ).toThrow(/not "pipelite_dedup_test"/)
+  })
+
   it("refuses a non-loopback host and NAMES it", () => {
     expect(() =>
-      assertLoopbackConnection("postgres://u:p@db.internal.example.com:5432/pipelite")
+      assertIsolatedConnection(`postgres://u:p@db.internal.example.com:5432/${TEST_DATABASE}`)
     ).toThrow(/db\.internal\.example\.com/)
-    expect(() => assertLoopbackConnection("postgres://u:p@10.0.0.7:5432/pipelite")).toThrow(
-      /10\.0\.0\.7/
-    )
+    expect(() =>
+      assertIsolatedConnection(`postgres://u:p@10.0.0.7:5432/${TEST_DATABASE}`)
+    ).toThrow(/10\.0\.0\.7/)
     // A hostname that merely CONTAINS "localhost" is not loopback. Without the
     // exact comparison, `localhost.evil.example` would pass.
     expect(() =>
-      assertLoopbackConnection("postgres://u:p@localhost.evil.example:5432/pipelite")
+      assertIsolatedConnection(`postgres://u:p@localhost.evil.example:5432/${TEST_DATABASE}`)
     ).toThrow(/localhost\.evil\.example/)
   })
 
   it("refuses an absent connection string", () => {
-    expect(() => assertLoopbackConnection(undefined)).toThrow(/E2E_DATABASE_URL is not set/)
-    expect(() => assertLoopbackConnection("")).toThrow(/E2E_DATABASE_URL is not set/)
+    expect(() => assertIsolatedConnection(undefined)).toThrow(/DATABASE_URL is not set/)
+    expect(() => assertIsolatedConnection("")).toThrow(/DATABASE_URL is not set/)
   })
 
-  it("the connection this suite actually resolved is loopback", () => {
+  it("the connection this suite actually resolved is the isolated database on loopback", () => {
     // The module-scope call already enforced this; asserting the resolved value
     // is what makes the enforcement visible in the report instead of implied by
     // the suite having started at all.
-    expect(["localhost", "127.0.0.1"]).toContain(new URL(CONNECTION).hostname)
+    const url = new URL(CONNECTION)
+    expect(["localhost", "127.0.0.1"]).toContain(url.hostname)
+    expect(url.pathname).toBe(`/${TEST_DATABASE}`)
+
+    // And the server agrees. The string could be right while the pool was built
+    // from something else entirely; this is the only assertion that closes that
+    // gap, and it is the one that would catch a `@/db` client constructed before
+    // the config's env forwarding took effect.
+    return db
+      .execute<{ value: string }>(sql`select current_database() as value`)
+      .then(([row]) => {
+        expect(row.value).toBe(TEST_DATABASE)
+        expect(row.value).not.toBe(DEV_DATABASE)
+      })
   })
 })
 

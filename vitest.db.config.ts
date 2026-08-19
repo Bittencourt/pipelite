@@ -37,9 +37,10 @@ import path from 'path'
 //   docker compose up -d          # the app's Postgres, host 5433 -> container 5432
 //   npm run test:db
 //
-//   E2E_DATABASE_URL must be set (it is, in .env) and must point at a LOOPBACK host. The
-//   test file re-derives and re-asserts that from the URL itself and refuses to run
-//   otherwise; this config only forwards it.
+//   `test:db` runs scripts/dedup-db-test-setup.sh first, which provisions the ISOLATED
+//   database the suite actually uses. E2E_DATABASE_URL must be set (it is, in .env) and must
+//   point at a LOOPBACK host; the test file re-derives and re-asserts both the host and the
+//   database NAME from the URL itself and refuses to run otherwise.
 try {
   // Node's built-in .env loader, exactly as playwright.config.ts does it and for the same
   // reason: no `dotenv` dependency is added to this repo. A missing .env must degrade to
@@ -49,17 +50,48 @@ try {
   // No .env on disk. The variable must then already be exported in the environment.
 }
 
-// DATABASE_URL in .env resolves `postgres:5432` INSIDE the Docker network and is
-// unreachable from the host, so `@/db` — which every mutation module imports at
-// module-evaluation time — cannot be loaded with it as-is. The host-mapped
-// E2E_DATABASE_URL is the one connection string that works from here, and it is the same
-// variable e2e/seed-admin.ts already uses for the same reason.
+// THE NAME OF THE DATABASE THIS PROJECT TALKS TO, AND THE MOST IMPORTANT LINE IN THIS FILE.
+//
+// `pipelite` is the operator's real development database: 46,054 organizations, 38,348
+// people, and the application container running against it. The suite creates and HARD
+// DELETES fixture rows, so it may not be pointed there — not with a prefix convention, not
+// with a careful teardown, not at all. It gets its own database instead, provisioned from a
+// schema-only dump by scripts/dedup-db-test-setup.sh (see that file for why a dump rather
+// than `drizzle-kit migrate`), starting empty every run.
+//
+// The name is spelled out here, unmistakably distinct from the development one, and the
+// test file asserts it again from the connection string it receives.
+const TEST_DATABASE = 'pipelite_dedup_test'
+
+/**
+ * The isolated connection string, derived from E2E_DATABASE_URL by replacing ONLY the
+ * database name.
+ *
+ * Derived rather than declared so no credential is written into this file, and so the host
+ * and port stay whatever the operator configured. E2E_DATABASE_URL is the same variable
+ * e2e/seed-admin.ts uses, and for the same reason: DATABASE_URL in .env resolves
+ * `postgres:5432` inside the Docker network and is unreachable from a host test process.
+ */
+function isolatedConnection(source: string): string {
+  const url = new URL(source)
+  url.pathname = `/${TEST_DATABASE}`
+  return url.toString()
+}
+
+// `@/db` reads DATABASE_URL at module-evaluation time and every mutation module imports it,
+// so the isolated string has to arrive under that name. E2E_DATABASE_URL is forwarded
+// UNCHANGED alongside it: the test file's guard reads it to check the host, and comparing
+// the two is how it proves it is not about to write to the development database.
 //
 // Forwarded rather than defaulted: if E2E_DATABASE_URL is absent, DATABASE_URL is left
 // alone and `@/db` throws its own named error, which is a better message than a silent
 // fallback to a container hostname that will time out.
 const dbEnv = process.env.E2E_DATABASE_URL
-  ? { DATABASE_URL: process.env.E2E_DATABASE_URL, E2E_DATABASE_URL: process.env.E2E_DATABASE_URL }
+  ? {
+      DATABASE_URL: isolatedConnection(process.env.E2E_DATABASE_URL),
+      E2E_DATABASE_URL: process.env.E2E_DATABASE_URL,
+      DEDUP_TEST_DATABASE: TEST_DATABASE,
+    }
   : {}
 
 export default defineConfig({
@@ -74,14 +106,14 @@ export default defineConfig({
     // ONE database, shared fixtures, and real transactions. Two files running at once
     // would interleave their transactions on the same rows, and one file's teardown would
     // race another's assertions. Serial is not a performance concession here, it is the
-    // isolation model.
+    // isolation model — the isolated database is per-RUN, not per-file.
     fileParallelism: false,
     // Same reasoning one level down: within a file, no two tests may be in flight against
     // the same tables at once.
     sequence: { concurrent: false },
-    // A real merge is a multi-statement transaction against a table with 46,054 rows,
-    // followed by a formula recalculation pass and a fixture teardown. The 5s default is
-    // sized for a mocked call and would flake on the first slow round trip.
+    // A real merge is a multi-statement transaction, followed by a formula recalculation
+    // pass and a fixture teardown. The 5s default is sized for a mocked call and would
+    // flake on the first slow round trip.
     testTimeout: 60_000,
     hookTimeout: 60_000,
     // The teardown ends the postgres.js pool. Give it room so a lingering connection
