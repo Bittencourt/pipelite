@@ -29,15 +29,35 @@ import { useFormatter } from "next-intl"
  * names the value and not the token.
  */
 export interface ProgressBarProps {
-  /** Already translated by the caller. */
-  label: string
+  /**
+   * Already translated by the caller. Optional: a caller whose heading already names the job — the
+   * scan panel, whose `dedup.scan.running` sits above the track at Heading typography — omits it
+   * rather than repeating the same words at two sizes.
+   */
+  label?: string
   /** 0-100. */
   percentage: number
   current: number
   total: number
+  /**
+   * Replaces the beneath-the-track `current / total` line with a caller-supplied sentence.
+   *
+   * BOTH OF THESE PROPS ARE ADDITIVE AND OPTIONAL, and that is deliberate: the importer passes
+   * neither, so its rendering is byte-for-byte what it was before the lift. They exist because
+   * 39-UI-SPEC P-1 puts `dedup.scan.progress` ("{current} of {total} records compared") in exactly
+   * this position, and a raw "1,234 / 46,054" underneath that sentence would say the same thing
+   * twice.
+   */
+  countsLabel?: string
 }
 
-export function ProgressBar({ label, percentage, current, total }: ProgressBarProps) {
+export function ProgressBar({
+  label,
+  percentage,
+  current,
+  total,
+  countsLabel,
+}: ProgressBarProps) {
   const format = useFormatter()
 
   return (
@@ -52,10 +72,14 @@ export function ProgressBar({ label, percentage, current, total }: ProgressBarPr
           style={{ width: `${percentage}%` }}
         />
       </div>
-      {total > 0 && (
-        <p className="text-muted-foreground text-xs">
-          {format.number(current)} / {format.number(total)}
-        </p>
+      {countsLabel === undefined ? (
+        total > 0 && (
+          <p className="text-muted-foreground text-xs">
+            {format.number(current)} / {format.number(total)}
+          </p>
+        )
+      ) : (
+        <p className="text-muted-foreground text-xs">{countsLabel}</p>
       )}
     </div>
   )

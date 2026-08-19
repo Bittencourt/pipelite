@@ -155,12 +155,19 @@ function nestedArrowSpans(text: string): Array<[number, number]> {
   return spans
 }
 
-/** Every `setSomething(` call in `text`, with its index. */
+/**
+ * The platform timer functions, which match the `setSomething(` shape and are not state setters.
+ *
+ * Excluded by name rather than by a narrower pattern, because `useState`'s setter has no distinctive
+ * spelling beyond the convention — anything narrower would let a real `setScan` through.
+ */
+const NOT_STATE_SETTERS = new Set(["setInterval", "setTimeout", "setImmediate"])
+
+/** Every `setSomething(` call in `text` that could be a `useState` setter, with its index. */
 function stateSetterCalls(text: string): Array<{ name: string; index: number }> {
-  return [...text.matchAll(/\bset[A-Z][A-Za-z0-9_]*\(/g)].map((match) => ({
-    name: match[0].slice(0, -1),
-    index: match.index,
-  }))
+  return [...text.matchAll(/\bset[A-Z][A-Za-z0-9_]*\(/g)]
+    .map((match) => ({ name: match[0].slice(0, -1), index: match.index }))
+    .filter((call) => !NOT_STATE_SETTERS.has(call.name))
 }
 
 function count(text: string, needle: string): number {
@@ -193,13 +200,35 @@ describe("scan panel — the poll", () => {
     expect(effectBody().trim().length).toBeGreaterThan(200)
   })
 
-  it("clears the interval from inside the poll callback on a terminal status", () => {
+  it("clears the interval from inside the poll callback", () => {
     const poll = arrowBody(effectBody(), "poll")
 
     expect(
       poll.includes("clearInterval("),
-      `${PANEL_PATH}: the poll callback never calls clearInterval, so a completed, cancelled or ` +
-        "errored scan would keep being polled forever — progress-step.tsx:48-53's dead effect (T-39-33).",
+      `${PANEL_PATH}: the poll callback never calls clearInterval, so nothing but the effect's ` +
+        "cleanup can ever stop the poll — progress-step.tsx:48-53's dead effect (T-39-33).",
+    ).toBe(true)
+  })
+
+  /**
+   * The assertion above is NOT ENOUGH ON ITS OWN, and that is not a guess: deleting the
+   * terminal-status stop while writing this gate left it green, because the poll's other early exits
+   * (a refused request, a run of missing rows) also clear the interval. The stop this rule is about
+   * is the one keyed on a TERMINAL STATUS — the exact stop the analog is missing — so it is asserted
+   * inside its own branch rather than anywhere in the callback.
+   */
+  it("stops the poll in the terminal-status branch specifically (T-39-33)", () => {
+    const poll = arrowBody(effectBody(), "poll")
+    const at = poll.indexOf("if (isTerminal(")
+
+    expect(at, `${PANEL_PATH}: the poll callback has no terminal-status branch`).toBeGreaterThan(-1)
+
+    const branch = bodyAt(poll, poll.indexOf("{", at))
+
+    expect(
+      branch.includes("clearInterval("),
+      `${PANEL_PATH}: the terminal-status branch of the poll does not clear the interval, so a ` +
+        "completed, cancelled or errored scan would keep being polled for as long as the tab is open.",
     ).toBe(true)
   })
 
