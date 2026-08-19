@@ -1,9 +1,11 @@
 ---
 phase: 39
 slug: duplicate-detection-merge
-status: draft
+status: approved
 shadcn_initialized: true
 preset: "new-york / neutral / cssVariables (read from components.json — not a ui.shadcn.com/create preset string)"
+reviewed_at: 2026-08-19T01:09:36Z
+reviewed_by: gsd-ui-checker (6/6 PASS, revision 1)
 created: 2026-08-18
 ---
 
