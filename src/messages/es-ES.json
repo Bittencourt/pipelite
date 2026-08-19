@@ -594,7 +594,8 @@
       "emptyNeverScannedBody": "Un análisis compara todos los registros de este tipo y lista los pares que parecen iguales. Se ejecuta en segundo plano.",
       "emptyNoPairs": "No se encontraron duplicados",
       "emptyNoPairsBody": "Nada coincidió en el último análisis, {time}.",
-      "emptyAllDismissed": "Todos los pares se han descartado"
+      "emptyAllDismissed": "Todos los pares se han descartado",
+      "unavailable": "No se pudo cargar la lista de duplicados. Actualiza la página para intentarlo de nuevo."
     },
     "merge": {
       "title": "Fusionar duplicados",
