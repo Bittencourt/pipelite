@@ -56,7 +56,29 @@ occlusion is worst — a fix validated only at en-US desktop will not be enough.
 
 ---
 
-## D-45-03 (F-2) — `/deals` pipeline select renders with an empty label on dark, UNCONFIRMED
+## D-45-03 (F-2) — `/deals` pipeline select renders with an empty label on dark — RESOLVED, NOT A DEFECT
+
+> **RESOLVED 2026-08-18, same day, by direct measurement. No code change was needed or made.**
+>
+> Re-checked on a settled page in a real Chromium (reusing the harness `storageState`, read-only,
+> no database write), at 1280x900, in BOTH themes:
+>
+> | theme | `[data-slot="select-trigger"]` count | `innerText` | boundingBox |
+> |---|---|---|---|
+> | light | 1 | `"BDR - Base Fria"` | 200x36 |
+> | dark  | 1 | `"BDR - Base Fria"` | 200x36 |
+>
+> The label is present, identical in both themes, and the trigger is correctly sized. The original
+> observation was a **capture-timing artefact**: `/deals` populates its pipeline list from a client
+> component, and the first screenshot was taken before it settled. Waiting ~3.5s makes it render
+> every time.
+>
+> This also **rules IN** 45-11's `min-w-0 max-w-full` addition to this trigger — the class is present
+> in the measured `class` attribute (`w-[200px] min-w-0 max-w-full`) and the label renders anyway, so
+> that SC-1 change is not implicated.
+>
+> 45-11 was right to refuse to edit code on the strength of one screenshot. Recording the negative
+> result rather than silently deleting the item, so the next person does not re-investigate it.
 
 **Found:** 2026-08-18, during 45-11's Task 2 visual verification.
 
