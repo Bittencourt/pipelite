@@ -36,6 +36,12 @@ import {
   pairScope,
   pairStatusFor,
 } from "./queries"
+import type {
+  DedupReason,
+  DedupTier,
+  DuplicatePairStatus,
+  MergeableEntityType,
+} from "./types"
 
 const mockDb = db as unknown as { select: ReturnType<typeof vi.fn> }
 
@@ -84,15 +90,35 @@ function sqlTokens(node: unknown, acc: string[] = []): string[] {
   return acc
 }
 
-const PAIR_ROW = {
+/**
+ * `entityType` is widened to the union rather than narrowed to a literal, so the person-pair
+ * fixture below is a spread of this one rather than a second literal that could drift from it.
+ */
+interface PairRowFixture {
+  id: string
+  entityType: MergeableEntityType
+  recordAId: string
+  recordBId: string
+  tier: DedupTier
+  reason: DedupReason
+  score: number | null
+  status: DuplicatePairStatus
+  scanId: string | null
+  dismissedByUserId: string | null
+  dismissedAt: Date | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+const PAIR_ROW: PairRowFixture = {
   id: "pair-1",
-  entityType: "organization" as const,
+  entityType: "organization",
   recordAId: "org-a",
   recordBId: "org-b",
-  tier: "likely" as const,
-  reason: "similarName" as const,
+  tier: "likely",
+  reason: "similarName",
   score: 0.91,
-  status: "open" as const,
+  status: "open",
   scanId: "scan-1",
   dismissedByUserId: null,
   dismissedAt: null,
@@ -116,7 +142,7 @@ interface SetupOptions {
   /** Rows the joined list query resolves with. */
   listRows?: unknown[]
   /** The `duplicate_pairs` row `getPairDetail` reads, or `null` for "the pair is gone". */
-  pairRow?: typeof PAIR_ROW | null
+  pairRow?: PairRowFixture | null
   recordARow?: Record<string, unknown> | null
   recordBRow?: Record<string, unknown> | null
   /** Table names whose query rejects. `"*"` rejects everything. */
@@ -476,7 +502,7 @@ describe("getPairDetail", () => {
   })
 
   it("omits the people count for a person pair, because a person has no people", async () => {
-    const personPair = { ...PAIR_ROW, entityType: "person" as const }
+    const personPair: PairRowFixture = { ...PAIR_ROW, entityType: "person" }
     const harness = setup({
       pairRow: personPair,
       recordARow: { id: "p-a", firstName: "Maria", lastName: "Silva", deletedAt: null },
@@ -487,8 +513,13 @@ describe("getPairDetail", () => {
     const detail = await getPairDetail("pair-1")
 
     expect(detail!.recordA.childCounts).toEqual({ deals: 3, people: null, notes: 5 })
-    // `people` was never queried: the emptiness is expressed as a control, not as a comment.
-    expect(harness.forTable("people")).toHaveLength(0)
+    // NO AGGREGATE was taken over `people`: the emptiness is expressed as a control, not as a
+    // comment. Scoped to aggregates because the two RECORD reads legitimately hit `people` too —
+    // a person pair's records ARE people, and counting those as "the people count ran" would make
+    // this assertion unfalsifiable in the opposite direction.
+    expect(harness.aggregates().filter((statement) => statement.table === "people")).toHaveLength(0)
+    // Four aggregates, not six: deals and notes, twice.
+    expect(harness.aggregates()).toHaveLength(4)
     // A person's deals hang off `person_id`, which is what the merge reparents.
     const dealTokens = harness.forTable("deals").map((statement) => sqlTokens(statement.where))
     for (const tokens of dealTokens) {
