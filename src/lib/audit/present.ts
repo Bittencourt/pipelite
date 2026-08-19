@@ -269,7 +269,7 @@ function customDefinitionId(name: string, resolution: AuditResolution): string |
 }
 
 /** How a stored change key should be typed, labelled and ordered. */
-interface FieldDescriptor {
+export interface FieldDescriptor {
   /** `AuditFieldChange.field`: the column name, or `custom:<definitionId>`. */
   field: string
   label: string
@@ -308,7 +308,22 @@ function humaniseColumn(column: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-function describeField(changeKey: string, resolution: AuditResolution): FieldDescriptor {
+/**
+ * The label, value kind and ordering rank of one stored change key.
+ *
+ * EXPORTED for the Phase 39 merge picker (39-UI-SPEC M-4). The merge picker and the record
+ * timeline must show the SAME WORD for the same column, because one is the receipt for the
+ * other: the picker asks "which Website do you want?" and the `merged` audit entry it writes
+ * then reports the change under that same name. A second field-label map next to
+ * `AUDIT_FIELD_LABELS` is exactly what this export exists to prevent - two maps drift, and
+ * the drift surfaces as a user being asked about "Site" and told about "Website".
+ *
+ * `humaniseColumn`, `NATIVE_ORDER` and `resolveWithDescriptor` stay private. The merge picker
+ * needs the descriptor, not the internals, and `NATIVE_ORDER` in particular is derived from
+ * `AUDIT_FIELD_LABELS`' insertion order (39-UI-SPEC A-8): exporting it would invite a caller
+ * to add a key and silently reorder every record timeline in the app.
+ */
+export function describeField(changeKey: string, resolution: AuditResolution): FieldDescriptor {
   if (changeKey.startsWith(CUSTOM_FIELD_PREFIX)) {
     const name = changeKey.slice(CUSTOM_FIELD_PREFIX.length)
     const definitionId = customDefinitionId(name, resolution)
