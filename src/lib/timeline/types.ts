@@ -102,7 +102,15 @@ export interface StageChangeTimelineEntry extends TimelineEntryBase {
 /** Who or what performed the change. Never guessed — an unknown actor records `system`. */
 export type AuditActorKind = 'user' | 'workflow_run' | 'api_key' | 'import' | 'system'
 
-export type AuditAction = 'created' | 'updated' | 'deleted'
+/**
+ * Kept deliberately IDENTICAL to `AuditAction` in `src/db/schema/audit-log.ts`, and deliberately
+ * NOT consolidated with it: Phase 36 recorded that the sibling type in
+ * `src/lib/audit/actor-context.ts` carries an explicit dependency-free invariant, and the same
+ * posture applies here. `merged` joined both declarations in Phase 39 (39-09) for the duplicate
+ * merge. `src/lib/audit/__tests__/audit-action-exhaustive.test.ts` asserts the two stay in step —
+ * `tsc` cannot see divergence between two structurally separate string unions on its own.
+ */
+export type AuditAction = 'created' | 'updated' | 'deleted' | 'merged'
 
 /** A single displayable value. `empty` is a first-class case, never an empty string. */
 export type AuditValue =
