@@ -50,10 +50,19 @@ const ENTITY_ICONS: Record<EntityType, LucideIcon> = {
 /**
  * NEVER `destructive`. A completed deletion is a fact, not a warning, and `--destructive` is
  * reserved in this phase for the shorten-retention confirmation and `toast.error`.
+ *
+ * `merged` (Phase 39) is `secondary` for the same reason `deleted` is: a completed merge is a
+ * fact about the record, not a warning about it.
+ *
+ * Exhaustive by type, deliberately. NEVER weaken to a `Partial<…>` of its `Record` — the compile
+ * error a new action raises here is what guarantees it gets a badge instead of rendering with
+ * `undefined`. That relaxation is grep-gated at zero occurrences, which is why this comment does
+ * not spell the pattern out.
  */
 const ACTION_BADGE_VARIANT: Record<AuditAction, "outline" | "secondary"> = {
   created: "outline",
   updated: "outline",
+  merged: "secondary",
   deleted: "secondary",
 }
 

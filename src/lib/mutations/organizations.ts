@@ -188,6 +188,12 @@ function auditActorColumns(actor: AuditActor | undefined) {
  * `action` stays `"deleted"` deliberately. A fourth `AuditAction` literal would be a four-file
  * compile cascade: the type is declared TWICE (`db/schema/audit-log.ts` and
  * `lib/timeline/types.ts`) and consumed by two exhaustive `Record<AuditAction, …>` maps.
+ *
+ * Phase 39 (39-09) paid that four-file cost deliberately, in one commit, to add a `merged` action
+ * for the duplicate merge — so the cascade is now a measured cost rather than an estimate. The
+ * purge's own choice is UNCHANGED: a purge is still recorded as `deleted` plus this marker,
+ * because a purge is the completion of a deletion, not a distinct fate, and a fifth literal would
+ * buy nothing the marker does not already carry.
  */
 const PURGE_MARKER = { __purge: { from: null, to: true } } as const
 

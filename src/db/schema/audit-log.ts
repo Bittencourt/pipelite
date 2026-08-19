@@ -20,7 +20,19 @@ import type { EntityType } from "./custom-fields"
 // `import_session` row is unreachable from every record timeline by construction.
 export type AuditEntityType = EntityType | "import_session"
 
-export type AuditAction = "created" | "updated" | "deleted"
+// The fourth literal, `merged`, arrived in Phase 39 (39-09) for the duplicate merge. Adding it
+// is a FOUR-FILE compile cascade, which is exactly why Phase 37's PURGE_MARKER comment
+// (src/lib/mutations/organizations.ts) chose not to add one: the type is declared TWICE (here and
+// in src/lib/timeline/types.ts) and consumed by two exhaustive `Record<AuditAction, …>` maps
+// (src/lib/audit/linked-records.ts ACTION_RANK and
+// src/app/workflows/[id]/runs/[runId]/components/run-changed-records.tsx ACTION_BADGE_VARIANT).
+// Phase 39 paid that cost deliberately and in one commit. NEVER relax either map to a
+// `Partial<…>` of its `Record` in order to avoid paying it again — the exhaustiveness is the only
+// thing that forces a new action to be presented rather than silently dropped. That relaxation is
+// grep-gated at zero occurrences, which is also why this comment does not spell the pattern out.
+// src/lib/audit/__tests__/audit-action-exhaustive.test.ts asserts the two declarations stay
+// identical: typecheck alone cannot see divergence between two structurally separate unions.
+export type AuditAction = "created" | "updated" | "deleted" | "merged"
 
 // Declared here rather than imported from `@/lib/audit/actor-context` (36-01): that module
 // does not exist yet — 36-01 and this plan are wave-1 siblings with no dependency edge, so

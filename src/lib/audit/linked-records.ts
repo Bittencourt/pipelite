@@ -21,7 +21,7 @@ export interface RunChangedRecord {
   entityId: string
   /** Best-known title at read time; null when the row is gone or has no title column value. */
   title: string | null
-  /** The most significant action this run took on this record: deleted > created > updated. */
+  /** The most significant action this run took on this record: deleted > merged > created > updated. */
   action: AuditAction
   /** Distinct fields this run changed on this record, unioned across every row for it. */
   fieldCount: number
@@ -32,15 +32,25 @@ export interface RunChangedRecord {
 }
 
 /**
- * The precedence the contract names: `deleted > created > updated`. A run that creates a deal
- * and then deletes it in a later step reports `deleted` — the record's fate is the significant
+ * The precedence the contract names: `deleted > merged > created > updated`. A run that creates a
+ * deal and then deletes it in a later step reports `deleted` — the record's fate is the significant
  * fact, and reporting `created` for something that no longer exists would send the operator to
  * a page that 404s.
+ *
+ * `merged` (Phase 39) sits BETWEEN `created` and `deleted`: a `merged` row is written on the
+ * SURVIVOR of a duplicate merge, which is still alive, so it must never outrank a deletion — but
+ * absorbing another record is a more significant fate than being created.
+ *
+ * This map is exhaustive by type and must stay that way. NEVER weaken it to a `Partial<…>` of its
+ * `Record`: the compile error a new action produces here is the mechanism that forces the action to
+ * be given a precedence instead of silently ranking `undefined`. That relaxation is grep-gated at
+ * zero occurrences, which is why this comment does not spell the pattern out.
  */
 const ACTION_RANK: Record<AuditAction, number> = {
   updated: 0,
   created: 1,
-  deleted: 2,
+  merged: 2,
+  deleted: 3,
 }
 
 const CRM_ENTITY_TYPES: readonly EntityType[] = ["organization", "person", "deal", "activity"]

@@ -248,11 +248,19 @@ describe("buildMergeFieldGroups", () => {
   })
 
   it("keeps the excluded set frozen and complete", () => {
+    // The three `norm*` entries joined in 39-09: they are GENERATED ALWAYS columns from
+    // migration 0017, so a merge that offered them would both ask a meaningless question and
+    // raise SQLSTATE 428C9 on the survivor UPDATE. `dedup.test.ts` holds the drift alarm that
+    // ties this list to the tables' actual generated columns — a list this file cannot see
+    // without importing the schema, which its own header forbids.
     expect([...MERGE_EXCLUDED_COLUMNS].sort()).toEqual([
       "createdAt",
       "customFields",
       "deletedAt",
       "id",
+      "normEmail",
+      "normName",
+      "normPhone",
       "ownerId",
       "updatedAt",
     ])

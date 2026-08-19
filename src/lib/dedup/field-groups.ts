@@ -47,13 +47,40 @@ export type MergeEntityType = MergeableEntityType
  *   prefixed, so that a user answers about "CNPJ / CPF" and not about a JSON object.
  * - `ownerId` - Phase 38 established the narrow `update{Entity}OwnerMutation` functions as
  *   the only sanctioned owner write path, and a merge is not one of them (T-39-13).
+ * - `normName`, `normEmail`, `normPhone` - GENERATED ALWAYS columns, added by plan 39-05 in
+ *   migration 0017 AFTER this set was written (the two plans were wave-1 siblings in separate
+ *   worktrees and could not see each other). Three consequences, all bad, and all fixed by
+ *   this entry: the merge picker would ask a user to choose between two normalized names; the
+ *   `merged` audit entry would report the answer as a field the user picked; and - decisively -
+ *   the survivor UPDATE would carry `SET norm_name = …`, which PostgreSQL rejects with
+ *   SQLSTATE 428C9 (`column "norm_name" can only be updated to DEFAULT`), failing EVERY
+ *   organization and person merge. The database maintains these values from `name` / `email` /
+ *   `phone`; picking those columns is how a user picks the normalized form.
+ *
+ *   Listed by NAME rather than derived from the Drizzle tables on purpose: this module is
+ *   database-free so it can be imported from a `"use client"` component (see the header), and
+ *   `getTableColumns` would drag the schema - and through it `drizzle-orm/pg-core` - into a
+ *   browser bundle. The drift alarm is a unit test instead: `dedup.test.ts` asserts that every
+ *   generated column of both mergeable tables appears in this set, and `mergeRecordsMutation`
+ *   independently filters generated columns out of its SET clause, so a fourth generated column
+ *   fails a test rather than a merge.
  *
  * `Object.freeze` on a `Set` seals its properties, not its contents; the `ReadonlySet` type
  * is what actually stops `.add` at compile time. Both are here on purpose - one guards the
  * reader, the other guards the compiler.
  */
 export const MERGE_EXCLUDED_COLUMNS: ReadonlySet<string> = Object.freeze(
-  new Set(["id", "createdAt", "updatedAt", "deletedAt", "customFields", "ownerId"])
+  new Set([
+    "id",
+    "createdAt",
+    "updatedAt",
+    "deletedAt",
+    "customFields",
+    "ownerId",
+    "normName",
+    "normEmail",
+    "normPhone",
+  ])
 )
 
 /** One compared field, as the merge picker asks about it. */
