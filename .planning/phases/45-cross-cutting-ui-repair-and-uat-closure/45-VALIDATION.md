@@ -108,7 +108,7 @@ mechanism, and the planner must attach every task to one of these rows.
 | Behavior | Criterion | Why Manual | Test Instructions |
 |----------|-----------|------------|-------------------|
 | Visual correctness of the dark palette on each repaired surface | SC-2 | A source gate proves the provider is mounted and the toggle exists; it cannot prove the result looks right. No screenshot baseline exists in this repo and this phase does not add one. | With the app rebuilt, toggle to dark and walk `/organizations`, `/deals`, `/admin/audit` and one open dialog. Confirm no unreadable text and no light-mode island. |
-| Sheet drawer feel on a real touch device | SC-1 | Playwright emulates a 320px viewport, not a finger. Swipe-to-dismiss and momentum are not measurable here. | Open `/admin/audit` on a phone, open the drawer, dismiss it by overlay tap and by swipe. |
+| Sheet drawer feel on a real touch device | SC-1 | Playwright emulates a 320px viewport, not a finger. | Open `/admin/audit` on a phone, open the drawer, dismiss it by overlay tap, and confirm tapping an entry navigates and closes. ~~and by swipe~~ — **CORRECTED 2026-08-18:** the original instruction also asked for swipe-to-dismiss. That expectation was wrong: `sheet.tsx` wraps Radix `Dialog`, which has no gesture layer, and `vaul` is not installed, so swipe could never have worked. Tested on a real device: everything else passed, swipe did nothing. Logged as D-45-04. Do not re-add this row until a vaul-backed drawer ships. |
 
 *Everything else in this phase has automated verification. The single item Phase 45 inherited as
 "human-only" — the deals-kanban drag — is explicitly converted to an automated e2e check by SC-5,

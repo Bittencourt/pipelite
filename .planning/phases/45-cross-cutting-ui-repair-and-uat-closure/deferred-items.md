@@ -2,6 +2,55 @@
 
 Out-of-scope discoveries logged during execution. Not fixed here.
 
+## D-45-04 — The admin drawer cannot be dismissed by swiping, because Radix Dialog has no swipe
+
+**Found:** 2026-08-18, by the user on a real phone — the one check no instrument in this repo can
+drive. This is the single item from 45-VALIDATION.md's Manual-Only Verifications table that did not
+pass.
+
+**What was tested, and what happened.** On a real device against `/admin/audit`:
+
+| # | Check | Result |
+|---|---|---|
+| 1 | No horizontal scrollbar; hamburger top-left | ✅ pass |
+| 2 | Tap hamburger → drawer opens, menu in the active language | ✅ pass |
+| 3 | Dismiss by tapping the overlay | ✅ pass |
+| 4 | **Dismiss by swiping left** | ❌ **does nothing** |
+| 5 | Tap an entry → navigates AND closes | ✅ pass |
+| 6 | Repeat in es-ES | ✅ pass |
+
+**Root cause — this is an unimplemented capability, not a regression.** `src/components/ui/sheet.tsx`
+wraps Radix's `Dialog` primitive (`import { Dialog as SheetPrimitive } from "radix-ui"`). Radix
+Dialog has no gesture layer: grepping the file for `swipe`, `touchstart`, `pointerdown`, `onDrag` and
+`translate` returns **zero** matches, and `vaul` — the library that actually provides
+swipe-dismissable drawers — is **not** in `package.json`. shadcn's official `sheet` block has never
+supported swipe. Nothing Phase 45 did removed this; it was never there.
+
+**The actual defect is in the validation document, and it is worth naming.** `45-VALIDATION.md`'s
+Manual-Only Verifications table instructed the tester to "dismiss by overlay tap **and by swipe**".
+That expectation was written without checking whether the chosen primitive could do it, so it
+promised a capability the implementation never had and could not have acquired without a new
+dependency. A manual test that asserts an un-implementable behaviour will fail forever and teaches
+the team to discount manual results — the precise habit this phase exists to break. **When
+`45-VALIDATION.md` is next revised, that row should be corrected**, not silently dropped.
+
+**Why deferred rather than fixed here.** Swipe-to-dismiss appears in none of SC-1..SC-5, and the
+phase goal ("the app is usable on a phone") is met: the drawer has three working dismissal paths —
+overlay tap, the close button, and navigation — plus Escape from a keyboard. Adding it means adding
+`vaul` and replacing the Sheet primitive, which is a new dependency and a shared-component swap
+landing after this phase's single Docker rebuild and after its verification passed. That is a
+scope expansion, and it belongs to a phase that plans for it.
+
+**How to fix, when someone picks it up:** install `vaul`, swap `src/components/ui/sheet.tsx` for the
+shadcn `drawer` block (or a vaul-backed Sheet), and keep the `common.close` translation treatment
+that 45-04 applied — the vaul block ships the same hardcoded English `sr-only` close label the Radix
+one did, so re-adding it verbatim would reintroduce exactly the defect SC-3 removed. Re-run the
+manual table on a real device afterwards; no automated check in this repo can confirm a swipe.
+
+**Suggested owner:** whichever phase next does mobile or design-system work.
+
+---
+
 ## D-45-01 — `src/lib/execution/toggle.test.ts` intermittently times out its `beforeEach` hook under parallel workers
 
 **Found:** 2026-08-18, during 45-06's `npm run test` gate.
