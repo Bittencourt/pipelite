@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
-status: verifying
-last_updated: "2026-08-19T00:12:49.258Z"
+status: executing
+last_updated: "2026-08-19T12:34:07.908Z"
 last_activity: 2026-08-19
 progress:
   total_phases: 14
   completed_phases: 9
-  total_plans: 112
-  completed_plans: 112
+  total_plans: 129
+  completed_plans: 117
   percent: 64
 ---
 
@@ -20,13 +20,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 45 — Cross-Cutting UI Repair and UAT Closure
+**Current focus:** Phase 39 — duplicate-detection-merge
 
 ## Position
 
 Phase: 45 - Cross-Cutting UI Repair and UAT Closure
 Plan: 11 of 11 complete
-Status: Phase complete — ready for verification. Every gate green: typecheck 0, lint 0 errors, 2224+8 vitest, 23/23 Playwright against a freshly built image, and the visual checkpoint approved.
+Status: Executing Phase 39
 Last activity: 2026-08-19
 
 Progress: [██████████] 100%
@@ -313,9 +313,9 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 
 ## Current Position
 
-Phase: 38 (Bulk Operations) — EXECUTING
-Plan: 10 of 11 complete
-Status: Phase complete — ready for verification
-Last activity: 2026-08-19
+Phase: 39 (duplicate-detection-merge) — EXECUTING
+Plan: 1 of 17
+Status: Executing Phase 39
+Last activity: 2026-08-19 -- Phase 39 execution started
 
 - 2026-08-17: Phase 37 COMPLETE (15 plans, 6 waves) — Trash & Restore. `/trash` with four scoped tabs, `/admin/trash` retention (1..365, default 30, seeded as data, fail-closed with NO `?? 30`), restore + ordered transactional purge for all four CRM entities, three REST endpoints, and a daily pruner PROVEN running in the container (`[trash-prune] Starting with initial delay of 60s, ticking daily`, all six processors announcing from the merged-master build). Suite 1549 -> 1703 passing, typecheck 0, lint 0 errors throughout. Verified 4/4 success criteria plus a live browser walkthrough (8/10 UAT steps, both "deleted by" strings, manual tab activation, restore with children intact, purge detaching a live child with both audit rows). Code review: 1 critical + 9 warnings, all in-scope findings fixed; CR-01 deliberately scoped to correcting a false comment. The 320px check found and fixed a real tablist overflow defect. Autonomous run STOPPED here by user — phases 38-43 remain.
