@@ -117,12 +117,13 @@ describe("createPerson — the create-time certain-match gate", () => {
     await createPerson(DRAFT)
 
     expect(mockFindCertainMatches).toHaveBeenCalledTimes(1)
+    // No `customFields`, deliberately: the person certain rule is decided by the e-mail address
+    // alone, and the organization identity custom field has no person counterpart.
     expect(mockFindCertainMatches).toHaveBeenCalledWith({
       entityType: "person",
       firstName: DRAFT.firstName,
       lastName: DRAFT.lastName,
       email: DRAFT.email,
-      customFields: undefined,
     })
   })
 

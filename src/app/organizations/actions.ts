@@ -10,6 +10,8 @@ import { runWithActor } from "@/lib/audit/actor-context"
 import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
 import type { BulkFailure, BulkWriteResult } from "@/lib/bulk/types"
+import { findCertainMatches } from "@/lib/dedup/matching"
+import type { CertainMatch } from "@/lib/dedup/matching"
 import { fetchFilteredData } from "@/lib/export/formatters"
 import type { ExportResult } from "@/lib/export/types"
 import {
@@ -21,19 +23,94 @@ import {
 } from "@/lib/mutations/organizations"
 
 /**
+ * What a create can answer, in THREE members rather than two (DEDUP-01 / SC-1).
+ *
+ * The two failure members are deliberately disjoint — one carries `error`, the other carries
+ * `duplicates`, and neither carries the other's field. A single member with two optional fields
+ * would let a caller narrow on `success === false`, reach for `result.error`, get `undefined` and
+ * render an empty toast for what is actually a duplicate warning. The two outcomes need opposite
+ * UI: an error is a failure to report, a duplicate list is an advisory to render in place with the
+ * draft intact (39-UI-SPEC W-2).
+ */
+export type CreateOrganizationResult =
+  | { success: true; id: string }
+  | { success: false; error: string }
+  | { success: false; duplicates: CertainMatch[] }
+
+/**
+ * The confirm flag, and why it is a parameter of the ACTION rather than a field of the payload.
+ *
+ * `organizationSchema` is a Zod object and Zod STRIPS unknown keys silently (Phase 38 recorded what
+ * that costs: `bulkReassignOrganizationOwner`'s comment describes an `ownerId` smuggled into a
+ * validated payload becoming a silent success no-op). A `confirmDuplicate` inside `data` would be
+ * dropped by `organizationSchema.parse` inside the mutation and the check would run forever.
+ *
+ * T-39-34 — THIS FLAG IS BROWSER-SUPPLIED AND THAT IS FINE. It only skips an ADVISORY. The warning
+ * is locked as "advisory, never blocking", so a client that always sends `true` gets exactly the
+ * behaviour a user who clicks "Create anyway" gets. It is not an authorization bypass and must not
+ * be hardened into one.
+ */
+export interface CreateRecordOptions {
+  confirmDuplicate?: boolean
+}
+
+/**
+ * Find the certain duplicates of a draft WITHOUT ever being able to fail the create (T-39-36).
+ *
+ * `findCertainMatches` already swallows its own query errors and answers `[]`, so this second net
+ * catches only what it cannot: a module-level import failure, or a future refactor that lets an
+ * exception out. A duplicate check must never be the reason a record cannot be saved, so the
+ * rejection is logged with identifiers only and the create proceeds unwarned.
+ */
+async function certainMatchesOrNone(
+  input: Parameters<typeof findCertainMatches>[0]
+): Promise<CertainMatch[]> {
+  try {
+    return await findCertainMatches(input)
+  } catch (error) {
+    console.warn("[dedup] create-time duplicate check failed; creating without a warning:", error)
+    return []
+  }
+}
+
+/**
  * Create a new organization
  * - Validates user is authenticated
+ * - Reports certain duplicates instead of creating, unless the caller has already confirmed
  * - Delegates to mutation layer for validation, insert, and event emission
- * - Returns success with organization ID or error
+ * - Returns success with organization ID, an error, or the matches to warn about
  */
 export async function createOrganization(
-  data: z.infer<typeof organizationSchema>
-): Promise<{ success: true; id: string } | { success: false; error: string }> {
+  data: z.infer<typeof organizationSchema>,
+  options?: CreateRecordOptions
+): Promise<CreateOrganizationResult> {
   const session = await auth()
 
   // Verify authentication
   if (!session?.user?.id) {
     return { success: false, error: "Not authenticated" }
+  }
+
+  // THE DUPLICATE CHECK SITS HERE AND NOWHERE ELSE: after the session guard, before the actor
+  // scope. An unauthenticated call therefore performs NO lookup and establishes NO actor — the
+  // lookup carries only `deleted_at IS NULL` for visibility (T-39-05), which is sound for a caller
+  // that has already passed `auth()` and would be a read oracle for one that has not.
+  //
+  // Server-side on submit, before the insert commits — not on field blur. A blur check is
+  // bypassable, and decisively the importer never blurs anything (39-UI-SPEC Surface 1, locked).
+  if (!options?.confirmDuplicate) {
+    const duplicates = await certainMatchesOrNone({
+      entityType: "organization",
+      name: data.name,
+      customFields: data.customFields,
+    })
+
+    // Advisory, never blocking: nothing is created, and the caller re-submits with
+    // `confirmDuplicate: true` to proceed. The check must NOT run on that second submit, or the
+    // warning would re-appear and the user could never get past it (W-4).
+    if (duplicates.length > 0) {
+      return { success: false, duplicates }
+    }
   }
 
   // The actor scope opens AFTER the session check above, never before it, so an

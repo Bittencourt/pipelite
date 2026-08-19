@@ -10,6 +10,8 @@ import { runWithActor } from "@/lib/audit/actor-context"
 import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch"
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
 import type { BulkFailure, BulkWriteResult } from "@/lib/bulk/types"
+import { findCertainMatches } from "@/lib/dedup/matching"
+import type { CertainMatch } from "@/lib/dedup/matching"
 import { fetchFilteredData } from "@/lib/export/formatters"
 import type { ExportResult } from "@/lib/export/types"
 import {
@@ -21,14 +23,79 @@ import {
 } from "@/lib/mutations/people"
 
 /**
+ * What a create can answer, in THREE members rather than two (DEDUP-01 / SC-1).
+ *
+ * The organization twin of this type, with the same reasoning, lives in
+ * `src/app/organizations/actions.ts` — read the comment there. The two are stated separately rather
+ * than shared because a `"use server"` module may only EXPORT async functions, so a shared runtime
+ * home for the helper below would have to expose it as its own POST endpoint.
+ */
+export type CreatePersonResult =
+  | { success: true; id: string }
+  | { success: false; error: string }
+  | { success: false; duplicates: CertainMatch[] }
+
+/**
+ * The confirm flag, as a parameter of the ACTION and never a field of the payload: `personSchema`
+ * is a Zod object and Zod strips unknown keys silently. See the organization twin for T-39-34 —
+ * this flag is browser-supplied and only skips an ADVISORY, so it is not an authorization bypass.
+ */
+export interface CreateRecordOptions {
+  confirmDuplicate?: boolean
+}
+
+/**
+ * Find the certain duplicates of a draft WITHOUT ever being able to fail the create (T-39-36).
+ *
+ * Duplicated verbatim from `src/app/organizations/actions.ts` for the reason stated above: a
+ * `"use server"` module cannot host a shared non-action helper for both, and exporting this one
+ * would publish the duplicate lookup as its own endpoint. The two must change together.
+ */
+async function certainMatchesOrNone(
+  input: Parameters<typeof findCertainMatches>[0]
+): Promise<CertainMatch[]> {
+  try {
+    return await findCertainMatches(input)
+  } catch (error) {
+    console.warn("[dedup] create-time duplicate check failed; creating without a warning:", error)
+    return []
+  }
+}
+
+/**
  * Create a new person (contact)
+ * - Reports certain duplicates instead of creating, unless the caller has already confirmed
  */
 export async function createPerson(
-  data: z.infer<typeof personSchema>
-): Promise<{ success: true; id: string } | { success: false; error: string }> {
+  data: z.infer<typeof personSchema>,
+  options?: CreateRecordOptions
+): Promise<CreatePersonResult> {
   const session = await auth()
   if (!session?.user?.id) {
     return { success: false, error: "Not authenticated" }
+  }
+
+  // THE DUPLICATE CHECK SITS HERE AND NOWHERE ELSE: after the session guard, before the actor
+  // scope. An unauthenticated call therefore performs NO lookup and establishes NO actor — the
+  // lookup carries only `deleted_at IS NULL` for visibility (T-39-05), which is sound for a caller
+  // that has already passed `auth()` and would be a read oracle for one that has not.
+  //
+  // Both name parts go over even though the person *certain* rule is decided by the e-mail alone:
+  // they build the draft's normalized name, which `classifyPersonMatch` reads. No `customFields` —
+  // the organization identity custom field has no person counterpart.
+  if (!options?.confirmDuplicate) {
+    const duplicates = await certainMatchesOrNone({
+      entityType: "person",
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+    })
+
+    // Advisory, never blocking: nothing is created, and the caller re-submits with
+    // `confirmDuplicate: true` to proceed. The check must NOT run on that second submit (W-4).
+    if (duplicates.length > 0) {
+      return { success: false, duplicates }
+    }
   }
 
   // The actor scope opens AFTER the session check above, never before it, so an
