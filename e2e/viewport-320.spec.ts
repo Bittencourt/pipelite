@@ -1,11 +1,17 @@
 /**
- * SC-1 — no horizontal overflow at a 320px viewport, on six routes, in all three locales.
+ * SC-1 — no horizontal overflow at a 320px viewport, on seven routes, in all three locales.
  *
  * This is the phase's headline claim and the whole reason the Playwright harness exists. The
  * recorded UAT baseline it is written against (do not re-derive it, and do not relax it):
  *
  *   /organizations, /people, /deals, /activities, /trash   scrollWidth 416 vs clientWidth 305
  *   /admin/audit                                           508 (pt-BR), 526 (es-ES) vs 305
+ *
+ * `/duplicates` was added by Phase 39 (plan 39-17, R-1) and has no pre-existing UAT baseline: it is
+ * a route Phase 45 could not measure because it did not exist. It joins the matrix rather than
+ * getting a spec of its own because it renders its empty state with no fixture data at all, so the
+ * seventh row costs no seeding. Its sibling `/duplicates/[pairId]` cannot say the same, which is why
+ * that one lives in `e2e/merge-screen-320.spec.ts` with fixtures of its own.
  *
  * es-ES measures WORSE than pt-BR because the admin rail is width-based and Spanish runs longer.
  * That asymmetry is the exact failure mode the original Phase 36 UAT item was written to catch, so
@@ -43,6 +49,7 @@ interface AnchorCatalog {
   activities: { title: string }
   trash: { title: string }
   audit: { retention: { title: string } }
+  dedup: { scan: { title: string } }
 }
 
 /**
@@ -56,14 +63,20 @@ const CATALOG: Record<string, AnchorCatalog> = {
 }
 
 /**
- * Every one of these six pages renders its heading as
- * `<h1 className="text-3xl font-bold">{t("…")}</h1>`, so one role locator reaches all six.
+ * Every one of these seven pages renders its heading as
+ * `<h1 className="text-3xl font-bold">{t("…")}</h1>`, so one role locator reaches all seven.
  *
  * The anchor is READ FROM THE CATALOG rather than hardcoded, so a copy change in `src/messages`
  * cannot leave a stale expectation behind here.
  *
  * `/admin/audit` is the RETENTION SETTINGS page, not an audit-entry list — its heading comes from
  * `audit.retention.title`. Anchoring on `audit.filter.label` or on an entry row would be wrong.
+ *
+ * `/duplicates` is ADMIN-ONLY, gated by `src/app/duplicates/layout.tsx` with a server-side redirect,
+ * and the storageState session is the seeded e2e admin — so the anchor below is also the one thing
+ * that would notice if that gate ever started refusing the wrong people: a non-admin session lands on
+ * `/?error=unauthorized`, which renders a different `h1` and fails here rather than measuring a page
+ * nobody was allowed to see.
  */
 const ROUTES: { path: string; anchor: (m: AnchorCatalog) => string }[] = [
   { path: "/organizations", anchor: (m) => m.organizations.title },
@@ -72,6 +85,7 @@ const ROUTES: { path: string; anchor: (m: AnchorCatalog) => string }[] = [
   { path: "/activities", anchor: (m) => m.activities.title },
   { path: "/trash", anchor: (m) => m.trash.title },
   { path: "/admin/audit", anchor: (m) => m.audit.retention.title },
+  { path: "/duplicates", anchor: (m) => m.dedup.scan.title },
 ]
 
 for (const [locale, messages] of Object.entries(CATALOG)) {
