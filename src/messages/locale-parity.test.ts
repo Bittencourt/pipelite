@@ -441,9 +441,9 @@ export const REQUIRED_SHELL_KEYS: string[] = [
  * assertion below turns a string that skipped this list into a red suite rather than copy that ships
  * gated by nothing.
  *
- * 77 keys, all inside the `dedup` namespace — like `bulk` and unlike `trash`, this phase adds
+ * 79 keys, all inside the `dedup` namespace — like `bulk` and unlike `trash`, this phase adds
  * nothing to `nav` or `admin.dashboard`, which is why `dedupKeys` below needs no `*_EXTRA_KEYS`
- * sibling and the comparison against this list is TOTAL: a 78th dedup string that never made it
+ * sibling and the comparison against this list is TOTAL: an 80th dedup string that never made it
  * into this array fails, which is the half a missing-key check cannot see. The per-group counts in
  * the comments are load-bearing: they are how a reader sees at a glance that a group lost a key.
  *
@@ -489,7 +489,7 @@ export const REQUIRED_DEDUP_KEYS: string[] = [
   "dedup.scan.failed",
   "dedup.scan.failedBody",
 
-  // Review list — 18. Three distinct emptinesses, three distinct headings: never scanned, scanned
+  // Review list — 19. Three distinct emptinesses, three distinct headings: never scanned, scanned
   // and found nothing, everything dismissed. There is deliberately no `emptyAllDismissedBody` — the
   // body of that state is the `showDismissed` ghost button that resolves it.
   "dedup.review.pairsFound",
@@ -503,6 +503,11 @@ export const REQUIRED_DEDUP_KEYS: string[] = [
   "dedup.review.hideDismissed",
   "dedup.review.undismiss",
   "dedup.review.undismissed",
+  // The undismiss failure needs its own sentence, added by plan 39-13. `dismissFailed` says "That
+  // pair wasn't dismissed", which is the OPPOSITE of what is true when moving a pair back out of the
+  // dismissed list fails — it is still dismissed, and that is the problem being reported. Reusing it
+  // would tell the user the one thing that is false about the state they are in.
+  "dedup.review.undismissFailed",
   "dedup.review.loadMore",
   "dedup.review.emptyNeverScanned",
   "dedup.review.emptyNeverScannedBody",
@@ -839,13 +844,14 @@ describe("locale parity", () => {
     expect.soft(missingIn(REQUIRED_DEDUP_KEYS)).toEqual(emptyPerLocale)
   })
 
-  it("the checked-in dedup contract still lists exactly 78 keys", () => {
+  it("the checked-in dedup contract still lists exactly 79 keys", () => {
     // Asserted here rather than left to the reader's arithmetic: the per-group comments in
-    // REQUIRED_DEDUP_KEYS say 4+4+13+18+27+3+8+1, and this is what stops that sum drifting silently
+    // REQUIRED_DEDUP_KEYS say 4+4+13+19+27+3+8+1, and this is what stops that sum drifting silently
     // when a group gains or loses an entry. The review group went 17 -> 18 in plan 39-11, which is
-    // where the degraded-read panel got a sentence of its own.
-    expect(REQUIRED_DEDUP_KEYS).toHaveLength(78)
-    expect(new Set(REQUIRED_DEDUP_KEYS).size, "REQUIRED_DEDUP_KEYS lists a key twice").toBe(78)
+    // where the degraded-read panel got a sentence of its own, and 18 -> 19 in plan 39-13, which is
+    // where the undismiss failure got one.
+    expect(REQUIRED_DEDUP_KEYS).toHaveLength(79)
+    expect(new Set(REQUIRED_DEDUP_KEYS).size, "REQUIRED_DEDUP_KEYS lists a key twice").toBe(79)
   })
 
   it("the notes, audit, trash, bulk, shell and dedup namespaces have identical key sets across all three locales", () => {
@@ -899,7 +905,7 @@ describe("locale parity", () => {
     }
 
     // Same exact-contract rule for dedup, and total for the same reason bulk's is: 39-UI-SPEC adds
-    // no dedup string outside the namespace, so a 78th key added without its dot-path going into
+    // no dedup string outside the namespace, so an 80th key added without its dot-path going into
     // REQUIRED_DEDUP_KEYS fails here. Every component plan in phase 39 consumes these keys, and a
     // key that does not exist renders its own dot-path to the user (the Phase 45 finding).
     const dedupContract = [...REQUIRED_DEDUP_KEYS].sort()

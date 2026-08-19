@@ -145,8 +145,19 @@ describe("pair card — the stacked layout (L-3, R-3)", () => {
     expect(count(block, "line-clamp")).toBe(0)
   })
 
+  /**
+   * Asserted as two tokens in ONE class list rather than as the adjacent pair `text-primary
+   * hover:underline`, because class order in this repo is not the author's to choose — the formatter
+   * sorts utilities, so an adjacency assertion would fail on correctly written code the moment
+   * anything else joined the same element. Both tokens on the same element is the actual contract
+   * (§ Color item 6: a link from a listed row to the record it names).
+   */
   it("links each record name to the record it names, in the sanctioned accent", () => {
-    expect(functionBody("PairRecord")).toContain("text-primary hover:underline")
+    const accentLinks = classNames(functionBody("PairRecord")).filter(
+      (value) => value.includes("text-primary") && value.includes("hover:underline")
+    )
+
+    expect(accentLinks.length, `${CARD_PATH}: no record name carries the accent link idiom`).toBe(1)
   })
 
   it("carries min-w-0 on the wrapping action row (R-4)", () => {

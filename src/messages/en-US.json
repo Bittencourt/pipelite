@@ -589,6 +589,7 @@
       "hideDismissed": "Hide dismissed pairs",
       "undismiss": "Move back to the list",
       "undismissed": "Back in the list.",
+      "undismissFailed": "That pair wasn't moved back. Check your connection and try again.",
       "loadMore": "Load more",
       "emptyNeverScanned": "No scan yet",
       "emptyNeverScannedBody": "A scan compares every record of this type and lists the pairs that look the same. It runs in the background.",

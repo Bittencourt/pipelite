@@ -55,12 +55,14 @@ import { db } from "@/db"
 import { users } from "@/db/schema"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import { readOrgIdentityFields } from "@/lib/dedup/identity-settings"
-import { countPairs, listPairs } from "@/lib/dedup/queries"
+import { countPairs, listPairs, MAX_PAIR_PAGE, type PairSideSummary } from "@/lib/dedup/queries"
 import { calculateScanProgress, getLatestScan } from "@/lib/dedup/scan-state"
+import type { DedupReason } from "@/lib/dedup/types"
 
 import type { ScanProgressPayload } from "./actions"
 import { DuplicatesTabs } from "./duplicates-tabs"
 import { IdentityFieldsForm } from "./identity-fields-form"
+import { PairCard } from "./pair-card"
 import { ScanPanel } from "./scan-panel"
 import {
   DUPLICATE_TAB_TO_ENTITY,
@@ -141,6 +143,64 @@ function viewHref(tab: DuplicateTab, dismissed: boolean): string {
   }
 
   return `/duplicates?${sp.toString()}`
+}
+
+/** The same URL plus a cursor. Separate from `viewHref`, which deliberately DROPS the cursor. */
+function pageHref(tab: DuplicateTab, dismissed: boolean, page: number): string {
+  const sp = new URLSearchParams({ type: tab, page: String(page) })
+
+  if (dismissed) {
+    sp.set("dismissed", "1")
+  }
+
+  return `/duplicates?${sp.toString()}`
+}
+
+/**
+ * The one value beneath a record's name on its card — what made THIS pair a candidate (L-4).
+ *
+ * KEYED ON THE REASON, because "the distinguishing value" is not a property of a record, it is a
+ * property of the comparison. Showing an email under a pair matched on a similar name would be
+ * showing the user the field the scan did not look at, and would leave them unable to audit the match
+ * — which 39-UI-SPEC's copywriting contract treats as the failure that turns a duplicate warning into
+ * noise people learn to click through.
+ *
+ * RESOLVED ON THE SERVER, so the client never receives `customFields`. An organization's blob holds
+ * every custom field of the record; two of them per card, twenty-five cards per page, is a payload
+ * sent so the browser can pick one string out of it (the D-44-02 precedent, and the same projection
+ * `readOrgFieldNames` above performs).
+ *
+ * ONLY PRIMITIVES ARE RENDERED. A custom field can hold an object or an array, and `String(value)` on
+ * one of those produces `[object Object]` — a string that looks like a value and identifies nothing.
+ */
+function distinguishingValue(
+  side: PairSideSummary,
+  reason: DedupReason,
+  identityFields: string[]
+): string | null {
+  if (reason === "email") return side.email
+
+  if (reason === "similarNamePhone") return side.phone
+
+  if (reason === "nameIdentity") {
+    /*
+      The organization certain tier. The configured fields are checked IN ORDER, which is the order
+      `identity-settings.ts` stores and the matcher reads them in — so the value shown is the one the
+      match was actually made on when both fields are set.
+    */
+    for (const field of identityFields) {
+      const raw = side.customFields?.[field]
+
+      if (typeof raw === "string" && raw.trim() !== "") return raw
+      if (typeof raw === "number") return String(raw)
+    }
+
+    return side.normName
+  }
+
+  // `similarName`, and any reason added later: the normalized name is what the trigram comparison
+  // ran on, so it is the honest thing to show for a match made on names alone.
+  return side.normName
 }
 
 /**
@@ -329,12 +389,40 @@ export default async function DuplicatesPage({
     panel = (
       <div className="space-y-4">
         <p className="text-muted-foreground text-sm">{t("review.pairsFound", { count: pairsInTab })}</p>
+        {list.rows.map((row) => (
+          <PairCard
+            key={row.id}
+            pairId={row.id}
+            entityType={row.entityType}
+            tier={row.tier}
+            reason={row.reason}
+            recordA={{
+              id: row.recordA.id,
+              name: row.recordA.name,
+              detail: distinguishingValue(row.recordA, row.reason, orgIdentityFields ?? []),
+            }}
+            recordB={{
+              id: row.recordB.id,
+              name: row.recordB.name,
+              detail: distinguishingValue(row.recordB, row.reason, orgIdentityFields ?? []),
+            }}
+            dismissed={showDismissed}
+          />
+        ))}
         {/*
-          PLAN 39-13 REPLACES THIS REGION with the pair cards (UI-SPEC L-3/L-4: a `rounded-md border
-          p-4` card per pair, both records stacked, never side by side) and with `dedup.review.merge`
-          / `dedup.review.dismiss` wired to the actions this plan already exports. The count line
-          above belongs to THIS plan and stays.
+          PAGING IS THE SERVER'S, AS ON `/trash` (L-9). `listPairs` returns a CUMULATIVE window —
+          `?page=2` is 50 rows, not rows 26 to 50 — so "Load more" appends to the list the user is
+          already reading rather than replacing it, and the back button walks back through the same
+          view. `MAX_PAIR_PAGE` is the ceiling the query itself clamps to; past it the link would fetch
+          the same rows again and the button would do nothing visible, so it is not offered.
         */}
+        {list.hasMore && page < MAX_PAIR_PAGE ? (
+          <div className="flex justify-center pt-2">
+            <Button asChild variant="outline">
+              <Link href={pageHref(tab, showDismissed, page + 1)}>{t("review.loadMore")}</Link>
+            </Button>
+          </div>
+        ) : null}
       </div>
     )
   } else if (scan === null) {
