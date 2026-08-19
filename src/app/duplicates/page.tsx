@@ -48,10 +48,13 @@ import type { ReactNode } from "react"
 import { auth } from "@/auth"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import { readOrgIdentityFields } from "@/lib/dedup/identity-settings"
 import { countPairs, listPairs } from "@/lib/dedup/queries"
 import { getLatestScan } from "@/lib/dedup/scan-state"
 
 import { DuplicatesTabs } from "./duplicates-tabs"
+import { IdentityFieldsForm } from "./identity-fields-form"
 import {
   DUPLICATE_TAB_TO_ENTITY,
   parseDuplicatePage,
@@ -67,6 +70,29 @@ import {
  * nothing in the dismissed list, and would render an empty panel the user cannot explain. The tab is
  * preserved because the dismissed view is per tab.
  */
+/**
+ * The organization custom-field LABELS the identity selects offer.
+ *
+ * WRAPPED BECAUSE `getActiveFieldDefinitions` IS THE ONE READ ON THIS PAGE THAT CAN THROW — it is a
+ * bare `db.select()` with no guard of its own, unlike the four dedup reads, which all fail closed
+ * inside their own modules. `/duplicates` has no `error.tsx` above it, so an unguarded rejection here
+ * would take the whole page down over a settings card (S-5).
+ *
+ * PROJECTED TO NAMES BEFORE THE BOUNDARY. Only labels cross into the client component; the full
+ * definition rows carry config blobs, timestamps and positions that no client code on this route
+ * reads, and Flight would serialize every byte of them (the D-44-02 precedent).
+ */
+async function readOrgFieldNames(): Promise<string[]> {
+  try {
+    const definitions = await getActiveFieldDefinitions("organization")
+
+    return definitions.map((definition) => definition.name)
+  } catch (error) {
+    console.error("[duplicates-page] could not read the organization field definitions:", error)
+    return []
+  }
+}
+
 function viewHref(tab: DuplicateTab, dismissed: boolean): string {
   const sp = new URLSearchParams({ type: tab })
 
@@ -142,11 +168,23 @@ export default async function DuplicatesPage({
     redirect("/?error=unauthorized")
   }
 
-  // Three independent reads, none of which throws — every one fails closed inside its own module.
-  const [counts, list, scan] = await Promise.all([
+  /*
+    Five independent reads, none of which throws — the four dedup reads fail closed inside their own
+    modules and `readOrgFieldNames` is wrapped above.
+
+    THE TWO IDENTITY READS ARE SKIPPED ON THE PEOPLE TAB, not merely unrendered: people match on the
+    native `email` column and have no identity field, so the card does not exist there and neither
+    query has anything to contribute. Issuing them anyway would be two round trips per people-tab
+    render for a card nobody is going to see.
+  */
+  const identityNeeded = tab === "organizations"
+
+  const [counts, list, scan, orgFieldNames, orgIdentityFields] = await Promise.all([
     countPairs(),
     listPairs({ entityType, page, dismissed: showDismissed }),
     getLatestScan(entityType),
+    identityNeeded ? readOrgFieldNames() : Promise.resolve<string[]>([]),
+    identityNeeded ? readOrgIdentityFields() : Promise.resolve<string[] | null>(null),
   ])
 
   const t = await getTranslations("dedup")
@@ -335,6 +373,23 @@ export default async function DuplicatesPage({
               <CardContent>{panel}</CardContent>
             </Card>
             {footer}
+
+            {/*
+              THE IDENTITY CARD RENDERS ONLY UNDER THE ORGANIZATIONS TAB. People are matched on the
+              native `email` column and need no identity field at all, so the setting has no meaning
+              there — and a settings card that appears on a tab it does not govern is a card an admin
+              will eventually configure for the wrong entity type.
+
+              `readOrgIdentityFields` returns `null` for unconfigured, corrupted, over-long and
+              unreadable alike; all of them are "nothing is configured" from this form's position, so
+              they collapse onto an empty array here rather than being distinguished in the UI.
+            */}
+            {identityNeeded ? (
+              <IdentityFieldsForm
+                fieldNames={orgFieldNames}
+                value={orgIdentityFields ?? []}
+              />
+            ) : null}
           </div>
         </DuplicatesTabs>
       </div>
