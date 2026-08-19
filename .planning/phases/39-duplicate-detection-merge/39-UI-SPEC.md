@@ -97,7 +97,6 @@ Every value is a multiple of 4 and already appears in the codebase.
 |-------|-------|---------------------|
 | xs | 4px | `gap-1` between a confidence `Badge`'s icon and its label |
 | sm | 8px | `gap-2` / `space-y-2` — between the two options of one merge field group; between a pair card's two action buttons; between the progress label row and the track |
-| sm-plus | 12px | `px-3 py-2` on a merge option card; `p-3` on a pair-card body. **Declared, not an exception** — 12 is a multiple of 4, and a 16px inset on a one-line value in a list of 10+ field groups wastes a third of the 241px usable width at 320px |
 | md | 16px | `space-y-4` between merge sections; `p-4` on the scan panel and each pair card; `gap-4` in the page header cluster |
 | lg | 24px | `space-y-6` on the page shell (matches `/organizations`, `/trash`) |
 | xl | 32px | `container` `padding-inline: 2rem` — inherited and **unchangeable**; it costs 64 of the 305px client width at 320px |
@@ -112,8 +111,23 @@ Every value is a multiple of 4 and already appears in the codebase.
 | Merge option card min-height | **40px** | `px-3 py-2` around a `text-sm`/`leading-normal` line yields 20 + 16 = 36px; the radio is `size-4`. The whole card is the label, so the tap target is the full card width × ≥36px. WCAG 2.2 AA's minimum is 24px; this clears it without a declared `min-h-*` utility. |
 | Pair list page size | **25 pairs** | matches `/trash`'s page-at-a-time posture. A scan of 46,054 organizations can produce thousands of pairs; the list must never try to render them all. |
 
-**Exceptions:** `h-2.5` (10px), above, is the only one. `max-w-sm` / `max-w-lg` are constraints, not
-scale values.
+**Exceptions.** The core scale above is exactly the seven standard values (4 / 8 / 16 / 24 / 32 / 48 /
+64). Two documented exceptions, both justified and both narrow:
+
+1. **`h-2.5` (10px)** — the progress track height, inherited verbatim from
+   `src/components/import/progress-bar.tsx`. Two visually different progress bars in one app is the
+   defect this reuse prevents. Pre-existing; this phase does not introduce it.
+2. **`px-3 py-2` / `p-3` (12px)** — the inset on a merge option card and on a pair-card body. This is
+   Tailwind's and shadcn's own default control inset (`buttonVariants` and `Input` both use `px-3`),
+   so it is already the ambient convention in this codebase rather than a new value. It is recorded
+   here as an exception rather than promoted into the scale, per the same treatment `h-2.5` gets and
+   the precedent 45-UI-SPEC set with its `left-2.5` / `right-2.5` inset.
+   **Why not 16px:** a `p-4` inset on a one-line value, repeated down a list of 10+ field groups,
+   consumes a third of the 241px usable content width at a 320px viewport — the viewport Phase 45
+   just made an enforced e2e gate. **Why not 8px:** it would diverge from every other control in the
+   app, which is the inconsistency the scale rule exists to prevent.
+
+`max-w-sm` / `max-w-lg` are constraints, not scale values.
 
 ---
 
@@ -418,6 +432,23 @@ create-time warning would make the warning's own diff unreviewable. The narrow, 
 *this* phase is: **every string the phase adds or touches comes from the catalog — zero new
 hardcoded literals in any file this phase edits.** The remaining debt is real, is named here, and
 should be attached to a dedicated pass or to Phase 40/41's own copy work.
+
+---
+
+## Focal Point per Surface
+
+Each new screen has exactly one primary visual anchor. Stated explicitly so an executor does not have
+to infer it from the colour and typography rules, and so the "one primary-filled button per surface"
+rule has an unambiguous owner on each screen.
+
+| Surface | Focal point | Why it, and not something else |
+|---------|-------------|-------------------------------|
+| Create-time warning | The list of matched existing records | The user came here to create something; the decision this dialog exists to inform is "have I already got this?", so the matches outrank all three buttons. "Create anyway" is deliberately NOT primary-filled — advisory means the safe path leads. |
+| `/duplicates` — idle | The **Scan** CTA | Nothing else on the page is actionable before a scan has run. |
+| `/duplicates` — scanning | The **progress bar** | It replaces the CTA as the anchor; a long job over 46,054 rows must make its own progress the most legible thing on screen, or the user assumes it has hung. |
+| `/duplicates` — results | The **pair list** | The CTA demotes to secondary once results exist; the list is the work. |
+| Merge screen | The **survivor selector**, placed first | Every downstream field default derives from it, so it must be settled before the user starts choosing fields. The submit button is last and is the only destructive-styled control. |
+| `merged` audit entry | The sentence naming the losing record | Within an existing timeline this is one entry among many; its job is to be scannable, not to dominate. |
 
 ---
 
