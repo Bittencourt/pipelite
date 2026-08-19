@@ -489,7 +489,7 @@ export const REQUIRED_DEDUP_KEYS: string[] = [
   "dedup.scan.failed",
   "dedup.scan.failedBody",
 
-  // Review list — 17. Three distinct emptinesses, three distinct headings: never scanned, scanned
+  // Review list — 18. Three distinct emptinesses, three distinct headings: never scanned, scanned
   // and found nothing, everything dismissed. There is deliberately no `emptyAllDismissedBody` — the
   // body of that state is the `showDismissed` ghost button that resolves it.
   "dedup.review.pairsFound",
@@ -509,6 +509,13 @@ export const REQUIRED_DEDUP_KEYS: string[] = [
   "dedup.review.emptyNoPairs",
   "dedup.review.emptyNoPairsBody",
   "dedup.review.emptyAllDismissed",
+  // The FOURTH thing an empty tab can be, and the one that is not an emptiness at all: `listPairs`
+  // returns `{ ok: false }` rather than an empty success precisely so a failed read is
+  // distinguishable from "no duplicates found", and a degraded panel therefore needs its own
+  // sentence. `errors.somethingWentWrong` is forbidden on this surface (UI-SPEC: every error in this
+  // phase names its problem), and `trash.error.unavailable` is the same sentence about a different
+  // list.
+  "dedup.review.unavailable",
 
   // Merge screen — 27. `filesStayInPlace` exists because the locked decision leaves file blobs at
   // the loser's path: the user must not be told files "move" when they do not, so the sentence
@@ -832,12 +839,13 @@ describe("locale parity", () => {
     expect.soft(missingIn(REQUIRED_DEDUP_KEYS)).toEqual(emptyPerLocale)
   })
 
-  it("the checked-in dedup contract still lists exactly 77 keys", () => {
+  it("the checked-in dedup contract still lists exactly 78 keys", () => {
     // Asserted here rather than left to the reader's arithmetic: the per-group comments in
-    // REQUIRED_DEDUP_KEYS say 4+4+13+17+27+3+8+1, and this is what stops that sum drifting silently
-    // when a group gains or loses an entry.
-    expect(REQUIRED_DEDUP_KEYS).toHaveLength(77)
-    expect(new Set(REQUIRED_DEDUP_KEYS).size, "REQUIRED_DEDUP_KEYS lists a key twice").toBe(77)
+    // REQUIRED_DEDUP_KEYS say 4+4+13+18+27+3+8+1, and this is what stops that sum drifting silently
+    // when a group gains or loses an entry. The review group went 17 -> 18 in plan 39-11, which is
+    // where the degraded-read panel got a sentence of its own.
+    expect(REQUIRED_DEDUP_KEYS).toHaveLength(78)
+    expect(new Set(REQUIRED_DEDUP_KEYS).size, "REQUIRED_DEDUP_KEYS lists a key twice").toBe(78)
   })
 
   it("the notes, audit, trash, bulk, shell and dedup namespaces have identical key sets across all three locales", () => {
