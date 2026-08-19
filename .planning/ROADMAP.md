@@ -77,7 +77,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [ ] **Phase 42: Observability** - Structured logging, opt-in error tracking, and a health endpoint that sees the processors
 - [ ] **Phase 43: Type Safety & Deployment Docs** - Clear the 14 type suppressions and document backup/restore
 - [x] **Phase 44: Custom Field UI Repair** - Restore the ability to add custom fields to Deals, and make the formula display agree with the stored value (completed 2026-08-15)
-- [x] **Phase 45: Cross-Cutting UI Repair and UAT Closure** - Close the five app-wide defects the Phase 36-38 browser UAT surfaced: mobile overflow, unreachable dark mode, untranslated shells, a lying failure panel, and the one drag check no tool can drive (completed 2026-08-18)
+- [x] **Phase 45: Cross-Cutting UI Repair and UAT Closure** - Close the five app-wide defects the Phase 36-38 browser UAT surfaced: mobile overflow, unreachable dark mode, untranslated shells, a lying failure panel, and the one drag check no tool can drive (completed 2026-08-18; 11/11 plans, 5/5 criteria, e2e 23/23 — swipe-to-dismiss on the admin drawer deferred as D-45-04, a capability Radix Dialog never had)
 
 ## Phase Details
 
