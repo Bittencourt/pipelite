@@ -1,7 +1,9 @@
 "use client"
 
 import { useMemo, useState, useRef } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useTranslations } from "next-intl"
 import {
   ColumnDef,
   flexRender,
@@ -68,6 +70,15 @@ interface DataTableProps {
    * action re-validates the chosen target once before its write loop.
    */
   bulkOwners: { id: string; name: string }[]
+  /**
+   * Whether to RENDER the "Find duplicates" entry point. Cosmetic, never authorization — see the
+   * comment at the button itself (T-39-01).
+   *
+   * Arrives as a prop from the server page rather than being read here: this is a `"use client"`
+   * file, so the session helper is unavailable to it. That absence is grep-gated at zero
+   * occurrences, which is why the helper is not named.
+   */
+  isAdmin?: boolean
 }
 
 export function DataTable({
@@ -79,8 +90,12 @@ export function DataTable({
   refresh,
   retentionDays,
   bulkOwners,
+  isAdmin = false,
 }: DataTableProps) {
   const router = useRouter()
+  // Scoped to the `dedup` namespace on purpose: this file's other labels are pre-existing English
+  // literals and translating them is not this plan's business.
+  const tDedup = useTranslations("dedup")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -300,8 +315,19 @@ export function DataTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      {/*
+        `flex-wrap` and `gap-2` ARE LOAD-BEARING, not tidying. This row was
+        `flex items-center justify-between` with no wrap until a third control landed on it, and a
+        non-wrapping row with three controls is exactly the defect Phase 45 spent a rebuild fixing
+        on `/deals` and `/activities` — measured at 412px and at 356/425/430px against a 305px
+        client width. `gap-2` is what keeps the wrapped rows from touching.
+
+        `min-w-0` on the search cluster below is the other half: a flex item's default
+        `min-width: auto` refuses to shrink below its content, and that default is the mechanism
+        behind every overflow Phase 45 measured (R-4). Do not remove either class.
+      */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <Search className="h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search organizations..."
@@ -310,6 +336,23 @@ export function DataTable({
             className="max-w-sm"
           />
         </div>
+        {/*
+          VISIBILITY ONLY — `isAdmin` decides whether this button is RENDERED and is NEVER the
+          authorization. `src/app/duplicates/layout.tsx` is the authority and redirects any
+          non-admin who reaches the route by URL (T-39-01). It is hidden rather than disabled
+          because a control that always redirects is worse than no control, and the same
+          visibility-only pattern is used on `/trash` for the purge action.
+
+          Deliberately NOT a global-nav link: Phase 45 measured the header's 320px budget at 190px
+          of 241 usable and every nav link is `hidden md:flex`, so a seventh link is real risk
+          against a route used a few times a year (L-10). No icon either — the label alone is the
+          narrowest this control can be, and it shares a row with two others.
+        */}
+        {isAdmin && (
+          <Button asChild variant="outline">
+            <Link href="/duplicates?type=organizations">{tDedup("findDuplicates")}</Link>
+          </Button>
+        )}
         <Button onClick={handleAddNew}>
           <Plus className="h-4 w-4 mr-2" />
           Add Organization
