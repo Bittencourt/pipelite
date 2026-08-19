@@ -589,6 +589,7 @@
       "hideDismissed": "Ocultar pares descartados",
       "undismiss": "Devolver a la lista",
       "undismissed": "De vuelta en la lista.",
+      "undismissFailed": "Ese par no se devolvió a la lista. Comprueba tu conexión e inténtalo de nuevo.",
       "loadMore": "Cargar más",
       "emptyNeverScanned": "Aún no hay análisis",
       "emptyNeverScannedBody": "Un análisis compara todos los registros de este tipo y lista los pares que parecen iguales. Se ejecuta en segundo plano.",

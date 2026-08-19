@@ -33,11 +33,14 @@
  * without this the four reads below would still execute for a non-admin whose response is about to be
  * thrown away as a redirect. It costs one `auth()` and it means a refused visitor costs zero queries.
  *
- * WHAT PLAN 39-13 ADDS HERE. The scan panel (the CTA, the progress bar, the cancel button, the four
- * P-4 renderings) and the pair cards. This plan deliberately stops short of both so that its diff
- * reads as a security boundary rather than as a layout.
+ * WHAT PLAN 39-13 ADDED HERE. The scan panel (the CTA, the progress bar, the cancel button, the four
+ * P-4 renderings) and the pair cards. Plan 39-11 deliberately stopped short of both so that ITS diff
+ * read as a security boundary rather than as a layout; this is the layout half, and it changes no
+ * control. Every string it adds comes from the catalog and every write it triggers goes through the
+ * same six gated actions.
  */
 
+import { eq } from "drizzle-orm"
 import { CopyCheck } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import Link from "next/link"
@@ -48,13 +51,19 @@ import type { ReactNode } from "react"
 import { auth } from "@/auth"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { db } from "@/db"
+import { users } from "@/db/schema"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import { readOrgIdentityFields } from "@/lib/dedup/identity-settings"
-import { countPairs, listPairs } from "@/lib/dedup/queries"
-import { getLatestScan } from "@/lib/dedup/scan-state"
+import { countPairs, listPairs, MAX_PAIR_PAGE, type PairSideSummary } from "@/lib/dedup/queries"
+import { calculateScanProgress, getLatestScan } from "@/lib/dedup/scan-state"
+import type { DedupReason } from "@/lib/dedup/types"
 
+import type { ScanProgressPayload } from "./actions"
 import { DuplicatesTabs } from "./duplicates-tabs"
 import { IdentityFieldsForm } from "./identity-fields-form"
+import { PairCard } from "./pair-card"
+import { ScanPanel } from "./scan-panel"
 import {
   DUPLICATE_TAB_TO_ENTITY,
   parseDuplicatePage,
@@ -93,6 +102,39 @@ async function readOrgFieldNames(): Promise<string[]> {
   }
 }
 
+/**
+ * The display name of the user who started a scan, for 39-UI-SPEC P-6's `dedup.scan.startedBy`.
+ *
+ * RESOLVED HERE RATHER THAN IN THE POLL, and that is a cost decision as much as a layering one. The
+ * starter of a given scan never changes, so one lookup per page render is enough; resolving it inside
+ * `getScanProgress` would repeat it every second for every viewer watching. The scan panel is keyed
+ * by the scan id, so a different scan remounts the panel with a freshly resolved name.
+ *
+ * A NAME, NOT AN ID. Plan 39-11 deliberately kept the starter's user id out of the poll payload
+ * (`startedByViewer` is a boolean for exactly that reason); this returns the label P-6's sentence
+ * needs and nothing else. Every viewer of this route is an admin, and `name` falls back to `email`
+ * because `users.name` is nullable while `email` is not.
+ *
+ * FAILS CLOSED TO `null`, like every other read on this page: an unresolvable name costs the sentence,
+ * not the page. The cancel control's absence does NOT depend on this value — it depends on
+ * `startedByViewer` — so a failed lookup cannot hand anyone a control they should not have.
+ */
+async function readStarterName(userId: string | null): Promise<string | null> {
+  if (userId === null) return null
+
+  try {
+    const row = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { name: true, email: true },
+    })
+
+    return row?.name ?? row?.email ?? null
+  } catch (error) {
+    console.error("[duplicates-page] could not resolve the scan starter's name:", error)
+    return null
+  }
+}
+
 function viewHref(tab: DuplicateTab, dismissed: boolean): string {
   const sp = new URLSearchParams({ type: tab })
 
@@ -101,6 +143,64 @@ function viewHref(tab: DuplicateTab, dismissed: boolean): string {
   }
 
   return `/duplicates?${sp.toString()}`
+}
+
+/** The same URL plus a cursor. Separate from `viewHref`, which deliberately DROPS the cursor. */
+function pageHref(tab: DuplicateTab, dismissed: boolean, page: number): string {
+  const sp = new URLSearchParams({ type: tab, page: String(page) })
+
+  if (dismissed) {
+    sp.set("dismissed", "1")
+  }
+
+  return `/duplicates?${sp.toString()}`
+}
+
+/**
+ * The one value beneath a record's name on its card — what made THIS pair a candidate (L-4).
+ *
+ * KEYED ON THE REASON, because "the distinguishing value" is not a property of a record, it is a
+ * property of the comparison. Showing an email under a pair matched on a similar name would be
+ * showing the user the field the scan did not look at, and would leave them unable to audit the match
+ * — which 39-UI-SPEC's copywriting contract treats as the failure that turns a duplicate warning into
+ * noise people learn to click through.
+ *
+ * RESOLVED ON THE SERVER, so the client never receives `customFields`. An organization's blob holds
+ * every custom field of the record; two of them per card, twenty-five cards per page, is a payload
+ * sent so the browser can pick one string out of it (the D-44-02 precedent, and the same projection
+ * `readOrgFieldNames` above performs).
+ *
+ * ONLY PRIMITIVES ARE RENDERED. A custom field can hold an object or an array, and `String(value)` on
+ * one of those produces `[object Object]` — a string that looks like a value and identifies nothing.
+ */
+function distinguishingValue(
+  side: PairSideSummary,
+  reason: DedupReason,
+  identityFields: string[]
+): string | null {
+  if (reason === "email") return side.email
+
+  if (reason === "similarNamePhone") return side.phone
+
+  if (reason === "nameIdentity") {
+    /*
+      The organization certain tier. The configured fields are checked IN ORDER, which is the order
+      `identity-settings.ts` stores and the matcher reads them in — so the value shown is the one the
+      match was actually made on when both fields are set.
+    */
+    for (const field of identityFields) {
+      const raw = side.customFields?.[field]
+
+      if (typeof raw === "string" && raw.trim() !== "") return raw
+      if (typeof raw === "number") return String(raw)
+    }
+
+    return side.normName
+  }
+
+  // `similarName`, and any reason added later: the normalized name is what the trigram comparison
+  // ran on, so it is the honest thing to show for a match made on names alone.
+  return side.normName
 }
 
 /**
@@ -216,6 +316,59 @@ export default async function DuplicatesPage({
   /** Whether anything is behind `?dismissed=1` for this tab. `null` counts mean "cannot tell". */
   const dismissedInTab = counts === null ? null : counts[entityType].dismissed
 
+  /*
+    THE SCAN PANEL'S FIRST PAINT, in the same shape its 1s poll returns.
+
+    MAPPED HERE RATHER THAN SHARED WITH `getScanProgress`. A `"use server"` module may only export
+    async functions, so `actions.ts` cannot export the mapper this and it would both call — the type
+    is shared instead, which is what keeps the two in step: adding a field to `ScanProgressPayload`
+    breaks this object until it is filled in.
+
+    `startedByViewer` IS COMPUTED, NOT SHIPPED. The row's `userId` never crosses to the browser
+    (39-11's decision); what crosses is the answer to "may I cancel", plus — only when the answer is
+    no — the starter's display name.
+  */
+  const scanPayload: ScanProgressPayload | null =
+    scan === null
+      ? null
+      : {
+          scanId: scan.scanId,
+          entityType: scan.entityType,
+          status: scan.status,
+          cancelled: scan.cancelled,
+          current: scan.progress.current,
+          total: scan.progress.total,
+          percentage: calculateScanProgress(scan.progress),
+          startedAt: scan.startedAt.toISOString(),
+          startedByViewer: scan.userId === session.user.id,
+        }
+
+  /*
+    ONE EXTRA READ, AND ONLY IN THE ONE STATE THAT RENDERS IT: a scan of this entity type that is
+    still in flight and that this viewer did not start. Every other combination — no scan, a finished
+    scan, the viewer's own scan — resolves to `null` without a query.
+  */
+  const starterNeeded =
+    scanPayload !== null &&
+    !scanPayload.startedByViewer &&
+    (scanPayload.status === "running" || scanPayload.status === "idle")
+
+  const startedByName = starterNeeded ? await readStarterName(scan?.userId ?? null) : null
+
+  /*
+    `dedup.scan.lastRun`, BUILT ON THE SERVER. The panel is a client component and a relative-time
+    string it computed itself would differ between the SSR render and hydration for anything less
+    than a minute old — the exact age of a scan that just finished. `updatedAt` rather than
+    `startedAt`, because the sentence is about when the scan finished, and it is the same instant the
+    zero-pairs empty state below quotes.
+
+    Only a COMPLETED scan gets it. "Last scanned {time}" is a claim a cancelled scan has not earned.
+  */
+  const lastRunLabel =
+    scan !== null && scan.status === "completed"
+      ? t("scan.lastRun", { time: format.relativeTime(scan.updatedAt) })
+      : null
+
   let panel: ReactNode
 
   if (!list.ok) {
@@ -236,12 +389,40 @@ export default async function DuplicatesPage({
     panel = (
       <div className="space-y-4">
         <p className="text-muted-foreground text-sm">{t("review.pairsFound", { count: pairsInTab })}</p>
+        {list.rows.map((row) => (
+          <PairCard
+            key={row.id}
+            pairId={row.id}
+            entityType={row.entityType}
+            tier={row.tier}
+            reason={row.reason}
+            recordA={{
+              id: row.recordA.id,
+              name: row.recordA.name,
+              detail: distinguishingValue(row.recordA, row.reason, orgIdentityFields ?? []),
+            }}
+            recordB={{
+              id: row.recordB.id,
+              name: row.recordB.name,
+              detail: distinguishingValue(row.recordB, row.reason, orgIdentityFields ?? []),
+            }}
+            dismissed={showDismissed}
+          />
+        ))}
         {/*
-          PLAN 39-13 REPLACES THIS REGION with the pair cards (UI-SPEC L-3/L-4: a `rounded-md border
-          p-4` card per pair, both records stacked, never side by side) and with `dedup.review.merge`
-          / `dedup.review.dismiss` wired to the actions this plan already exports. The count line
-          above belongs to THIS plan and stays.
+          PAGING IS THE SERVER'S, AS ON `/trash` (L-9). `listPairs` returns a CUMULATIVE window —
+          `?page=2` is 50 rows, not rows 26 to 50 — so "Load more" appends to the list the user is
+          already reading rather than replacing it, and the back button walks back through the same
+          view. `MAX_PAIR_PAGE` is the ceiling the query itself clamps to; past it the link would fetch
+          the same rows again and the button would do nothing visible, so it is not offered.
         */}
+        {list.hasMore && page < MAX_PAIR_PAGE ? (
+          <div className="flex justify-center pt-2">
+            <Button asChild variant="outline">
+              <Link href={pageHref(tab, showDismissed, page + 1)}>{t("review.loadMore")}</Link>
+            </Button>
+          </div>
+        ) : null}
       </div>
     )
   } else if (scan === null) {
@@ -309,10 +490,11 @@ export default async function DuplicatesPage({
     /*
       A SCAN THAT IS RUNNING, CANCELLED OR ERRORED, with nothing to list yet. None of the three empty
       copies is true here — "no scan yet" is false, and "nothing matched in the last scan" is a
-      conclusion the scan has not reached — so this plan says nothing rather than something wrong.
-      PLAN 39-13's scan panel is what fills this space: P-4 gives `running` a progress bar and
-      `error` a destructive `dedup.scan.failed` Alert, and both of them explain the emptiness
-      properly.
+      conclusion the scan has not reached — so this position still says nothing rather than something
+      wrong. THE SCAN PANEL ABOVE IS NOW WHAT EXPLAINS IT: P-4 gives `running` a progress bar with a
+      count, `error` a destructive `dedup.scan.failed` Alert, and `cancelled` the rescan CTA with no
+      claim about what the scan found. The card itself is not rendered around this `null` — see the
+      render below.
     */
     panel = null
   }
@@ -369,9 +551,40 @@ export default async function DuplicatesPage({
 
         <DuplicatesTabs tab={tab} counts={tabCounts}>
           <div className="space-y-4">
-            <Card>
-              <CardContent>{panel}</CardContent>
-            </Card>
+            {/*
+              THE SCAN PANEL, ABOVE THE TAB'S CONTENT. It is per entity type, so it belongs inside the
+              tab body rather than above the tab bar: an organization scan must not appear to be a
+              people scan when the user switches tabs.
+
+              THE KEY CARRIES THE ENTITY TYPE AS WELL AS THE SCAN ID, and both halves are load-bearing.
+              Switching tabs re-renders this position with an identical tree shape, so React would
+              otherwise REUSE the client instance and carry one tab's polled state — including an
+              optimistic "running" a click just produced — onto the other tab's panel. The scan id half
+              is what makes a newly landed server render (a scan this viewer just started, or another
+              admin's scan that started first) reset the panel to server truth instead of keeping a
+              stale client state. This is the sanctioned React reset, and it is why the panel needs no
+              state-syncing effect at all.
+            */}
+            <ScanPanel
+              key={`${entityType}:${scanPayload?.scanId ?? "none"}`}
+              entityType={entityType}
+              initialScan={scanPayload}
+              startedByName={startedByName}
+              lastRunLabel={lastRunLabel}
+            />
+
+            {/*
+              NO EMPTY CARD. `panel` is `null` for a scan that is in flight or was cancelled with
+              nothing to list, and a bordered card containing nothing is a card the user tries to read.
+              The scan panel directly above is what explains that emptiness — a progress bar while the
+              scan runs, a destructive Alert when it failed — so this position stays silent rather than
+              drawing a frame around the silence.
+            */}
+            {panel === null ? null : (
+              <Card>
+                <CardContent>{panel}</CardContent>
+              </Card>
+            )}
             {footer}
 
             {/*
