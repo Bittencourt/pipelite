@@ -91,6 +91,41 @@ reporting matched rows.
   single opaque "merged" line would not satisfy "the merge is visible in the change history" in any
   useful sense.
 
+### Post-Research Decisions (2026-08-18, accepted by the user after 39-RESEARCH.md)
+
+Research measured the live database and found that one decision locked above is **unimplementable as
+written**. It is superseded here rather than silently edited, so the reasoning survives.
+
+- **SUPERSEDES the "compared fields" decision for the ORGANIZATION *certain* tier.** The original
+  locked rule was "identical normalized name + identical domain". Measured: `website` is **NULL on
+  all 46,054 organizations**, so with the domain conjunct the certain tier can never fire even once;
+  without it, **70.7% of organizations share a normalized name**, producing 1,030,436 "certain"
+  pairs. Both branches are useless. The real discriminators in this data are custom fields —
+  `CNPJ / CPF` (11.5% populated) and `E-mail de Contato 1` (55.4%).
+  **New rule: the organization identity key is ADMIN-CONFIGURABLE.** An admin setting names which
+  custom field(s) act as identity keys, checked in order. This deployment will set CNPJ/CPF first,
+  then contact email. Where the setting is unset, organizations simply have no *certain* tier and no
+  create-time warning — a documented, graceful degradation. Rationale for configurability over
+  hardcoding: custom field names are per-installation, and baking this install's Portuguese field
+  names into the product would be wrong for every other deployment.
+  **Unchanged:** the *likely* tier (name similarity) and the entire person-side rule
+  (`people.email` is a real column, so exact email remains a valid certain match).
+- **The loser's `source='migration'` note is re-pointed to the survivor with its `source` changed**
+  so it no longer competes for the `notes_migration_uniq` partial unique index. Measured: 29,037 of
+  46,054 organizations (63%) carry such a note, so a naive reassignment raises a 23505 and rolls back
+  roughly 40% of organization merges. Deleting the note was rejected — it is import provenance, and a
+  merge should not destroy the record of where a row came from. Relaxing the index was rejected — it
+  is a documented permanent invariant belonging to another phase.
+- **`/duplicates` and the merge screen are ADMIN-ONLY**, behind the same double gate `/admin/*` uses
+  (`middleware.ts`'s `authorized()` plus a server-side role check in the route's layout/page). Merge
+  is the most destructive operation in the app; the loser landing in Trash makes it recoverable in
+  principle but not cheaply.
+- **The merge mutation gets REAL-DATABASE integration tests**, against the Docker Postgres. This is a
+  new pattern for this repo — every existing mutation test mocks `db`. The justification is concrete:
+  a mocked merge test would have passed while the feature failed on 40% of real organizations,
+  because a mock cannot raise `notes_migration_uniq`. Constraint violations must be exercised, not
+  asserted. Scope this to the merge mutation; do not migrate existing mocked tests.
+
 ### Claude's Discretion
 
 - The exact similarity threshold value, and whether it is a constant or an app setting.
