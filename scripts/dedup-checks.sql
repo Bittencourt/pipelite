@@ -44,10 +44,18 @@
 --            full table in src/lib/dedup/normalize.fixtures.ts.
 --   Part 7 — the star-versus-clique pair-count sanity assertion, in place BEFORE
 --            any pair is ever written.
---   Part 8 — RESERVED FOR PLAN 39-07 (the scan probe).
+--   Part 8 — THE SCAN, RUN FOR REAL. The whole statement family from
+--            src/lib/dedup/scan-engine.ts against the live tables, INSERTING
+--            into duplicate_pairs inside BEGIN ... ROLLBACK: the distinct-name
+--            dictionary, the star-paired exact tiers, the name-level trigram
+--            self-join EXPLAIN (ANALYZE, BUFFERS)-ed, Pitfall 3's inequality
+--            and the canonical ordering asserted against the rows it actually
+--            wrote, and a dismissal proven to survive a rescan.
 --   Part 9 — the AFTER snapshot. Every count from Part 0 must be unchanged.
 --   Part 10 — RESERVED FOR PLAN 39-10 (the merge probe). It sits AFTER Part 9
---            because it is the only part that writes.
+--            because it writes rows to tables Part 0 counted, which Part 8 does
+--            not (duplicate_pairs and dedup_scans are outside Part 0's list, and
+--            Part 8 carries its own before/after check at 8r).
 --
 -- HOW TO RUN
 --   docker compose exec -T postgres psql -U pipelite -d pipelite -f - < scripts/dedup-checks.sql
@@ -69,15 +77,31 @@
 --
 -- IT IS RE-RUNNABLE AND MUTATES NO DATA
 --   Parts 0-3 and 5-7 are pure SELECTs against the catalog, against two functions
---   that read no table, and against organizations/people. Exactly ONE part
---   changes the database at all — Part 4f — and it is wrapped BEGIN ... ROLLBACK
---   with a `lock_timeout` so it cannot hang behind the running app, followed by
---   an assertion that the index it removed is back. It removes an INDEX, never a
---   row; Part 9 re-counts every table Part 0 counted and fails loudly if that
+--   that read no table, and against organizations/people. TWO parts change the
+--   database at all, and both are wrapped BEGIN ... ROLLBACK with a
+--   `lock_timeout` so neither can hang behind the running app:
+--
+--     * Part 4f removes an INDEX, never a row, and is followed by an assertion
+--       that the index it removed is back (4g).
+--     * Part 8 INSERTS the pair rows the scan produces — tens of thousands of
+--       them — plus two dedup_scans rows, and is followed by 8r, which re-counts
+--       both Phase 39 tables against a snapshot 8a took BEFORE the transaction
+--       opened. The pair rows carry uuid ids rather than a `dedupchk_` prefix,
+--       deliberately: they are written by the same `gen_random_uuid()` the module
+--       uses and prefixing them would break the mirror. 8r's before/after
+--       comparison is the detector for those, and it is a stronger one than a
+--       prefix scan because it would also catch a row this script never named.
+--
+--   Part 9 re-counts every table Part 0 counted and fails loudly if any of it
 --   ever stops being true. The analog for the wrapper habit is
 --   `scripts/trash-checks.sql`, whose fixtures all carry a `tck-` prefix that its
 --   final part asserts has left no survivor; the equivalent prefix here is
---   `dedupchk_`, asserted gone by Part 9c.
+--   `dedupchk_`, asserted gone by Parts 9c and 9d.
+--
+--   PART 8 IS SLOW ON PURPOSE. The two name-level self-joins are the real thing
+--   against 21.5k and 23.9k distinct names, and each takes tens of seconds. A
+--   full run of this file is therefore minutes, not seconds. Timing it is the
+--   point: SC-2 is a claim about wall clock.
 --
 --   Part 4a runs ANALYZE on organizations and people. ANALYZE changes no row —
 --   it refreshes planner statistics — and it is there because without statistics
@@ -833,20 +857,626 @@ FROM totals;
 
 
 -- -----------------------------------------------------------------------------
--- PART 8 IS DELIBERATELY UNUSED AND RESERVED FOR PLAN 39-07 (the scan).
+-- PART 8 — THE SCAN, RUN FOR REAL AGAINST THE LIVE DATA (plan 39-07).
 --
--- 39-07 owns the scan job itself, and the assertion it owes this file is the one
--- Part 7 above can only anticipate: that the pair rows the scan ACTUALLY WROTE
--- obey the same inequality, that every one of them is canonically ordered
--- (record_a_id < record_b_id, which duplicate_pairs_uniq depends on and does not
--- enforce), and that re-running a scan over a dismissed pair leaves its status
--- untouched.
+-- EVERY STATEMENT BELOW IS A MIRROR OF src/lib/dedup/scan-engine.ts, AND
+-- CHANGING ONE WITHOUT THE OTHER MAKES THIS MEASUREMENT A LIE. Same parity
+-- posture Part 6 has for normalization: the module's unit tests pin the
+-- statement SHAPE against a mocked `tx.execute`, which has no planner and no
+-- rows, so a green suite says nothing at all about whether the trigram index is
+-- chosen or how many pairs come out. That is this Part's job and nothing else's.
 --
--- If it writes anything, it goes inside BEGIN ... ROLLBACK with every fixture
--- object carrying the dedupchk_ prefix that Part 9c asserts leaves no survivor.
+-- WHAT IT DOES
+--   Runs the real scan family — the temp name dictionary, its GIN trigram index,
+--   the transaction-local similarity floor, the star-paired exact tiers and the
+--   name-level fuzzy self-join — for BOTH entity types, INSERTING into
+--   duplicate_pairs, and then asserts against the rows it actually wrote:
 --
--- Do not renumber Part 9. Its number is what reserves this block.
+--     * the pair count is strictly below the scanned row count (Pitfall 3);
+--     * EVERY written row is canonically ordered, record_a_id < record_b_id,
+--       which duplicate_pairs_uniq depends on and does not enforce;
+--     * a pair a human dismissed survives a rescan of the same pair untouched.
+--
+--   It prints the distinct-name group count, the star-pair count and the
+--   name-level pair count for each entity type, a wall clock for each phase
+--   (\timing plus the EXPLAIN's own Execution Time), and the chosen plan.
+--
+-- IT IS WRAPPED BEGIN ... ROLLBACK AND WRITES NOTHING PERMANENT. The only
+-- non-temp rows it creates are the duplicate_pairs rows the scan produces and
+-- one dedup_scans row carrying the dedupchk_ prefix Part 9d asserts leaves no
+-- survivor; 8n re-counts both tables against a snapshot taken before the
+-- transaction opened, so the rollback is proven rather than assumed.
+--
+-- ON THE Seq Scan ASSERTION, WHICH IS DELIBERATELY ONE-SIDED.
+--   The plan is REQUIRED to contain `Seq Scan on scan_groups a` and is FORBIDDEN
+--   to contain `Seq Scan on scan_groups b`. A self-join has a driving side and a
+--   probed side: every name must be offered to the index once, so scanning the
+--   outer relation is the correct plan and not a defect. What would be a defect
+--   is the INNER side being scanned, because that is the 21,505 x 21,505
+--   cross product the trigram index exists to prevent. Demanding no sequential
+--   scan on either side would be demanding a plan PostgreSQL is right to
+--   refuse — the same reasoning Part 4's header records for Bitmap Index Scan
+--   versus a plain Index Scan.
 -- -----------------------------------------------------------------------------
+
+\echo ''
+\echo '###############################################################################'
+\echo '# PART 8 — the scan, run for real (39-VALIDATION SC-2, Pitfall 3, T-39-21)'
+\echo '###############################################################################'
+\echo ''
+\echo '--- 8a. Snapshot the two Phase 39 tables BEFORE the transaction opens, so ---'
+\echo '    8n can prove the ROLLBACK held. Created outside BEGIN on purpose: a'
+\echo '    temp table created inside the transaction would be discarded with'
+\echo '    everything else and could not testify to anything.'
+
+DROP TABLE IF EXISTS pg_temp.dedup_checks_pairs_before;
+
+CREATE TEMP TABLE dedup_checks_pairs_before AS
+            SELECT 'duplicate_pairs' AS tbl, count(*) AS n FROM duplicate_pairs
+  UNION ALL SELECT 'dedup_scans',            count(*)      FROM dedup_scans;
+
+SELECT tbl, n AS rows_before FROM dedup_checks_pairs_before ORDER BY tbl;
+
+\timing on
+
+BEGIN;
+
+-- Five seconds, not forever: the app container is normally serving while this
+-- runs, and a scan that queues behind a request holding a conflicting lock
+-- should fail loudly rather than hang the script. Same habit as Part 4f.
+SET LOCAL lock_timeout = '5s';
+
+-- The FK on duplicate_pairs.scan_id points at dedup_scans, so the scan row has
+-- to exist for the mirror to be exact. Prefixed, and rolled back.
+INSERT INTO dedup_scans (id, user_id, entity_type, status, progress, cancelled)
+VALUES ('dedupchk_scan_org', NULL, 'organization', 'running', '{"current":0,"total":0}'::jsonb, false);
+
+\echo ''
+\echo '--- 8b. ORGANIZATIONS, phase 1: the DISTINCT-NAME dictionary. -------------'
+\echo '    The comparability predicate mirrors isComparableOrgName TOKEN-wise —'
+\echo '    at least one token of SCAN_MIN_NAME_LENGTH characters — not by total'
+\echo '    length. Part 6 proves the normalization itself; this is the filter'
+\echo '    that keeps the 9 initials-only names out of one shared clique.'
+
+CREATE TEMP TABLE scan_groups ON COMMIT DROP AS
+SELECT norm_name,
+       min(id)       AS canonical_id,
+       count(*)::int AS n
+  FROM organizations
+ WHERE deleted_at IS NULL
+   AND norm_name <> ''
+   AND EXISTS (
+         SELECT 1
+           FROM unnest(string_to_array(norm_name, ' ')) AS tok
+          WHERE length(tok) >= 3
+       )
+ GROUP BY 1;
+
+CREATE INDEX scan_groups_norm_trgm_idx ON scan_groups USING gin (norm_name gin_trgm_ops);
+ANALYZE scan_groups;
+
+\echo ''
+\echo '--- 8c. The dictionary, measured. star_pairs_if_name_only is the number ----'
+\echo '    a name-only certain tier would emit, printed UNASSERTED beside the'
+\echo '    clique number Part 7a already reports: it is what the scan'
+\echo '    deliberately does NOT write, because 70.7% of organizations share a'
+\echo '    normalized name and 24.5k undifferentiated pairs is not a queue.'
+
+SELECT count(*)::int                                      AS distinct_norm_names,
+       coalesce(sum(n) FILTER (WHERE n > 1), 0)::int       AS records_in_multi_member_groups,
+       coalesce(sum(n - 1) FILTER (WHERE n > 1), 0)::int   AS star_pairs_if_name_only,
+       (SELECT count(*)::int FROM organizations WHERE deleted_at IS NULL) AS org_rows
+  FROM scan_groups;
+
+\echo ''
+\echo '--- 8d. The trigram floor, TRANSACTION-LOCALLY. set_config(..., true) IS ---'
+\echo '    SET LOCAL, and it is the only form that takes a bound parameter, which'
+\echo '    is why scan-engine.ts uses it. A session-scoped assignment would leak'
+\echo '    the floor onto the next query on this pooled connection (T-39-26).'
+
+SELECT set_config('pg_trgm.similarity_threshold', '0.85', true) AS threshold;
+
+\echo ''
+\echo '--- 8e. Is the organization CERTAIN tier configured on this deployment? ---'
+\echo '    The scan reads dedup.organization_identity_fields from app_settings.'
+\echo '    ABSENT MEANS NO CERTAIN TIER AT ALL and never a name-only fallback —'
+\echo '    39-RESEARCH measured website NULL on all 46,054 rows, which killed the'
+\echo '    originally locked rule, and the tempting repair was measured at'
+\echo '    1,030,436 pairs. This row records which branch the numbers below are'
+\echo '    from, so a reader never has to guess.'
+
+SELECT
+  (SELECT count(*) FROM app_settings WHERE key = 'dedup.organization_identity_fields') AS setting_rows,
+  CASE
+    WHEN EXISTS (SELECT 1 FROM app_settings WHERE key = 'dedup.organization_identity_fields')
+      THEN 'INFO — identity fields ARE configured; the certain tier below runs in production'
+    ELSE 'INFO — identity fields are NOT configured, so the scan skips the organization certain tier entirely. 8f measures what it WOULD emit.'
+  END AS verdict;
+
+\echo ''
+\echo '--- 8f. The organization CERTAIN tier, star-paired, measured against the ---'
+\echo '    strongest candidate identity label on this deployment. HYPOTHETICAL on this'
+\echo '    database (see 8e) and printed unasserted: what matters is the shape'
+\echo '    and the order of magnitude. Note how far it is below'
+\echo '    star_pairs_if_name_only — that gap is the whole argument for requiring'
+\echo '    identity evidence rather than accepting an equal name.'
+
+SELECT count(*)::int AS certain_star_pairs_if_cnpj_configured
+  FROM scan_groups g
+  JOIN organizations c ON c.id = g.canonical_id
+  JOIN organizations o ON o.norm_name = g.norm_name
+                      AND o.deleted_at IS NULL
+                      AND o.id <> g.canonical_id
+ WHERE g.n > 1
+   AND CASE
+         WHEN lower(btrim(CASE WHEN jsonb_typeof(c.custom_fields -> 'CNPJ / CPF') = 'string' THEN c.custom_fields ->> 'CNPJ / CPF' ELSE '' END)) <> ''
+          AND lower(btrim(CASE WHEN jsonb_typeof(o.custom_fields -> 'CNPJ / CPF') = 'string' THEN o.custom_fields ->> 'CNPJ / CPF' ELSE '' END)) <> ''
+         THEN lower(btrim(CASE WHEN jsonb_typeof(c.custom_fields -> 'CNPJ / CPF') = 'string' THEN c.custom_fields ->> 'CNPJ / CPF' ELSE '' END))
+            = lower(btrim(CASE WHEN jsonb_typeof(o.custom_fields -> 'CNPJ / CPF') = 'string' THEN o.custom_fields ->> 'CNPJ / CPF' ELSE '' END))
+         ELSE false
+       END;
+
+\echo ''
+\echo '--- 8g. The organization LIKELY tier: the name-level trigram self-join, ---'
+\echo '    INSERTED for real and EXPLAIN (ANALYZE, BUFFERS)-ed in the same pass.'
+\echo '    EXPLAIN ANALYZE executes, so this is one run rather than two, and the'
+\echo '    plan reported is the plan that actually wrote the rows.'
+\echo ''
+\echo '    THIS IS THE BIGGEST MEASURED WIN IN THE PHASE. The identical join over ROWS'
+\echo '    was measured at 27,156 pairs in 67.1 s; over the DISTINCT names it is'
+\echo '    a few hundred. The collapse is not a precision change — it is the same'
+\echo '    evidence with the clique cross-products removed.'
+
+DROP TABLE IF EXISTS pg_temp.dedup_checks_scan_plans;
+
+CREATE TEMP TABLE dedup_checks_scan_plans (
+  probe   text,
+  line_no int,
+  line    text
+) ON COMMIT DROP;
+
+DO $do$
+DECLARE
+  r record;
+  n int := 0;
+BEGIN
+  FOR r IN EXECUTE 'EXPLAIN (ANALYZE, BUFFERS) ' || $q$
+    INSERT INTO duplicate_pairs
+           (id, entity_type, record_a_id, record_b_id, tier, reason, score, status, scan_id, created_at, updated_at)
+    SELECT gen_random_uuid()::text,
+           'organization',
+           least(a.canonical_id, b.canonical_id), greatest(a.canonical_id, b.canonical_id),
+           'likely', 'similarName',
+           similarity(a.norm_name, b.norm_name),
+           'open',
+           'dedupchk_scan_org',
+           now(), now()
+      FROM scan_groups a
+      JOIN scan_groups b
+        ON b.norm_name % a.norm_name
+       AND b.norm_name > a.norm_name
+       AND similarity(a.norm_name, b.norm_name) >= 0.85
+    ON CONFLICT (entity_type, record_a_id, record_b_id) DO UPDATE
+       SET tier       = excluded.tier,
+           reason     = excluded.reason,
+           score      = excluded.score,
+           scan_id    = excluded.scan_id,
+           updated_at = now()
+     WHERE duplicate_pairs.status <> 'dismissed'
+       AND NOT (duplicate_pairs.tier = 'certain' AND excluded.tier <> 'certain')
+  $q$
+  LOOP
+    n := n + 1;
+    INSERT INTO dedup_checks_scan_plans VALUES ('organization fuzzy', n, r."QUERY PLAN");
+  END LOOP;
+END
+$do$;
+
+\echo ''
+\echo '--- 8h. The plan, PRINTED. A verdict alone would say something passed ---'
+\echo '    without saying which node was chosen; this is what a reader reads when'
+\echo '    the number stops matching the claim.'
+
+SELECT line_no, line FROM dedup_checks_scan_plans WHERE probe = 'organization fuzzy' ORDER BY line_no;
+
+\echo ''
+\echo '--- 8i. The plan verdicts. See the Part header for why the sequential-scan ---'
+\echo '    assertion is one-sided: the DRIVING side must be scanned, the PROBED'
+\echo '    side must not be.'
+
+WITH plan_text AS (
+  SELECT string_agg(line, E'\n' ORDER BY line_no) AS t
+    FROM dedup_checks_scan_plans WHERE probe = 'organization fuzzy'
+)
+SELECT
+  CASE WHEN position('scan_groups_norm_trgm_idx' in t) > 0 THEN 'PASS'
+       ELSE 'FAIL — the plan never mentions scan_groups_norm_trgm_idx; the trigram index is being silently ignored and this join is a cross product'
+  END AS trigram_index_used,
+  CASE WHEN position('Seq Scan on scan_groups b' in t) = 0 THEN 'PASS'
+       ELSE 'FAIL — the PROBED side of the self-join is being sequentially scanned; this is the 21.5k x 21.5k cross product the index exists to prevent'
+  END AS probed_side_indexed,
+  CASE WHEN position('Seq Scan on scan_groups a' in t) > 0 THEN 'PASS'
+       ELSE 'INFO — the driving side was not a sequential scan on this run; not a failure, the planner found something better'
+  END AS driving_side_scanned
+FROM plan_text;
+
+\echo ''
+\echo '--- 8j. THE ROWS THE SCAN ACTUALLY WROTE, and the two assertions Part 7 ---'
+\echo '    could only anticipate.'
+\echo ''
+\echo '    Pitfall 3: a scan may never produce at least as many pairs as the'
+\echo '    entity has records. That single inequality is violated the instant a'
+\echo '    clique join sneaks into a tier, and scan-engine.ts throws on it INSIDE'
+\echo '    its transaction so Postgres discards the run.'
+\echo ''
+\echo '    CANONICAL ORDERING: duplicate_pairs_uniq is on'
+\echo '    (entity_type, record_a_id, record_b_id) and NOTHING enforces that'
+\echo '    record_a_id is the smaller id. If a writer ever inserts a pair the'
+\echo '    other way round, the unique index sees a different key, the dismissal'
+\echo '    is bypassed, and the feature loses the property it was built for.'
+
+SELECT
+  count(*)::int AS org_pairs_written,
+  (SELECT count(*)::int FROM organizations WHERE deleted_at IS NULL) AS org_rows,
+  (count(*) FILTER (WHERE record_a_id >= record_b_id))::int AS misordered_rows,
+  CASE
+    WHEN count(*) >= (SELECT count(*) FROM organizations WHERE deleted_at IS NULL)
+      THEN 'FAIL — the scan produced at least as many pairs as there are organizations; a clique join is in the family'
+    WHEN count(*) FILTER (WHERE record_a_id >= record_b_id) > 0
+      THEN 'FAIL — a written pair is not canonically ordered; duplicate_pairs_uniq cannot dedupe it and a dismissal will not hold'
+    ELSE 'PASS'
+  END AS verdict
+FROM duplicate_pairs
+WHERE entity_type = 'organization';
+
+\echo ''
+\echo '--- 8k. A DISMISSAL SURVIVES A RESCAN (T-39-21) — proven on a real pair. ---'
+\echo ''
+\echo '    One of the rows just written is marked dismissed AND has its tier,'
+\echo '    reason, score and scan_id deliberately falsified. The identical upsert'
+\echo '    is then re-issued for exactly that name pair. If the'
+\echo '    status-is-not-dismissed guard holds, all five falsified values survive'
+\echo '    untouched; if it were ever removed, every one of them would be'
+\echo '    refreshed and the pair would be back in the review queue.'
+\echo ''
+\echo '    The re-issued statement is narrowed to the one name pair, so it costs'
+\echo '    milliseconds instead of re-running the whole join.'
+
+DROP TABLE IF EXISTS pg_temp.dedup_checks_dismissal;
+
+CREATE TEMP TABLE dedup_checks_dismissal (
+  metric text,
+  value  text
+) ON COMMIT DROP;
+
+DO $do$
+DECLARE
+  target      duplicate_pairs;
+  name_a      text;
+  name_b      text;
+  after_row   duplicate_pairs;
+BEGIN
+  SELECT * INTO target
+    FROM duplicate_pairs
+   WHERE entity_type = 'organization'
+   ORDER BY record_a_id
+   LIMIT 1;
+
+  IF target.id IS NULL THEN
+    INSERT INTO dedup_checks_dismissal
+      VALUES ('verdict', 'FAIL — the organization fuzzy tier wrote no pair at all, so the dismissal guard could not be exercised');
+    RETURN;
+  END IF;
+
+  -- Both ids ARE canonical ids of their groups (they are the least/greatest of two
+  -- of them), so each is one indexless lookup over 21.5k temp rows rather than the
+  -- cross join a least/greatest match would need.
+  SELECT norm_name INTO name_a FROM scan_groups WHERE canonical_id = target.record_a_id;
+  SELECT norm_name INTO name_b FROM scan_groups WHERE canonical_id = target.record_b_id;
+
+  UPDATE duplicate_pairs
+     SET status  = 'dismissed',
+         tier    = 'certain',
+         reason  = 'email',
+         score   = 0.111,
+         scan_id = NULL
+   WHERE id = target.id;
+
+  -- The SAME upsert as 8g, narrowed to the one name pair.
+  INSERT INTO duplicate_pairs
+         (id, entity_type, record_a_id, record_b_id, tier, reason, score, status, scan_id, created_at, updated_at)
+  SELECT gen_random_uuid()::text,
+         'organization',
+         least(a.canonical_id, b.canonical_id), greatest(a.canonical_id, b.canonical_id),
+         'likely', 'similarName',
+         similarity(a.norm_name, b.norm_name),
+         'open',
+         'dedupchk_scan_org',
+         now(), now()
+    FROM scan_groups a
+    JOIN scan_groups b
+      ON b.norm_name % a.norm_name
+     AND b.norm_name > a.norm_name
+     AND similarity(a.norm_name, b.norm_name) >= 0.85
+   WHERE a.norm_name IN (name_a, name_b)
+     AND b.norm_name IN (name_a, name_b)
+  ON CONFLICT (entity_type, record_a_id, record_b_id) DO UPDATE
+     SET tier       = excluded.tier,
+         reason     = excluded.reason,
+         score      = excluded.score,
+         scan_id    = excluded.scan_id,
+         updated_at = now()
+   WHERE duplicate_pairs.status <> 'dismissed'
+     AND NOT (duplicate_pairs.tier = 'certain' AND excluded.tier <> 'certain');
+
+  SELECT * INTO after_row FROM duplicate_pairs WHERE id = target.id;
+
+  INSERT INTO dedup_checks_dismissal VALUES
+    ('pair_id',        after_row.id),
+    ('status_after',   after_row.status),
+    ('tier_after',     after_row.tier),
+    ('reason_after',   after_row.reason),
+    ('score_after',    coalesce(after_row.score::text, '(null)')),
+    ('scan_id_after',  coalesce(after_row.scan_id, '(null)')),
+    ('verdict',
+      CASE
+        WHEN after_row.status = 'dismissed'
+         AND after_row.tier   = 'certain'
+         AND after_row.reason = 'email'
+         AND after_row.score  = 0.111::real
+         AND after_row.scan_id IS NULL
+          THEN 'PASS'
+        WHEN after_row.status <> 'dismissed'
+          THEN 'FAIL — the rescan reopened a dismissed pair; the status <> dismissed guard is gone'
+        ELSE 'FAIL — the rescan refreshed a dismissed pair`s tier, reason, score or scan_id; the DO UPDATE guard is not covering every column'
+      END);
+END
+$do$;
+
+SELECT metric, value FROM dedup_checks_dismissal
+ORDER BY (metric = 'verdict'), metric;
+
+\echo ''
+\echo '--- 8l. PEOPLE. The same family, with the two person exact tiers: exact ---'
+\echo '    valid e-mail (certain / email) and normalized name + normalized phone'
+\echo '    (LIKELY / similarNamePhone — scoring.ts owns that tier and it is not'
+\echo '    certain). Both star-paired.'
+
+DROP TABLE IF EXISTS pg_temp.scan_groups;
+
+INSERT INTO dedup_scans (id, user_id, entity_type, status, progress, cancelled)
+VALUES ('dedupchk_scan_person', NULL, 'person', 'running', '{"current":0,"total":0}'::jsonb, false);
+
+CREATE TEMP TABLE scan_groups ON COMMIT DROP AS
+SELECT norm_name,
+       min(id)       AS canonical_id,
+       count(*)::int AS n
+  FROM people
+ WHERE deleted_at IS NULL
+   AND length(norm_name) >= 5
+   AND array_length(array_remove(string_to_array(norm_name, ' '), ''), 1) >= 2
+   AND norm_name <> ALL(ARRAY['nao encotrado','nao encontrado']::text[])
+ GROUP BY 1;
+
+CREATE INDEX scan_groups_norm_trgm_idx ON scan_groups USING gin (norm_name gin_trgm_ops);
+ANALYZE scan_groups;
+
+SELECT count(*)::int                                AS distinct_norm_names,
+       coalesce(sum(n) FILTER (WHERE n > 1), 0)::int AS records_in_multi_member_groups,
+       (SELECT count(*)::int FROM people WHERE deleted_at IS NULL) AS people_rows
+  FROM scan_groups;
+
+SELECT set_config('pg_trgm.similarity_threshold', '0.85', true) AS threshold;
+
+\echo ''
+\echo '--- 8m. The person CERTAIN tier: exact valid e-mail, star-paired. ---------'
+\echo '    THE FORMAT PREDICATE IS THE POINT. Grouping by exact e-mail with no'
+\echo '    predicate was measured at 28,032 pairs whose largest group is 212'
+\echo '    people sharing one single-character junk value — 22,366 pairs from that'
+\echo '    one value alone. The predicate plus the two sentinel addresses is'
+\echo '    what makes this a queue a human can work through.'
+
+INSERT INTO duplicate_pairs
+       (id, entity_type, record_a_id, record_b_id, tier, reason, score, status, scan_id, created_at, updated_at)
+WITH g AS (
+  SELECT norm_email, min(id) AS canonical_id
+    FROM people
+   WHERE deleted_at IS NULL
+     AND norm_email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[a-zA-Z]{2,}$'
+     AND norm_email <> ALL(ARRAY['teste@teste.com','teste@gmail.com']::text[])
+   GROUP BY 1
+  HAVING count(*) > 1
+)
+SELECT gen_random_uuid()::text,
+       'person',
+       least(g.canonical_id, p.id), greatest(g.canonical_id, p.id),
+       'certain', 'email',
+       NULL,
+       'open',
+       'dedupchk_scan_person',
+       now(), now()
+  FROM g
+  JOIN people p ON p.norm_email = g.norm_email
+               AND p.deleted_at IS NULL
+               AND p.id <> g.canonical_id
+ON CONFLICT (entity_type, record_a_id, record_b_id) DO UPDATE
+   SET tier       = excluded.tier,
+       reason     = excluded.reason,
+       score      = excluded.score,
+       scan_id    = excluded.scan_id,
+       updated_at = now()
+ WHERE duplicate_pairs.status <> 'dismissed'
+   AND NOT (duplicate_pairs.tier = 'certain' AND excluded.tier <> 'certain');
+
+SELECT count(*)::int AS person_certain_email_pairs
+  FROM duplicate_pairs WHERE entity_type = 'person' AND reason = 'email';
+
+\echo ''
+\echo '--- 8n. The person name + phone tier, star-paired. The non-empty phone ---'
+\echo '    conjunct is what stops the ABSENCE of a phone number promoting every'
+\echo '    same-name pair in the database into this reason.'
+
+INSERT INTO duplicate_pairs
+       (id, entity_type, record_a_id, record_b_id, tier, reason, score, status, scan_id, created_at, updated_at)
+WITH g AS (
+  SELECT norm_name, norm_phone, min(id) AS canonical_id
+    FROM people
+   WHERE deleted_at IS NULL
+     AND norm_phone <> ''
+     AND length(norm_name) >= 5
+     AND array_length(array_remove(string_to_array(norm_name, ' '), ''), 1) >= 2
+     AND norm_name <> ALL(ARRAY['nao encotrado','nao encontrado']::text[])
+   GROUP BY 1, 2
+  HAVING count(*) > 1
+)
+SELECT gen_random_uuid()::text,
+       'person',
+       least(g.canonical_id, p.id), greatest(g.canonical_id, p.id),
+       'likely', 'similarNamePhone',
+       NULL,
+       'open',
+       'dedupchk_scan_person',
+       now(), now()
+  FROM g
+  JOIN people p ON p.norm_name = g.norm_name
+               AND p.norm_phone = g.norm_phone
+               AND p.deleted_at IS NULL
+               AND p.id <> g.canonical_id
+ON CONFLICT (entity_type, record_a_id, record_b_id) DO UPDATE
+   SET tier       = excluded.tier,
+       reason     = excluded.reason,
+       score      = excluded.score,
+       scan_id    = excluded.scan_id,
+       updated_at = now()
+ WHERE duplicate_pairs.status <> 'dismissed'
+   AND NOT (duplicate_pairs.tier = 'certain' AND excluded.tier <> 'certain');
+
+SELECT count(*)::int AS person_name_phone_pairs
+  FROM duplicate_pairs WHERE entity_type = 'person' AND reason = 'similarNamePhone';
+
+\echo ''
+\echo '--- 8o. The person LIKELY tier: the name-level self-join, inserted and ----'
+\echo '    EXPLAIN (ANALYZE, BUFFERS)-ed in one pass, exactly as 8g.'
+
+DO $do$
+DECLARE
+  r record;
+  n int := 0;
+BEGIN
+  FOR r IN EXECUTE 'EXPLAIN (ANALYZE, BUFFERS) ' || $q$
+    INSERT INTO duplicate_pairs
+           (id, entity_type, record_a_id, record_b_id, tier, reason, score, status, scan_id, created_at, updated_at)
+    SELECT gen_random_uuid()::text,
+           'person',
+           least(a.canonical_id, b.canonical_id), greatest(a.canonical_id, b.canonical_id),
+           'likely', 'similarName',
+           similarity(a.norm_name, b.norm_name),
+           'open',
+           'dedupchk_scan_person',
+           now(), now()
+      FROM scan_groups a
+      JOIN scan_groups b
+        ON b.norm_name % a.norm_name
+       AND b.norm_name > a.norm_name
+       AND similarity(a.norm_name, b.norm_name) >= 0.85
+    ON CONFLICT (entity_type, record_a_id, record_b_id) DO UPDATE
+       SET tier       = excluded.tier,
+           reason     = excluded.reason,
+           score      = excluded.score,
+           scan_id    = excluded.scan_id,
+           updated_at = now()
+     WHERE duplicate_pairs.status <> 'dismissed'
+       AND NOT (duplicate_pairs.tier = 'certain' AND excluded.tier <> 'certain')
+  $q$
+  LOOP
+    n := n + 1;
+    INSERT INTO dedup_checks_scan_plans VALUES ('person fuzzy', n, r."QUERY PLAN");
+  END LOOP;
+END
+$do$;
+
+SELECT line_no, line FROM dedup_checks_scan_plans WHERE probe = 'person fuzzy' ORDER BY line_no;
+
+WITH plan_text AS (
+  SELECT string_agg(line, E'\n' ORDER BY line_no) AS t
+    FROM dedup_checks_scan_plans WHERE probe = 'person fuzzy'
+)
+SELECT
+  CASE WHEN position('scan_groups_norm_trgm_idx' in t) > 0 THEN 'PASS'
+       ELSE 'FAIL — the plan never mentions scan_groups_norm_trgm_idx; the trigram index is being silently ignored and this join is a cross product'
+  END AS trigram_index_used,
+  CASE WHEN position('Seq Scan on scan_groups b' in t) = 0 THEN 'PASS'
+       ELSE 'FAIL — the PROBED side of the self-join is being sequentially scanned'
+  END AS probed_side_indexed
+FROM plan_text;
+
+\echo ''
+\echo '--- 8p. Pitfall 3 and the canonical ordering, for people. ----------------'
+
+SELECT
+  count(*)::int AS person_pairs_written,
+  (SELECT count(*)::int FROM people WHERE deleted_at IS NULL) AS people_rows,
+  (count(*) FILTER (WHERE record_a_id >= record_b_id))::int AS misordered_rows,
+  CASE
+    WHEN count(*) >= (SELECT count(*) FROM people WHERE deleted_at IS NULL)
+      THEN 'FAIL — the scan produced at least as many pairs as there are people; a clique join is in the family'
+    WHEN count(*) FILTER (WHERE record_a_id >= record_b_id) > 0
+      THEN 'FAIL — a written pair is not canonically ordered'
+    ELSE 'PASS'
+  END AS verdict
+FROM duplicate_pairs
+WHERE entity_type = 'person';
+
+\echo ''
+\echo '--- 8q. The whole scan, both entity types, by tier and reason. This is ----'
+\echo '    the reviewable-queue size SC-2 is about.'
+\echo ''
+\echo '    TWO ROWS HERE WILL LOOK WRONG AND ARE NOT:'
+\echo ''
+\echo '    1. ONE organization row reads certain / email. That is the 8k probe: the'
+\echo '       falsified pair, still carrying the values the rescan was not allowed'
+\echo '       to refresh. The organization scan has no e-mail tier and never will.'
+\echo ''
+\echo '    2. The person fuzzy plan printed above reports a nonzero'
+\echo '       "Rows Removed by Conflict Filter" alongside its inserts. THAT IS THE'
+\echo '       NO-DOWNGRADE CONJUNCT FIRING ON REAL DATA, not an error: those pairs'
+\echo '       already existed as certain / email from 8m, and the fuzzy tier tried'
+\echo '       to rewrite them as likely / similarName because the same two people'
+\echo '       share an address AND a near-identical name. Without'
+\echo '       NOT (duplicate_pairs.tier = certain AND excluded.tier <> certain)'
+\echo '       every one of them would be silently demoted, and the merge screen'
+\echo '       would stop pre-checking the strongest evidence the scan found.'
+
+SELECT entity_type, tier, reason, count(*)::int AS pairs
+  FROM duplicate_pairs
+ GROUP BY 1, 2, 3
+ ORDER BY 1, 2, 3;
+
+ROLLBACK;
+
+\timing off
+
+\echo ''
+\echo '--- 8r. THE ROLLBACK HELD. Both Phase 39 tables are back to the counts ----'
+\echo '    8a snapshotted, so everything above — tens of thousands of pair rows,'
+\echo '    two scan rows, one falsified dismissal — is gone.'
+
+SELECT
+  b.tbl,
+  b.n       AS rows_before,
+  a.n       AS rows_after,
+  a.n - b.n AS delta,
+  CASE WHEN a.n = b.n THEN 'PASS'
+       ELSE 'FAIL — PART 8 CHANGED REAL DATA; the BEGIN ... ROLLBACK wrapper did not hold'
+  END AS verdict
+FROM dedup_checks_pairs_before b
+JOIN (
+            SELECT 'duplicate_pairs' AS tbl, count(*) AS n FROM duplicate_pairs
+  UNION ALL SELECT 'dedup_scans',            count(*)      FROM dedup_scans
+) a ON a.tbl = b.tbl
+ORDER BY b.tbl;
+
+DROP TABLE IF EXISTS pg_temp.dedup_checks_pairs_before;
 
 
 \echo ''
@@ -935,7 +1565,11 @@ DROP TABLE IF EXISTS pg_temp.dedup_checks_plans;
 -- PART 10 IS DELIBERATELY UNUSED AND RESERVED FOR PLAN 39-10 (the merge).
 --
 -- It sits AFTER Part 9 rather than before it because it is the only part that
--- will write ROWS. The merge probe 39-10 owes this file is the one a mocked test
+-- will write rows to a table Part 9 re-counts (Part 8 writes rows too, but only
+-- to duplicate_pairs and dedup_scans, which Part 0 does not snapshot — Part 8
+-- carries its own before/after comparison at 8r instead).
+--
+-- The merge probe 39-10 owes this file is the one a mocked test
 -- cannot express at all: merge two organizations that BOTH carry a
 -- source='migration' note and show that the survivor ends up with every child and
 -- that notes_migration_uniq was never violated — measured at 63% of this
