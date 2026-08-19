@@ -80,6 +80,14 @@ export default async function OrganizationsPage({
     redirect("/login")
   }
 
+  /*
+   * VISIBILITY ONLY, exactly as on `/trash`. This decides whether the "Find duplicates" button is
+   * RENDERED; it is never the authorization. `src/app/duplicates/layout.tsx` re-checks the role
+   * independently and redirects a non-admin who reaches the route by URL, which is what makes
+   * hiding rather than disabling the control safe (T-39-01).
+   */
+  const isAdmin = session.user.role === "admin"
+
   const params = await searchParams
   const pageNum = Math.max(1, parseInt(params.page ?? "1"))
   const search = params.search ?? ""
@@ -158,6 +166,7 @@ export default async function OrganizationsPage({
               currentPage={pageNum}
               retentionDays={retentionDays}
               bulkOwners={bulkOwners}
+              isAdmin={isAdmin}
             />
           </CardContent>
         </Card>

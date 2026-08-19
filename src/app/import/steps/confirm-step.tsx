@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { ProgressBar } from "@/components/import/progress-bar"
 import { CheckCircle2, XCircle, RotateCcw } from "lucide-react"
+import { ImportDuplicateNotice } from "@/components/dedup/import-duplicate-notice"
 import {
   importOrganizations,
   importPeople,
@@ -58,6 +59,12 @@ export function ConfirmStep({
     percentage: 0,
   })
 
+  // DEDUP-01: kept beside `result` rather than inside it, so nothing in the existing result flow
+  // has to change. `0` is both "no duplicates" and "not applicable" — only organizations and
+  // people have a duplicate concept, so a deal or activity import leaves this at 0 and the notice
+  // renders nothing.
+  const [flaggedDuplicates, setFlaggedDuplicates] = useState(0)
+
   const importStartedRef = useRef(false)
 
   useEffect(() => {
@@ -87,6 +94,7 @@ export function ConfirmStep({
               count: number
               warnings: string[]
               autoCreated: { orgs: string[]; people: string[] }
+              flaggedDuplicates?: number
             }
           | { success: false; error: string }
 
@@ -147,6 +155,7 @@ export function ConfirmStep({
         })
 
         if (response.success) {
+          setFlaggedDuplicates(response.flaggedDuplicates ?? 0)
           setResult({
             status: "success",
             count: response.count,
@@ -202,6 +211,11 @@ export function ConfirmStep({
               </p>
             </div>
           </div>
+
+          {/* DEDUP-01 (39-UI-SPEC I-1): the flagged-rows report. Renders nothing when the count is 0. */}
+          {(entityType === "organization" || entityType === "person") && (
+            <ImportDuplicateNotice count={flaggedDuplicates} entityType={entityType} />
+          )}
 
           {/* Auto-created entities */}
           {(result.autoCreated.orgs.length > 0 ||

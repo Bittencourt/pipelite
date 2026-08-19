@@ -57,6 +57,9 @@ import type { CustomFieldDefinition, FieldType, EntityType } from "@/db/schema/c
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import { stripFormulaKeys, FORMULA_EVALUATION_BUDGET } from "@/lib/formula-recalc"
 import { recalculateImportedRows, type ImportedRow } from "./formula-recalc-batch"
+// DEDUP-01, the importer's REPORTING half. Never rejects a row, never prompts: it counts, after
+// the write, how many created rows look like duplicates so the summary can say so.
+import { countFlaggedImportedRecords } from "@/lib/dedup/import-flags"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -468,6 +471,16 @@ export async function importFromPipedrive(
       const personIdMap = new Map<number, string>()
       const dealIdMap = new Map<number, string>()
 
+      /**
+       * DEDUP-01: how many of the records this run created look like duplicates.
+       *
+       * Accumulated here at run scope and persisted after each entity block, because the progress
+       * poller is what the completion summary reads and the JSONB merge in `updateImportState`
+       * replaces the whole object. Counting is a REPORT, not a prompt — the locked decision is
+       * that an import of thousands of rows never stops to ask (39-CONTEXT).
+       */
+      const flaggedDuplicates = { organizations: 0, people: 0 }
+
       // Pipedrive field definitions (needed for custom field extraction)
       // Fetch these upfront so they're available for both custom field import and entity transformations
       let pdDealFields: PipedriveFieldDefinition[] = []
@@ -765,6 +778,16 @@ export async function importFromPipedrive(
 
         await formulaBudget.recalculate("organization", insertedOrgs)
 
+        // DEDUP-01 — AFTER the write, and it cannot fail the run: the ids come from the
+        // `.returning()` above and `countFlaggedImportedRecords` swallows its own errors and
+        // answers 0. Only rows this run CREATED are counted; a Pipedrive organization matched to
+        // an existing one was never inserted and is not a new duplicate.
+        flaggedDuplicates.organizations = await countFlaggedImportedRecords({
+          entityType: "organization",
+          recordIds: insertedOrgs.map((row) => row.id),
+        })
+        await updateImportState(importId, { flaggedDuplicates })
+
         await updateCompletedCount(importId, pdOrgs.length)
       }
 
@@ -848,6 +871,13 @@ export async function importFromPipedrive(
         }
 
         await formulaBudget.recalculate("person", insertedPeople)
+
+        // DEDUP-01 — same posture as the organization block above.
+        flaggedDuplicates.people = await countFlaggedImportedRecords({
+          entityType: "person",
+          recordIds: insertedPeople.map((row) => row.id),
+        })
+        await updateImportState(importId, { flaggedDuplicates })
 
         await updateCompletedCount(importId, pdPeople.length)
       }

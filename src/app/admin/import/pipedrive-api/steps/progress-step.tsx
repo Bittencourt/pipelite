@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { CheckCircle2, XCircle, AlertTriangle, Loader2, X } from "lucide-react"
 import { ProgressBar } from "@/components/import/progress-bar"
+import { ImportDuplicateNotice } from "@/components/dedup/import-duplicate-notice"
 import {
   getImportProgress,
   cancelPipedriveImport,
@@ -154,6 +155,16 @@ export function ProgressStep({ importId, onComplete }: ProgressStepProps) {
               )
             ))}
           </div>
+
+          {/* DEDUP-01 (39-UI-SPEC I-1): the same notice the CSV summary renders. Nothing at 0. */}
+          <ImportDuplicateNotice
+            count={state.flaggedDuplicates?.organizations ?? 0}
+            entityType="organization"
+          />
+          <ImportDuplicateNotice
+            count={state.flaggedDuplicates?.people ?? 0}
+            entityType="person"
+          />
 
           {/* Interrupted hint */}
           {isInterrupted && (
