@@ -238,7 +238,26 @@ export function IdentityFieldsForm({ fieldNames, value }: IdentityFieldsFormProp
           uses `default` for its Save because that page's focal point IS the retention control; here
           it is not, so the filled button stays reserved for the CTA plan 39-13 adds.
         */}
-        <Button variant="outline" onClick={handleSave} disabled={!canSave}>
+        {/*
+          `h-auto whitespace-normal` OVERRIDES `buttonVariants`' base `whitespace-nowrap` and the
+          default size's fixed `h-9`, and both halves are load-bearing rather than defensive.
+
+          MEASURED, not anticipated: es-ES's `identity.save` reads "Guardar campos de identificación",
+          whose one unbreakable line is 255px wide. This card's content box is 248px at a 320px
+          viewport (305 client width, less the container's 32px, the card's 1px border and
+          `CardContent`'s 24px padding), so the nowrap button pushed `documentElement.scrollWidth` to
+          312 and `/duplicates @ es-ES` was the ONE red assertion of the 21 the viewport matrix added
+          — en-US and pt-BR both fit, which is the es-ES-runs-longer asymmetry
+          `e2e/viewport-320.spec.ts` exists to catch. `shrink-0` in the same base means no flex parent
+          would have rescued it either. Without `h-auto` the wrapped second line escapes the 36px box
+          instead of overflowing sideways, which trades a visible defect for a worse one.
+        */}
+        <Button
+          variant="outline"
+          className="h-auto whitespace-normal"
+          onClick={handleSave}
+          disabled={!canSave}
+        >
           {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
           {t("identity.save")}
         </Button>
