@@ -429,8 +429,8 @@ Plans:
 - [x] 39-07-PLAN.md — The scan engine (name-level, star-paired) and the paged pair queries
 - [x] 39-08-PLAN.md — Admin identity-field setting, similarity threshold, findCertainMatches
 - [x] 39-09-PLAN.md — The merge mutation: one transaction, four-site AuditAction cascade
-- [ ] 39-10-PLAN.md — Real-database integration tests, third vitest project, CI-exclusion story
-- [ ] 39-11-PLAN.md — /duplicates admin gate, server actions, RSC page, identity-field control
+- [x] 39-10-PLAN.md — Real-database integration tests, third vitest project, CI-exclusion story
+- [x] 39-11-PLAN.md — /duplicates admin gate, server actions, RSC page, identity-field control
 - [x] 39-12-PLAN.md — The merged audit entry: marker filter, timeline hydration, renderer
 - [ ] 39-13-PLAN.md — Progress-bar lift, scan panel, pair card
 - [x] 39-14-PLAN.md — Create-time duplicate warning, end to end
@@ -547,7 +547,7 @@ Plans:
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
 | 38. Bulk Operations | 19/20 | In Progress|  |
-| 39. Duplicate Detection & Merge | 12/17 | In Progress|  |
+| 39. Duplicate Detection & Merge | 14/17 | In Progress|  |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
