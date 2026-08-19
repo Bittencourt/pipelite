@@ -32,6 +32,15 @@ export interface ImportProgressState {
   }
   errors: Array<{ entity: string; message: string; details?: unknown }>
   reviewItems: Array<{ type: string; id: string; reason: string }>
+  /**
+   * DEDUP-01: how many of the records this run CREATED look like duplicates of something already
+   * there. Counts only, never ids — the completion notice reports a number and links to
+   * `/duplicates`; it never lists rows (39-UI-SPEC I-4), so ids here would be dead weight in a
+   * JSONB column the progress poller reads once a second.
+   *
+   * Optional because sessions written before this field existed have no key for it.
+   */
+  flaggedDuplicates?: { organizations: number; people: number }
   cancelled: boolean
   startedAt: Date
   completedAt?: Date
@@ -56,6 +65,8 @@ interface ImportProgressData {
   totalEntities: number
   errors: Array<{ entity: string; message: string }>
   reviewItems: Array<{ type: string; id: string; reason: string }>
+  /** DEDUP-01 — see `ImportProgressState.flaggedDuplicates`. Absent on pre-existing sessions. */
+  flaggedDuplicates?: { organizations: number; people: number }
 }
 
 const DEFAULT_IMPORTED = {
@@ -97,6 +108,7 @@ function toProgressState(
     imported: progress.imported ?? { ...DEFAULT_IMPORTED },
     errors: progress.errors ?? [],
     reviewItems: progress.reviewItems ?? [],
+    flaggedDuplicates: progress.flaggedDuplicates,
     cancelled: session.cancelled,
     startedAt: session.createdAt,
     completedAt: session.updatedAt,
@@ -178,6 +190,7 @@ export async function updateImportState(importId: string, updates: Partial<Impor
     ...(updates.imported && { imported: updates.imported }),
     ...(updates.errors && { errors: updates.errors.slice(0, 50).map(e => ({ entity: e.entity, message: e.message })) }),
     ...(updates.reviewItems && { reviewItems: updates.reviewItems }),
+    ...(updates.flaggedDuplicates && { flaggedDuplicates: updates.flaggedDuplicates }),
   }
 
   await db

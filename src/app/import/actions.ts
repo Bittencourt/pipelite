@@ -18,6 +18,10 @@ import { revalidatePath } from "next/cache"
 import { fuzzyMatchOrganization } from "@/lib/import/fuzzy-match"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import { stripFormulaKeys, FORMULA_EVALUATION_BUDGET } from "@/lib/formula-recalc"
+// DEDUP-01, the importer's REPORTING half. The importer stays non-interactive: this never rejects
+// a row and never prompts — it counts, after the write, how many of the rows it just created look
+// like duplicates, so the completion summary can say so and link to `/duplicates`.
+import { countFlaggedImportedRecords } from "@/lib/dedup/import-flags"
 import {
   recalculateImportedRows,
   type ImportedRow,
@@ -229,6 +233,8 @@ export async function importOrganizations(
       count: number
       warnings: string[]
       autoCreated: { orgs: string[]; people: string[] }
+      /** DEDUP-01: how many of the created rows look like duplicates. 0 means no notice. */
+      flaggedDuplicates: number
     }
   | { success: false; error: string }
 > {
@@ -310,11 +316,21 @@ export async function importOrganizations(
         console.error("[audit-import] failed to write organizations import summary:", auditError)
       }
 
+      // AFTER the write, never before it, and it cannot fail the import: the ids come from
+      // `batchInsert`'s `.returning()`, and `countFlaggedImportedRecords` swallows its own errors
+      // and answers 0. This is the whole of the importer's duplicate handling — a report, not a
+      // prompt (39-CONTEXT, locked).
+      const flaggedDuplicates = await countFlaggedImportedRecords({
+        entityType: "organization",
+        recordIds: inserted.map((row) => row.id),
+      })
+
       return {
         success: true,
         count: rows.length,
         warnings,
         autoCreated: { orgs: [], people: [] },
+        flaggedDuplicates,
       }
     } catch (error) {
       console.error("Failed to import organizations:", error)
@@ -342,6 +358,8 @@ export async function importPeople(
       count: number
       warnings: string[]
       autoCreated: { orgs: string[]; people: string[] }
+      /** DEDUP-01: how many of the created rows look like duplicates. 0 means no notice. */
+      flaggedDuplicates: number
     }
   | { success: false; error: string }
 > {
@@ -443,6 +461,15 @@ export async function importPeople(
         console.error("[audit-import] failed to write people import summary:", auditError)
       }
 
+      // See the same call in importOrganizations: after the write, cannot fail the import, and the
+      // whole of the importer's duplicate handling. Only the people this action created are
+      // counted — an auto-created organization is a stub the user did not ask for and flagging it
+      // as a duplicate would report a row they never imported.
+      const flaggedDuplicates = await countFlaggedImportedRecords({
+        entityType: "person",
+        recordIds: inserted.map((row) => row.id),
+      })
+
       return {
         success: true,
         count: rows.length,
@@ -451,6 +478,7 @@ export async function importPeople(
           orgs: Array.from(autoCreatedOrgs.values()),
           people: [],
         },
+        flaggedDuplicates,
       }
     } catch (error) {
       console.error("Failed to import people:", error)
