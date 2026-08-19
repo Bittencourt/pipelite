@@ -3,10 +3,12 @@ import { QueryBuilder, alias } from "drizzle-orm/pg-core"
 
 import { db } from "@/db"
 import { auditLog, deals, duplicatePairs, notes, organizations, people } from "@/db/schema"
-import type { CustomFieldDefinition, EntityType } from "@/db/schema"
+// Through the BARREL, exactly as every sibling mutation module imports its tables and types.
+// `@/db/schema/audit-log` directly would also be a deeper reach into the audit layer than
+// `src/lib/audit/no-mutation-coupling.test.ts` permits a mutation module to make.
+import type { AuditChanges, CustomFieldDefinition, EntityType } from "@/db/schema"
 import { getCurrentActor } from "@/lib/audit/actor-context"
 import type { AuditActor } from "@/lib/audit/actor-context"
-import type { AuditChanges } from "@/db/schema/audit-log"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import { buildMergeFieldGroups } from "@/lib/dedup/field-groups"
 import { applyMergeChoices } from "@/lib/dedup/merge-defaults"

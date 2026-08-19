@@ -156,10 +156,50 @@ function couplesToAudit(source: string): boolean {
 }
 
 /**
- * The event-less audit writers of Phase 37 — the ONLY functions permitted to reach the audit
- * layer from inside a mutation module, because they emit nothing for the subscriber to hear.
+ * The event-less audit writers — the ONLY functions permitted to reach the audit layer from
+ * inside a mutation module, because the row they need has no event for the subscriber to hear.
+ *
+ * `restore` and `purge` are Phase 37's (no `{entity}.restored` / `.purged` event type exists).
+ * `merge` is Phase 39's, for the same reason with a sharper edge: `merged` is not a member of
+ * `AUDITED_EVENTS`, no `{entity}.merged` event exists, AND the merge's rows must be written with
+ * the transaction handle — a bus-written row uses the module-level client, fire-and-forget, so it
+ * would survive a rollback and the timeline would show a merge that never happened.
  */
-const EVENTLESS_AUDIT_WRITER = /export async function (?:restore|purge)[A-Za-z]*Mutation\b/g
+const EVENTLESS_AUDIT_WRITER =
+  /export async function (?:restore|purge|merge)[A-Za-z]*Mutation\b/g
+
+/**
+ * Mutation modules that are ENTIRELY event-less audit writers and own no CRM entity.
+ *
+ * A THIRD SCOPE, added in Phase 39, because `src/lib/mutations/dedup.ts` does not fit either
+ * existing one. The Phase 37 carve-out is shaped around a CRM ENTITY module that also happens to
+ * carry a restore and a purge: its assertions require the file to be one of the four entity
+ * modules and to declare at least one create/update/delete mutation. `dedup.ts` is neither — it
+ * declares exactly one function, that function is an event-less audit writer, and the entities it
+ * writes are owned by `organizations.ts` and `people.ts`.
+ *
+ * Putting it in `wholeFileScope` instead would be wrong in the other direction: the whole-file
+ * negative forbids ANY audit reference, and the merge cannot exist without `tx.insert(auditLog)`.
+ * So it gets its own bounded scope below, carrying the same three anti-vacuity requirements: the
+ * list is proven non-empty and resolved against real files; a positive marker is asserted before
+ * any negative; and the audit vocabulary is pinned to the same permitted minimum.
+ *
+ * This list is a DENY-BY-DEFAULT allow-list. A new file here is a deliberate edit with a reason,
+ * never a way to quiet a red gate.
+ */
+const DEDICATED_EVENTLESS_MODULES = ["dedup.ts"] as const
+
+/**
+ * Modules that emit an EXISTING event for an entity they do not own.
+ *
+ * `dedup.ts` emits `{entity}.deleted` for the losing record of a merge, after its transaction
+ * commits, so webhooks and workflow triggers still observe the record going to Trash and the
+ * subscriber writes the ordinary tombstone. That is a RE-EMISSION of an event
+ * `organizations.ts` / `people.ts` already own — not a new entity gaining CRM events — which is
+ * why it is recorded here rather than appended to `CRM_MUTATION_MODULES`. Appending it there
+ * would break the "found the four" count and claim dedup.ts owns an entity.
+ */
+const REEMITTING_MODULES = ["dedup.ts"] as const
 
 /** Everything the subscriber captures instead. These must stay uncoupled, per function. */
 const EVENT_EMITTING_MUTATION = /export async function (?:create|update|delete)[A-Za-z]*Mutation\b/g
@@ -169,8 +209,22 @@ const EVENT_EMITTING_MUTATION = /export async function (?:create|update|delete)[
  * `subscribers/audit.ts:48-56` requires be done synchronously at entry. `buildChanges`,
  * `runWithActor`, the pruner and the retention reader stay forbidden everywhere — a mutation
  * module has no business establishing an actor or reading a retention policy.
+ *
+ * `AuditChanges` joined in Phase 39. It is the declared type of the `changes` COLUMN of the table
+ * this list already permits, and it is the same class of entry as `AuditActor`, which has been
+ * permitted since Phase 37: a shape, imported `type`-only, describing a value the module writes.
+ * It carries no behaviour, reads no policy and establishes no actor — the three things this list
+ * exists to keep out. The alternative was for `dedup.ts` to restate the shape inline, which D-01
+ * forbids for exactly the reason that matters here: a second copy drifts, and the copy that
+ * drifted would be the one describing what goes into the audit log.
  */
-const PERMITTED_EVENTLESS_COUPLINGS = ["auditLog", "getCurrentActor", "AuditActor", "@/lib/audit"]
+const PERMITTED_EVENTLESS_COUPLINGS = [
+  "auditLog",
+  "getCurrentActor",
+  "AuditActor",
+  "AuditChanges",
+  "@/lib/audit",
+]
 
 /**
  * `@/lib/audit` alone is too coarse to pin: the detector reports that prefix for
@@ -204,12 +258,25 @@ const strippedSources = new Map(files.map(file => [file, stripComments(rawSource
 const crmFiles = files.filter(file => CRM_MUTATION_MODULES.includes(path.basename(file) as never))
 const relative = (file: string) => path.relative(REPO_ROOT, file)
 
-/** Files carrying at least one event-less audit writer, and therefore scoped per function. */
-const carveOutFiles = files.filter(file =>
-  new RegExp(EVENTLESS_AUDIT_WRITER.source).test(strippedSources.get(file)!)
+/** The Phase 39 third scope: whole modules that are nothing but an event-less audit writer. */
+const dedicatedFiles = files.filter(file =>
+  (DEDICATED_EVENTLESS_MODULES as readonly string[]).includes(path.basename(file))
+)
+
+/**
+ * Phase 37's carve-out: an ENTITY module that also carries an event-less writer, scoped per
+ * function. A dedicated module is excluded — it owns no entity and declares no
+ * create/update/delete mutation, so this scope's assertions would misjudge it.
+ */
+const carveOutFiles = files.filter(
+  file =>
+    !dedicatedFiles.includes(file) &&
+    new RegExp(EVENTLESS_AUDIT_WRITER.source).test(strippedSources.get(file)!)
 )
 /** Everything else: the whole-file negative assertion still applies verbatim. */
-const wholeFileScope = files.filter(file => !carveOutFiles.includes(file))
+const wholeFileScope = files.filter(
+  file => !carveOutFiles.includes(file) && !dedicatedFiles.includes(file)
+)
 
 describe("SC-5 anti-vacuity — the scan really found and read the mutation modules", () => {
   it("found the four CRM entity mutation modules and read them", () => {
@@ -242,12 +309,14 @@ describe("SC-5 anti-vacuity — the scan really found and read the mutation modu
     }
   })
 
-  it("and that they are the ONLY modules in the directory that emit", () => {
-    // Pins the set both ways. A fifth emitter appearing means a new entity gained CRM
-    // events, and it must be added to CRM_MUTATION_MODULES deliberately rather than
-    // slipping past the positive marker unnoticed.
+  it("and that the only other emitters are the declared re-emitters", () => {
+    // Pins the set both ways. An undeclared emitter appearing means either a new entity gained
+    // CRM events (add it to CRM_MUTATION_MODULES) or a module started re-emitting someone
+    // else's event (add it to REEMITTING_MODULES). Either way it is a deliberate edit here,
+    // never something that slips past the positive marker unnoticed.
     const emitters = files.filter(file => strippedSources.get(file)!.includes(EMITS))
-    expect(emitters.map(f => path.basename(f))).toEqual([...CRM_MUTATION_MODULES])
+    const expected = [...CRM_MUTATION_MODULES, ...REEMITTING_MODULES].sort()
+    expect(emitters.map(f => path.basename(f)).sort()).toEqual(expected)
   })
 })
 
@@ -377,6 +446,95 @@ describe("SC-5 inside the Phase 37 carve-out — coupling is confined to the eve
     expect(couplesToAudit(created)).toBe(false)
 
     expect(sliceDeclaration(fixture, "export async function noSuchMutation")).toBe("")
+  })
+})
+
+/*
+ * The Phase 39 third scope — a mutation module that is NOTHING BUT an event-less audit writer.
+ *
+ * `src/lib/mutations/dedup.ts` declares one exported function, `mergeRecordsMutation`, and that
+ * function must write `audit_log` rows itself: `merged` is not an `AUDITED_EVENTS` member, no
+ * `{entity}.merged` event exists, and — decisively — the rows have to go through the transaction
+ * handle so a rollback cannot leave a record of a merge that did not happen. The bus subscriber
+ * writes with the module-level client, fire-and-forget, which is the opposite property.
+ *
+ * SC-5's claim is untouched by this scope. SC-5 says audit capture required no edit to any
+ * mutation FUNCTION that emits an event; every such function still lives in the four entity
+ * modules and is still asserted uncoupled one at a time above. What this scope adds is the
+ * boundary: a dedicated event-less module may reach the audit layer, and NOTHING ELSE about it
+ * is relaxed.
+ */
+describe("SC-5 alongside the Phase 39 dedicated event-less modules", () => {
+  it("every declared dedicated module resolves to a real file that was read", () => {
+    // Anti-vacuity requirement 1. A typo in DEDICATED_EVENTLESS_MODULES would otherwise widen
+    // `wholeFileScope` back over the file and fail elsewhere for a confusing reason — or, worse,
+    // shrink this scope to nothing and certify an empty set.
+    expect(DEDICATED_EVENTLESS_MODULES.length).toBeGreaterThan(0)
+    expect(dedicatedFiles.map(f => path.basename(f)).sort()).toEqual(
+      [...DEDICATED_EVENTLESS_MODULES].sort()
+    )
+
+    for (const file of dedicatedFiles) {
+      expect(rawSources.get(file)!.length, `${relative(file)} is empty`).toBeGreaterThan(0)
+    }
+  })
+
+  it("declares an event-less audit writer and NO event-emitting mutation", () => {
+    // Anti-vacuity requirement 2: the positive marker, asserted before the permission. This is
+    // also what makes the scope's name true — a module that grew a `createXMutation` would stop
+    // being "dedicated" and must move into the Phase 37 carve-out, where each of its
+    // event-emitting functions is sliced out and asserted uncoupled individually.
+    for (const file of dedicatedFiles) {
+      const source = strippedSources.get(file)!
+      expect(
+        matchAll(source, EVENTLESS_AUDIT_WRITER).length,
+        `${relative(file)} declares no event-less audit writer, so it does not belong in this scope`
+      ).toBeGreaterThan(0)
+      expect(
+        matchAll(source, EVENT_EMITTING_MUTATION),
+        `${relative(file)} declares an event-emitting mutation and must move to the Phase 37 carve-out`
+      ).toEqual([])
+    }
+  })
+
+  it("reaches for nothing beyond the audit table and the actor read", () => {
+    // The SAME permitted vocabulary as the Phase 37 carve-out, deliberately reused rather than
+    // restated: `buildChanges`, `runWithActor`, the pruner and the retention reader stay
+    // forbidden. A dedicated module may write a row; it may not establish an actor or read a
+    // policy.
+    for (const file of dedicatedFiles) {
+      const hits = matchAll(strippedSources.get(file)!, COUPLES_TO_AUDIT)
+      expect(hits.length, `${relative(file)} matched the detector nowhere`).toBeGreaterThan(0)
+
+      for (const hit of hits) {
+        expect(
+          PERMITTED_EVENTLESS_COUPLINGS.some(permitted => hit.includes(permitted)),
+          `${relative(file)} reaches the audit layer via \`${hit}\`, which is outside the permitted vocabulary`
+        ).toBe(true)
+      }
+
+      for (const specifier of matchAll(strippedSources.get(file)!, AUDIT_MODULE_SPECIFIER)) {
+        expect(
+          PERMITTED_AUDIT_MODULES,
+          `${relative(file)} imports \`${specifier}\`, which this scope does not permit`
+        ).toContain(specifier)
+      }
+    }
+  })
+
+  it("writes every audit row through the transaction handle, never the module client", () => {
+    // The property that justifies the whole scope existing. A `db.insert(auditLog)` here would
+    // be a row that survives a rollback, which is exactly what the bus subscriber already does
+    // and exactly why the merge could not use it.
+    for (const file of dedicatedFiles) {
+      const source = strippedSources.get(file)!
+      expect(source, `${relative(file)} writes audit rows outside the transaction`).not.toMatch(
+        /\bdb\s*\.\s*insert\s*\(\s*auditLog/
+      )
+      expect(source, `${relative(file)} never inserts an audit row at all`).toMatch(
+        /\btx\s*\.\s*insert\s*\(\s*auditLog/
+      )
+    }
   })
 })
 
