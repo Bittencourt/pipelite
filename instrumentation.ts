@@ -9,6 +9,9 @@ export async function register() {
     const { cleanupStaleImportSessions } = await import("@/lib/import/import-session-cleanup")
     await cleanupStaleImportSessions()
 
+    const { cleanupStaleDedupScans } = await import("@/lib/dedup/scan-cleanup")
+    await cleanupStaleDedupScans()
+
     const { registerWebhookSubscriber } = await import("@/lib/events/subscribers/webhook")
     registerWebhookSubscriber()
 
