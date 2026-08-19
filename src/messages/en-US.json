@@ -328,7 +328,13 @@
         "deal": "deleted this deal",
         "activity": "deleted this activity"
       },
-      "noVisibleChanges": "No field-level detail was recorded."
+      "merged": {
+        "organization": "merged {name} into this organization",
+        "person": "merged {name} into this person"
+      },
+      "noVisibleChanges": "No field-level detail was recorded.",
+      "mergedNoFieldChanges": "No field values changed — this record kept all of its own.",
+      "mergedChildren": "{count, plural, one {# linked record moved to this one} other {# linked records moved to this one}}"
     },
     "value": {
       "empty": "empty",
@@ -542,6 +548,99 @@
       "alreadyDeleted": "Already in Trash",
       "unknown": "Couldn't be saved"
     }
+  },
+  "dedup": {
+    "warning": {
+      "title": "{count, plural, one {A matching record already exists} other {# matching records already exist}}",
+      "body": "Check whether one of these is the record you meant. You can still create a new one.",
+      "openExisting": "Open in a new tab",
+      "createAnyway": "Create anyway"
+    },
+    "reason": {
+      "email": "Same email address",
+      "nameIdentity": "Same name and the same identifying field",
+      "similarName": "Similar name",
+      "similarNamePhone": "Similar name and same phone number"
+    },
+    "scan": {
+      "title": "Duplicates",
+      "description": "Find records that look like the same organization or person entered twice.",
+      "startOrganizations": "Scan organizations",
+      "startPeople": "Scan people",
+      "rescan": "Scan again",
+      "running": "Comparing records…",
+      "progress": "{current} of {total} records compared",
+      "startedBy": "Started by {name}",
+      "lastRun": "Last scanned {time}",
+      "backgroundHint": "This runs in the background. You can leave this page and come back.",
+      "cancel": "Cancel scan",
+      "failed": "The scan didn't finish",
+      "failedBody": "No records were changed. Start the scan again."
+    },
+    "review": {
+      "pairsFound": "{count, plural, one {# possible duplicate} other {# possible duplicates}}",
+      "confidenceCertain": "Almost certain",
+      "confidenceLikely": "Likely",
+      "merge": "Review and merge",
+      "dismiss": "Not a duplicate",
+      "dismissed": "Marked as not a duplicate.",
+      "dismissFailed": "That pair wasn't dismissed. Check your connection and try again.",
+      "showDismissed": "Show dismissed pairs",
+      "hideDismissed": "Hide dismissed pairs",
+      "undismiss": "Move back to the list",
+      "undismissed": "Back in the list.",
+      "loadMore": "Load more",
+      "emptyNeverScanned": "No scan yet",
+      "emptyNeverScannedBody": "A scan compares every record of this type and lists the pairs that look the same. It runs in the background.",
+      "emptyNoPairs": "No duplicates found",
+      "emptyNoPairsBody": "Nothing matched in the last scan, {time}.",
+      "emptyAllDismissed": "Every pair has been dismissed"
+    },
+    "merge": {
+      "title": "Merge duplicates",
+      "description": "Choose which record to keep, then choose which value wins for each field that differs.",
+      "survivorLegend": "Which record do you want to keep?",
+      "survivorHelp": "The other record moves to Trash. Changing this resets every field choice below.",
+      "keepThis": "Keep this record",
+      "createdOn": "Created {time}",
+      "conflictsLegend": "{count, plural, one {# field differs} other {# fields differ}}",
+      "filledLegend": "{count, plural, one {# field is filled only on the other record} other {# fields are filled only on the other record}}",
+      "filledHelp": "These come from the other record by default, because the record you're keeping has nothing there.",
+      "identical": "{count, plural, one {# field is identical} other {# fields are identical}}",
+      "showIdentical": "Show identical fields",
+      "hideIdentical": "Hide identical fields",
+      "whatMoves": "What moves to the record you keep",
+      "movesDeals": "{count, plural, one {# deal} other {# deals}}",
+      "movesNotes": "{count, plural, one {# note} other {# notes}}",
+      "movesPeople": "{count, plural, one {# person} other {# people}}",
+      "activitiesFollowDeals": "Activities stay attached to their deals and move with them.",
+      "filesStayInPlace": "Uploaded files stay where they are and keep working from the record you keep.",
+      "submit": "Merge records",
+      "submitting": "Merging…",
+      "confirmTitle": "Merge these records?",
+      "confirmBody": "{loser} moves to Trash and {survivor} keeps the values you chose. You can restore {loser} from Trash, but the merge itself isn't undone.",
+      "confirmAction": "Merge and move to Trash",
+      "success": "Records merged. {loser} is in Trash.",
+      "failed": "The records weren't merged. Nothing was changed — try again.",
+      "gone": "One of these records is no longer available. It may already have been merged or deleted.",
+      "backToList": "Back to duplicates"
+    },
+    "import": {
+      "flagged": "{count, plural, one {# imported record looks like a duplicate} other {# imported records look like duplicates}}",
+      "flaggedBody": "They were imported as new records. Review them on the duplicates page.",
+      "review": "Review duplicates"
+    },
+    "identity": {
+      "title": "Organization identity fields",
+      "help": "A create-time duplicate warning needs a field that identifies a company uniquely, such as a tax number. Choose up to two custom fields, checked in order. Until one is chosen, new organizations are not checked.",
+      "primaryLabel": "First identity field",
+      "secondaryLabel": "Second identity field (optional)",
+      "none": "None",
+      "save": "Save identity fields",
+      "saved": "Identity fields saved.",
+      "saveFailed": "The identity fields weren't saved. Nothing was changed — try again."
+    },
+    "findDuplicates": "Find duplicates"
   },
   "settings": {
     "profile": {
