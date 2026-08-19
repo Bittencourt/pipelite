@@ -1,10 +1,10 @@
-import type { EntityType } from "@/db/schema/custom-fields"
 import {
   CUSTOM_FIELD_PREFIX,
   describeField,
   type AuditResolution,
   type FieldDescriptor,
 } from "@/lib/audit/present"
+import type { MergeableEntityType } from "./types"
 
 /* -----------------------------------------------------------------------------------------
  * PURE. No database client, no clock, no I/O of any kind.
@@ -25,13 +25,13 @@ import {
 /**
  * The two entity types a merge can be performed on.
  *
- * Derived from `EntityType` rather than restated, so adding a fifth entity cannot silently
- * make it mergeable. Plan 39-01 lands the canonical `MergeableEntityType` in
- * `src/lib/dedup/types.ts`; the two plans are in the same wave and cannot import from one
- * another, so this alias exists locally and should be re-pointed at `./types` once both are
- * merged.
+ * Re-exported from the canonical `MergeableEntityType` in `./types` (landed by plan 39-01)
+ * rather than restated, so adding a fifth entity cannot silently make it mergeable. During
+ * wave 1 these two plans ran in separate worktrees and could not import from one another, so
+ * this was briefly declared locally with an identical `Extract<EntityType, …>` derivation;
+ * it was re-pointed at the canonical type once both merged.
  */
-export type MergeEntityType = Extract<EntityType, "organization" | "person">
+export type MergeEntityType = MergeableEntityType
 
 /**
  * Columns the merge picker never offers and `applyMergeChoices` never writes.
