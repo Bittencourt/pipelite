@@ -426,16 +426,16 @@ Plans:
 - [x] 39-04-PLAN.md — 77 dedup.* + 4 audit.* message keys x3 locales, exact-set contract
 - [x] 39-05-PLAN.md — Generated norm columns, GIN + btree indexes, duplicate_pairs and dedup_scans, EXPLAIN proof
 - [x] 39-06-PLAN.md — dedup_scans state module and the boot reaper
-- [ ] 39-07-PLAN.md — The scan engine (name-level, star-paired) and the paged pair queries
+- [x] 39-07-PLAN.md — The scan engine (name-level, star-paired) and the paged pair queries
 - [x] 39-08-PLAN.md — Admin identity-field setting, similarity threshold, findCertainMatches
 - [x] 39-09-PLAN.md — The merge mutation: one transaction, four-site AuditAction cascade
 - [ ] 39-10-PLAN.md — Real-database integration tests, third vitest project, CI-exclusion story
 - [ ] 39-11-PLAN.md — /duplicates admin gate, server actions, RSC page, identity-field control
-- [ ] 39-12-PLAN.md — The merged audit entry: marker filter, timeline hydration, renderer
+- [x] 39-12-PLAN.md — The merged audit entry: marker filter, timeline hydration, renderer
 - [ ] 39-13-PLAN.md — Progress-bar lift, scan panel, pair card
-- [ ] 39-14-PLAN.md — Create-time duplicate warning, end to end
+- [x] 39-14-PLAN.md — Create-time duplicate warning, end to end
 - [ ] 39-15-PLAN.md — The merge screen: radio-group, action, page, stacked field picker
-- [ ] 39-16-PLAN.md — Import flagged-rows notice and the two list-page entry points
+- [x] 39-16-PLAN.md — Import flagged-rows notice and the two list-page entry points
 - [ ] 39-17-PLAN.md — 320px e2e for both new routes, Docker rebuild, phase gate, dark-mode checkpoint
 
 **UI hint**: yes
@@ -547,7 +547,7 @@ Plans:
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
 | 38. Bulk Operations | 19/20 | In Progress|  |
-| 39. Duplicate Detection & Merge | 8/17 | In Progress|  |
+| 39. Duplicate Detection & Merge | 12/17 | In Progress|  |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
