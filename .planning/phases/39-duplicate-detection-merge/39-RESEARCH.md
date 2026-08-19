@@ -1207,7 +1207,20 @@ for (const child of [...reparentedDeals, ...reparentedPeople]) {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> **All five closed 2026-08-18, after this document was written.** Resolutions live in the artifacts
+> named per question below, not here — this section is left intact so the reasoning that produced the
+> questions survives alongside the answers.
+>
+> | # | Resolution | Where |
+> |---|---|---|
+> | 1 | Organization identity key is **admin-configurable** custom fields (this deployment: CNPJ/CPF, then contact email); degrades to no certain tier when unset | `39-CONTEXT.md` § Post-Research Decisions; implemented in 39-01 / 39-08 |
+> | 2 | **Admin-only.** `/duplicates` gets a role-checked layout plus a re-check in every server action — note `middleware.ts` performs NO role check, so the gate is written by this phase, not inherited | `39-CONTEXT.md` § Post-Research Decisions; implemented in 39-11 |
+> | 3 | **Real-DB integration tests**, scoped to the merge mutation only, with a CI-exclusion story | `39-CONTEXT.md` § Post-Research Decisions, `39-VALIDATION.md` V-1; implemented in 39-10 |
+> | 4 | **DECLINED for this phase.** The group-size hint ("and 632 more like this") is not built. Star pairing already stops the list exploding, and pair-at-a-time is what CONTEXT locks; the hint needs a new message key and changes the approved copy contract. Recorded as a deliberate non-action, adjacent to the already-deferred automatic merging — not an oversight | this table; deferred alongside auto-merge in `39-CONTEXT.md` § Deferred Ideas |
+> | 5 | Pairs referencing a merged loser are marked **`superseded` inside the merge transaction**, and the next scan regenerates | implemented in 39-09 |
+
 
 1. **How is the organization *certain* tier redefined? (B1)**
    - What we know: `website` is NULL on 100% of rows; the locked rule cannot fire. `CNPJ / CPF` (11.5%) and `E-mail de Contato 1` (55.4%) are the only real discriminators and both live in deployment-specific custom field *names*.
