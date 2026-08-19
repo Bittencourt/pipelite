@@ -405,8 +405,30 @@ export function AuditEntry({ entry }: AuditEntryProps) {
    * Spanish and Portuguese inflect the demonstrative with the noun's gender ("este trato" vs
    * "esta actividad"), so a placeholder would produce broken grammar in two of the three
    * shipped locales.
+   *
+   * FOURTEEN AS OF PHASE 39. `merged` adds two — organization and person only, because a deal
+   * and an activity cannot be merged — and it is the ONLY action whose sentence carries a
+   * placeholder: "merged {name} into this organization". The values object is therefore passed
+   * UNCONDITIONALLY rather than behind a ternary. next-intl tolerates values a message does not
+   * use, so the twelve existing predicates are unaffected, and this stays ONE call site — which
+   * is the whole of what 39-UI-SPEC A-2 protects. A conditional would create the second
+   * predicate-building path A-2 forbids, for no gain.
+   *
+   * THE LOSER'S NAME IS PLAIN TEXT AND MUST STAY THAT WAY (A-3). It arrives as an interpolated
+   * ICU value, so it is a React text child, which React escapes — the same posture the field
+   * list takes toward user-authored values (T-36-21). It is deliberately NOT wrapped in a
+   * `Link`: the losing record is soft-deleted, its detail route answers 404 while it is in
+   * Trash, and `/trash` already owns the affordance for finding it. A dead link out of an audit
+   * entry is worse than a name.
+   *
+   * `?? ""` rather than a guard: a `merged` row whose `__mergedFromName` marker is missing or
+   * malformed hydrates `null` (see `AuditTimelineEntry.mergedLoserName`), and HTML collapses the
+   * resulting double space, so the sentence degrades to "merged into this organization" — less
+   * specific, still grammatical, and never a rendering failure.
    */
-  const predicate = t(`entry.${entry.action}.${entry.entityType}`)
+  const predicate = t(`entry.${entry.action}.${entry.entityType}`, {
+    name: entry.mergedLoserName ?? "",
+  })
 
   return (
     <div className="flex gap-2">
@@ -445,6 +467,19 @@ export function AuditEntry({ entry }: AuditEntryProps) {
           )}
         </div>
 
+        {/* A-7. The timeline's answer to "was anything orphaned?", and it belongs BEFORE the
+            field list rather than inside it: the count is a fact about the merge, not a field
+            whose value changed, so it must not take a row in the <dl> and must not be counted by
+            `hiddenFieldCount`. Label typography and muted, so it reads as a statement about the
+            record rather than as data. `mergedChildCount` is 0 on every other action, but the
+            line is still gated on the action — "0 linked records moved to this one" beside an
+            ordinary edit would be a sentence about nothing. */}
+        {entry.action === "merged" ? (
+          <p className="text-muted-foreground mt-1 text-xs">
+            {t("entry.mergedChildren", { count: entry.mergedChildCount })}
+          </p>
+        ) : null}
+
         {entry.action === "deleted" ? null : changes.length === 0 ? (
           /*
             Defensive. The capture subscriber returns early on an empty diff, so this row
@@ -452,9 +487,18 @@ export function AuditEntry({ entry }: AuditEntryProps) {
             make that bug invisible, and an audit surface that quietly omits history is the
             worst failure available here. Applied to `created` as well as `updated`: a
             create with nothing recorded is the same defect wearing a different action.
+
+            NOT APPLIED TO `merged`, AND THE KEY BRANCHES ON THE ACTION FOR THAT REASON (A-6).
+            For a merge an empty diff is a CORRECT, expected outcome — the survivor won every
+            field, so no value changed — and `noVisibleChanges` reads as a bug report in prose
+            ("No field-level detail was recorded."), which would tell the reader a successful
+            merge had gone wrong. `mergedNoFieldChanges` states the same emptiness as the fact it
+            is. The `created`/`updated` wording is untouched; only `merged` gets the other key.
           */
           <p className="text-muted-foreground mt-1 text-sm leading-normal">
-            {t("entry.noVisibleChanges")}
+            {entry.action === "merged"
+              ? t("entry.mergedNoFieldChanges")
+              : t("entry.noVisibleChanges")}
           </p>
         ) : (
           <>

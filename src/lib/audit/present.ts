@@ -42,6 +42,36 @@ export const CUSTOM_FIELD_PREFIX = "customFields."
 const CUSTOM_CHANGE_PREFIX = "custom:"
 
 /**
+ * The prefix that marks a stored change key as a statement about the CHANGE, not about a FIELD.
+ *
+ * Two families exist. `__purge` (`PURGE_MARKER`, `src/lib/mutations/organizations.ts`) records
+ * that a `deleted` row was a hard purge rather than a soft delete. The `__merged*` family
+ * (`MERGE_MARKER_KEYS`, `src/lib/mutations/dedup.ts`) records the losing record's id, its display
+ * name captured before the soft delete, and how many child rows were reparented. Neither names a
+ * column, so neither has an entry in `AUDIT_FIELD_LABELS` and neither can ever have one.
+ *
+ * WHY THE CONVENTION ONLY NEEDED ENFORCING IN PHASE 39. Until `merged` existed, every marker rode
+ * on a `deleted` action, and `buildAuditFieldChanges` returns `[]` for `deleted` before its loop
+ * is reached — so `__purge` had never rendered and the convention had never been tested. A
+ * `merged` entry DOES render its field list (39-UI-SPEC A-5, because the per-field diff is the
+ * whole content of the merge receipt), so an unfiltered marker becomes a field row whose label
+ * comes from `humaniseColumn`: a sentence-cased marker name beside a raw record id, shown to a
+ * user. That is the same defect 45-06 removed for `deletedAt`, arriving by a different door.
+ *
+ * WHY THE FILTER LIVES HERE AND NOT IN THE RENDERER. 45-06 recorded that a change which renders
+ * `null` must also LEAVE the array: `hiddenFieldCount` in `audit-entry.tsx` is derived from the
+ * array's length, so an invisible member promises "show 1 more" and then produces nothing, and
+ * the defensive empty-list branch never fires for an entry whose only changes are invisible. This
+ * filter therefore sits upstream of both the sort and that count, in the one function every
+ * consumer of the change list goes through.
+ *
+ * `startsWith`, never `includes`: a column or a user-authored field name containing a double
+ * underscore anywhere but the start is ordinary history, and an audit surface that silently drops
+ * a change is the worst failure available on this screen.
+ */
+export const AUDIT_MARKER_PREFIX = "__"
+
+/**
  * Every audited native column, mapped to the MESSAGE KEY that labels it.
  *
  * Keys, not English: the 20-branch mapping stays out of the render function and this module
@@ -491,6 +521,11 @@ export function buildAuditFieldChanges(
   const ranked: RankedChange[] = []
 
   for (const [changeKey, stored] of Object.entries(changes)) {
+    // A marker is a fact about the change, not about a field, and has no label by construction
+    // (see `AUDIT_MARKER_PREFIX`). Skipped BEFORE `describeField`, so it never reaches
+    // `humaniseColumn` and can never be sentence-cased into a field name a user reads.
+    if (changeKey.startsWith(AUDIT_MARKER_PREFIX)) continue
+
     const descriptor = describeField(changeKey, resolution)
 
     ranked.push({

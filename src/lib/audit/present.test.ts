@@ -6,6 +6,7 @@ import type { AuditAction, AuditFieldChange, AuditValue } from "@/lib/timeline/t
 
 import {
   AUDIT_FIELD_LABELS,
+  AUDIT_MARKER_PREFIX,
   AUDIT_TITLE_MAX_CHARS,
   AUDIT_VALUE_MAX_CHARS,
   buildAuditFieldChanges,
@@ -726,5 +727,126 @@ describe("the soft-delete column", () => {
       fieldsOf(changes),
       "an unmapped native column sorts after every mapped one (group 1 vs group 0), so leaving deletedAt out of the label map costs it no position it would otherwise have held"
     ).toEqual(["title", "deletedAt"])
+  })
+})
+
+/* -----------------------------------------------------------------------------------------
+ * THE RESERVED MARKER PREFIX (39-12)
+ *
+ * A `__`-prefixed key in a stored change map is a statement about the CHANGE, not about a
+ * FIELD: `__purge` (Phase 37) distinguishes a purge from a soft delete, and the `__merged*`
+ * family (Phase 39, `MERGE_MARKER_KEYS` in `src/lib/mutations/dedup.ts`) carries the losing
+ * record's id, its display name and the number of child rows reparented.
+ *
+ * The convention had never needed ENFORCING here, because the only action carrying a marker was
+ * `deleted` and `buildAuditFieldChanges` returns `[]` for it before the loop is ever reached.
+ * `merged` breaks that: it DOES render its field list (39-UI-SPEC A-5), so an unfiltered marker
+ * becomes a field row labelled by `humaniseColumn` — a user reading a sentence-cased marker name
+ * beside a raw record id, which is the same class of defect 45-06 removed for `deletedAt`.
+ *
+ * The rule asserted below is GENERAL, not a `merged` special case: a marker on an `updated` row
+ * is skipped too, and a key that merely CONTAINS a double underscore is not.
+ * ----------------------------------------------------------------------------------------- */
+describe("the reserved marker prefix", () => {
+  const LOSER = "8c2d1f4a-6b3e-4d59-a0f7-2e9c8b1d4a70"
+
+  /** The exact shape `mergeRecordsMutation` writes on the SURVIVOR's row (39-09, dedup.ts:505). */
+  function survivorMergeChanges(): Record<string, { from: unknown; to: unknown }> {
+    return {
+      name: { from: "Tyr Energia Ltda", to: "Tyr Energia" },
+      __mergedFrom: { from: LOSER, to: null },
+      __mergedFromName: { from: "Tyr Energia Ltda (dup)", to: null },
+      __mergedChildren: { from: null, to: 7 },
+    }
+  }
+
+  it("exports the prefix as the two-character string the mutations already write", () => {
+    expect(
+      AUDIT_MARKER_PREFIX,
+      'AUDIT_MARKER_PREFIX must be exactly "__". Both marker families already in the database are spelled that way (`__purge` since Phase 37, the merge markers since Phase 39); a different value here would silently stop matching every row already written'
+    ).toBe("__")
+  })
+
+  it("returns only the real field for a merged entry carrying three markers", () => {
+    const changes = buildAuditFieldChanges(
+      "organization",
+      "merged",
+      survivorMergeChanges(),
+      resolution()
+    )
+
+    expect(
+      changes,
+      "a merged entry with one real change and three markers must produce exactly ONE field row. Each unfiltered marker becomes a row labelled by humaniseColumn: one beside a raw record id, one beside the loser's name, and one beside a count the entry already states in its own sentence (A-7)"
+    ).toHaveLength(1)
+
+    expect(
+      fieldsOf(changes),
+      "the surviving row must be the real column, not whichever marker happened to sort first. Asserting the identity as well as the length is what stops this test passing over an empty array"
+    ).toEqual(["name"])
+  })
+
+  it("skips a marker on an updated entry too, so the rule is general", () => {
+    // `__purge` rides on a `deleted` action today, which never reaches the loop. Asserting it
+    // against `updated` proves the filter is a rule about the PREFIX rather than a carve-out for
+    // the merge, so the next mutation that invents a marker inherits the behaviour.
+    const changes = buildAuditFieldChanges(
+      "organization",
+      "updated",
+      {
+        name: { from: "Antigo", to: "Novo" },
+        __purge: { from: null, to: true },
+      },
+      resolution()
+    )
+
+    expect(
+      fieldsOf(changes),
+      "the marker filter must apply to every action that renders a field list, not only to `merged`. A prefix rule enforced for one action is not a convention, it is a special case wearing one"
+    ).toEqual(["name"])
+  })
+
+  it("keeps a key that merely contains a double underscore", () => {
+    const changes = buildAuditFieldChanges(
+      "deal",
+      "updated",
+      { custom__field: { from: "a", to: "b" } },
+      resolution()
+    )
+
+    expect(
+      fieldsOf(changes),
+      '`startsWith`, never `includes`. A column or a user-authored field name containing a double underscore anywhere but the start is ordinary history, and dropping it would be an audit surface quietly omitting a change — the worst failure available on this screen'
+    ).toEqual(["custom__field"])
+  })
+
+  it("returns an empty list for a merged entry that is nothing but markers", () => {
+    const onlyMarkers = survivorMergeChanges()
+    delete onlyMarkers.name
+
+    expect(
+      buildAuditFieldChanges("organization", "merged", onlyMarkers, resolution()),
+      "a merge where the survivor won every field records no real change, and the result must be [] rather than three marker rows. This is the case that makes audit-entry.tsx's mergedNoFieldChanges branch (A-6) reachable at all"
+    ).toEqual([])
+  })
+
+  it("leaves the deleted and created rules exactly as 45-06 left them", () => {
+    expect(
+      buildAuditFieldChanges("organization", "deleted", survivorMergeChanges(), resolution()),
+      "`deleted` must still short-circuit to [] before the loop. The marker filter is an addition to the loop, not a replacement for that early return, and the UI-SPEC draws no field list for a delete"
+    ).toEqual([])
+
+    const created = buildAuditFieldChanges(
+      "organization",
+      "created",
+      { name: { from: "should be dropped", to: "Tyr" }, __purge: { from: null, to: true } },
+      resolution()
+    )
+
+    expect(created, "the marker must be skipped on `created` as well").toHaveLength(1)
+    expect(
+      created[0].from,
+      "`created` must still force every `from` to null. A create is an initial state and an arrow drawn from nothing would be a fiction — the marker filter must not have moved that decision"
+    ).toBeNull()
   })
 })
