@@ -16,7 +16,13 @@
  *
  *   1. CONFIGURED + MATCHING identity value  -> the advisory FIRES, and everything 39-GAPS GAP 1
  *      lists about it is true: inside the dialog, above the form, not red, nothing typed lost,
- *      name + distinguishing value + reason, submit relabelled, and W-4 gets the user past it.
+ *      name + distinguishing value + reason, submit relabelled. Nothing is created on that submit
+ *      (W-2 at the database) and the dialog can still be dismissed (W-5).
+ *   1b. W-4 — the relabelled button carries `confirmDuplicate: true`, commits the record, and a
+ *      fresh dialog session comes back unwarned. Split into its own test at a LARGER DECLARED
+ *      viewport for a measured reason recorded on that test: with the advisory showing, the dialog
+ *      is ~940px tall inside the 640px project viewport and its footer cannot be reached by a
+ *      pointer. That is a real defect, reported rather than absorbed.
  *   2. CONFIGURED + DIFFERENT identity value -> NO advisory. This is the file's discriminator: the
  *      two records share a name, so if the name alone decided, case 1 would prove nothing. 70.7%
  *      of the 46,054 real organizations share a normalized name and a name-only rule was measured
@@ -143,9 +149,15 @@ const SEED_WEBSITE = "https://dup-warning-seed.e2e.example.test/institucional"
  * matched record's values into itself".
  */
 const TYPED_WEBSITE = "https://dup-warning-draft.e2e.example.test/contato"
-const TYPED_INDUSTRY = "[e2e] industry marker 5f3a"
-const TYPED_NOTES =
-  "[e2e] notes marker — an arbitrarily long paste is the thing W-2 exists to protect, so the advisory must not cost it."
+const TYPED_INDUSTRY = `${FIXTURE_PREFIX} industry 5f3a`
+/**
+ * CARRIES THE FIXTURE PREFIX BECAUSE THE TEARDOWN ASSERTION MATCHES ON IT. A create through the
+ * dialog turns this into a `notes` row whose `entity_id` has no foreign key, so the prefix is what
+ * lets `afterAll` prove that row is gone without depending on the organization it hung off still
+ * being there to join against. It is also long on purpose: an arbitrarily long paste is exactly
+ * what W-2 exists to protect.
+ */
+const TYPED_NOTES = `${FIXTURE_PREFIX} notes marker — an arbitrarily long paste is the thing W-2 exists to protect, so the advisory must not cost it.`
 
 /** The `app_settings` key this file mutates. Nothing else in that table may be touched. */
 const ORG_IDENTITY_KEY = "dedup.organization_identity_fields"
@@ -159,10 +171,9 @@ const ADD_ORGANIZATION = "Add Organization"
 const CREATE_ORGANIZATION = "Create Organization"
 
 interface Counts {
-  organizations: number
-  notes: number
-  auditLog: number
-  duplicatePairs: number
+  /** Organizations that are NOT any spec's fixture — i.e. the real ones. */
+  realOrganizations: number
+  /** Nothing in this file scans, so this one is safe to compare globally. */
   dedupScans: number
 }
 
@@ -216,28 +227,34 @@ async function withDb<T>(work: (sql: Sql) => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * The two counts that are safe to compare across this run, AND WHY THE OTHERS ARE NOT.
+ *
+ * The plan asked for `count(*)` parity on `organizations`, `audit_log`, `duplicate_pairs` and
+ * `dedup_scans`. Measured reason that cannot be done as written: `playwright.config.ts` sets
+ * `fullyParallel: false`, which serializes tests WITHIN a file and distributes FILES across
+ * workers — the full suite really does run on two. `merge-screen-320.spec.ts` inserts two
+ * organizations and a `duplicate_pairs` row in its own `beforeAll` and deletes them in its
+ * `afterAll`, and `deals-drag.spec.ts` creates records of its own, so a global `count(*)` captured
+ * here and compared there would report a SIBLING SPEC's in-flight fixture as this file's
+ * contamination. A teardown assertion that fails when the teardown was perfect is worse than no
+ * assertion: it trains people to re-run until it passes.
+ *
+ * So parity is taken on the population no e2e spec can touch — organizations that carry no `[e2e]`
+ * prefix, i.e. the 46,054 real ones — which is the thing actually worth protecting, plus
+ * `dedup_scans`, which nothing in `e2e/` writes at all. Everything this file can itself leave
+ * behind is asserted DIRECTLY and by its own marker in `afterAll`, which is both stricter and
+ * immune to a sibling's timing. That is also the posture `merge-screen-320.spec.ts` already takes:
+ * it asserts its own prefix and its own pair ids, never a global total.
+ */
 async function readCounts(sql: Sql): Promise<Counts> {
-  const [row] = await sql<
-    {
-      organizations: string
-      notes: string
-      audit_log: string
-      duplicate_pairs: string
-      dedup_scans: string
-    }[]
-  >`
+  const [row] = await sql<{ real_organizations: string; dedup_scans: string }[]>`
     select
-      (select count(*) from organizations)::text   as organizations,
-      (select count(*) from notes)::text           as notes,
-      (select count(*) from audit_log)::text       as audit_log,
-      (select count(*) from duplicate_pairs)::text as duplicate_pairs,
-      (select count(*) from dedup_scans)::text     as dedup_scans
+      (select count(*) from organizations where name not like '[e2e]%')::text as real_organizations,
+      (select count(*) from dedup_scans)::text                               as dedup_scans
   `
   return {
-    organizations: Number(row.organizations),
-    notes: Number(row.notes),
-    auditLog: Number(row.audit_log),
-    duplicatePairs: Number(row.duplicate_pairs),
+    realOrganizations: Number(row.real_organizations),
     dedupScans: Number(row.dedup_scans),
   }
 }
@@ -447,15 +464,17 @@ test.beforeEach(async () => {
 
 test.afterAll(async () => {
   await withDb(async (sql) => {
+    /**
+     * EVERY MUTATION FIRST, EVERY ASSERTION AFTERWARDS, AND THE ORDER IS THE POINT.
+     *
+     * This was learned the hard way here rather than reasoned about. An earlier version interleaved
+     * them — purge, assert, restore — and a deliberately broken purge made the leak assertion fail
+     * BEFORE the `app_settings` restore ran, so the probe that was checking the teardown left the
+     * identity setting configured on the shared database. A failing teardown assertion must REPORT
+     * a leak, never CAUSE one. Nothing below the mutations can now prevent the database from being
+     * put back, however red the run was.
+     */
     await purgeFixture(sql)
-
-    // TEARDOWN PROVEN, NOT PERFORMED-AND-TRUSTED, and it runs whether the spec was red or green:
-    // a failed run must never be allowed to strand a fixture or a configured setting on a database
-    // 46,054 real organizations live in.
-    const [orgs] = await sql<{ count: string }[]>`
-      select count(*)::text as count from organizations where name like ${FIXTURE_PREFIX + "%"}
-    `
-    expect(Number(orgs.count), "fixture organizations were left behind").toBe(0)
 
     if (capturedSetting.existed) {
       await sql`
@@ -464,31 +483,66 @@ test.afterAll(async () => {
         on conflict (key) do update
           set value = ${sql.json(capturedSetting.value as never)}, updated_at = now()
       `
-      const [row] = await sql<{ value: unknown }[]>`
-        select value from app_settings where key = ${ORG_IDENTITY_KEY}
-      `
-      expect(row?.value, `${ORG_IDENTITY_KEY} was not restored to its captured value`).toEqual(
-        capturedSetting.value
-      )
     } else {
       // The only DELETE this file issues outside its own fixture rows. Scoped to the single key it
       // wrote itself; nothing else in `app_settings` is read, written or deleted anywhere here.
       await sql`delete from app_settings where key = ${ORG_IDENTITY_KEY}`
-      const rows = await sql`select key from app_settings where key = ${ORG_IDENTITY_KEY}`
+    }
+
+    // ---- measurements ----
+    const [orgs] = await sql<{ count: string }[]>`
+      select count(*)::text as count from organizations where name like ${FIXTURE_PREFIX + "%"}
+    `
+    const [strandedNotes] = await sql<{ count: string }[]>`
+      select count(*)::text as count from notes where content like ${FIXTURE_PREFIX + "%"}
+    `
+    const settingRows = await sql<{ value: unknown }[]>`
+      select value from app_settings where key = ${ORG_IDENTITY_KEY}
+    `
+    const after = await readCounts(sql)
+
+    // ---- TEARDOWN PROVEN, NOT PERFORMED-AND-TRUSTED. A delete that matched nothing and a delete
+    // that matched everything both exit cleanly. ----
+    expect(Number(orgs.count), "fixture organizations were left behind").toBe(0)
+
+    /**
+     * THE ORPHAN NOTE, ASSERTED BY ITS OWN MARKER — the one leak this file actually produced while
+     * it was being written.
+     *
+     * A create through the dialog writes a `notes` row whenever the draft's Notes field is
+     * non-empty, and `notes.entity_id` is polymorphic with NO foreign key, so deleting the
+     * organization leaves the note behind and nothing complains. It was measured: an early run of
+     * this fixture left `notes` at 75,237 against a baseline of 75,236. Matching on the marker in
+     * the content is what makes this assertion immune to a sibling spec's notes, and it fails
+     * loudly if `purgeFixture` ever stops deleting notes before organizations — which was RUN and
+     * observed, not assumed: pointing that delete at a non-existent `entity_type` failed this line
+     * by name.
+     */
+    expect(
+      Number(strandedNotes.count),
+      "notes written by this fixture were left behind — polymorphic entity_id has no foreign key to catch it"
+    ).toBe(0)
+
+    if (capturedSetting.existed) {
       expect(
-        rows.length,
+        settingRows[0]?.value,
+        `${ORG_IDENTITY_KEY} was not restored to its captured value`
+      ).toEqual(capturedSetting.value)
+    } else {
+      expect(
+        settingRows.length,
         `${ORG_IDENTITY_KEY} did not exist before this run and must not exist after it`
       ).toBe(0)
     }
 
-    const after = await readCounts(sql)
-    expect(after, "the shared development database is not back at its pre-run row counts").toEqual(
-      baseline
-    )
+    expect(
+      after,
+      "a REAL organization was created or destroyed by this spec, or a scan was started — see readCounts for why these are the two counts compared"
+    ).toEqual(baseline)
   })
 })
 
-test("CONFIGURED + a matching identity value: the advisory fires, and W-4 gets past it", async ({
+test("CONFIGURED + a matching identity value: the advisory fires inside the open dialog", async ({
   page,
 }) => {
   const label = identityLabel as string
@@ -590,6 +644,11 @@ test("CONFIGURED + a matching identity value: the advisory fires, and W-4 gets p
       surfaceBackground: getComputedStyle(surface).backgroundColor,
       destructiveColor: destructive ? getComputedStyle(destructive).color : null,
       dialogHeight: surface.getBoundingClientRect().height,
+      dialogTop: surface.getBoundingClientRect().top,
+      dialogBottom: surface.getBoundingClientRect().bottom,
+      surfaceOverflowY: getComputedStyle(surface).overflowY,
+      surfaceMaxHeight: getComputedStyle(surface).maxHeight,
+      bodyOverflow: getComputedStyle(document.body).overflow,
       viewportHeight: window.innerHeight,
     }
   })
@@ -611,12 +670,28 @@ test("CONFIGURED + a matching identity value: the advisory fires, and W-4 gets p
     `the advisory's background ${palette.background} is not the dialog surface's ${palette.surfaceBackground}`
   ).toBe(palette.surfaceBackground)
 
-  // RECORDED, NOT ASSERTED: the dialog's height once the advisory renders, against the 640px
-  // project viewport. It is why this file activates the submit button by keyboard (see the header),
-  // and it is a measurement a reader of a green run should still be able to see.
+  /**
+   * RECORDED, NOT ASSERTED — and it is a defect this file FOUND rather than a property it verifies.
+   *
+   * Once the advisory renders, the dialog is far taller than the 640px project viewport.
+   * `DialogContent` is `position: fixed`, vertically centred by `translate-y-[-50%]`, and carries
+   * NO max-height and NO overflow, while Radix locks `body` at `overflow: hidden` — so the footer
+   * is below the fold with nothing that can scroll it, and the header's close button is above the
+   * fold for the same reason. A pointer therefore cannot reach "Create anyway" at this viewport,
+   * which is why W-4 is proven by a real click in the separate test below, at a viewport where the
+   * dialog demonstrably fits, instead of being faked with a synthetic event here.
+   *
+   * This is not asserted because asserting it either way would be wrong: asserting the overflow
+   * would encode a defect as expected behaviour, and asserting that it fits would leave this file
+   * permanently red over something outside the gap it was written to close. The numbers are logged
+   * so a reader of a GREEN run can still see them, and they are reported to the phase.
+   */
   console.log(
-    `[39-19] advisory showing: dialog height ${Math.round(palette.dialogHeight)}px vs viewport ${palette.viewportHeight}px; ` +
-      `advisory colour ${palette.color} on ${palette.background}; destructive token ${palette.destructiveColor}`
+    `[39-19] advisory showing @ ${palette.viewportHeight}px viewport: dialog height ` +
+      `${Math.round(palette.dialogHeight)}px, top ${Math.round(palette.dialogTop)}px, bottom ` +
+      `${Math.round(palette.dialogBottom)}px; dialog overflow-y ${palette.surfaceOverflowY}, ` +
+      `max-height ${palette.surfaceMaxHeight}, body overflow ${palette.bodyOverflow}. ` +
+      `Advisory colour ${palette.color} on ${palette.background}; destructive token ${palette.destructiveColor}.`
   )
 
   /**
@@ -668,38 +743,141 @@ test("CONFIGURED + a matching identity value: the advisory fires, and W-4 gets p
   await expect(submitButton(page)).not.toHaveText(CREATE_ORGANIZATION)
 
   /**
-   * (i) W-4 OBSERVED — pressing the relabelled button creates the record, and the check does NOT
-   * run again. If `confirmDuplicate` were not carried, the same advisory would come back and the
-   * user could never get past it, which is why this is a product requirement and not a nicety.
+   * (i) W-2 AT THE DATABASE — THE ADVISORY REPLACED THE CREATE, IT DID NOT ACCOMPANY IT.
+   *
+   * "Advisory, never blocking" is about the SECOND submit, not the first: the first submit must
+   * report and create nothing, or the warning would be a notification about a row that already
+   * exists and the user's only remaining option would be to delete it. Only the seed is present.
    */
-  await activateSubmit(page)
-
-  await expect(page.locator("#name"), "the dialog did not close after Create anyway").toBeHidden()
-  await expect(page.getByText("Organization created!")).toBeVisible()
-
-  const rows = await fixtureRows()
-  expect(rows.length, "Create anyway did not create the second organization").toBe(2)
-
-  const created = rows.find((row) => row.id !== seedId)
-  expect(created, "the created organization could not be identified").toBeTruthy()
-  // The typed values reached the database, INCLUDING the identity blob — the create-time half of
-  // 39-18's wire, observed end to end rather than read off the source.
-  expect(created?.website).toBe(TYPED_WEBSITE)
-  expect(created?.industry).toBe(TYPED_INDUSTRY)
-  expect((created?.customFields as Record<string, unknown> | null)?.[label]).toBe(
-    TYPED_IDENTITY_MATCHING
-  )
+  const duringWarning = await fixtureRows()
+  expect(
+    duringWarning.length,
+    "a record was created on the warned submit — the advisory accompanied the create instead of replacing it"
+  ).toBe(1)
 
   /**
-   * A FRESH DIALOG SESSION STARTS UNWARNED — the browser-visible half of the `dialogSessionKey`
-   * rule. A warning that outlived the draft it described would be naming records that no longer
-   * relate to anything on screen, which is worse than no warning at all.
+   * W-5 — THE DIALOG'S EXISTING CLOSE IS STILL A WAY OUT, and at this viewport it is the ONLY one.
+   *
+   * `DuplicateWarning` renders no buttons of its own by design, so cancelling is the dialog's own
+   * affordance. Escape is asserted rather than the footer's Cancel button or the header's close
+   * icon, because the measurement logged above puts both of those off-screen here — which is
+   * exactly why this line matters: it establishes that a 320px user who is shown an advisory is not
+   * TRAPPED, even though they cannot reach "Create anyway". Nothing is created on the way out.
    */
-  await openCreateDialog(page, false)
-  await expect(advisory(page), "the advisory survived into a fresh dialog session").toHaveCount(0)
-  await expect(submitButton(page)).toHaveText(CREATE_ORGANIZATION)
-  await expect(page.locator("#name")).toHaveValue("")
-  await expect(page.locator("#org-identity-0")).toHaveValue("")
+  await page.keyboard.press("Escape")
+  await expect(page.locator("#name"), "the advisory left no way to dismiss the dialog").toBeHidden()
+  expect((await fixtureRows()).length, "dismissing the advisory created a record").toBe(1)
+})
+
+/**
+ * W-4, PROVEN BY A REAL POINTER CLICK, AT A VIEWPORT WHERE THE DIALOG DEMONSTRABLY FITS.
+ *
+ * THE VIEWPORT IS DECLARED HERE AND ONLY HERE, and it is not the thing the surrounding rules
+ * forbid. `test.use` sets the viewport when the browser CONTEXT IS CREATED, so no `resize` event is
+ * ever dispatched — which is the whole hazard behind "never resize mid-run": `@dnd-kit/core` wires
+ * the window resize event to its drag-cancel handler. Nothing is resized; a second context is
+ * simply born larger, and the 320px project viewport still governs every other test in this file.
+ *
+ * The reason it is needed is measured, not assumed, and is logged by the test above: with the
+ * advisory showing, the dialog is ~940px tall inside a 640px viewport, `position: fixed` with no
+ * max-height, no overflow and a scroll-locked body, so the footer cannot be reached by a pointer
+ * there. W-4 is a BEHAVIOURAL rule — does the confirmed submit skip the check and commit the
+ * record — and proving a behaviour at a viewport where the control is reachable is sound, whereas
+ * dispatching a synthetic click at 320px would prove the handler while asserting nothing about the
+ * button a user actually presses. The 320px unreachability is reported as its own defect rather
+ * than absorbed into this test.
+ */
+test.describe("W-4 at a viewport the create dialog fits", () => {
+  test.use({ viewport: { width: 1280, height: 900 } })
+
+  test("Create anyway commits the record, and a fresh dialog session is unwarned", async ({
+    page,
+  }) => {
+    const label = identityLabel as string
+    await setIdentityFields([label])
+
+    await openCreateDialog(page)
+
+    const identityInput = page.locator("#org-identity-0")
+    await expect(identityInput).toBeVisible()
+
+    await page.locator("#name").fill(SEED_NAME)
+    await page.locator("#website").fill(TYPED_WEBSITE)
+    await page.locator("#industry").fill(TYPED_INDUSTRY)
+    await identityInput.fill(TYPED_IDENTITY_MATCHING)
+    await page.locator("#notes").fill(TYPED_NOTES)
+
+    await expect(submitButton(page)).toHaveText(CREATE_ORGANIZATION)
+    await activateSubmit(page)
+
+    // The same advisory, at this viewport too — so what follows is a confirmed submit and not an
+    // ordinary one that never saw a warning.
+    await expect(advisory(page), "the advisory did not appear at this viewport").toBeVisible()
+    await expect(submitButton(page)).toHaveAccessibleName(en.dedup.warning.createAnyway)
+
+    /**
+     * THE PRECONDITION FOR A REAL CLICK, ASSERTED SO A FUTURE FAILURE EXPLAINS ITSELF. If the
+     * dialog ever stops fitting here too, this line says so in one number instead of leaving a
+     * click to time out against "element is outside of the viewport".
+     */
+    const fit = await page.evaluate(() => {
+      const surface = document.querySelector('[data-slot="dialog-content"]') as HTMLElement
+      const submit = document.querySelector(
+        '[data-slot="dialog-content"] button[type="submit"]'
+      ) as HTMLElement
+      return {
+        dialogBottom: surface.getBoundingClientRect().bottom,
+        dialogTop: surface.getBoundingClientRect().top,
+        submitBottom: submit.getBoundingClientRect().bottom,
+        viewportHeight: window.innerHeight,
+      }
+    })
+    expect(
+      fit.submitBottom,
+      `the relabelled submit button is below the fold here too (${Math.round(fit.submitBottom)}px vs ${fit.viewportHeight}px)`
+    ).toBeLessThanOrEqual(fit.viewportHeight)
+    expect(fit.dialogTop, "the dialog overflows the top of this viewport").toBeGreaterThanOrEqual(0)
+    console.log(
+      `[39-19] W-4 viewport ${fit.viewportHeight}px: dialog top ${Math.round(fit.dialogTop)}px, ` +
+        `bottom ${Math.round(fit.dialogBottom)}px, submit bottom ${Math.round(fit.submitBottom)}px — reachable.`
+    )
+
+    /**
+     * W-4 OBSERVED. The relabelled button carries `confirmDuplicate: true`, so the server skips the
+     * check; if it did not, the identical advisory would come straight back and the user could
+     * never get past it. That is why this is a product requirement and not a nicety.
+     */
+    await activateSubmit(page)
+
+    await expect(page.locator("#name"), "the dialog did not close after Create anyway").toBeHidden()
+    await expect(page.getByText("Organization created!")).toBeVisible()
+
+    const rows = await fixtureRows()
+    expect(rows.length, "Create anyway did not create the second organization").toBe(2)
+
+    const created = rows.find((row) => row.id !== seedId)
+    expect(created, "the created organization could not be identified").toBeTruthy()
+    // The typed values reached the database, INCLUDING the identity blob — the create-time half of
+    // 39-18's wire, observed end to end rather than read off the source.
+    expect(created?.website).toBe(TYPED_WEBSITE)
+    expect(created?.industry).toBe(TYPED_INDUSTRY)
+    expect((created?.customFields as Record<string, unknown> | null)?.[label]).toBe(
+      TYPED_IDENTITY_MATCHING
+    )
+
+    /**
+     * A FRESH DIALOG SESSION STARTS UNWARNED — the browser-visible half of the `dialogSessionKey`
+     * rule. A warning that outlived the draft it described would be naming records that no longer
+     * relate to anything on screen, which is worse than no warning at all. Note this is asserted
+     * with TWO matching organizations now in the database, so it is the session key doing the work
+     * and not an absence of anything to match.
+     */
+    await openCreateDialog(page, false)
+    await expect(advisory(page), "the advisory survived into a fresh dialog session").toHaveCount(0)
+    await expect(submitButton(page)).toHaveText(CREATE_ORGANIZATION)
+    await expect(page.locator("#name")).toHaveValue("")
+    await expect(page.locator("#org-identity-0")).toHaveValue("")
+  })
 })
 
 test("CONFIGURED + a different identity value: the shared name alone does not warn", async ({
