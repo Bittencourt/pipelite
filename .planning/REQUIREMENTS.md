@@ -48,9 +48,9 @@ the motivating evidence stays one hop away.
 
 ### Duplicate Detection & Merge (999.7)
 
-- [ ] **DEDUP-01**: User is warned of likely duplicates when creating an organization or person, and can scan an entity type for existing duplicates on demand
-- [ ] **DEDUP-02**: User can merge two records, choosing the winning value per conflicting field
-- [ ] **DEDUP-03**: Merging reassigns all child records (deals, activities, notes, files, custom field values) to the surviving record rather than orphaning them
+- [x] **DEDUP-01**: User is warned of likely duplicates when creating an organization or person, and can scan an entity type for existing duplicates on demand
+- [x] **DEDUP-02**: User can merge two records, choosing the winning value per conflicting field
+- [x] **DEDUP-03**: Merging reassigns all child records (deals, activities, notes, files, custom field values) to the surviving record rather than orphaning them
 
 ### Saved Views & Filters (999.8)
 
@@ -138,9 +138,9 @@ Which phases cover which requirements. Populated during roadmap creation (2026-0
 | BULK-02 | Phase 38 | Pending |
 | BULK-03 | Phase 38 | Pending |
 | BULK-04 | Phase 38 | Pending |
-| DEDUP-01 | Phase 39 | Pending |
-| DEDUP-02 | Phase 39 | Pending |
-| DEDUP-03 | Phase 39 | Pending |
+| DEDUP-01 | Phase 39 | Complete |
+| DEDUP-02 | Phase 39 | Complete |
+| DEDUP-03 | Phase 39 | Complete |
 | VIEW-01 | Phase 40 | Pending |
 | VIEW-02 | Phase 40 | Pending |
 | VIEW-03 | Phase 40 | Pending |
