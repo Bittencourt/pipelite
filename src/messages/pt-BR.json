@@ -635,13 +635,14 @@
     },
     "identity": {
       "title": "Campos de identificação da empresa",
-      "help": "Um aviso de duplicado na criação precisa de um campo que identifique a empresa de forma única, como o CNPJ. Escolha até dois campos personalizados, verificados nesta ordem. Até escolher um, novas empresas não são verificadas.",
+      "help": "Um aviso de duplicado na criação precisa de um campo que identifique a empresa de forma única, como o CNPJ. Escolha até dois campos personalizados de texto, verificados nesta ordem. Até escolher um, novas empresas não são verificadas.",
       "primaryLabel": "Primeiro campo de identificação",
       "secondaryLabel": "Segundo campo de identificação (opcional)",
       "none": "Nenhum",
       "save": "Salvar campos de identificação",
       "saved": "Campos de identificação salvos.",
-      "saveFailed": "Os campos de identificação não foram salvos. Nada foi alterado — tente novamente."
+      "saveFailed": "Os campos de identificação não foram salvos. Nada foi alterado — tente novamente.",
+      "unsupported": "Um campo configurado aqui não está mais disponível: ele precisa ser um campo personalizado de texto que ainda exista. Novas empresas não estão sendo verificadas por ele — escolha outro campo ou limpe-o."
     },
     "findDuplicates": "Encontrar duplicados"
   },

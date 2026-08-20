@@ -54,6 +54,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { db } from "@/db"
 import { users } from "@/db/schema"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import { collectableIdentityFieldNames } from "@/lib/dedup/identity-inputs"
 import { readOrgIdentityFields } from "@/lib/dedup/identity-settings"
 import { countPairs, listPairs, MAX_PAIR_PAGE, type PairSideSummary } from "@/lib/dedup/queries"
 import { calculateScanProgress, getLatestScan } from "@/lib/dedup/scan-state"
@@ -90,12 +91,20 @@ import {
  * PROJECTED TO NAMES BEFORE THE BOUNDARY. Only labels cross into the client component; the full
  * definition rows carry config blobs, timestamps and positions that no client code on this route
  * reads, and Flight would serialize every byte of them (the D-44-02 precedent).
+ *
+ * AND THE PROJECTION IS FILTERED — only labels a create-time text input can actually COLLECT are
+ * offered, so the picker cannot store a configuration that silently does nothing. That was gap
+ * D-39-04: every label was offered, while `matching.ts` can only read a string out of the blob, so an
+ * admin could choose a `multi_select` field, see "Identity fields saved." and get no check at all.
+ * THE FILTER LIVES IN `identity-inputs.ts` rather than here, because the create dialog applies the
+ * SAME predicate — one implementation is the only thing that keeps the offer and the collect from
+ * disagreeing.
  */
 async function readOrgFieldNames(): Promise<string[]> {
   try {
     const definitions = await getActiveFieldDefinitions("organization")
 
-    return definitions.map((definition) => definition.name)
+    return collectableIdentityFieldNames(definitions)
   } catch (error) {
     console.error("[duplicates-page] could not read the organization field definitions:", error)
     return []

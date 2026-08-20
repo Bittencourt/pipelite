@@ -18,11 +18,21 @@
  * the gap was closed: no input, no value, no certain tier, no advisory. That is the same safe
  * direction `readOrgIdentityFields` chose for a missing or corrupted setting.
  *
- * A KNOWN RESIDUAL ASYMMETRY, recorded so nobody reads the drop as a bug: the admin identity-field
- * form offers every organization field label with no type filter, so an admin can configure a
- * non-text field and see it saved while no input ever appears for it. Filtering that control is a
- * separate decision, not this module's to make — and until it is made, silently doing nothing is
- * strictly better than silently corrupting a blob.
+ * THE ADMIN PICKER AND THIS MODULE NOW SHARE ONE PREDICATE, and that is the point of
+ * `isCollectableIdentityField` being exported rather than inlined. Until gap D-39-04 was closed the
+ * admin identity-field form offered every organization field label with no type filter, so an admin
+ * could configure a non-text field and see it saved while no input ever appeared for it — the same
+ * silent-failure class D-39-01 was, moved one layer up. The picker's option list is now produced by
+ * `collectableIdentityFieldNames` in this module, consumed by `readOrgFieldNames` in
+ * `src/app/duplicates/page.tsx` and passed to the form as a plain array of labels. Both sides route
+ * through ONE implementation of the rule precisely so the picker cannot offer a label the create
+ * dialog would then refuse: two independently maintained filters would disagree on the shared-name
+ * case below and rebuild the defect somewhere new.
+ *
+ * THE PICKER IS A CONTROL, NOT THE ENFORCEMENT (T-39G-17). `saveOrgIdentityFields` validates the
+ * submitted array's SHAPE and deliberately not its types, so a crafted POST can still store a
+ * `multi_select` label. What makes that safe is the read side here refusing to collect it — the
+ * configuration degrades to exactly the unconfigured behaviour rather than corrupting a blob.
  *
  * LIKE `identity-settings.ts`, THIS MODULE READS THE DATABASE and may never be imported from a
  * `"use client"` file. `/organizations` reads it on the server and passes the resulting labels down
@@ -50,10 +60,76 @@ const LOG_PREFIX = "[dedup-identity-inputs]"
  */
 export const IDENTITY_INPUT_FIELD_TYPE = "text"
 
-/** The narrow projection of a definition this selector needs — never the whole row. */
-interface FieldTypeByName {
+/**
+ * The narrow projection of a definition this selector needs — never the whole row.
+ *
+ * Exported because two exported functions take it, and a caller assembling a fixture or a projection
+ * needs to be able to name the shape.
+ */
+export interface FieldTypeByName {
   name: string
   type: string
+}
+
+/**
+ * THE ONE IMPLEMENTATION OF THE COLLECTABILITY RULE. Both the create dialog (through
+ * `selectIdentityInputFields` below) and the admin picker (through `collectableIdentityFieldNames`,
+ * and thence `/duplicates/page.tsx`) ask this and nothing else.
+ *
+ * True when at least one active definition carries that name AND every definition carrying it is
+ * `IDENTITY_INPUT_FIELD_TYPE`.
+ *
+ * BOTH HALVES TRAVEL TOGETHER AND THE ORDER IS LOAD-BEARING. `Array.prototype.every` returns TRUE on
+ * an empty array, so dropping the "at least one" test — or reordering it after the `every` — would
+ * make every UNKNOWN label collectable, which is the precise opposite of this module's purpose. It is
+ * the kind of thing a later simplification removes because it reads as redundant; it is not.
+ *
+ * "EVERY definition carrying it", not "the first one": two active definitions may legitimately share
+ * a name in this deployment, and because `customFields` has ONE key per name, a text row and a
+ * `multi_select` row under the same label both read that one key. A shared name whose definitions
+ * disagree is therefore collectable by neither side.
+ */
+export function isCollectableIdentityField(
+  label: string,
+  definitions: readonly FieldTypeByName[]
+): boolean {
+  const matching = definitions.filter((definition) => definition.name === label)
+
+  if (matching.length === 0) return false
+
+  return matching.every((definition) => definition.type === IDENTITY_INPUT_FIELD_TYPE)
+}
+
+/**
+ * Every DISTINCT definition name the predicate admits, in DEFINITION ORDER — the option list the
+ * admin identity-field picker offers.
+ *
+ * DEFINITION ORDER, which is `position` order because `getActiveFieldDefinitions` orders by it, and
+ * NOT configured order: this list feeds a control where the admin has not chosen anything yet, so
+ * there is no configured order to honour, and `position` is the order the same fields appear in
+ * everywhere else in the app.
+ *
+ * NOT CAPPED AT `ORG_IDENTITY_FIELDS_MAX`. The cap bounds how many fields may be CONFIGURED, not how
+ * many may be OFFERED — capping the picker at two options would leave an admin unable to choose the
+ * third field in the table.
+ *
+ * Deduplicated for the same reason `selectIdentityInputFields` deduplicates: one blob key per name,
+ * so two definition rows sharing a name are one choice, and offering both would render two options
+ * that cannot be told apart and mean the same thing.
+ */
+export function collectableIdentityFieldNames(
+  definitions: readonly FieldTypeByName[]
+): string[] {
+  const names: string[] = []
+
+  for (const definition of definitions) {
+    if (names.includes(definition.name)) continue
+    if (!isCollectableIdentityField(definition.name, definitions)) continue
+
+    names.push(definition.name)
+  }
+
+  return names
 }
 
 /**
@@ -66,11 +142,10 @@ interface FieldTypeByName {
  * order and stops at the first field populated on both records — so the inputs are rendered in the
  * order the decision is actually made, never in definition `position` order.
  *
- * A label is dropped when no active definition describes it (the admin renamed or deleted the field
- * after configuring it), or when any definition carrying that name is not text. "ANY", not "the
- * first": two active definitions may legitimately share a name in this deployment, and because the
- * blob has ONE key per name, a text row and a `multi_select` row under the same label both read that
- * one key. A shared name whose definitions disagree is therefore not collectable at all.
+ * WHICH labels are dropped is `isCollectableIdentityField`'s answer and not restated here — the admin
+ * picker asks the same function, and a second copy of the rule in this loop is exactly how the two
+ * would drift apart. In short: a label with no active definition (the admin renamed or deleted the
+ * field after configuring it) and a label any of whose definitions is not text are both dropped.
  *
  * The result is deduplicated — one input per blob key, whether the repetition came from the
  * configured list or from two definition rows — and capped at `ORG_IDENTITY_FIELDS_MAX`. The cap is
@@ -89,11 +164,7 @@ export function selectIdentityInputFields(
 
   for (const label of configured) {
     if (selected.includes(label)) continue
-
-    const matching = definitions.filter((definition) => definition.name === label)
-
-    if (matching.length === 0) continue
-    if (!matching.every((definition) => definition.type === IDENTITY_INPUT_FIELD_TYPE)) continue
+    if (!isCollectableIdentityField(label, definitions)) continue
 
     selected.push(label)
 

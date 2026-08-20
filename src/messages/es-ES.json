@@ -635,13 +635,14 @@
     },
     "identity": {
       "title": "Campos de identificación de la empresa",
-      "help": "Un aviso de duplicado al crear necesita un campo que identifique a la empresa de forma única, como el NIF. Elige hasta dos campos personalizados, comprobados en ese orden. Hasta que elijas uno, las nuevas empresas no se comprueban.",
+      "help": "Un aviso de duplicado al crear necesita un campo que identifique a la empresa de forma única, como el NIF. Elige hasta dos campos personalizados de texto, comprobados en ese orden. Hasta que elijas uno, las nuevas empresas no se comprueban.",
       "primaryLabel": "Primer campo de identificación",
       "secondaryLabel": "Segundo campo de identificación (opcional)",
       "none": "Ninguno",
       "save": "Guardar campos de identificación",
       "saved": "Campos de identificación guardados.",
-      "saveFailed": "Los campos de identificación no se guardaron. No se modificó nada — inténtalo de nuevo."
+      "saveFailed": "Los campos de identificación no se guardaron. No se modificó nada — inténtalo de nuevo.",
+      "unsupported": "Un campo configurado aquí ya no está disponible: debe ser un campo personalizado de texto que siga existiendo. Las empresas nuevas no se están comprobando con él — elige otro campo o bórralo."
     },
     "findDuplicates": "Buscar duplicados"
   },

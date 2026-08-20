@@ -28,6 +28,15 @@
  * is cosmetic either way: the two selects decide what CAN be submitted, and the server action plus
  * that module's own zod schema are what enforce it (T-39-11).
  *
+ * WHICH IS WHY `fieldNames` ARRIVES ALREADY FILTERED, AND WHERE TO LOOK FOR THE RULE. As of plan
+ * 39-21 the labels this form offers are not every organization field label: only those a create-time
+ * text input can actually COLLECT reach it. That filter runs on the SERVER — `readOrgFieldNames` in
+ * `page.tsx` projects the definitions through the very predicate the create dialog applies, so the
+ * two cannot disagree — and this file imports nothing to do it. The boundary above therefore still
+ * holds exactly as written; what changed is the CONTENT of the prop, not this file's dependencies.
+ * Said here because a reader of this file alone cannot otherwise tell where the type rule lives, and
+ * both helpers below take only the component's own props precisely to keep it that way.
+ *
  * THE SELECTION IS RETAINED ON FAILURE. `saved` moves in exactly one place — the success branch. A
  * refused save and a thrown action land in the same handler, which re-enables the selects with
  * whatever the admin chose still in them.
@@ -42,11 +51,12 @@
  * measured is a surface with no owner. Changing it remains a one-row operator `UPDATE`.
  */
 
-import { Loader2 } from "lucide-react"
+import { Loader2, TriangleAlert } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -78,6 +88,48 @@ const NONE_VALUE = "__none__"
 const PRIMARY_ID = "org-identity-primary"
 const SECONDARY_ID = "org-identity-secondary"
 const HELP_ID = "org-identity-help"
+const UNSUPPORTED_ID = "org-identity-unsupported"
+
+/**
+ * The labels the two selects may show: everything OFFERED, plus any stored label that is no longer
+ * offerable, appended.
+ *
+ * A STORED LABEL THE PICKER CAN NO LONGER OFFER IS NEITHER ERASED NOR HIDDEN. `<Select value={x}>`
+ * with no `SelectItem` of that value renders an EMPTY TRIGGER — Radix has nothing to display — so
+ * dropping the stranded label would tell the admin their configuration is gone while `app_settings`
+ * still holds it, and invite a "corrective" save that really would erase it. Appending it keeps the
+ * trigger honest.
+ *
+ * OFFERED FIRST, so the normal case reads in the server's `position` order and the stranded entry is
+ * visibly an appendix rather than an equal choice.
+ *
+ * The `new Set` and the empty-string filter are the same ones this form has always applied to the
+ * offered list; see the note on the anomaly at the call site.
+ */
+const selectableOptions = (offered: string[], configured: string[]): string[] => {
+  const distinct = Array.from(new Set(offered)).filter((name) => name.length > 0)
+  const stranded = Array.from(new Set(configured)).filter(
+    (name) => name.length > 0 && !distinct.includes(name)
+  )
+
+  return [...distinct, ...stranded]
+}
+
+/**
+ * Whether a stored label is one the picker can no longer offer — the condition the Alert explains.
+ *
+ * IT TAKES THE OFFERED LIST, NEVER THE OPTION LIST. Against the options it is FALSE FOREVER BY
+ * CONSTRUCTION, because `selectableOptions` above is precisely what put the stranded label into the
+ * options. That single-word slip would make the sentence unreachable while leaving every assertion
+ * about the sentence's existence green, so the wiring gate asserts the ARGUMENTS at the call site
+ * rather than merely that the call is there.
+ *
+ * IT ANSWERS HONESTLY FOR BOTH REASONS A LABEL CAN BE UNOFFERABLE — a type a create-time text input
+ * cannot collect, and a definition renamed or deleted after being configured — which is why the copy
+ * covers both and does not claim the cause is always the type.
+ */
+const hasUnsupportedIdentityField = (offered: string[], configured: string[]): boolean =>
+  configured.some((name) => name.length > 0 && !offered.includes(name))
 
 interface IdentityFieldsFormProps {
   /**
@@ -118,10 +170,34 @@ export function IdentityFieldsForm({ fieldNames, value }: IdentityFieldsFormProp
    * resolves a field by name and returns the first match, so collapsing them here is consistent with
    * what the presentation layer does today.
    *
+   * THE SERVER NOW COLLAPSES SHARED NAMES TOO, so the `new Set` inside `selectableOptions` is a
+   * SECOND BELT rather than the only one. It survives deliberately: this component's contract is
+   * about the prop it is handed, and one duplicated `SelectItem` key is not a failure worth trusting
+   * a caller to prevent.
+   *
+   * AND A SHARED NAME WHOSE DEFINITIONS DISAGREE ABOUT TYPE IS NOW A THIRD OUTCOME — one text row and
+   * one `multi_select` row under the same label are DROPPED rather than collapsed, because the single
+   * blob key both address cannot be safely filled from a text input. That decision is the server's;
+   * from here such a label simply never arrives, and if one was configured before the rule existed it
+   * shows up as the stranded case the Alert below explains.
+   *
    * THIS WORKS AROUND THE ANOMALY AND DOES NOT FIX IT. The duplicate definition rows are still there;
    * merging or archiving one is a data decision with an owner outside this phase.
    */
-  const options = Array.from(new Set(fieldNames)).filter((name) => name.length > 0)
+  const options = selectableOptions(fieldNames, configured)
+
+  /**
+   * Fed `fieldNames` — the OFFERED list — and never `options`; see the helper's own note for why that
+   * distinction is the whole assertion.
+   */
+  const unsupported = hasUnsupportedIdentityField(fieldNames, configured)
+
+  /**
+   * The selects describe themselves with the help text, and additionally with the stranded-field
+   * sentence when there is one, so a screen-reader user reaching the control is told the same thing a
+   * sighted user reads above it.
+   */
+  const describedBy = unsupported ? `${HELP_ID} ${UNSUPPORTED_ID}` : HELP_ID
 
   /**
    * The ordered array the action receives: the sentinel removed, and the SECOND selection dropped when
@@ -176,6 +252,22 @@ export function IdentityFieldsForm({ fieldNames, value }: IdentityFieldsFormProp
         </p>
 
         {/*
+          `variant="default"` AND NEVER `destructive` (C-1). This phase adds no `--warning` token, and
+          a configuration that cannot work is ADVISORY: nothing the admin did failed, and nothing is
+          lost — the field simply is not being checked. Red would also spend this surface's emphasis on
+          a settings card, where the page's one primary-filled control is the scan CTA.
+
+          It sits between the help paragraph and the selects because it qualifies the help text and
+          explains the list directly below it.
+        */}
+        {unsupported ? (
+          <Alert id={UNSUPPORTED_ID} variant="default">
+            <TriangleAlert className="h-4 w-4" />
+            <AlertDescription>{t("identity.unsupported")}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        {/*
           The two selects stack below `sm` and sit two-up above it. Each is a full-width control in a
           241px content box at a 320px viewport, which is what stops a field label being clipped
           mid-word (K-3).
@@ -188,7 +280,7 @@ export function IdentityFieldsForm({ fieldNames, value }: IdentityFieldsFormProp
               onValueChange={setPrimary}
               disabled={isPending}
             >
-              <SelectTrigger id={PRIMARY_ID} aria-describedby={HELP_ID}>
+              <SelectTrigger id={PRIMARY_ID} aria-describedby={describedBy}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -214,7 +306,7 @@ export function IdentityFieldsForm({ fieldNames, value }: IdentityFieldsFormProp
                 indistinguishable in effect from "CNPJ" alone, and offering it invites an admin to
                 believe they have set two checks when they have set one.
               */}
-              <SelectTrigger id={SECONDARY_ID} aria-describedby={HELP_ID}>
+              <SelectTrigger id={SECONDARY_ID} aria-describedby={describedBy}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
