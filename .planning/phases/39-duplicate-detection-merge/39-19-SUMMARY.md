@@ -69,7 +69,7 @@ that shipped once behind a green source gate.
 | the advisory appears | `role="alert"` inside `[data-slot="dialog-content"]`, absent before the submit and present after |
 | inside the dialog, above the form | same `<form>` as `#name`; `#name` FOLLOWS it in document order; it is not an ancestor of it |
 | not red | `lab(2.75381 0 0)` on `lab(100 0 0)` — identical to the dialog surface, and unequal to the `text-destructive` token measured in the same dialog at `lab(48.4493 77.4328 61.5452)`; no `destructive` class |
-| nothing typed is lost | all five inputs retained their values, including the 122-character Notes paste and the identity value |
+| nothing typed is lost | all five inputs retained their values, including the 128-character Notes paste and the identity value |
 | each match shows a name | `[e2e] Dup Warning Alpha Distribuidora`, in an `<a href="/organizations/<the seed's full id>" target="_blank" rel="noopener noreferrer">` plus the sr-only "Open in a new tab" |
 | + a distinguishing value | `E2E-CNPJ-77.888.999/0001-11` |
 | + a reason | `Same name and the same identifying field` |
