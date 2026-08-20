@@ -302,10 +302,17 @@ describe("collectableIdentityFieldNames", () => {
  * moment the two drifted, so this asserts the two answers are the SAME answer for every interesting
  * shape at once.
  *
- * THE HONEST LIMIT OF THIS INSTRUMENT, stated because a reader will otherwise over-trust it: both
- * sides now route through `isCollectableIdentityField`, so this catches a rule that is wrong in ONE
- * place and NOT a rule that is wrong in the SHARED place. Breaking the shared predicate leaves both
- * sides wrong together and this test green. The per-function cases above are what cover that.
+ * THE HONEST LIMIT OF THIS INSTRUMENT, stated because a reader will otherwise over-trust it, and
+ * MEASURED rather than reasoned: both sides now route through `isCollectableIdentityField`, so a rule
+ * that is wrong in the SHARED place leaves both sides wrong TOGETHER and this test green. Deleting
+ * the predicate's `matching.length === 0` guard was tried, and four of the five candidates below —
+ * every one the fixture's definitions actually carry — kept agreeing and stayed green. Only
+ * `FIELD_E` went red, and for a reason worth knowing: `collectableIdentityFieldNames` ITERATES the
+ * definitions, so a label no definition carries can never enter its result whatever the predicate
+ * says, while `selectIdentityInputFields` iterates the CONFIGURED list and asks the predicate about a
+ * label that is not there. The two callers' iteration domains differ, and that difference is the only
+ * part of the shared rule this test can see. So keep `FIELD_E` in the candidate list — and rely on
+ * the per-function cases above for the rest.
  */
 describe("the picker's offer rule EQUALS the dialog's collect rule", () => {
   /** All five interesting shapes in one fixture, so no candidate is tested in isolation. */
