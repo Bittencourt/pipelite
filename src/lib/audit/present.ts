@@ -74,7 +74,7 @@ export const AUDIT_MARKER_PREFIX = "__"
 /**
  * Every audited native column, mapped to the MESSAGE KEY that labels it.
  *
- * Keys, not English: the 20-branch mapping stays out of the render function and this module
+ * Keys, not English: the 21-branch mapping stays out of the render function and this module
  * stays pure. 36-13 resolves them with `useTranslations`. `AuditFieldChange.label` therefore
  * carries a message key for native columns and the VERBATIM user-authored name for custom
  * fields - the one property in this contract holding two kinds of string. The two are told
@@ -84,6 +84,12 @@ export const AUDIT_MARKER_PREFIX = "__"
  * `buildAuditFieldChanges`). Labels name the relationship, not the column - `stageId` is
  * "Stage", not "Stage ID", because the id is an implementation detail and never reaches a
  * screen.
+ *
+ * `notes` is the last entry and belongs in this SHARED map rather than a per-entity one because
+ * all four CRM tables carry the column and it means the same free text on each - which is also
+ * why one message key is enough for it, unlike the `audit.entry.*` predicates that had to be
+ * split per entity for gender agreement. It was appended in 39-20 (D-39-03): audited since
+ * Phase 36 with no entry here, so its label fell to `humaniseColumn` below.
  */
 export const AUDIT_FIELD_LABELS: Record<string, string> = {
   title: "audit.field.title",
@@ -106,6 +112,7 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   typeId: "audit.field.type",
   dueDate: "audit.field.dueDate",
   completedAt: "audit.field.completedAt",
+  notes: "audit.field.notes",
 }
 
 const NATIVE_ORDER: ReadonlyMap<string, number> = new Map(
@@ -314,12 +321,21 @@ export interface FieldDescriptor {
 /**
  * A column name split on capitals and sentence-cased: `someNewColumn` to "Some new column".
  *
- * THIS PATH IS REACHED, and by exactly one column today. The comment here used to assert the
- * opposite, and that assertion is why a raw database identifier sat in the record timeline
- * beside an unformatted instant for the whole of phases 36-38: a reader who believed it went
- * looking for the missing label in the map above and concluded there was nothing to fix.
+ * THIS PATH IS REACHED. The comment here once asserted the opposite, and that assertion is why a
+ * raw database identifier sat in the record timeline beside an unformatted instant for the whole
+ * of phases 36-38: a reader who believed it went looking for the missing label in the map above
+ * and concluded there was nothing to fix.
  *
- * The column is `deletedAt`, and its absence from the map is DELIBERATE. `AUDIT_FIELD_LABELS`
+ * TWO columns reached it, and the count itself is why this comment keeps going stale. 45-06 fixed
+ * the first and wrote "by exactly one column today" - which was ALREADY FALSE when it was written,
+ * because `notes` reached here too, on every merge screen and on every timeline entry that changed
+ * the column. 39-17 read the consequence at step 8: the English word "Notes" under a pt-BR and an
+ * es-ES heading. 39-20 gave `notes` its entry in the map above, so it no longer arrives here.
+ * Treat any COUNT in this comment as the thing most likely to be wrong; what is durable is the
+ * RULE, which is that arriving here at all is a defect for every column but the one named next.
+ *
+ * The remaining column is `deletedAt`, and its absence from the map is DELIBERATE, which is what
+ * makes it the opposite case to `notes` rather than a second instance of it. `AUDIT_FIELD_LABELS`
  * holds one message key per column and `describeField` emits one `label` with no sight of the
  * from/to pair, but a `deleted_at` transition has two directions - a value appearing is a soft
  * delete, a value being cleared is a restore - and they are different sentences. So the choice

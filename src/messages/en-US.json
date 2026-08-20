@@ -369,7 +369,8 @@
       "dueDate": "Due date",
       "completedAt": "Completed",
       "movedToTrash": "Moved to Trash",
-      "restoredFromTrash": "Restored from Trash"
+      "restoredFromTrash": "Restored from Trash",
+      "notes": "Notes"
     },
     "filter": {
       "label": "Show field changes",

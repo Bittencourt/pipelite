@@ -369,7 +369,8 @@
       "dueDate": "Data de vencimento",
       "completedAt": "Concluída",
       "movedToTrash": "Movido para a Lixeira",
-      "restoredFromTrash": "Restaurado da Lixeira"
+      "restoredFromTrash": "Restaurado da Lixeira",
+      "notes": "Notas"
     },
     "filter": {
       "label": "Mostrar alterações de campo",
