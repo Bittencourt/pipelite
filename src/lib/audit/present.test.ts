@@ -297,8 +297,8 @@ describe("reference resolution", () => {
 })
 
 describe("labels", () => {
-  it("maps all twenty audited native columns to their message keys", () => {
-    expect(Object.keys(AUDIT_FIELD_LABELS)).toHaveLength(20)
+  it("maps all twenty-one audited native columns to their message keys", () => {
+    expect(Object.keys(AUDIT_FIELD_LABELS)).toHaveLength(21)
 
     const expected: Record<string, string> = {
       title: "audit.field.title",
@@ -321,6 +321,7 @@ describe("labels", () => {
       typeId: "audit.field.type",
       dueDate: "audit.field.dueDate",
       completedAt: "audit.field.completedAt",
+      notes: "audit.field.notes",
     }
 
     expect(AUDIT_FIELD_LABELS).toEqual(expected)
@@ -656,20 +657,28 @@ const NATIVE_ORDER_PREFIX = [
   "typeId",
   "dueDate",
   "completedAt",
+  // Appended by 39-20 (D-39-03), which is the extension this guard's own message prescribes.
+  // Pinning the appended POSITION is the point: without this line a later edit could move the
+  // key into the middle of the map and silently reorder every record timeline in the app, and
+  // the guard would still pass because the shorter prefix it compared would still match.
+  "notes",
 ]
 
 describe("the native display order", () => {
   it("appends new columns rather than inserting them", () => {
     expect(
       Object.keys(AUDIT_FIELD_LABELS).slice(0, NATIVE_ORDER_PREFIX.length),
-      "the first 20 keys of AUDIT_FIELD_LABELS must still be in their checked-in order. NATIVE_ORDER is derived from this object's INSERTION ORDER (present.ts, immediately below the map) and that index is the display order of native columns in every record timeline; inserting a key rather than appending one silently reorders every timeline in the app, and because only the first three rows render collapsed it changes which fields a reader sees at all. A new column goes at the END"
+      "the first 21 keys of AUDIT_FIELD_LABELS must still be in their checked-in order. NATIVE_ORDER is derived from this object's INSERTION ORDER (present.ts, immediately below the map) and that index is the display order of native columns in every record timeline; inserting a key rather than appending one silently reorders every timeline in the app, and because only the first three rows render collapsed it changes which fields a reader sees at all. A new column goes at the END"
     ).toEqual(NATIVE_ORDER_PREFIX)
   })
 
   it("still derives that order from the map rather than from a second list", () => {
-    // Anti-vacuity for the guard above: if the map were emptied or renamed, `slice(0, 20)` of
-    // nothing would be `[]` and would not equal the prefix — but a map that GREW a 21st key
-    // still passes, which is the point. The guard defends the prefix, never the length.
+    // Anti-vacuity for the guard above: if the map were emptied or renamed, slicing nothing
+    // would give `[]`, which would not equal the prefix — but a map that grows a FURTHER key
+    // beyond the pinned prefix still passes, which is the point. The guard defends the prefix,
+    // never the length. Phrased without a number on purpose: this comment said "a 21st key"
+    // until 39-20 appended exactly that, and a claim that goes stale on the next append is a
+    // claim the next reader has to re-derive.
     expect(
       Object.keys(AUDIT_FIELD_LABELS).length,
       "AUDIT_FIELD_LABELS must have at least as many keys as the pinned prefix, or the order guard above would be comparing against a truncated slice"
