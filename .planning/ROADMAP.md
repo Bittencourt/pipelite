@@ -417,7 +417,7 @@ Plans:
   4. After a merge, every deal, activity, note, file, and custom field value from the losing record is attached to the survivor — nothing is orphaned
   5. The merge is visible in the surviving record's change history
 
-**Plans**: 17 plans in 7 waves, plus 3 gap-closure plans in 2 waves
+**Plans**: 17 plans in 7 waves, plus 4 gap-closure plans in 3 waves
 
 Plans:
 - [x] 39-01-PLAN.md — Normalization and tier scoring (pure, TDD)
@@ -440,8 +440,9 @@ Plans:
 
 **Gap closure** (from the 39-17 dark-mode checkpoint; brief in `39-GAPS.md`)
 - [x] 39-18-PLAN.md — D-39-01: collect the configured organization identity custom field(s) at create time
-- [ ] 39-19-PLAN.md — D-39-01: browser proof that the organization advisory fires, and does not fire when it must not
 - [x] 39-20-PLAN.md — D-39-03: `audit.field.notes` in three locales, the 21st label, the extended pin
+- [ ] 39-21-PLAN.md — D-39-04: filter the identity picker to text fields, one predicate shared with the create dialog
+- [ ] 39-19-PLAN.md — D-39-01: browser proof that the organization advisory fires, and does not fire when it must not (runs LAST — owns the phase's only rebuild)
 
 **UI hint**: yes
 
