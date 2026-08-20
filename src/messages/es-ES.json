@@ -369,7 +369,8 @@
       "dueDate": "Fecha de vencimiento",
       "completedAt": "Completada",
       "movedToTrash": "Movido a la Papelera",
-      "restoredFromTrash": "Restaurado desde la Papelera"
+      "restoredFromTrash": "Restaurado desde la Papelera",
+      "notes": "Notas"
     },
     "filter": {
       "label": "Mostrar cambios de campo",

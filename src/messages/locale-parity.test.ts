@@ -66,13 +66,18 @@ export const REQUIRED_NOTE_KEYS: string[] = [
  * its dot-path here first. The list is checked in precisely so that the addition is a reviewable
  * diff rather than a namespace that silently grows in en-US only.
  *
- * 83 keys in the `audit` namespace plus the 2 dashboard-tile keys that live in the pre-existing
- * `admin.dashboard` namespace — 85. Groups below carry the UI-SPEC's own section names so a key can
+ * 84 keys in the `audit` namespace plus the 2 dashboard-tile keys that live in the pre-existing
+ * `admin.dashboard` namespace — 86. Groups below carry the UI-SPEC's own section names so a key can
  * be found by the surface that renders it.
  *
- * Phase 39 added exactly 4: the two `audit.entry.merged.*` predicates and the two merge detail
- * lines. The list was 81 entries when 39-04 read it (counted from this file, not from a planning
- * document — 39-RESEARCH A7 records that the size is reported inconsistently across documents).
+ * Phase 39 added 4 keys during the phase proper: the two `audit.entry.merged.*` predicates and the
+ * two merge detail lines. The list was 81 entries when 39-04 read it (counted from this file, not
+ * from a planning document — 39-RESEARCH A7 records that the size is reported inconsistently across
+ * documents). Gap-closure plan 39-20 then added a FIFTH, `audit.field.notes`, closing D-39-03: the
+ * `notes` column was audited from Phase 36 onwards with no entry in `AUDIT_FIELD_LABELS`, so
+ * `describeField` fell through to `humaniseColumn` and every locale rendered the raw English column
+ * word. The merge screen was the first surface to EXPOSE it — no earlier screen edits that column —
+ * which is why the leak survived three phases of locale gates that were all passing.
  */
 export const REQUIRED_AUDIT_KEYS: string[] = [
   // Actor kinds — 4
@@ -118,10 +123,12 @@ export const REQUIRED_AUDIT_KEYS: string[] = [
   "audit.entry.mergedNoFieldChanges",
   "audit.entry.mergedChildren",
 
-  // Field labels — 22, covering every audited native column across the four entities. Custom
+  // Field labels — 23, covering every audited native column across the four entities. Custom
   // fields are never translated; they render customFieldDefinitions.name verbatim.
   // movedToTrash/restoredFromTrash are FLAT siblings, not a nested object: AUDIT_FIELD_LABELS in
   // src/lib/audit/present.ts maps a column name to a flat dot-path and a nested value breaks it.
+  // 23 leaves for 21 mapped columns, and the difference is exactly those two flat siblings: they
+  // are the renderer's two direction sentences for `deletedAt`, which has no map entry at all.
   "audit.field.title",
   "audit.field.name",
   "audit.field.firstName",
@@ -144,6 +151,7 @@ export const REQUIRED_AUDIT_KEYS: string[] = [
   "audit.field.completedAt",
   "audit.field.movedToTrash",
   "audit.field.restoredFromTrash",
+  "audit.field.notes",
 
   // Filter toggle — 5. emptyHidden.body quotes the toggle's own label, so a locale whose body
   // stops matching its own filter label points the user at a control they cannot find.
