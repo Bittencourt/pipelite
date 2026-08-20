@@ -15,6 +15,7 @@ import {
 import { Building2 } from "lucide-react"
 import { getTranslations } from 'next-intl/server'
 import { readTrashRetentionDays } from "@/lib/trash/settings"
+import { readOrgIdentityInputFields } from "@/lib/dedup/identity-inputs"
 
 const PAGE_SIZE = 50
 
@@ -93,9 +94,9 @@ export default async function OrganizationsPage({
   const search = params.search ?? ""
 
   /*
-   * Three independent reads in one round trip. Two of the three are new and exist only to feed the
-   * bulk selection bar mounted inside `data-table.tsx`; both cross the RSC boundary as PLAIN
-   * SERIALIZABLE VALUES and nothing else, which is why no bulk component is imported here.
+   * Four independent reads in one round trip. Three of the four exist only to feed components
+   * mounted inside `data-table.tsx`; every one of them crosses the RSC boundary as a PLAIN
+   * SERIALIZABLE VALUE and nothing else, which is why no bulk component is imported here.
    *
    * `retentionDays` is passed straight through, un-defaulted, and no numeric fallback may ever be
    * added anywhere in this file. The read fails closed to `null` when the window is unset,
@@ -113,8 +114,16 @@ export default async function OrganizationsPage({
    * own owner picker on the soft-delete column alone and is an anti-analog here, not a template.
    * The prop is named `bulkOwners`, not `owners`, so it can never be conflated with a future owner
    * FILTER list on this same surface.
+   *
+   * `identityFieldNames` is the admin-configured organization identity custom field LABELS that the
+   * create dialog can collect a value for, and it is a PAGE-RENDER read — not a submit-path one. The
+   * create submit performs exactly the queries it performed before this read existed, in both
+   * configurations; the duplicate check's own field list is still read server-side inside the action
+   * and is never taken from the request (T-39G-02). It resolves to `[]` — the same value as
+   * unconfigured, so no input renders — on any failure, because a settings read may not be the
+   * reason this list page goes blank and there is no `error.tsx` above this route.
    */
-  const [{ rows: orgs, hasMore }, retentionDays, ownerRows] = await Promise.all([
+  const [{ rows: orgs, hasMore }, retentionDays, ownerRows, identityFieldNames] = await Promise.all([
     getOrganizations(search || undefined, pageNum),
     readTrashRetentionDays(),
     db.query.users.findMany({
@@ -126,6 +135,7 @@ export default async function OrganizationsPage({
       },
       orderBy: [users.name],
     }),
+    readOrgIdentityInputFields(),
   ])
 
   const bulkOwners = ownerRows.map((u) => ({
@@ -166,6 +176,7 @@ export default async function OrganizationsPage({
               currentPage={pageNum}
               retentionDays={retentionDays}
               bulkOwners={bulkOwners}
+              identityFieldNames={identityFieldNames}
               isAdmin={isAdmin}
             />
           </CardContent>

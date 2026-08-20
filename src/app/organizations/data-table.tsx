@@ -71,6 +71,19 @@ interface DataTableProps {
    */
   bulkOwners: { id: string; name: string }[]
   /**
+   * The organization identity custom fields the create dialog collects a value for — the admin's
+   * configured list, narrowed to the ones a text input can safely fill.
+   *
+   * Arrives as a prop because resolving it needs BOTH `app_settings` and
+   * `custom_field_definitions`, and this is a `"use client"` file: neither read is available to it.
+   *
+   * A list of user-authored LABELS, not definition ids. `customFields` is a JSONB blob keyed by the
+   * field definition's name, so an id would address nothing in the payload the create action
+   * receives. Projected to labels on the server so no definition row crosses the Flight boundary,
+   * the same shape `/duplicates/page.tsx` sends down for the same reason.
+   */
+  identityFieldNames: string[]
+  /**
    * Whether to RENDER the "Find duplicates" entry point. Cosmetic, never authorization — see the
    * comment at the button itself (T-39-01).
    *
@@ -90,6 +103,7 @@ export function DataTable({
   refresh,
   retentionDays,
   bulkOwners,
+  identityFieldNames = [],
   isAdmin = false,
 }: DataTableProps) {
   const router = useRouter()
@@ -455,6 +469,7 @@ export function DataTable({
         open={dialogOpen}
         onOpenChange={handleDialogOpenChange}
         organization={editingOrg}
+        identityFieldNames={identityFieldNames}
         onRecordSaved={handleRecordSaved}
       />
 

@@ -46,6 +46,24 @@ interface OrganizationDialogProps {
   onOpenChange: (open: boolean) => void
   organization?: Organization | null
   /**
+   * The admin-configured organization identity custom field LABELS this dialog collects at create
+   * time — resolved on the server, since this file cannot read `app_settings` or the field
+   * definitions, and empty when nothing is configured.
+   *
+   * WHY THESE ARE NOT `react-hook-form` FIELDS. `zodResolver` strips keys the schema does not
+   * declare — the same trap `actions.ts` records for `confirmDuplicate` — and the schema cannot
+   * declare labels that are per-installation data. Beyond that, react-hook-form reads a dot in a
+   * field name as a path into nested state, and these names are user-authored: a field called
+   * `CNPJ / CPF` or `Contato.email` would silently register somewhere else entirely. They are held
+   * in their own state object, keyed by label, and assembled into the create payload directly.
+   *
+   * OPTIONAL DELIBERATELY. The other mount site,
+   * `src/app/organizations/[id]/organization-detail-client.tsx`, always passes an `organization` and
+   * is therefore edit-only, and these inputs are create-only — so the default is not a degradation
+   * there and that file needs no change.
+   */
+  identityFieldNames?: string[]
+  /**
    * REFRESH ONLY — THIS CALLBACK MUST NEVER CLOSE THE DIALOG.
    *
    * It means "the record behind this dialog changed, re-read your data", not "we are
@@ -62,6 +80,7 @@ export function OrganizationDialog({
   open,
   onOpenChange,
   organization,
+  identityFieldNames = [],
   onRecordSaved,
 }: OrganizationDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
@@ -87,7 +106,21 @@ export function OrganizationDialog({
   const [duplicates, setDuplicates] = useState<CertainMatch[]>([])
 
   /**
-   * A WARNING MUST NEVER OUTLIVE THE DRAFT IT DESCRIBES.
+   * THE TYPED IDENTITY VALUES, KEYED BY FIELD LABEL — the create-time half of DEDUP-01 for
+   * organizations.
+   *
+   * These are what make the organization certain tier reachable at all: `draftHasIdentityValue`
+   * gates the whole check on the draft populating a configured identity field, and until this
+   * dialog collected one it could never pass, so the check returned no matches for every submission
+   * however the admin had configured it (D-39-01).
+   *
+   * Its own state and not part of the form, for the reasons recorded on `identityFieldNames`.
+   */
+  const [identityValues, setIdentityValues] = useState<Record<string, string>>({})
+
+  /**
+   * A WARNING MUST NEVER OUTLIVE THE DRAFT IT DESCRIBES, AND NEITHER MAY THE VALUES IT WAS
+   * COMPUTED FROM.
    *
    * One key for the dialog "session": it changes when the dialog opens, when it closes by ANY route
    * (including a parent that flips `open` directly instead of going through `handleClose`), and
@@ -100,12 +133,18 @@ export function OrganizationDialog({
    * hit it independently. The extra render this schedules happens before the browser paints, so the
    * stale warning is never visible. The source gate for this file asserts no `set*` call appears
    * inside any effect body, which is why the mechanism has to be here rather than there.
+   *
+   * THE IDENTITY VALUES RIDE THE SAME KEY, and not merely for symmetry: a tax id typed into one
+   * draft and left in state would be submitted with the NEXT organization the user creates, quietly
+   * attaching one company's identifier to another and making it a certain match for a record it has
+   * nothing to do with. They are cleared here and in `handleClose` for that reason.
    */
   const dialogSessionKey = `${open ? "open" : "closed"}:${organization?.id ?? "new"}`
   const [warnedSessionKey, setWarnedSessionKey] = useState(dialogSessionKey)
   if (warnedSessionKey !== dialogSessionKey) {
     setWarnedSessionKey(dialogSessionKey)
     setDuplicates([])
+    setIdentityValues({})
   }
 
   /**
@@ -215,6 +254,42 @@ export function OrganizationDialog({
     }
   }
 
+  /**
+   * The identity inputs' own change handler — W-10 for a field that is not a form field.
+   *
+   * W-10 APPLIES HERE BECAUSE A CONFIGURED IDENTITY FIELD IS A COMPARED FIELD FOR ORGANIZATIONS:
+   * `classifyOrganizationMatch` calls a pair certain on an equal normalized name AND an equal
+   * identity value, so an advisory left standing while the user corrects the identifier it was
+   * computed from is describing a comparison that no longer exists. Same rule and same reason as
+   * `registerComparedField` above; a separate handler only because these inputs are not registered.
+   */
+  const handleIdentityChange =
+    (field: string) => (event: ChangeEvent<HTMLInputElement>) => {
+      const { value } = event.target
+      setIdentityValues((current) => ({ ...current, [field]: value }))
+      clearDuplicateWarning()
+    }
+
+  /**
+   * The `customFields` blob for the create payload — TRIMMED, and empty entries OMITTED.
+   *
+   * The trim is not cosmetic. `writeOrgIdentityFields` trims its labels because an untrimmed one
+   * "would look configured while matching nothing", and the same is exactly true of a value: a
+   * whitespace-only entry would make `draftHasIdentityValue` pass, buy the round trip, and then
+   * match nothing — while also persisting a blank identifier onto the record. Omitting empties is
+   * what keeps an untouched input out of the payload entirely.
+   */
+  const collectIdentityCustomFields = (): Record<string, string> => {
+    const collected: Record<string, string> = {}
+
+    for (const field of identityFieldNames) {
+      const value = (identityValues[field] ?? "").trim()
+      if (value) collected[field] = value
+    }
+
+    return collected
+  }
+
   const onSubmit = async (data: OrganizationFormData) => {
     setIsLoading(true)
     try {
@@ -243,8 +318,23 @@ export function OrganizationDialog({
             return
           }
         } else {
+          /*
+            THE CONDITIONAL SPREAD IS LOAD-BEARING, not a tidiness. With the setting unconfigured,
+            or with every identity input left blank, the payload is BYTE-IDENTICAL to the one this
+            dialog sent before the inputs existed — no `customFields` key at all, so
+            `createOrganizationMutation` receives `undefined` and defaults it exactly as it did
+            before. That is what makes "unconfigured behaviour is unchanged" literally true rather
+            than approximately true.
+
+            The blob is attached to the CREATE call only. Custom fields on a persisted record are
+            written by inline edit on the detail page, and a create dialog that also wrote them on
+            the retry-after-a-failed-note path would be a second writer nobody owns.
+          */
+          const identityCustomFields = collectIdentityCustomFields()
           const result = await createOrganization(
-            record,
+            Object.keys(identityCustomFields).length > 0
+              ? { ...record, customFields: identityCustomFields }
+              : record,
             // W-4 — THE SECOND SUBMIT CARRIES THE CONFIRMATION. The advisory is already on screen,
             // so the user pressing the (relabelled) submit button means "create anyway"; the server
             // must skip the check, because re-running it would produce the same warning and the
@@ -316,6 +406,7 @@ export function OrganizationDialog({
 
   const handleClose = () => {
     reset()
+    setIdentityValues({})
     createdRecordIdRef.current = null
     onOpenChange(false)
   }
@@ -379,6 +470,34 @@ export function OrganizationDialog({
               <p className="text-sm text-destructive">{errors.industry.message}</p>
             )}
           </div>
+
+          {/* THE CONFIGURED IDENTITY FIELDS — CREATE ONLY, AND ONLY WHEN CONFIGURED.
+              Renders nothing at all when the admin has configured nothing, which is the whole of
+              the graceful degradation this surface owes an unconfigured install.
+
+              Create only, because on a persisted record these same fields are edited through
+              `CustomFieldsSection` on the detail page, and two writers of one blob is how a value
+              gets silently overwritten by a form that never loaded it.
+
+              THE LABEL IS THE USER-AUTHORED FIELD NAME, VERBATIM AND UNTRANSLATED — UI-SPEC M-4's
+              rule for every custom field, which `describeField` already implements for the merge
+              picker. It is DATA, not copy, so it adds no hardcoded literal in any language. And no
+              placeholder: a placeholder WOULD be copy, in exactly one language. */}
+          {!isEditMode && identityFieldNames.length > 0 && (
+            <>
+              {identityFieldNames.map((fieldName, index) => (
+                <div key={fieldName} className="space-y-2">
+                  <Label htmlFor={`org-identity-${index}`}>{fieldName}</Label>
+                  <Input
+                    id={`org-identity-${index}`}
+                    value={identityValues[fieldName] ?? ""}
+                    onChange={handleIdentityChange(fieldName)}
+                    disabled={isLoading}
+                  />
+                </div>
+              ))}
+            </>
+          )}
 
           {/* Create only. The text becomes the record's first timeline note, never a
               legacy column value. Editing happens in the timeline on the detail page. */}
