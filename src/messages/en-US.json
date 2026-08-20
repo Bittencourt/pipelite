@@ -635,13 +635,14 @@
     },
     "identity": {
       "title": "Organization identity fields",
-      "help": "A create-time duplicate warning needs a field that identifies a company uniquely, such as a tax number. Choose up to two custom fields, checked in order. Until one is chosen, new organizations are not checked.",
+      "help": "A create-time duplicate warning needs a field that identifies a company uniquely, such as a tax number. Choose up to two text custom fields, checked in order. Until one is chosen, new organizations are not checked.",
       "primaryLabel": "First identity field",
       "secondaryLabel": "Second identity field (optional)",
       "none": "None",
       "save": "Save identity fields",
       "saved": "Identity fields saved.",
-      "saveFailed": "The identity fields weren't saved. Nothing was changed — try again."
+      "saveFailed": "The identity fields weren't saved. Nothing was changed — try again.",
+      "unsupported": "A field configured here is no longer available: it must be a text custom field that still exists. New organizations are not being checked against it — choose another field, or clear it."
     },
     "findDuplicates": "Find duplicates"
   },

@@ -449,9 +449,9 @@ export const REQUIRED_SHELL_KEYS: string[] = [
  * assertion below turns a string that skipped this list into a red suite rather than copy that ships
  * gated by nothing.
  *
- * 79 keys, all inside the `dedup` namespace — like `bulk` and unlike `trash`, this phase adds
+ * 80 keys, all inside the `dedup` namespace — like `bulk` and unlike `trash`, this phase adds
  * nothing to `nav` or `admin.dashboard`, which is why `dedupKeys` below needs no `*_EXTRA_KEYS`
- * sibling and the comparison against this list is TOTAL: an 80th dedup string that never made it
+ * sibling and the comparison against this list is TOTAL: an 81st dedup string that never made it
  * into this array fails, which is the half a missing-key check cannot see. The per-group counts in
  * the comments are load-bearing: they are how a reader sees at a glance that a group lost a key.
  *
@@ -566,9 +566,13 @@ export const REQUIRED_DEDUP_KEYS: string[] = [
   "dedup.import.flaggedBody",
   "dedup.import.review",
 
-  // Identity fields — 8. The admin control that names which custom fields act as the organization
+  // Identity fields — 9. The admin control that names which custom fields act as the organization
   // identity key. `help` states the degradation explicitly, because until a field is chosen new
   // organizations get no create-time check at all and silence there would read as a working feature.
+  // `unsupported` is the SECOND application of that same rule, added in plan 39-21: the picker now
+  // offers only text fields, so a configuration stored before that — or one whose field was renamed
+  // or retyped since — names a field that cannot work, and being told beats inferring it from a
+  // duplicate warning that never appears.
   "dedup.identity.title",
   "dedup.identity.help",
   "dedup.identity.primaryLabel",
@@ -577,6 +581,7 @@ export const REQUIRED_DEDUP_KEYS: string[] = [
   "dedup.identity.save",
   "dedup.identity.saved",
   "dedup.identity.saveFailed",
+  "dedup.identity.unsupported",
 
   // Entry point — 1
   "dedup.findDuplicates",
@@ -852,14 +857,15 @@ describe("locale parity", () => {
     expect.soft(missingIn(REQUIRED_DEDUP_KEYS)).toEqual(emptyPerLocale)
   })
 
-  it("the checked-in dedup contract still lists exactly 79 keys", () => {
+  it("the checked-in dedup contract still lists exactly 80 keys", () => {
     // Asserted here rather than left to the reader's arithmetic: the per-group comments in
-    // REQUIRED_DEDUP_KEYS say 4+4+13+19+27+3+8+1, and this is what stops that sum drifting silently
+    // REQUIRED_DEDUP_KEYS say 4+4+13+19+27+3+9+1, and this is what stops that sum drifting silently
     // when a group gains or loses an entry. The review group went 17 -> 18 in plan 39-11, which is
     // where the degraded-read panel got a sentence of its own, and 18 -> 19 in plan 39-13, which is
-    // where the undismiss failure got one.
-    expect(REQUIRED_DEDUP_KEYS).toHaveLength(79)
-    expect(new Set(REQUIRED_DEDUP_KEYS).size, "REQUIRED_DEDUP_KEYS lists a key twice").toBe(79)
+    // where the undismiss failure got one. The identity group went 8 -> 9 in plan 39-21, which is
+    // where a configured field the picker can no longer offer got a sentence of its own.
+    expect(REQUIRED_DEDUP_KEYS).toHaveLength(80)
+    expect(new Set(REQUIRED_DEDUP_KEYS).size, "REQUIRED_DEDUP_KEYS lists a key twice").toBe(80)
   })
 
   it("the notes, audit, trash, bulk, shell and dedup namespaces have identical key sets across all three locales", () => {

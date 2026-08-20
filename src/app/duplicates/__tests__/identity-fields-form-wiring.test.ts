@@ -125,9 +125,15 @@ describe("G3: the unsupported-field predicate is fed the UNFILTERED offered list
     const calls = callArguments(FORM, "hasUnsupportedIdentityField")
 
     expect(calls).toHaveLength(1)
-    expect(calls[0]).toContain("fieldNames")
-    expect(calls[0]).toContain("configured")
-    expect(
+
+    // SOFT, so the inversion is reported by BOTH halves rather than only by whichever throws first.
+    // Measured: passing `options` here makes the argument text `options, configured`, which fails the
+    // `fieldNames` half as well — and a hard assertion would then hide the half that carries the
+    // reasoning, leaving the next reader unable to see that the zero-occurrences check discriminates
+    // at all. A gate whose evidence is invisible is how 39-13 shipped one that stayed green.
+    expect.soft(calls[0]).toContain("fieldNames")
+    expect.soft(calls[0]).toContain("configured")
+    expect.soft(
       occurrences(calls[0] ?? "", "options"),
       "hasUnsupportedIdentityField fed `options` is false by construction — the sentence would be unreachable",
     ).toBe(0)
