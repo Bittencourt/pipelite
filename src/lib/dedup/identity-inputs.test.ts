@@ -40,8 +40,11 @@ import { readOrgIdentityFields } from "./identity-settings"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import {
   IDENTITY_INPUT_FIELD_TYPE,
+  collectableIdentityFieldNames,
+  isCollectableIdentityField,
   selectIdentityInputFields,
   readOrgIdentityInputFields,
+  type FieldTypeByName,
 } from "./identity-inputs"
 
 const mockReadFields = vi.mocked(readOrgIdentityFields)
@@ -191,4 +194,145 @@ describe("readOrgIdentityInputFields", () => {
 
     await expect(readOrgIdentityInputFields()).resolves.toEqual([])
   })
+})
+
+/**
+ * Two more deployment-neutral stand-ins, for the shapes the equivalence fixture needs and the three
+ * above cannot cover at the same time: a name two DISAGREEING rows share, and a name no row carries.
+ */
+const FIELD_D = "Region"
+const FIELD_E = "Retired Field"
+
+describe("isCollectableIdentityField", () => {
+  it("admits a single text definition", () => {
+    expect(isCollectableIdentityField(FIELD_A, [text(FIELD_A)])).toBe(true)
+  })
+
+  it("refuses a single multi_select definition", () => {
+    // An array-valued blob key. A free-text input under it writes a bare string the detail page's
+    // `FieldRenderer` then has to read back as an array.
+    expect(isCollectableIdentityField(FIELD_A, [{ name: FIELD_A, type: "multi_select" }])).toBe(
+      false
+    )
+  })
+
+  it.each(["single_select", "url"])(
+    "refuses a %s definition even though it stores a string",
+    (type) => {
+      // Both store strings and are still excluded, for the reasons the module's own comment on
+      // `IDENTITY_INPUT_FIELD_TYPE` records: an option list to validate against, and a validating
+      // component of its own.
+      expect(isCollectableIdentityField(FIELD_A, [{ name: FIELD_A, type }])).toBe(false)
+    }
+  )
+
+  it("refuses a name NO definition carries", () => {
+    // The admin renamed or deleted the field after configuring it.
+    expect(isCollectableIdentityField(FIELD_A, [text(FIELD_B)])).toBe(false)
+  })
+
+  it("admits TWO definitions sharing a name when both are text", () => {
+    // This deployment really has two active rows sharing a name; one blob key, one input.
+    expect(isCollectableIdentityField(FIELD_A, [text(FIELD_A), text(FIELD_A)])).toBe(true)
+  })
+
+  it.each([
+    ["text first", [text(FIELD_A), { name: FIELD_A, type: "multi_select" }]],
+    ["multi_select first", [{ name: FIELD_A, type: "multi_select" }, text(FIELD_A)]],
+  ])("refuses a shared name whose definitions DISAGREE about type (%s)", (_order, definitions) => {
+    // Asserted in BOTH array orders so the answer cannot depend on which row `filter` happens to see
+    // first — "the first match wins" is the plausible implementation this rules out.
+    expect(isCollectableIdentityField(FIELD_A, definitions as FieldTypeByName[])).toBe(false)
+  })
+
+  it("refuses ANY name against an EMPTY definitions array", () => {
+    // THE `every`-ON-EMPTY CASE, and it has a test of its own because it is the one a plausible
+    // simplification breaks in silence: `[].every(...)` is `true`, so dropping the "at least one
+    // definition carries this name" half would make every unknown label collectable.
+    expect(isCollectableIdentityField(FIELD_A, [])).toBe(false)
+  })
+})
+
+describe("collectableIdentityFieldNames", () => {
+  it("returns DEFINITION order, which is `position` order — not alphabetical, not configured order", () => {
+    // This list feeds a picker where nothing has been configured yet, so there is no configured order
+    // to honour; `position` is the order the same fields appear in everywhere else in the app.
+    const definitions = [text(FIELD_C), text(FIELD_A), text(FIELD_B)]
+
+    expect(collectableIdentityFieldNames(definitions)).toEqual([FIELD_C, FIELD_A, FIELD_B])
+  })
+
+  it("excludes a non-text name", () => {
+    const definitions = [text(FIELD_A), { name: FIELD_B, type: "multi_select" }]
+
+    expect(collectableIdentityFieldNames(definitions)).toEqual([FIELD_A])
+  })
+
+  it("returns a name shared by TWO TEXT definitions exactly ONCE", () => {
+    // One blob key per name, so two rows are one choice. Offering both would render two options that
+    // cannot be told apart and mean the same thing.
+    expect(collectableIdentityFieldNames([text(FIELD_A), text(FIELD_A)])).toEqual([FIELD_A])
+  })
+
+  it("excludes a shared name whose definitions disagree about type", () => {
+    const definitions = [text(FIELD_A), { name: FIELD_A, type: "multi_select" }]
+
+    expect(collectableIdentityFieldNames(definitions)).toEqual([])
+  })
+
+  it("returns [] for an empty definitions array", () => {
+    expect(collectableIdentityFieldNames([])).toEqual([])
+  })
+
+  it("does NOT truncate at ORG_IDENTITY_FIELDS_MAX", () => {
+    // The cap bounds how many fields may be CONFIGURED, not how many may be OFFERED. Capping the
+    // picker at two options would leave an admin unable to choose the third field in the table.
+    const definitions = [text(FIELD_A), text(FIELD_B), text(FIELD_C)]
+
+    expect(collectableIdentityFieldNames(definitions)).toEqual([FIELD_A, FIELD_B, FIELD_C])
+  })
+})
+
+/**
+ * THE PICKER'S RULE AND THE CREATE DIALOG'S RULE ARE ONE RULE.
+ *
+ * Gap D-39-04 was not "the picker has no filter" — it was that the picker's answer and the dialog's
+ * answer could disagree, so an admin could save a configuration that silently collected nothing. A
+ * second, independently written type filter in the form would reproduce that defect one layer up the
+ * moment the two drifted, so this asserts the two answers are the SAME answer for every interesting
+ * shape at once.
+ *
+ * THE HONEST LIMIT OF THIS INSTRUMENT, stated because a reader will otherwise over-trust it: both
+ * sides now route through `isCollectableIdentityField`, so this catches a rule that is wrong in ONE
+ * place and NOT a rule that is wrong in the SHARED place. Breaking the shared predicate leaves both
+ * sides wrong together and this test green. The per-function cases above are what cover that.
+ */
+describe("the picker's offer rule EQUALS the dialog's collect rule", () => {
+  /** All five interesting shapes in one fixture, so no candidate is tested in isolation. */
+  const definitions: FieldTypeByName[] = [
+    text(FIELD_A), // a plain text field
+    { name: FIELD_B, type: "multi_select" }, // a non-text field
+    text(FIELD_C), // a name shared by
+    text(FIELD_C), // ...two text rows
+    text(FIELD_D), // a name shared by a text row and
+    { name: FIELD_D, type: "multi_select" }, // ...a multi_select row
+    // FIELD_E is carried by NOTHING and is in the candidate list below — without it the equivalence
+    // would only be tested where both sides say yes.
+  ]
+
+  it.each([FIELD_A, FIELD_B, FIELD_C, FIELD_D, FIELD_E])(
+    "answers the same for %s on both sides",
+    (label) => {
+      const offered = collectableIdentityFieldNames(definitions).includes(label)
+
+      // A SINGLETON configured list, deliberately, so `ORG_IDENTITY_FIELDS_MAX` never bites and the
+      // two sides are compared on the RULE alone.
+      const collected = selectIdentityInputFields([label], definitions).length === 1
+
+      expect(
+        offered,
+        `the picker must never offer a label the create dialog would refuse to collect: ${label}`
+      ).toBe(collected)
+    }
+  )
 })
