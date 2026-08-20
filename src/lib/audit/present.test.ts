@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs"
 import { describe, it, expect } from "vitest"
 
 import type { AuditAction, AuditFieldChange, AuditValue } from "@/lib/timeline/types"
+import enUS from "@/messages/en-US.json"
+import esES from "@/messages/es-ES.json"
+import ptBR from "@/messages/pt-BR.json"
 
 import {
   AUDIT_FIELD_LABELS,
@@ -11,6 +14,7 @@ import {
   AUDIT_VALUE_MAX_CHARS,
   buildAuditFieldChanges,
   collapseAndTruncate,
+  describeField,
   toAuditValue,
   type AuditResolution,
 } from "./present"
@@ -727,6 +731,90 @@ describe("the soft-delete column", () => {
       fieldsOf(changes),
       "an unmapped native column sorts after every mapped one (group 1 vs group 0), so leaving deletedAt out of the label map costs it no position it would otherwise have held"
     ).toEqual(["title", "deletedAt"])
+  })
+})
+
+/* -----------------------------------------------------------------------------------------
+ * THE FREE-TEXT NOTES COLUMN (39-20, closing D-39-03)
+ *
+ * The MIRROR IMAGE of the soft-delete block above: that one defends a deliberate ABSENCE from
+ * `AUDIT_FIELD_LABELS`, this one defends a deliberate PRESENCE. Same posture on purpose — pure
+ * functions asserted through the real public entry point, catalog copy read straight from the
+ * JSON, no new source-scan gate and no new file. The two columns are opposite cases for the SAME
+ * reason: the map holds one message key per column, `notes` has exactly one meaning, and
+ * `deletedAt` has two directions.
+ *
+ * WHAT WENT WRONG. `notes` exists on all four CRM tables and has been audited since Phase 36, but
+ * it never got a map entry. `describeField` therefore fell through to `humaniseColumn("notes")`,
+ * which returns the English word — and `resolveLabel` in `src/app/duplicates/[pairId]/page.tsx`
+ * only translates a label its `tRoot.has()` can find, so a pt-BR or es-ES viewer read an English
+ * word. `organizations.notes` is a dormant legacy column no other screen edits, so the merge
+ * screen was the first surface to render it at all; the 39-17 checkpoint saw it at step 8.
+ *
+ * HOW THE WHOLE CHAIN IS PROVEN WITHOUT A BROWSER, since no test here can render a page:
+ *   1. `describeField("notes")` returns the KEY, not a word.               <- asserted below
+ *   2. `resolveLabel` returns `tRoot(key)` whenever `tRoot.has(key)`, and holds no field-label
+ *      map of its own.                                    <- already gated by 39-15's M-4 tests
+ *   3. `tRoot.has(key)` is true in a locale exactly when that catalog carries the leaf.
+ *                                                                          <- asserted below
+ * Steps 1 and 3 are what this block adds; step 2 is somebody else's gate, cited rather than
+ * duplicated.
+ * ----------------------------------------------------------------------------------------- */
+describe("the free-text notes column", () => {
+  it("labels notes with a message key rather than a database word", () => {
+    expect(
+      describeField("notes", resolution()).label,
+      'describeField("notes") must return the MESSAGE KEY "audit.field.notes". Unmapped, it returns humaniseColumn("notes") — the English word "Notes" — and resolveLabel in src/app/duplicates/[pairId]/page.tsx renders a label verbatim when tRoot.has() cannot find it, so that word reached pt-BR and es-ES viewers on the merge screen (D-39-03)'
+    ).toBe("audit.field.notes")
+  })
+
+  it("returns that key through the public builder every consumer goes through", () => {
+    // Not only through describeField: buildAuditFieldChanges is what the timeline and the merge
+    // picker both call, and a descriptor that is right in isolation but lost on the way out
+    // would be invisible to the assertion above.
+    const [change] = buildAuditFieldChanges(
+      "organization",
+      "updated",
+      { notes: { from: "antigo", to: "novo" } },
+      resolution()
+    )
+
+    expect(
+      change.label,
+      "buildAuditFieldChanges must emit audit.field.notes for a notes change on an organization — the exact path the merge receipt and the record timeline both read"
+    ).toBe("audit.field.notes")
+
+    expect(
+      change.label,
+      'the label must not be the literal "Notes". That exact string is the observed defect: it is what 39-17 read on the merge screen in all three locales at step 8'
+    ).not.toBe("Notes")
+  })
+
+  it("puts notes in the mapped-column group, so the fallback is no longer reachable by it", () => {
+    expect(
+      describeField("notes", resolution()).group,
+      "notes must be group 0, a MAPPED native column. Group 1 is the unmapped-column fallback, and its only remaining occupant is deletedAt — which is there deliberately. A notes descriptor still in group 1 means the map entry is missing however the label reads"
+    ).toBe(0)
+  })
+
+  it("carries the label copy in all three catalogs, which is what makes tRoot.has true", () => {
+    // Step 3 of the chain in this block's header. Asserted against the imported catalogs rather
+    // than a hand-copied string, because a hand-copied expectation proves only that two people
+    // typed the same word.
+    for (const [locale, messages] of [
+      ["en-US", enUS],
+      ["pt-BR", ptBR],
+      ["es-ES", esES],
+    ] as const) {
+      const value = (messages.audit.field as Record<string, string | undefined>).notes
+
+      expect
+        .soft(
+          typeof value === "string" && value.trim() !== "",
+          `audit.field.notes must resolve to a non-empty string in src/messages/${locale}.json. describeField returns the key and resolveLabel translates it only when tRoot.has() finds it, so a locale missing this leaf renders the raw dot-path "audit.field.notes" to the user — strictly worse than the English word it replaced`
+        )
+        .toBe(true)
+    }
   })
 })
 
