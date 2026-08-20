@@ -184,4 +184,33 @@ None. This plan changes one LABEL. No endpoint, auth path, file access or schema
 | `72fe556` | feat | `audit.field.notes` in three locales and the extended pin |
 | `d0598f7` | test | RED: notes must be labelled by a key, not by a database word |
 | `ea0928e` | fix | append notes to `AUDIT_FIELD_LABELS`, closing D-39-03 |
+| `4a16133` | docs | this SUMMARY |
+
+Whole-plan diffstat against `b296497`: 6 source files, 145 insertions / 21 deletions,
+plus this SUMMARY. No file deleted anywhere in the plan
+(`git diff --diff-filter=D b296497 HEAD` is empty).
+
+## TDD Gate Compliance
+
+Task 2 followed the full gate in order, verifiable in `git log`:
+
+1. **RED** — `d0598f7` `test(39-20)`, committed with the received values in the message body
+   (`expected 'Notes' to be 'audit.field.notes'` twice, `expected 1 to be +0` once).
+   No test passed unexpectedly: the three behaviour assertions failed before any implementation,
+   and the fourth (the catalog half) is documented in both the commit message and the block header
+   as already passing because task 1 landed the catalogs — it was **not** presented as part of the red.
+2. **GREEN** — `ea0928e` `fix(39-20)`, after RED.
+3. **REFACTOR** — not needed; no separate commit, correctly absent.
+
+Task 1's RED was the contract-only intermediate (dot-path added, catalogs not yet), run and
+recorded as 3 failing tests, then made green inside the same commit. The plan required a single
+commit there because the gate is bidirectional and splitting it would ship a knowingly-red
+intermediate for no benefit; the RED was therefore *run and recorded* rather than *committed*.
+
+## Self-Check: PASSED
+
+- All 7 files claimed above exist on disk.
+- All 4 commits (`72fe556`, `d0598f7`, `ea0928e`, `4a16133`) are in `git log`.
+- Working tree clean; no untracked files left behind.
+- `STATE.md`, `ROADMAP.md` and `REQUIREMENTS.md` deliberately NOT modified — the orchestrator owns those writes.
 </content>
