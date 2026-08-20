@@ -441,7 +441,7 @@ Plans:
 **Gap closure** (from the 39-17 dark-mode checkpoint; brief in `39-GAPS.md`)
 - [x] 39-18-PLAN.md — D-39-01: collect the configured organization identity custom field(s) at create time
 - [x] 39-20-PLAN.md — D-39-03: `audit.field.notes` in three locales, the 21st label, the extended pin
-- [ ] 39-21-PLAN.md — D-39-04: filter the identity picker to text fields, one predicate shared with the create dialog
+- [x] 39-21-PLAN.md — D-39-04: filter the identity picker to text fields, one predicate shared with the create dialog
 - [ ] 39-19-PLAN.md — D-39-01: browser proof that the organization advisory fires, and does not fire when it must not (runs LAST — owns the phase's only rebuild)
 
 **UI hint**: yes
@@ -553,7 +553,7 @@ Plans:
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
 | 38. Bulk Operations | 19/20 | In Progress|  |
-| 39. Duplicate Detection & Merge | 19/20 | In Progress|  |
+| 39. Duplicate Detection & Merge | 20/21 | In Progress|  |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
