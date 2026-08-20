@@ -71,7 +71,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 36: Audit Log** - Field-level change history with actor kind, fed by crmBus, with retention (completed 2026-08-16)
 - [x] **Phase 37: Trash & Restore** - Make soft-deleted records visible, restorable, and eventually purged (completed 2026-08-17)
 - [x] **Phase 38: Bulk Operations** - Multi-select with bulk delete, owner reassignment, and scoped export (completed 2026-08-17; the one remaining human check — dragging a Deals kanban card by its body with a real mouse — is instrument-blocked and carried into Phase 45)
-- [ ] **Phase 39: Duplicate Detection & Merge** - Warn on likely duplicates and merge without orphaning children
+- [x] **Phase 39: Duplicate Detection & Merge** - Warn on likely duplicates and merge without orphaning children (completed 2026-08-20)
 - [ ] **Phase 40: Saved Views & Shared Filters** - Persist, share, default, and export named filter sets
 - [ ] **Phase 41: Workflow Operator Affordances** - Replay, dry-run, failure alerting, and the single-instance constraint documented
 - [ ] **Phase 42: Observability** - Structured logging, opt-in error tracking, and a health endpoint that sees the processors
@@ -436,7 +436,7 @@ Plans:
 - [x] 39-14-PLAN.md — Create-time duplicate warning, end to end
 - [x] 39-15-PLAN.md — The merge screen: radio-group, action, page, stacked field picker
 - [x] 39-16-PLAN.md — Import flagged-rows notice and the two list-page entry points
-- [ ] 39-17-PLAN.md — 320px e2e for both new routes, Docker rebuild, phase gate, dark-mode checkpoint
+- [x] 39-17-PLAN.md — 320px e2e for both new routes, Docker rebuild, phase gate, dark-mode checkpoint
 
 **UI hint**: yes
 
@@ -547,7 +547,7 @@ Plans:
 | 36. Audit Log | 20/20 | Complete   | 2026-08-16 |
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
 | 38. Bulk Operations | 19/20 | In Progress|  |
-| 39. Duplicate Detection & Merge | 16/17 | In Progress|  |
+| 39. Duplicate Detection & Merge | 17/17 | Complete   | 2026-08-20 |
 | 40. Saved Views & Shared Filters | 0/? | Not started | - |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
