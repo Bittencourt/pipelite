@@ -9,7 +9,8 @@ import {
   activityTypes,
   users,
 } from "@/db/schema"
-import { eq, and, isNull, gte, lte, inArray } from "drizzle-orm"
+import { eq, and, or, isNull, isNotNull, gte, lte, lt, ilike, inArray, sql } from "drizzle-orm"
+import type { SQL } from "drizzle-orm"
 import type { ExportEntityType, ExportFilters, ExportOptions, ExportResult } from "./types"
 import { toPipedriveFormat, exportToPipedriveCSV } from "./pipedrive"
 import { deriveCsvColumns } from "./csv-columns"
@@ -262,15 +263,54 @@ export function exportToJSON(
 // Every id crosses into SQL as a bound parameter (T-38-15) — never interpolated into a raw
 // `sql` fragment. The 100-id cap belongs to the server actions, not here: this is a shared
 // read path the admin full export also uses and it must not acquire a bulk-specific limit.
+//
+// ---------------------------------------------------------------------------
+// THE SAVED-VIEW PREDICATES (Phase 40, VIEW-03) AND THEIR INVARIANT
+//
+// Every key listed in `EXPORTABLE_FILTER_KEYS` (`src/lib/views/url-params.ts`) is applied below
+// as a REAL SQL predicate by the fetcher for its entity type. That is not a convention — it is
+// the claim the export guard rests on. `hasExportableFilter` decides whether a filter map may
+// authorize an export at all, and it is only a meaningful gate if the keys it counts provably
+// narrow the query. A key that authorizes while narrowing nothing is an unbounded export wearing
+// a filter's clothes (T-40-30, 40-CONTEXT amendment A8).
+//
+// `src/lib/export/__tests__/view-filters.test.ts` enforces it structurally, per fetcher, over
+// comment-stripped source. Adding a key to that table without a predicate here fails that gate.
+//
+// Each predicate MIRRORS the list page it must match, so the export and the list agree about what
+// the view means: `organizations/page.tsx:29-31`, `people/page.tsx:28-31`, `deals/page.tsx:113-115`
+// and `getActivities` in `activities/actions.ts`. Every filter value crosses as a BOUND PARAMETER,
+// including the two `sql` fragments (T-38-15/T-40-32) — nothing is interpolated into raw text.
+//
+// `maxRows` is threaded as the third parameter of each fetcher and selects `maxRows + 1`, so
+// `fetchFilteredData` can tell "exactly at the cap" from "over it" and refuse. Omitting it leaves
+// the read unbounded, which the admin full export depends on.
+// ---------------------------------------------------------------------------
+
+/** `limit` for a `findMany`, or nothing at all when the caller set no cap. */
+function rowLimit(maxRows: number | undefined): { limit?: number } {
+  return maxRows === undefined ? {} : { limit: maxRows + 1 }
+}
 
 async function fetchOrganizations(
   filters: ExportFilters | undefined,
-  includeCustomFields: boolean
+  includeCustomFields: boolean,
+  maxRows?: number
 ) {
-  const conditions = [isNull(organizations.deletedAt)]
+  const conditions: SQL[] = [isNull(organizations.deletedAt)]
 
   if (filters?.owner) {
     conditions.push(eq(organizations.ownerId, filters.owner))
+  }
+  if (filters?.search) {
+    // The same three columns `organizations/page.tsx:29-31` searches, in the same order.
+    conditions.push(
+      or(
+        ilike(organizations.name, `%${filters.search}%`),
+        ilike(organizations.industry, `%${filters.search}%`),
+        ilike(organizations.website, `%${filters.search}%`)
+      )!
+    )
   }
   if (filters?.ids) {
     conditions.push(inArray(organizations.id, filters.ids))
@@ -281,6 +321,7 @@ async function fetchOrganizations(
     with: {
       owner: { columns: { id: true, name: true, email: true } },
     },
+    ...rowLimit(maxRows),
   })
 
   return rows.map((r) => flattenOrganization(r as OrgRow, includeCustomFields))
@@ -288,12 +329,24 @@ async function fetchOrganizations(
 
 async function fetchPeople(
   filters: ExportFilters | undefined,
-  includeCustomFields: boolean
+  includeCustomFields: boolean,
+  maxRows?: number
 ) {
-  const conditions = [isNull(people.deletedAt)]
+  const conditions: SQL[] = [isNull(people.deletedAt)]
 
   if (filters?.owner) {
     conditions.push(eq(people.ownerId, filters.owner))
+  }
+  if (filters?.search) {
+    // The same four columns `people/page.tsx:28-31` searches, in the same order.
+    conditions.push(
+      or(
+        ilike(people.firstName, `%${filters.search}%`),
+        ilike(people.lastName, `%${filters.search}%`),
+        ilike(people.email, `%${filters.search}%`),
+        ilike(people.phone, `%${filters.search}%`)
+      )!
+    )
   }
   if (filters?.ids) {
     conditions.push(inArray(people.id, filters.ids))
@@ -305,6 +358,7 @@ async function fetchPeople(
       organization: { columns: { id: true, name: true } },
       owner: { columns: { id: true, name: true, email: true } },
     },
+    ...rowLimit(maxRows),
   })
 
   return rows.map((r) => flattenPerson(r as PersonRow, includeCustomFields))
@@ -312,15 +366,36 @@ async function fetchPeople(
 
 async function fetchDeals(
   filters: ExportFilters | undefined,
-  includeCustomFields: boolean
+  includeCustomFields: boolean,
+  maxRows?: number
 ) {
-  const conditions: ReturnType<typeof eq>[] = [isNull(deals.deletedAt)]
+  const conditions: SQL[] = [isNull(deals.deletedAt)]
 
   if (filters?.owner) {
     conditions.push(eq(deals.ownerId, filters.owner))
   }
   if (filters?.stage) {
     conditions.push(eq(deals.stageId, filters.stage))
+  }
+  if (filters?.pipeline) {
+    // A BOARD SELECTOR, NOT AN AUTHORIZING FILTER. `pipeline` is absent from
+    // `EXPORTABLE_FILTER_KEYS.deal` — it cannot authorize an export on its own, because a board
+    // scoping 25,195 deals is the unbounded export 38-CONTEXT.md:110-116 forbids (E-2). But it
+    // MUST still narrow, or a deals view exported with `pipeline` + `owner` would silently return
+    // that owner's deals on every board rather than the one the view was saved on.
+    //
+    // Do NOT delete this predicate on the grounds that pipeline is not exportable; the two facts
+    // are independent and `view-filters.test.ts` asserts both together for exactly that reason.
+    conditions.push(
+      sql`${deals.stageId} IN (SELECT id FROM stages WHERE pipeline_id = ${filters.pipeline})`
+    )
+  }
+  if (filters?.assignee) {
+    // The exact shape `deals/page.tsx:113-115` uses, copied rather than improvised so the export
+    // and the kanban cannot disagree about what "assigned to" means.
+    conditions.push(
+      sql`${deals.id} IN (SELECT deal_id FROM deal_assignees WHERE user_id = ${filters.assignee})`
+    )
   }
   if (filters?.dateFrom) {
     conditions.push(gte(deals.expectedCloseDate, new Date(filters.dateFrom)))
@@ -340,6 +415,7 @@ async function fetchDeals(
       person: { columns: { id: true, firstName: true, lastName: true } },
       owner: { columns: { id: true, name: true, email: true } },
     },
+    ...rowLimit(maxRows),
   })
 
   return rows.map((r) => flattenDeal(r as DealRow, includeCustomFields))
@@ -347,12 +423,55 @@ async function fetchDeals(
 
 async function fetchActivities(
   filters: ExportFilters | undefined,
-  includeCustomFields: boolean
+  includeCustomFields: boolean,
+  maxRows?: number
 ) {
-  const conditions: ReturnType<typeof eq>[] = [isNull(activities.deletedAt)]
+  const conditions: SQL[] = [isNull(activities.deletedAt)]
 
   if (filters?.owner) {
     conditions.push(eq(activities.ownerId, filters.owner))
+  }
+  if (filters?.type) {
+    conditions.push(eq(activities.typeId, filters.type))
+  }
+  if (filters?.assignee) {
+    conditions.push(eq(activities.assigneeId, filters.assignee))
+  }
+  if (filters?.search) {
+    // The same two columns `getActivities` searches (`src/app/activities/actions.ts`).
+    conditions.push(
+      or(
+        ilike(activities.title, `%${filters.search}%`),
+        ilike(activities.notes, `%${filters.search}%`)
+      )!
+    )
+  }
+  if (filters?.status) {
+    // WHY THIS PREDICATE IS THE ONE THAT MATTERS ON THIS FETCHER.
+    // `hasExportableFilter("activity", { status: "overdue" })` is `true`. Without a real predicate
+    // here that would authorize an export of ALL 79,022 live activities — the guard satisfied by a
+    // control that filters nothing, which is the exact failure mode E-2 exists to prevent and which
+    // neither 40-CONTEXT nor the UI-SPEC checked on this surface (amendment A8).
+    //
+    // THE LIST SIDE IS CURRENTLY WEAKER THAN THIS, AND THAT IS NOT THIS FILE'S BUG TO FIX.
+    // `getActivities` pushes a no-op duplicate `isNull(deletedAt)` for `completed` and then filters
+    // in JavaScript AFTER applying `limit`; it applies no `status` at all for `pending`/`overdue`
+    // and no date range whatsoever. **Plan 40-13 closes the list side.** Do not edit
+    // `getActivities` from here — different file, different owner in this wave, and a concurrent
+    // edit would collide. Until 40-13 lands the export is NARROWER than the list, which is the
+    // safe direction to be wrong in.
+    const now = new Date()
+
+    if (filters.status === "completed") {
+      conditions.push(isNotNull(activities.completedAt))
+    } else if (filters.status === "pending") {
+      conditions.push(isNull(activities.completedAt))
+    } else if (filters.status === "overdue") {
+      conditions.push(and(isNull(activities.completedAt), lt(activities.dueDate, now))!)
+    }
+    // Anything else adds no predicate. Unreachable from the view path — `pickFilterParams` has
+    // already dropped a value the toolbar cannot produce — but the admin export can pass anything,
+    // and an unrecognised status must not silently mean "completed".
   }
   if (filters?.dateFrom) {
     conditions.push(gte(activities.dueDate, new Date(filters.dateFrom)))
@@ -371,6 +490,7 @@ async function fetchActivities(
       deal: { columns: { id: true, title: true } },
       owner: { columns: { id: true, name: true, email: true } },
     },
+    ...rowLimit(maxRows),
   })
 
   return rows.map((r) => flattenActivity(r as ActivityRow, includeCustomFields))
@@ -384,25 +504,37 @@ export async function fetchFilteredData(
   options: ExportOptions
 ): Promise<ExportResult> {
   try {
-    const { entityType, format, includeCustomFields, filters } = options
+    const { entityType, format, includeCustomFields, filters, maxRows } = options
 
     let flatData: Record<string, unknown>[]
 
     switch (entityType) {
       case "organization":
-        flatData = await fetchOrganizations(filters, includeCustomFields)
+        flatData = await fetchOrganizations(filters, includeCustomFields, maxRows)
         break
       case "person":
-        flatData = await fetchPeople(filters, includeCustomFields)
+        flatData = await fetchPeople(filters, includeCustomFields, maxRows)
         break
       case "deal":
-        flatData = await fetchDeals(filters, includeCustomFields)
+        flatData = await fetchDeals(filters, includeCustomFields, maxRows)
         break
       case "activity":
-        flatData = await fetchActivities(filters, includeCustomFields)
+        flatData = await fetchActivities(filters, includeCustomFields, maxRows)
         break
       default:
         return { success: false, error: "Unknown entity type" }
+    }
+
+    // THE CAP, REFUSED BEFORE ANY FORMATTING (T-40-31). Each fetcher above selected `maxRows + 1`,
+    // so `>` here means "there is at least one more row than the caller allowed" — and the refusal
+    // happens BEFORE `exportToCSV`, so a rejected 79k-row activities export never materialises a
+    // CSV string it is only going to throw away. A truncated file would be worse than a refusal:
+    // the user cannot see what is missing.
+    //
+    // `maxRows === undefined` skips this entirely, which is what keeps the admin full export and
+    // the `exportSelected*` bulk paths byte-for-byte unchanged.
+    if (maxRows !== undefined && flatData.length > maxRows) {
+      return { success: false, error: "too_many" }
     }
 
     const timestamp = new Date().toISOString().split("T")[0]
