@@ -32,6 +32,8 @@ import type { ViewFilters } from "../types"
 import {
   MAX_VIEW_NAME_LENGTH,
   SAVED_VIEW_NAME_CONSTRAINT,
+  canMutateView,
+  canSeeView,
   guardSaveInput,
   isDuplicateViewName,
   listRouteFor,
@@ -44,8 +46,21 @@ import {
 const ACTIONS_PATH = "src/lib/views/actions.ts"
 const GUARDS_PATH = "src/lib/views/write-guards.ts"
 
-/** The two actions this task writes. A FLOOR, never the subject list — see below. */
-const PLANNED_ACTIONS = ["createView", "updateView"] as const
+/**
+ * The five actions this plan writes. A FLOOR, never the subject list: every ordering assertion
+ * below runs over the list DERIVED from the source, so a sixth action is gated the day it is added
+ * rather than the day somebody remembers to add it here.
+ */
+const PLANNED_ACTIONS = [
+  "createView",
+  "updateView",
+  "setViewShared",
+  "setViewDefault",
+  "deleteView",
+] as const
+
+/** The two actions that take a name and a filter map, and therefore run the save-time guard. */
+const SAVE_ACTIONS = ["createView", "updateView"] as const
 
 /** The call each save action's guard must precede. Its own write, not merely its first query. */
 const WRITE_MARKER: Readonly<Record<string, string>> = Object.freeze({
@@ -106,8 +121,7 @@ function skipBalanced(source: string, openAt: number, open: string, close: strin
  * assertions fail closed: a type literal contains neither `auth()` nor `db.`, so both indices are
  * -1 and `-1 < -1` is false.
  */
-function extractExportedAsyncFunctions(stripped: string): ExportedFunction[] {
-  const marker = "export async function "
+function extractExportedFunctions(stripped: string, marker: string): ExportedFunction[] {
   const found: ExportedFunction[] = []
   let from = 0
 
@@ -161,12 +175,21 @@ function extractExportedAsyncFunctions(stripped: string): ExportedFunction[] {
 
 const actionsSource = readStrippedSource(ACTIONS_PATH)
 const guardsSource = readStrippedSource(GUARDS_PATH)
-const actions = extractExportedAsyncFunctions(actionsSource)
+const actions = extractExportedFunctions(actionsSource, "export async function ")
+const guards = extractExportedFunctions(guardsSource, "export function ")
 
 function actionNamed(name: string): ExportedFunction {
   const found = actions.find((action) => action.name === name)
 
   if (!found) throw new Error(`${ACTIONS_PATH} no longer exports ${name}`)
+
+  return found
+}
+
+function guardNamed(name: string): ExportedFunction {
+  const found = guards.find((guard) => guard.name === name)
+
+  if (!found) throw new Error(`${GUARDS_PATH} no longer exports ${name}`)
 
   return found
 }
@@ -475,6 +498,89 @@ describe("redactDbError", () => {
   })
 })
 
+/**
+ * THE ASYMMETRY. Two predicates that a reader will assume are the same one, and are not.
+ *
+ * MUTATION is the app's ordinary `owner || role === "admin"`. VISIBILITY is not: 40-CONTEXT
+ * Decision 3 hides a private view from everyone including admins, which is a deliberate departure
+ * from that idiom. So an admin may delete a shared view they can see and may not enumerate anybody's
+ * private views at all. Each direction is asserted, including the ones that would pass if the two
+ * predicates were collapsed into one — because that is the "simplification" this pair invites.
+ */
+const OWNER = { id: "user-owner", role: "member" as const }
+const ADMIN = { id: "user-admin", role: "admin" as const }
+const STRANGER = { id: "user-stranger", role: "member" as const }
+const PRIVATE_ROW = { ownerId: OWNER.id, isShared: false }
+const SHARED_ROW = { ownerId: OWNER.id, isShared: true }
+
+describe("canMutateView — who may change a view", () => {
+  it("ANTI-VACUITY: the owner may", () => {
+    // A predicate hardcoded to `false` passes every refusal test below. These two are what stop it.
+    expect(canMutateView(PRIVATE_ROW, OWNER)).toBe(true)
+    expect(canMutateView(SHARED_ROW, OWNER)).toBe(true)
+  })
+
+  it("ANTI-VACUITY: an admin may, on somebody else's view", () => {
+    expect(canMutateView(SHARED_ROW, ADMIN)).toBe(true)
+  })
+
+  it("a stranger may not", () => {
+    expect(canMutateView(SHARED_ROW, STRANGER)).toBe(false)
+    expect(canMutateView(PRIVATE_ROW, STRANGER)).toBe(false)
+  })
+
+  it("reads the ROW's owner, never a submitted one", () => {
+    // A viewer claiming to be the owner is not the owner: the comparison is against the stored
+    // column, so a crafted `ownerId` in the request has nowhere to land (T-40-23).
+    expect(canMutateView({ ownerId: "someone-else", isShared: true }, STRANGER)).toBe(false)
+  })
+
+  it("does not treat a missing or oddly-cased role as admin", () => {
+    expect(canMutateView(SHARED_ROW, { id: STRANGER.id })).toBe(false)
+    expect(canMutateView(SHARED_ROW, { id: STRANGER.id, role: null })).toBe(false)
+    expect(canMutateView(SHARED_ROW, { id: STRANGER.id, role: "Admin" })).toBe(false)
+  })
+})
+
+describe("canSeeView — who may see a view", () => {
+  it("ANTI-VACUITY: the owner sees their own private view", () => {
+    expect(canSeeView(PRIVATE_ROW, OWNER)).toBe(true)
+  })
+
+  it("ANTI-VACUITY: anybody sees a shared view", () => {
+    expect(canSeeView(SHARED_ROW, STRANGER)).toBe(true)
+    expect(canSeeView(SHARED_ROW, ADMIN)).toBe(true)
+  })
+
+  it("an ADMIN does NOT see somebody else's private view", () => {
+    // THE DISCRIMINATING CASE, and the whole of Decision 3. `canMutateView` returns TRUE for this
+    // exact pair, so a `canSeeView` that had been "unified" with it would return true here and
+    // this is the only assertion that would notice. `views.save.privateHelp` promises the user
+    // "Only you can see this view. Nobody else, including admins." in words.
+    expect(canSeeView(PRIVATE_ROW, ADMIN)).toBe(false)
+    expect(canMutateView(PRIVATE_ROW, ADMIN)).toBe(true)
+  })
+
+  it("a stranger does not see a private view", () => {
+    expect(canSeeView(PRIVATE_ROW, STRANGER)).toBe(false)
+  })
+
+  it("the two predicates disagree, and the disagreement is the point", () => {
+    // Stated as one assertion so a future reader who deletes the pair by "simplifying" them into
+    // one function fails a test whose name says what they broke.
+    expect(canSeeView(PRIVATE_ROW, ADMIN)).not.toBe(canMutateView(PRIVATE_ROW, ADMIN))
+    expect(canSeeView(SHARED_ROW, STRANGER)).not.toBe(canMutateView(SHARED_ROW, STRANGER))
+  })
+
+  it("canSeeView's own body contains no admin branch; canMutateView's does", () => {
+    // Read from the EXTRACTED FUNCTION BODY rather than from the file, so the paragraph above
+    // `canSeeView` explaining why it has no admin branch cannot satisfy the assertion — and,
+    // equally, so deleting that paragraph is not a way to make it pass.
+    expect(guardNamed("canSeeView").body).not.toContain("admin")
+    expect(guardNamed("canMutateView").body).toContain("admin")
+  })
+})
+
 describe(`${ACTIONS_PATH}: the write layer's authorization ordering`, () => {
   describe("the derived action list", () => {
     it("finds exported actions at all", () => {
@@ -529,7 +635,7 @@ describe(`${ACTIONS_PATH}: the write layer's authorization ordering`, () => {
   })
 
   describe("createView and updateView re-derive their own inputs", () => {
-    for (const name of PLANNED_ACTIONS) {
+    for (const name of SAVE_ACTIONS) {
       it(`${name} calls guardSaveInput on the submitted map before writing`, () => {
         const action = actionNamed(name)
         const calls = callArguments(action.body, "guardSaveInput")
@@ -586,6 +692,114 @@ describe(`${ACTIONS_PATH}: the write layer's authorization ordering`, () => {
       // Anti-vacuity in the opposite direction: if `canMutateView` appeared in every action the
       // ordering assertion above would say nothing about `updateView` in particular.
       expect(actionNamed("createView").body).not.toContain("canMutateView")
+    })
+  })
+
+  describe("the G-7 asymmetry, action by action", () => {
+    it("setViewShared refuses a view the caller neither owns nor admins", () => {
+      const action = actionNamed("setViewShared")
+      const authorizeAt = action.body.indexOf("canMutateView")
+      const mutateAt = action.body.indexOf(".update(")
+
+      // The predicate itself, exercised: a stranger is refused.
+      expect(canMutateView(SHARED_ROW, STRANGER)).toBe(false)
+
+      expect(
+        authorizeAt,
+        `${ACTIONS_PATH}: setViewShared never calls canMutateView. The G-4 switch being absent ` +
+          `on a read-only row is presentation, not the control (T-40-23).`,
+      ).toBeGreaterThan(-1)
+      expect(mutateAt, `${ACTIONS_PATH}: setViewShared performs no .update(`).toBeGreaterThan(-1)
+      expect(
+        authorizeAt,
+        `${ACTIONS_PATH}: setViewShared flips the flag before authorizing the caller.`,
+      ).toBeLessThan(mutateAt)
+    })
+
+    it("setViewShared clears OTHER users' defaults when a view goes private", () => {
+      // A consequence 40-CONTEXT does not state. An unshared view that is still somebody else's
+      // default would redirect them into a view they can no longer see, and the resolver would
+      // return nothing on every visit — a silent, permanent no-op with nothing on screen to
+      // explain it. Dropping the stale row degrades them to the unfiltered list instead, which is
+      // the behaviour the locked decision already chose for a DELETED shared view.
+      const body = actionNamed("setViewShared").body
+
+      expect(body).toContain("savedViewDefaults")
+      expect(body).toContain(".delete(")
+      // Scoped to somebody ELSE: the owner keeps their own default, because they can still see
+      // their own private view. An unscoped delete would take theirs too.
+      expect(body).toContain("ne(")
+      expect(body).toContain("ownerId")
+    })
+
+    it("setViewDefault does NOT require ownership, because a default is per-user", () => {
+      // UI-SPEC G-7: "the default switch, which is per-user and stays live: a user may default to
+      // someone else's shared view". 40-CONTEXT gives the reason — "otherwise sharing has little
+      // payoff" — and plan 40-02 put the default in its own table keyed (userId, entityType)
+      // precisely so this is expressible; a boolean on the view row would have made one user's
+      // choice the owner's choice too. So the absence of the ownership check here is a REQUIREMENT.
+      expect(
+        actionNamed("setViewDefault").body,
+        `${ACTIONS_PATH}: setViewDefault calls canMutateView, which would stop a user pointing ` +
+          `their own default at somebody else's shared view (UI-SPEC G-7).`,
+      ).not.toContain("canMutateView")
+    })
+
+    it("setViewDefault refuses a view the caller cannot see", () => {
+      // The check that IS required, and it is not the ownership one. Without it a member could
+      // point their default at an admin's private view and read its filter values out of their
+      // own address bar after the redirect — the disclosure an ownership check does not cover,
+      // because ownership is not the question being asked (T-40-24).
+      const action = actionNamed("setViewDefault")
+      const seeAt = action.body.indexOf("canSeeView")
+      const writeAt = action.body.indexOf("upsertDefault")
+
+      expect(canSeeView(PRIVATE_ROW, STRANGER)).toBe(false)
+
+      expect(
+        seeAt,
+        `${ACTIONS_PATH}: setViewDefault never calls canSeeView (T-40-24).`,
+      ).toBeGreaterThan(-1)
+      expect(writeAt, `${ACTIONS_PATH}: setViewDefault performs no upsert`).toBeGreaterThan(-1)
+      expect(
+        seeAt,
+        `${ACTIONS_PATH}: setViewDefault writes the default before checking visibility.`,
+      ).toBeLessThan(writeAt)
+    })
+
+    it("deleteView authorizes before it deletes", () => {
+      const action = actionNamed("deleteView")
+      const authorizeAt = action.body.indexOf("canMutateView")
+      const deleteAt = action.body.indexOf(".delete(")
+
+      expect(authorizeAt, `${ACTIONS_PATH}: deleteView never calls canMutateView`).toBeGreaterThan(
+        -1,
+      )
+      expect(deleteAt, `${ACTIONS_PATH}: deleteView performs no .delete(`).toBeGreaterThan(-1)
+      expect(
+        authorizeAt,
+        `${ACTIONS_PATH}: deleteView removes the row before authorizing the caller.`,
+      ).toBeLessThan(deleteAt)
+    })
+
+    it("deleteView removes the row and lets the FK cascade take every default on it", () => {
+      // THE LOCKED DECISION: "deleting a shared view that someone had defaulted to falls back to
+      // unfiltered, with no error." Plan 40-02 made both saved_view_defaults foreign keys cascade
+      // and exercised it live — deleting a shared view left zero orphaned defaults — so the
+      // ABSENCE of a row IS the fallback. A manual delete here would be a second implementation
+      // of a database guarantee, and one a transaction boundary could get wrong.
+      const body = actionNamed("deleteView").body
+
+      expect(body).toContain("savedViews")
+      expect(
+        body,
+        `${ACTIONS_PATH}: deleteView deletes saved_view_defaults by hand. The cascade already ` +
+          `does it; the manual delete is an untested duplicate of a database guarantee.`,
+      ).not.toContain("savedViewDefaults")
+    })
+
+    it("deleteView returns the name, because the row is gone before the toast renders", () => {
+      expect(actionNamed("deleteView").body).toContain("name: row.name")
     })
   })
 
