@@ -1,12 +1,14 @@
 import { defineConfig } from "@playwright/test"
 
-// The e2e harness for Phase 45. It is deliberately minimal: one authenticated
-// session produced by `e2e/auth.setup.ts`, reused by every spec.
+// The e2e harness. Two authenticated sessions, both produced by the `setup`
+// project: an ADMIN (`e2e/auth.setup.ts`) reused by every spec, and a non-admin
+// MEMBER (`e2e/member.setup.ts`) used only by the handful of specs that must prove
+// something is invisible to somebody else.
 //
 // Node's built-in .env loader (no `dotenv` dependency is added). It is what makes
-// E2E_ADMIN_PASSWORD and E2E_DATABASE_URL — both required by the setup project's
-// seed — visible here. A missing .env must degrade to "export them by hand"
-// rather than crashing config load, hence the try/catch.
+// E2E_ADMIN_PASSWORD, E2E_MEMBER_PASSWORD and E2E_DATABASE_URL — all required by
+// the setup project's two seeds — visible here. A missing .env must degrade to
+// "export them by hand" rather than crashing config load, hence the try/catch.
 try {
   process.loadEnvFile()
 } catch {
@@ -37,8 +39,18 @@ export default defineConfig({
   // `next dev` are forbidden in this project. The harness attaches to the already
   // running container at baseURL; bring it up before invoking Playwright.
   projects: [
-    // Logs in once through the real form and writes the storageState below.
-    { name: "setup", testMatch: /.*\.setup\.ts/ },
+    // Logs in through the real form and writes the storageStates below. The
+    // `testMatch` catches both `auth.setup.ts` and `member.setup.ts`.
+    //
+    // `retries: 1` is scoped to THIS project and nowhere else. BACKLOG.md records
+    // `auth.setup.ts` timing out on `waitForURL` in 2 of 8 full-suite invocations
+    // with no rate limiting involved, and a setup project is the one place where a
+    // single flake is not a single failure: every dependent project is skipped with
+    // it, so one timeout reports as a whole-suite failure. Retrying the LOGIN is
+    // safe in a way that retrying an assertion would not be — both seeds are
+    // idempotent, and a retry re-runs the login rather than papering over a
+    // measurement.
+    { name: "setup", testMatch: /.*\.setup\.ts/, retries: 1 },
     {
       name: "chromium",
       dependencies: ["setup"],
@@ -46,6 +58,21 @@ export default defineConfig({
         storageState: "e2e/.auth/admin.json",
         // Plain viewport emulation, NOT `isMobile: true` — mobile emulation
         // measured 980px on a probe page, a variable this phase does not need.
+        viewport: { width: 320, height: 640 },
+      },
+    },
+    {
+      // The non-admin session. `testMatch` is NARROWED BY FILENAME on purpose: a
+      // second project with no `testMatch` inherits the whole `testDir` and would
+      // run every existing spec a second time — doubling the runtime, and doubling
+      // the fixture writes into a database holding 46,054 real organizations, with
+      // two projects racing for the same prefixed rows under `fullyParallel: false`
+      // but across projects. Only `*-member.spec.ts` belongs here.
+      name: "chromium-member",
+      dependencies: ["setup"],
+      testMatch: /.*-member\.spec\.ts/,
+      use: {
+        storageState: "e2e/.auth/member.json",
         viewport: { width: 320, height: 640 },
       },
     },
