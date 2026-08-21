@@ -646,6 +646,79 @@
     },
     "findDuplicates": "Buscar duplicados"
   },
+  "views": {
+    "picker": {
+      "label": "Vistas guardadas"
+    },
+    "allRecords": "Todos los registros",
+    "modified": "Modificada",
+    "groupMine": "Mis vistas",
+    "groupShared": "Compartidas conmigo",
+    "badgeShared": "Compartida",
+    "badgePrivate": "Privada",
+    "badgeDefault": "Predeterminada",
+    "ownedBy": "de {owner}",
+    "ownerUnavailable": "El propietario ya no está activo",
+    "emptyMenu": "Aún no hay vistas guardadas",
+    "saveNew": "Guardar vista",
+    "saveChanges": "Guardar cambios",
+    "manageAction": "Gestionar vistas",
+    "exportAction": "Exportar estos resultados (CSV)",
+    "exporting": "Preparando tu archivo…",
+    "needsFilter": "Filtra esta lista para guardarla como una vista.",
+    "degraded": "Parte de esta vista ya no existe y se ignoró.",
+    "save": {
+      "titleNew": "Guardar esta vista",
+      "titleUpdate": "Guardar los cambios de esta vista",
+      "description": "Una vista recuerda los filtros que tiene esta lista ahora mismo.",
+      "nameLabel": "Nombre de la vista",
+      "namePlaceholder": "p. ej. Vencidas y mías",
+      "nameRequired": "Ponle un nombre a esta vista.",
+      "nameTaken": "Ya tienes una vista llamada “{name}”. Elige otro nombre.",
+      "targetLegend": "¿Qué debe hacer este guardado?",
+      "targetUpdate": "Actualizar “{name}”",
+      "targetNew": "Guardar como una vista nueva",
+      "targetNewOnly": "Solo puedes guardar esto como una vista nueva, porque “{name}” pertenece a {owner}.",
+      "sharedLabel": "Compartir con el equipo",
+      "sharedHelp": "Tus compañeros pueden seleccionar esta vista y ponerla como predeterminada. Solo tú puedes editarla o eliminarla.",
+      "privateHelp": "Solo tú puedes ver esta vista. Nadie más, ni los administradores.",
+      "defaultLabel": "Abrir esta vista de forma predeterminada",
+      "defaultHelp": "Al abrir esta lista sin filtros en la barra de direcciones llegarás aquí.",
+      "submit": "Guardar vista",
+      "submitting": "Guardando…",
+      "created": "Vista “{name}” guardada.",
+      "updated": "Vista “{name}” actualizada.",
+      "failed": "La vista no se guardó. No cambió nada — inténtalo de nuevo.",
+      "noFilters": "Esta lista no tiene filtros aplicados, así que no hay nada que guardar."
+    },
+    "manage": {
+      "title": "Gestionar vistas",
+      "description": "Comparte una vista, elige cuál se abre de forma predeterminada o elimina alguna.",
+      "empty": "Aún no hay vistas guardadas",
+      "emptyBody": "Filtra una lista y guárdala para verla aquí.",
+      "share": "Compartir con el equipo",
+      "unshare": "Hacer privada",
+      "setDefault": "Abrir de forma predeterminada",
+      "clearDefault": "Dejar de abrir de forma predeterminada",
+      "delete": "Eliminar",
+      "readOnly": "Solo {owner} o un administrador puede cambiar esta vista.",
+      "filterCount": "{count, plural, one {# filtro} other {# filtros}}",
+      "saved": "Cambios guardados.",
+      "failed": "Ese cambio no se guardó. Inténtalo de nuevo."
+    },
+    "delete": {
+      "title": "¿Eliminar esta vista?",
+      "body": "“{name}” desaparece para todos los que la seleccionaron. Su lista vuelve a mostrar todos los registros. Los registros en sí no se tocan.",
+      "action": "Eliminar vista",
+      "success": "Vista “{name}” eliminada.",
+      "failed": "La vista no se eliminó. Inténtalo de nuevo."
+    },
+    "export": {
+      "disabledReason": "Elige al menos un filtro primero. No se permite exportar sin filtros.",
+      "tooMany": "Esta vista coincide con más de {max} registros. Restringe los filtros y exporta de nuevo.",
+      "refused": "Se rechazó esa exportación porque no había ningún filtro aplicado."
+    }
+  },
   "settings": {
     "profile": {
       "title": "Configuración de Perfil",

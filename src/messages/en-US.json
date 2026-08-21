@@ -646,6 +646,79 @@
     },
     "findDuplicates": "Find duplicates"
   },
+  "views": {
+    "picker": {
+      "label": "Saved views"
+    },
+    "allRecords": "All records",
+    "modified": "Modified",
+    "groupMine": "My views",
+    "groupShared": "Shared with me",
+    "badgeShared": "Shared",
+    "badgePrivate": "Private",
+    "badgeDefault": "Default",
+    "ownedBy": "by {owner}",
+    "ownerUnavailable": "Owner no longer active",
+    "emptyMenu": "No saved views yet",
+    "saveNew": "Save view",
+    "saveChanges": "Save changes",
+    "manageAction": "Manage views",
+    "exportAction": "Export these results (CSV)",
+    "exporting": "Preparing your file…",
+    "needsFilter": "Filter this list to save it as a view.",
+    "degraded": "Part of this view no longer exists and was ignored.",
+    "save": {
+      "titleNew": "Save this view",
+      "titleUpdate": "Save changes to this view",
+      "description": "A view remembers the filters this list has right now.",
+      "nameLabel": "View name",
+      "namePlaceholder": "e.g. Overdue and mine",
+      "nameRequired": "Give this view a name.",
+      "nameTaken": "You already have a view called “{name}”. Choose another name.",
+      "targetLegend": "What should this save do?",
+      "targetUpdate": "Update “{name}”",
+      "targetNew": "Save as a new view",
+      "targetNewOnly": "You can only save this as a new view, because “{name}” belongs to {owner}.",
+      "sharedLabel": "Share with the team",
+      "sharedHelp": "Teammates can select this view and set it as their default. Only you can edit or delete it.",
+      "privateHelp": "Only you can see this view. Nobody else, including admins.",
+      "defaultLabel": "Open this view by default",
+      "defaultHelp": "Opening this list with no filters in the address bar takes you here.",
+      "submit": "Save view",
+      "submitting": "Saving…",
+      "created": "View “{name}” saved.",
+      "updated": "View “{name}” updated.",
+      "failed": "The view wasn't saved. Nothing changed — try again.",
+      "noFilters": "This list has no filters applied, so there is nothing to save."
+    },
+    "manage": {
+      "title": "Manage views",
+      "description": "Share a view, choose which one opens by default, or delete one.",
+      "empty": "No saved views yet",
+      "emptyBody": "Filter a list and save it to see it here.",
+      "share": "Share with the team",
+      "unshare": "Make private",
+      "setDefault": "Open by default",
+      "clearDefault": "Stop opening by default",
+      "delete": "Delete",
+      "readOnly": "Only {owner} or an admin can change this view.",
+      "filterCount": "{count, plural, one {# filter} other {# filters}}",
+      "saved": "Changes saved.",
+      "failed": "That change wasn't saved. Try again."
+    },
+    "delete": {
+      "title": "Delete this view?",
+      "body": "“{name}” disappears for everyone who selected it. Their list goes back to showing all records. The records themselves are untouched.",
+      "action": "Delete view",
+      "success": "View “{name}” deleted.",
+      "failed": "The view wasn't deleted. Try again."
+    },
+    "export": {
+      "disabledReason": "Choose at least one filter first. An unfiltered export isn't allowed.",
+      "tooMany": "This view matches more than {max} records. Narrow the filters and export again.",
+      "refused": "That export was refused because no filter was applied."
+    }
+  },
   "settings": {
     "profile": {
       "title": "Profile Settings",

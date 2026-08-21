@@ -646,6 +646,79 @@
     },
     "findDuplicates": "Encontrar duplicados"
   },
+  "views": {
+    "picker": {
+      "label": "Visões salvas"
+    },
+    "allRecords": "Todos os registros",
+    "modified": "Modificada",
+    "groupMine": "Minhas visões",
+    "groupShared": "Compartilhadas comigo",
+    "badgeShared": "Compartilhada",
+    "badgePrivate": "Particular",
+    "badgeDefault": "Padrão",
+    "ownedBy": "de {owner}",
+    "ownerUnavailable": "Proprietário não está mais ativo",
+    "emptyMenu": "Nenhuma visão salva ainda",
+    "saveNew": "Salvar visão",
+    "saveChanges": "Salvar alterações",
+    "manageAction": "Gerenciar visões",
+    "exportAction": "Exportar estes resultados (CSV)",
+    "exporting": "Preparando seu arquivo…",
+    "needsFilter": "Filtre esta lista para salvá-la como uma visão.",
+    "degraded": "Parte desta visão não existe mais e foi ignorada.",
+    "save": {
+      "titleNew": "Salvar esta visão",
+      "titleUpdate": "Salvar alterações desta visão",
+      "description": "Uma visão guarda os filtros que esta lista tem agora.",
+      "nameLabel": "Nome da visão",
+      "namePlaceholder": "ex.: Atrasadas e minhas",
+      "nameRequired": "Dê um nome a esta visão.",
+      "nameTaken": "Você já tem uma visão chamada “{name}”. Escolha outro nome.",
+      "targetLegend": "O que este salvamento deve fazer?",
+      "targetUpdate": "Atualizar “{name}”",
+      "targetNew": "Salvar como uma nova visão",
+      "targetNewOnly": "Você só pode salvar isso como uma nova visão, porque “{name}” pertence a {owner}.",
+      "sharedLabel": "Compartilhar com a equipe",
+      "sharedHelp": "Colegas podem selecionar esta visão e defini-la como padrão. Só você pode editá-la ou excluí-la.",
+      "privateHelp": "Só você pode ver esta visão. Mais ninguém, nem os administradores.",
+      "defaultLabel": "Abrir esta visão por padrão",
+      "defaultHelp": "Abrir esta lista sem filtros na barra de endereço leva você para cá.",
+      "submit": "Salvar visão",
+      "submitting": "Salvando…",
+      "created": "Visão “{name}” salva.",
+      "updated": "Visão “{name}” atualizada.",
+      "failed": "A visão não foi salva. Nada foi alterado — tente novamente.",
+      "noFilters": "Esta lista não tem filtros aplicados, então não há nada para salvar."
+    },
+    "manage": {
+      "title": "Gerenciar visões",
+      "description": "Compartilhe uma visão, escolha qual abre por padrão ou exclua alguma.",
+      "empty": "Nenhuma visão salva ainda",
+      "emptyBody": "Filtre uma lista e salve para vê-la aqui.",
+      "share": "Compartilhar com a equipe",
+      "unshare": "Tornar particular",
+      "setDefault": "Abrir por padrão",
+      "clearDefault": "Parar de abrir por padrão",
+      "delete": "Excluir",
+      "readOnly": "Só {owner} ou um administrador pode alterar esta visão.",
+      "filterCount": "{count, plural, one {# filtro} other {# filtros}}",
+      "saved": "Alterações salvas.",
+      "failed": "Essa alteração não foi salva. Tente novamente."
+    },
+    "delete": {
+      "title": "Excluir esta visão?",
+      "body": "“{name}” desaparece para todos que a selecionaram. A lista deles volta a mostrar todos os registros. Os registros em si não são afetados.",
+      "action": "Excluir visão",
+      "success": "Visão “{name}” excluída.",
+      "failed": "A visão não foi excluída. Tente novamente."
+    },
+    "export": {
+      "disabledReason": "Escolha ao menos um filtro primeiro. Exportar sem filtro não é permitido.",
+      "tooMany": "Esta visão corresponde a mais de {max} registros. Restrinja os filtros e exporte de novo.",
+      "refused": "Essa exportação foi recusada porque nenhum filtro estava aplicado."
+    }
+  },
   "settings": {
     "profile": {
       "title": "Configurações de Perfil",
