@@ -102,6 +102,30 @@ function asFilterMap(raw: unknown): ViewFilters {
 }
 
 /**
+ * THE VISIBILITY PREDICATE, DEFINED EXACTLY ONCE (T-40-17, T-40-18).
+ *
+ * `ownerId = viewer OR isShared = true`. No admin branch — the header explains why at length, and
+ * this is the expression that header is about.
+ *
+ * WHY IT IS A FUNCTION RATHER THAN TWO INLINE COPIES. Both reads in this module apply the same
+ * rule: the picker list, and the "is this user's default still visible?" join. Two copies of a
+ * security control is the defect class `url-params.ts` was written to avoid one layer up — the
+ * copies agree today and one of them is edited later. One definition also makes the rule REACHABLE
+ * by a test: this function can be compiled to SQL and inspected, which is the only way to assert
+ * the difference T-40-17 is actually about. A behavioural test cannot see it. MEASURED, not
+ * assumed: moving this predicate out of the `where` into a post-fetch `rows.filter(...)` leaves
+ * ALL 25 behavioural assertions in `queries.db.test.ts` green, because the caller receives exactly
+ * the same list either way — while the server has now loaded every private view in the table into
+ * memory, and from a server component into the RSC payload of anything closing over them.
+ *
+ * It is deliberately parameterised on the viewer's ID ALONE. With no `role` parameter there is
+ * nowhere for an admin branch to be threaded in without changing the signature.
+ */
+export function visibleViewsPredicate(viewerId: string) {
+  return or(eq(savedViews.ownerId, viewerId), eq(savedViews.isShared, true))
+}
+
+/**
  * EVERY VIEW THIS VIEWER MAY SEE FOR ONE ENTITY TYPE, fully resolved.
  *
  * The visibility predicate is IN SQL and is never a post-fetch `.filter()` (T-40-17). That is a
@@ -124,8 +148,8 @@ export async function listVisibleViews(
       db.query.savedViews.findMany({
         where: and(
           eq(savedViews.entityType, entityType),
-          // THE ENTIRE PRIVACY CONTROL FOR CRITERION 2. No admin branch — see the header.
-          or(eq(savedViews.ownerId, viewer.id), eq(savedViews.isShared, true)),
+          // THE ENTIRE PRIVACY CONTROL FOR CRITERION 2, in the `where` and not in a `.filter()`.
+          visibleViewsPredicate(viewer.id),
         ),
         with: {
           // The `owner` relation registered in `_relations.ts:301` exists for exactly this line.
@@ -213,8 +237,8 @@ export async function readDefaultViewForUser(
         savedViews,
         and(
           eq(savedViews.id, savedViewDefaults.viewId),
-          // The same predicate as `listVisibleViews`, and again with no admin branch.
-          or(eq(savedViews.ownerId, userId), eq(savedViews.isShared, true)),
+          // THE SAME predicate as `listVisibleViews` — the same function, not a second copy of it.
+          visibleViewsPredicate(userId),
         ),
       )
       .where(
