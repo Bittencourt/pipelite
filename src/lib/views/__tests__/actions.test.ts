@@ -28,6 +28,7 @@
 import { describe, expect, it } from "vitest"
 
 import { callArguments, readStrippedSource } from "@/components/custom-fields/__tests__/source-scan"
+import type { ViewFilters } from "../types"
 import {
   MAX_VIEW_NAME_LENGTH,
   SAVED_VIEW_NAME_CONSTRAINT,
@@ -45,6 +46,12 @@ const GUARDS_PATH = "src/lib/views/write-guards.ts"
 
 /** The two actions this task writes. A FLOOR, never the subject list — see below. */
 const PLANNED_ACTIONS = ["createView", "updateView"] as const
+
+/** The call each save action's guard must precede. Its own write, not merely its first query. */
+const WRITE_MARKER: Readonly<Record<string, string>> = Object.freeze({
+  createView: ".insert(",
+  updateView: ".update(",
+})
 
 interface ExportedFunction {
   name: string
@@ -242,13 +249,18 @@ describe("guardSaveInput", () => {
   })
 
   it("refuses a map of only non-whitelisted keys", () => {
+    // Built with `JSON.parse`, which is how a POST body actually arrives, and which is the ONLY
+    // way to get a real own `__proto__` property: written as an object literal, `__proto__` sets
+    // the prototype instead and the test would look like it exercised pollution while exercising
+    // nothing. The cast is the point too — a server action's declared types are not a check.
+    const crafted = JSON.parse(
+      '{"page":"2","view":"abc","sort":"name","__proto__":{"polluted":true}}',
+    ) as ViewFilters
+
     expect(
-      guardSaveInput({
-        entityType: "organization",
-        filters: { page: "2", view: "abc", sort: "name", __proto__: { x: 1 } },
-        name: "Nothing",
-      }),
+      guardSaveInput({ entityType: "organization", filters: crafted, name: "Nothing" }),
     ).toEqual({ ok: false, error: "no_filters" })
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
   })
 
   it("refuses a whitespace-only search value", () => {
@@ -273,7 +285,12 @@ describe("guardSaveInput", () => {
       guardSaveInput({ entityType: "organization", filters: { search: "acme" }, name: "   " }),
     ).toEqual({ ok: false, error: "name_required" })
     expect(
-      guardSaveInput({ entityType: "organization", filters: { search: "acme" }, name: undefined }),
+      guardSaveInput({
+        entityType: "organization",
+        filters: { search: "acme" },
+        // A client that omits the field entirely. The declared `string` does not stop it.
+        name: undefined as unknown as string,
+      }),
     ).toEqual({ ok: false, error: "name_required" })
   })
 
@@ -528,10 +545,20 @@ describe(`${ACTIONS_PATH}: the write layer's authorization ordering`, () => {
         expect(calls[0]).toContain("filters")
         expect(calls[0]).toContain("name")
 
+        // Compared against the WRITE, not against the first `db.` access. `updateView` reads the
+        // stored row first on purpose — it has to, in order to authorize against the row rather
+        // than against the request — so "before any query" would be the wrong claim here.
+        const writeAt = action.body.indexOf(WRITE_MARKER[name])
+
+        expect(
+          writeAt,
+          `${ACTIONS_PATH}: ${name} performs no ${WRITE_MARKER[name]}, so the ordering claim ` +
+            `would be vacuous.`,
+        ).toBeGreaterThan(-1)
         expect(
           action.body.indexOf("guardSaveInput"),
           `${ACTIONS_PATH}: ${name} writes before it guards.`,
-        ).toBeLessThan(action.body.indexOf("db."))
+        ).toBeLessThan(writeAt)
       })
     }
 
