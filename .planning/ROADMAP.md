@@ -458,7 +458,27 @@ Plans:
   3. User sets a default view per entity type and lands on it when opening that list
   4. User exports the records matching a saved view
 
-**Plans**: TBD
+**Plans**: 17 plans in 9 waves
+
+Plans:
+- [ ] 40-01-PLAN.md — the URL vocabulary: whitelist, `withViewEscape`, and the two export predicates
+- [ ] 40-02-PLAN.md — `saved_views` + `saved_view_defaults` schema and migration 0018
+- [ ] 40-03-PLAN.md — 61 `views.*` keys x 3 locales and the `REQUIRED_VIEWS_KEYS` exact-set contract
+- [ ] 40-04-PLAN.md — e2e harness: a member storageState and the saved-view fixture module
+- [ ] 40-05-PLAN.md — the read layer: visibility scoping, degraded-read validation, bar-prop resolution
+- [ ] 40-06-PLAN.md — the write layer: create, update, share, default, delete server actions
+- [ ] 40-07-PLAN.md — `ExportFilters` extension, the four fetchers, and the guarded capped export action
+- [ ] 40-08-PLAN.md — the save/update dialog, with its own height clamp
+- [ ] 40-09-PLAN.md — the manage dialog and the delete confirmation
+- [ ] 40-10-PLAN.md — `SavedViewsBar`, and the V-40-5 parsed-interface gate
+- [ ] 40-11-PLAN.md — `/organizations` + `/people`: mount, redirect, escape, search resync
+- [ ] 40-12-PLAN.md — `/deals`: mount, redirect, escape, deleted-pipeline fallback
+- [ ] 40-13-PLAN.md — `/activities`: mount, redirect, escape x3, search resync, real status/date predicates
+- [ ] 40-14-PLAN.md — V-40-4 call-site gate over all 17 navigations, and the responsive-class gate
+- [ ] 40-15-PLAN.md — the Docker rebuild and the 320px reachability suite, with its negative probe RUN
+- [ ] 40-16-PLAN.md — private-visibility in both directions, and the degraded-read gate
+- [ ] 40-17-PLAN.md — dark-mode pass, backlog entries, and the human checkpoint
+
 **UI hint**: yes
 
 ### Phase 41: Workflow Operator Affordances
