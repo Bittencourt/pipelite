@@ -587,6 +587,114 @@ export const REQUIRED_DEDUP_KEYS: string[] = [
   "dedup.findDuplicates",
 ]
 
+/**
+ * The copy contract from 40-UI-SPEC.md § New message keys. Same rule as the six lists above: a
+ * `views.*` string reaching the UI means its dot-path is added here first, and the exact-contract
+ * assertion below turns a string that skipped this list into a red suite rather than copy that ships
+ * gated by nothing.
+ *
+ * 61 keys, every one of them inside the `views` namespace. Like `bulk` and `dedup`, and unlike
+ * `audit`, `trash` and `shell`, phase 40 adds NOTHING outside its own namespace — no `nav` entry, no
+ * `admin.dashboard` tile — so `viewsKeys` below needs no `*_EXTRA_KEYS` sibling and the comparison
+ * against this list is TOTAL: a 62nd `views` string that never made it into this array fails, which
+ * is the half a missing-key check cannot see. `audit`, `trash` and `shell` each need an extras array
+ * precisely because their contracts straddle a pre-existing namespace they must not swallow whole.
+ *
+ * Phase 40 REUSES four existing strings verbatim rather than restating them here: `bulk.exported` and
+ * `bulk.error.exportFailed` for the export toasts, and `common.cancel` / `common.close` for the
+ * dialogs. They belong to their own contracts and are deliberately absent from this one.
+ *
+ * The per-group counts in the comments are load-bearing: they are how a reader sees at a glance that
+ * a group lost a key.
+ */
+export const REQUIRED_VIEWS_KEYS: string[] = [
+  // The bar and the picker — 18. `badgeShared` / `badgePrivate` are the words that carry the
+  // shared-vs-private distinction: the phase-39 convention is that state reads as WORDS, never
+  // colour alone, so a shared view has to be distinguishable from a private one in text.
+  // `ownerUnavailable` is the fallback for a soft-deleted owner — six such users exist — and
+  // `ownedBy` must read correctly when {owner} is an email, because two of three live users have
+  // name = NULL.
+  "views.picker.label",
+  "views.allRecords",
+  "views.modified",
+  "views.groupMine",
+  "views.groupShared",
+  "views.badgeShared",
+  "views.badgePrivate",
+  "views.badgeDefault",
+  "views.ownedBy",
+  "views.ownerUnavailable",
+  "views.emptyMenu",
+  "views.saveNew",
+  "views.saveChanges",
+  "views.manageAction",
+  "views.exportAction",
+  "views.exporting",
+  "views.needsFilter",
+  "views.degraded",
+
+  // The save / update dialog — 22. `privateHelp` is the ONLY place the user learns that a private
+  // view is hidden from admins too, which is this phase's one departure from the app's
+  // `owner || role === "admin"` idiom (T-40-11). A mistranslation there is a false security promise,
+  // so all three locales are transcribed from the signed-off spec rather than machine-translated.
+  // `targetNewOnly` is the refusal that explains itself instead of silently disabling a radio.
+  "views.save.titleNew",
+  "views.save.titleUpdate",
+  "views.save.description",
+  "views.save.nameLabel",
+  "views.save.namePlaceholder",
+  "views.save.nameRequired",
+  "views.save.nameTaken",
+  "views.save.targetLegend",
+  "views.save.targetUpdate",
+  "views.save.targetNew",
+  "views.save.targetNewOnly",
+  "views.save.sharedLabel",
+  "views.save.sharedHelp",
+  "views.save.privateHelp",
+  "views.save.defaultLabel",
+  "views.save.defaultHelp",
+  "views.save.submit",
+  "views.save.submitting",
+  "views.save.created",
+  "views.save.updated",
+  "views.save.failed",
+  "views.save.noFilters",
+
+  // The manage dialog — 13. `share` / `unshare` and `setDefault` / `clearDefault` are four separate
+  // strings rather than two toggles with an {on} placeholder, because es-ES and pt-BR inflect the
+  // adjective with the noun's gender and "Predeterminada" cannot be assembled from parts.
+  "views.manage.title",
+  "views.manage.description",
+  "views.manage.empty",
+  "views.manage.emptyBody",
+  "views.manage.share",
+  "views.manage.unshare",
+  "views.manage.setDefault",
+  "views.manage.clearDefault",
+  "views.manage.delete",
+  "views.manage.readOnly",
+  "views.manage.filterCount",
+  "views.manage.saved",
+  "views.manage.failed",
+
+  // The delete confirmation — 5. `body` is the phase's blast-radius sentence and states all three
+  // categories: what DISAPPEARS (the view, for everyone who selected it), what CHANGES (their list
+  // falls back to all records), and what SURVIVES (the records themselves).
+  "views.delete.title",
+  "views.delete.body",
+  "views.delete.action",
+  "views.delete.success",
+  "views.delete.failed",
+
+  // Export — 3, and only what `bulk.*` cannot say. `disabledReason` is an advisory, never red (C-1):
+  // an unfiltered export is refused, and the refusal explains itself rather than leaving a control
+  // dead with no reason given.
+  "views.export.disabledReason",
+  "views.export.tooMany",
+  "views.export.refused",
+]
+
 /** The two shell strings that live outside the shell namespaces, in the pre-existing `nav`. */
 const SHELL_EXTRA_KEYS = [
   "nav.workflows",
@@ -683,6 +791,7 @@ const AUDIT_NAMESPACE = "audit"
 const TRASH_NAMESPACE = "trash"
 const BULK_NAMESPACE = "bulk"
 const DEDUP_NAMESPACE = "dedup"
+const VIEWS_NAMESPACE = "views"
 /** The shell contract spans two namespaces; `nav.*` is carried by SHELL_EXTRA_KEYS instead. */
 const SHELL_NAMESPACES = ["admin.nav", "theme"]
 const SHELL_LABEL = "shell"
@@ -721,6 +830,12 @@ const bulkKeys = keysMatching(inNamespace(BULK_NAMESPACE))
 // Same: 39-UI-SPEC adds zero dedup strings outside the namespace, so this scope is the whole
 // contract and the comparison against REQUIRED_DEDUP_KEYS below is total.
 const dedupKeys = keysMatching(inNamespace(DEDUP_NAMESPACE))
+// Same again, and the strongest case of it so far: 40-UI-SPEC adds zero strings outside `views` —
+// no `nav` entry and no `admin.dashboard` tile — so this scope IS the whole contract and the
+// comparison against REQUIRED_VIEWS_KEYS below is total. Contrast `auditKeys`, `trashKeys` and
+// `shellKeys` above, each of which needs an extras array because its contract straddles a
+// pre-existing namespace that a whole-namespace scope would swallow.
+const viewsKeys = keysMatching(inNamespace(VIEWS_NAMESPACE))
 const shellKeys = keysMatching(
   (key) => SHELL_NAMESPACES.some((ns) => inNamespace(ns)(key)) || SHELL_EXTRA_KEYS.includes(key),
 )
@@ -809,6 +924,11 @@ const ICU_PLURAL_MARKERS = ["{count,", "plural,"]
  * Every contract key whose message is an ICU plural. Listed rather than detected, so a key that
  * LOSES its wrapper in en-US is caught too — auto-detection from the reference locale would simply
  * stop gating a key the moment the reference broke.
+ *
+ * Twelve keys: eleven from phases 38 and 39, plus `views.manage.filterCount` from phase 40 — the one
+ * and only ICU plural among that phase's 61 strings (T-40-12). It must be listed here or its
+ * `{count, plural, …}` wrapper can be flattened in translation with nothing failing, because
+ * `placeholderDrift()` is structurally blind to that syntax.
  */
 const ICU_PLURAL_KEYS: string[] = [
   "bulk.failures.retryHintPartial",
@@ -822,6 +942,7 @@ const ICU_PLURAL_KEYS: string[] = [
   "dedup.merge.movesPeople",
   "dedup.import.flagged",
   "audit.entry.mergedChildren",
+  "views.manage.filterCount",
 ]
 
 /** Per-locale verdict on one message's ICU plural wrapper: "ok", "absent", or what it lost. */
@@ -847,7 +968,7 @@ function expectIdenticalKeySets(scoped: Record<Locale, string[]>, label: string)
 }
 
 describe("locale parity", () => {
-  it("every required notes, audit, trash, bulk, shell and dedup key exists in every locale", () => {
+  it("every required notes, audit, trash, bulk, shell, dedup and views key exists in every locale", () => {
     // Keyed by locale so a failure diff names the offending file and the exact missing keys.
     expect.soft(missingIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
     expect.soft(missingIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
@@ -855,6 +976,7 @@ describe("locale parity", () => {
     expect.soft(missingIn(REQUIRED_BULK_KEYS)).toEqual(emptyPerLocale)
     expect.soft(missingIn(SHELL_CONTRACT_KEYS)).toEqual(emptyPerLocale)
     expect.soft(missingIn(REQUIRED_DEDUP_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(missingIn(REQUIRED_VIEWS_KEYS)).toEqual(emptyPerLocale)
   })
 
   it("the checked-in dedup contract still lists exactly 80 keys", () => {
@@ -868,13 +990,42 @@ describe("locale parity", () => {
     expect(new Set(REQUIRED_DEDUP_KEYS).size, "REQUIRED_DEDUP_KEYS lists a key twice").toBe(80)
   })
 
-  it("the notes, audit, trash, bulk, shell and dedup namespaces have identical key sets across all three locales", () => {
+  it("the checked-in views contract still lists exactly 61 keys", () => {
+    // The dedup test above is the precedent, and the duplicate guard is carried for the same reason:
+    // toHaveLength alone passes a list that repeats one dot-path and omits another, because the
+    // exact-set comparison further down compares against a sorted array and a duplicate in the
+    // contract would show up there as a confusing diff rather than as "you listed a key twice".
+    // The per-group comments in REQUIRED_VIEWS_KEYS say 18+22+13+5+3, and this is what stops that
+    // sum drifting silently when a group gains or loses an entry.
+    expect(REQUIRED_VIEWS_KEYS).toHaveLength(61)
+    expect(new Set(REQUIRED_VIEWS_KEYS).size, "REQUIRED_VIEWS_KEYS lists a key twice").toBe(61)
+  })
+
+  // Phase 40 adds one namespace and touches no other contract. This asserts that, because every
+  // key count quoted in 40-UI-SPEC.md M-13 and 40-CONTEXT.md A5 for these four arrays is WRONG (a
+  // naive count over the array literal also counts the quoted dot-paths inside the explanatory
+  // comments), and the tempting "correction" is to edit the array until it matches the document.
+  // The lengths below were read from THIS FILE by evaluating the module, and the file wins.
+  //
+  // In particular: this phase reuses `bulk.exported` and `bulk.error.exportFailed` verbatim, so if
+  // you find yourself editing REQUIRED_BULK_KEYS, you have added a key you were told to reuse.
+  it("the four pre-existing pinned key sets are unchanged by phase 40", () => {
+    expect.soft(REQUIRED_AUDIT_KEYS, "phase 40 adds no audit key").toHaveLength(86)
+    expect.soft(REQUIRED_TRASH_KEYS, "phase 40 adds no trash key").toHaveLength(63)
+    expect
+      .soft(REQUIRED_BULK_KEYS, "phase 40 REUSES bulk.exported and bulk.error.exportFailed")
+      .toHaveLength(46)
+    expect.soft(REQUIRED_DEDUP_KEYS, "phase 40 adds no dedup key").toHaveLength(80)
+  })
+
+  it("the notes, audit, trash, bulk, shell, dedup and views namespaces have identical key sets across all three locales", () => {
     expectIdenticalKeySets(noteKeys, NOTES_NAMESPACE)
     expectIdenticalKeySets(auditKeys, AUDIT_NAMESPACE)
     expectIdenticalKeySets(trashKeys, TRASH_NAMESPACE)
     expectIdenticalKeySets(bulkKeys, BULK_NAMESPACE)
     expectIdenticalKeySets(shellKeys, SHELL_LABEL)
     expectIdenticalKeySets(dedupKeys, DEDUP_NAMESPACE)
+    expectIdenticalKeySets(viewsKeys, VIEWS_NAMESPACE)
 
     // Stronger than cross-locale identity, and the reason the contract list is checked in: the
     // shipped audit key set must equal REQUIRED_AUDIT_KEYS exactly, so a string added to the
@@ -929,18 +1080,32 @@ describe("locale parity", () => {
         `${DEDUP_NAMESPACE} key set in ${locale}.json diverges from the checked-in contract`,
       ).toEqual(dedupContract)
     }
+
+    // Same exact-contract rule for views, and total for the same reason bulk's and dedup's are:
+    // 40-UI-SPEC adds no `views` string outside the namespace, so a 62nd key added without its
+    // dot-path going into REQUIRED_VIEWS_KEYS fails here. Every UI plan in waves 3-5 of phase 40
+    // consumes these keys, and a key that does not exist renders its own dot-path to the user (the
+    // Phase 45 finding).
+    const viewsContract = [...REQUIRED_VIEWS_KEYS].sort()
+    for (const locale of LOCALES) {
+      expect.soft(
+        viewsKeys[locale],
+        `${VIEWS_NAMESPACE} key set in ${locale}.json diverges from the checked-in contract`,
+      ).toEqual(viewsContract)
+    }
   })
 
-  it("every required notes, audit, trash, bulk, shell and dedup value is a non-empty string", () => {
+  it("every required notes, audit, trash, bulk, shell, dedup and views value is a non-empty string", () => {
     expect.soft(blankIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
     expect.soft(blankIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
     expect.soft(blankIn(REQUIRED_TRASH_KEYS)).toEqual(emptyPerLocale)
     expect.soft(blankIn(REQUIRED_BULK_KEYS)).toEqual(emptyPerLocale)
     expect.soft(blankIn(SHELL_CONTRACT_KEYS)).toEqual(emptyPerLocale)
     expect.soft(blankIn(REQUIRED_DEDUP_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(blankIn(REQUIRED_VIEWS_KEYS)).toEqual(emptyPerLocale)
   })
 
-  it("no required notes, audit, trash, bulk, shell or dedup string was left untranslated in both es-ES and pt-BR", () => {
+  it("no required notes, audit, trash, bulk, shell, dedup or views string was left untranslated in both es-ES and pt-BR", () => {
     // An English string copied verbatim into BOTH other locales is a skipped translation, not a
     // coincidence. Matching one locale is plausible (cognates); matching both is not.
     expect.soft(untranslatedInBoth(REQUIRED_NOTE_KEYS)).toEqual([])
@@ -953,9 +1118,16 @@ describe("locale parity", () => {
     // "Mesmo e-mail", not the en string) and dedup.merge.movesNotes, whose pt and es are identical
     // TO EACH OTHER ("# nota") but not to en — which is not what this function tests.
     expect.soft(untranslatedInBoth(REQUIRED_DEDUP_KEYS)).toEqual([])
+    // No views key needed an exemption either, and IDENTICAL_TRANSLATION_ALLOWED is unchanged at
+    // three entries. The three near-misses are views.modified (pt and es are both "Modificada"),
+    // views.manage.filterCount and views.export.disabledReason — each identical TO THE OTHER
+    // NON-ENGLISH LOCALE, which is not what this function tests, and all three differ from en-US.
+    // Extending the allowlist to make a translation pass would be the wrong fix; this line is here
+    // to prove by RUNNING that no such fix is needed.
+    expect.soft(untranslatedInBoth(REQUIRED_VIEWS_KEYS)).toEqual([])
   })
 
-  it("interpolation placeholders survive translation for every required notes, audit, trash, bulk, shell and dedup key", () => {
+  it("interpolation placeholders survive translation for every required notes, audit, trash, bulk, shell, dedup and views key", () => {
     // next-intl throws at render time when a message references a placeholder the caller did not
     // pass, so a translator dropping `{from}` breaks the Spanish UI and only the Spanish UI.
     expect.soft(placeholderDrift(REQUIRED_NOTE_KEYS)).toEqual({})
@@ -964,6 +1136,11 @@ describe("locale parity", () => {
     expect.soft(placeholderDrift(REQUIRED_BULK_KEYS)).toEqual({})
     expect.soft(placeholderDrift(SHELL_CONTRACT_KEYS)).toEqual({})
     expect.soft(placeholderDrift(REQUIRED_DEDUP_KEYS)).toEqual({})
+    // Ten of the 61 views keys interpolate: views.ownedBy and views.manage.readOnly take {owner};
+    // views.save.nameTaken, views.save.targetUpdate, views.save.created, views.save.updated,
+    // views.delete.body and views.delete.success take {name}; views.save.targetNewOnly takes both;
+    // views.export.tooMany takes {max}.
+    expect.soft(placeholderDrift(REQUIRED_VIEWS_KEYS)).toEqual({})
   })
 
   it("every ICU plural wrapper survives translation", () => {
@@ -987,6 +1164,11 @@ describe("locale parity", () => {
     // de-duplicated sets (see placeholderCounts), so a translation naming the losing record once
     // instead of twice passes every other assertion in this file while quietly dropping the second
     // half of the sentence's promise — that the loser is the record the user can restore.
+    //
+    // Still the ONLY key in the catalog that does this, after phase 40. Not one of the 61 `views.*`
+    // strings repeats a placeholder — the ten that interpolate use each token exactly once (L-4) —
+    // so a `views` analogue of this assertion would be vacuous and is deliberately not written. If
+    // a future views string ever names the same record twice, it earns its own block here.
     for (const locale of LOCALES) {
       const value = resolve(messages[locale], "dedup.merge.confirmBody")
       expect
