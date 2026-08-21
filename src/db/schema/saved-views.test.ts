@@ -22,15 +22,28 @@ import type { EntityType } from "./custom-fields"
  */
 
 // ---------------------------------------------------------------------------------------
-// Type-level contracts. These are checked by `tsc`, not by vitest, and they are the
-// reason `saved-views.ts` may not restate the entity-type union: mutual assignability
-// below holds only if the column's type IS `EntityType`, so renaming a member of that
-// union is a compile error in this file.
+// Type-level contracts, checked by `tsc` rather than by vitest.
+//
+// `Exact` is deliberately an EQUALITY test and not a pair of `as` casts. A cast was the
+// first attempt and it proved nothing: TypeScript widens a fresh string literal before
+// checking assertion comparability, so `"organization" as ('org' | 'person' | 'deal' |
+// 'activity')` compiles cleanly. Measured, not assumed — the cast version of this block
+// survived renaming a member of `EntityType`, while 564 tsc errors appeared elsewhere in
+// the repo.
+//
+// What `Exact` actually buys, stated precisely because the obvious claim is false:
+// renaming a member of `EntityType` can NEVER error in `saved-views.ts` while that file
+// IMPORTS the union — the two sides move together, which is the whole point. It errors at
+// the ~100 call sites that spell the literals out. What `Exact` catches is the failure
+// mode that matters here: somebody RESTATING the union in `saved-views.ts` instead of
+// importing it. A restated copy is equal on the day it is written and diverges the moment
+// `EntityType` changes, and that divergence is a compile error right here.
 // ---------------------------------------------------------------------------------------
-const _entityTypeWidensToEntityType: EntityType = "organization" as SavedView["entityType"]
-const _entityTypeNarrowsFromEntityType: SavedView["entityType"] = "organization" as EntityType
-const _defaultsEntityTypeIsEntityType: EntityType = "deal" as SavedViewDefault["entityType"]
-const _filtersIsAStringMap: Record<string, string> = {} as SavedView["filters"]
+type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never
+
+const _viewEntityTypeIsExactlyEntityType: Exact<SavedView["entityType"], EntityType> = true
+const _defaultEntityTypeIsExactlyEntityType: Exact<SavedViewDefault["entityType"], EntityType> = true
+const _filtersIsExactlyAStringMap: Exact<SavedView["filters"], Record<string, string>> = true
 
 /**
  * The owner-attribution read, expressed once so `tsc` proves it is expressible.
@@ -261,10 +274,9 @@ describe("schema registration", () => {
 // value is entirely in `tsc`, and deleting them would silently drop those guarantees.
 describe("type-level contracts are present", () => {
   it("holds the entity-type, filters and attribution contracts", () => {
-    expect(_entityTypeWidensToEntityType).toBe("organization")
-    expect(_entityTypeNarrowsFromEntityType).toBe("organization")
-    expect(_defaultsEntityTypeIsEntityType).toBe("deal")
-    expect(_filtersIsAStringMap).toEqual({})
+    expect(_viewEntityTypeIsExactlyEntityType).toBe(true)
+    expect(_defaultEntityTypeIsExactlyEntityType).toBe(true)
+    expect(_filtersIsExactlyAStringMap).toBe(true)
     expect(typeof _ownerAttributionTypechecks).toBe("function")
   })
 })
