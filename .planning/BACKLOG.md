@@ -70,6 +70,21 @@ Phase 40 plan 40-13 makes `status` and the date range real SQL predicates, becau
 guard depends on a filter actually filtering. **The pagination interaction is broader than that fix**
 — any surface applying a JS filter after a limit has the same defect shape. Worth a sweep.
 
+### A dead `view=<id>` persists in the URL on `/deals` and `/activities`
+**Cosmetic asymmetry, accepted during phase 40 planning.** `withViewEscape` runs client-side with no
+view list, so it cannot know a view id is unresolvable. The two data-tables (`/organizations`,
+`/people`) scrub a dead id because they seed from the RESOLVED id; the two filter toolbars
+(`/deals`, `/activities`) preserve the raw param because they build from `searchParams.toString()`.
+
+Harmless in behaviour — the resolver yields no selection, so no badge, no notice and no throw — but a
+shared URL can carry a junk `view=` param, and the asymmetry reads as sloppy. Fixing it properly means
+threading `selectedViewId` into two more components. Judged not worth it mid-phase; the reasoning is
+recorded in `src/lib/views/resolve.ts`.
+
+Related footgun in the same module, worth watching in review: `withViewSelection` DROPS `page` (a view
+lands you on page 1) while `withViewEscape` PRESERVES it (Load More). Both are correct; reaching for
+the wrong one for pagination inside a view is an easy mistake.
+
 ### F-39-08 — Enter inside a modal navigates the list behind it
 Pre-existing, shared by six surfaces. `data-table-keyboard.tsx` registers
 `useHotkeys("enter", …, { preventDefault: true })` with **no ref**, so it fires inside a portalled
