@@ -27,7 +27,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import Papa from "papaparse"
 import { sql } from "drizzle-orm"
-import type { ExportEntityType } from "./types"
+import type { ExportEntityType, ExportFilters } from "./types"
 
 const HAS_DB = !!process.env.DATABASE_URL
 
@@ -74,6 +74,19 @@ describe.skipIf(!HAS_DB)("fetchFilteredData against the live database", () => {
       format: "csv",
       includeCustomFields: true,
       ...(ids === undefined ? {} : { filters: { ids } }),
+    })
+  }
+
+  /** The same call with the full options surface, for the Phase 40 filters and the row cap. */
+  function csvExportWith(
+    entityType: ExportEntityType,
+    options: { filters?: ExportFilters; maxRows?: number }
+  ) {
+    return fetchFilteredData({
+      entityType,
+      format: "csv",
+      includeCustomFields: true,
+      ...options,
     })
   }
 
@@ -175,6 +188,66 @@ describe.skipIf(!HAS_DB)("fetchFilteredData against the live database", () => {
       expect(result.count).toBe(0)
     }, 60_000)
   })
+
+  // -------------------------------------------------------------------------
+  // Phase 40: the row cap (T-40-31) and the admin path that must not move.
+  //
+  // A mocked suite can prove `limit` was passed. Only a real statement can prove the refusal
+  // triggers on real volumes and that omitting the cap still reads every row — which is what the
+  // admin full export (`src/app/admin/export/actions.ts`, no filters, no cap) depends on.
+  // -------------------------------------------------------------------------
+
+  it("refuses with `too_many` when the row count exceeds maxRows, and serialises nothing", async () => {
+    const result = await csvExportWith("organization", { maxRows: 100 })
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error).toBe("too_many")
+    // No `data` field at all on the failure branch: the refusal happens BEFORE exportToCSV, so
+    // 101 rows were never formatted.
+    expect("data" in result).toBe(false)
+  }, 60_000)
+
+  it("succeeds unchanged when maxRows is above the live row count", async () => {
+    const result = await csvExportWith("organization", { maxRows: 1_000_000 })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    // Identical to the uncapped read — a cap that is never reached must not narrow anything.
+    expect(result.count).toBe(baseline.organizations)
+  }, 180_000)
+
+  it("ADMIN PATH: no maxRows still reads every row", async () => {
+    // The one thing this plan must not move. `fetchFilteredData` with neither filters nor a cap is
+    // exactly what the admin full export calls.
+    const result = await csvExport("organization")
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.count).toBe(baseline.organizations)
+  }, 180_000)
+
+  it("BULK PATH: an empty id list still yields zero rows even with a cap in play", async () => {
+    // T-38-01 must survive the arrival of `maxRows`: presence-not-length, and a cap that cannot
+    // turn "no rows" into "all rows".
+    const capped = await csvExportWith("organization", { filters: { ids: [] }, maxRows: 100 })
+
+    expect(capped.success).toBe(true)
+    if (!capped.success) return
+    expect(capped.count).toBe(0)
+    expect(capped.data).toBe("")
+  }, 60_000)
+
+  it("the search predicate narrows organizations rather than being ignored", async () => {
+    // Anti-vacuity for the new `search` key: a predicate that silently did nothing would return
+    // the baseline, and a broken one would return zero. Neither is acceptable, so both are excluded.
+    const scoped = await csvExportWith("organization", { filters: { search: "a" } })
+
+    expect(scoped.success).toBe(true)
+    if (!scoped.success) return
+    expect(scoped.count).toBeGreaterThan(0)
+    expect(scoped.count).toBeLessThan(baseline.organizations)
+  }, 180_000)
 
   it("wrote nothing: organization and audit_log counts are unchanged", async () => {
     expect(await rawCount("organizations")).toBe(baseline.organizations)
