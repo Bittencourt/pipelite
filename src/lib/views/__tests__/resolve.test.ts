@@ -267,34 +267,34 @@ describe("computeIsModified", () => {
   it("is false when no view is selected", () => {
     const views = [validated({ id: "v1", filters: { search: "acme" } })]
 
-    expect(computeIsModified(null, { search: "anything" }, views)).toBe(false)
+    expect(computeIsModified("organization", null, { search: "anything" }, views)).toBe(false)
   })
 
   it("is false when the URL equals the selected view's validated filters", () => {
     const views = [validated({ id: "v1", filters: { search: "acme" } })]
 
-    expect(computeIsModified("v1", { search: "acme" }, views)).toBe(false)
+    expect(computeIsModified("organization", "v1", { search: "acme" }, views)).toBe(false)
   })
 
   it("is true when the URL differs from the selected view's filters", () => {
     // ANTI-VACUITY: a function returning a constant `false` would satisfy everything else here.
     const views = [validated({ id: "v1", filters: { search: "acme" } })]
 
-    expect(computeIsModified("v1", { search: "changed" }, views)).toBe(true)
-    expect(computeIsModified("v1", {}, views)).toBe(true)
-    expect(computeIsModified("v1", { search: "acme", industry: "x" }, views)).toBe(false)
+    expect(computeIsModified("organization", "v1", { search: "changed" }, views)).toBe(true)
+    expect(computeIsModified("organization", "v1", {}, views)).toBe(true)
+    expect(computeIsModified("organization", "v1", { search: "acme", industry: "x" }, views)).toBe(false)
   })
 
   it("is true when a whitelisted key was added to the URL", () => {
-    const views = [validated({ id: "v1", filters: { stage: STAGE } })]
+    const views = [validated({ id: "v1", entityType: "deal", filters: { stage: STAGE } })]
 
-    expect(computeIsModified("v1", { stage: STAGE, owner: ME }, views)).toBe(true)
+    expect(computeIsModified("deal", "v1", { stage: STAGE, owner: ME }, views)).toBe(true)
   })
 
   it("is false when the selected id matches no known view", () => {
     const views = [validated({ id: "v1", filters: { search: "acme" } })]
 
-    expect(computeIsModified("does-not-exist", { search: "anything" }, views)).toBe(false)
+    expect(computeIsModified("organization", "does-not-exist", { search: "anything" }, views)).toBe(false)
   })
 
   it("fails if the comparison uses the raw stored blob instead of the validated set", () => {
@@ -309,9 +309,9 @@ describe("computeIsModified", () => {
     )
 
     expect(views[0].droppedKeys).toEqual(["owner"])
-    expect(computeIsModified("v1", { stage: STAGE }, views)).toBe(false)
+    expect(computeIsModified("deal", "v1", { stage: STAGE }, views)).toBe(false)
     // And the other direction, so this is not satisfiable by a constant `false`.
-    expect(computeIsModified("v1", { stage: STAGE, owner: ME }, views)).toBe(true)
+    expect(computeIsModified("deal", "v1", { stage: STAGE, owner: ME }, views)).toBe(true)
   })
 
   it("a degraded view is never labelled Modified merely for being degraded", () => {
@@ -334,7 +334,7 @@ describe("computeIsModified", () => {
     )
 
     expect(views[0].droppedKeys).toEqual(["assignee", "dateFrom", "owner", "pipeline"])
-    expect(computeIsModified("v1", { stage: STAGE }, views)).toBe(false)
+    expect(computeIsModified("deal", "v1", { stage: STAGE }, views)).toBe(false)
   })
 })
 
