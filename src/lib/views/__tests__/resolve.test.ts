@@ -34,7 +34,7 @@ import {
   validateVisibleViews,
   type ValidatedView,
 } from "../resolve"
-import { VIEW_ESCAPE_VALUE, parseViewSelection } from "../url-params"
+import { VIEW_ESCAPE_VALUE, parseViewSelection, pickFilterParams } from "../url-params"
 
 import type { ViewFilterCatalog } from "../validate"
 import type { SavedViewSummary, ViewEntityType, ViewFilters } from "../types"
@@ -564,6 +564,381 @@ describe("redirectTargetFor", () => {
       expect(() =>
         redirectTargetFor("organization", { search: "acme" }, viewId as string | null),
       ).not.toThrow()
+    }
+  })
+})
+
+/* ------------------------------------------------------------------------- *
+ * The composed bar state — the 40-05 regression
+ * ------------------------------------------------------------------------- */
+
+/**
+ * WHY A COMPOSITION TEST EXISTS BESIDE THIRTY UNIT TESTS.
+ *
+ * Every unit above was correct and green. `selectViewForParams` returned a non-null id when asked;
+ * `computeIsModified` returned `true` when handed a selected id whose filters differed. And the
+ * COMPOSED result was still structurally impossible, because the wiring made one of their outputs a
+ * constant: selection was derived from filter equality, `isModified` compared the same two sets, so
+ * `selected && modified` could not occur. 40-05 measured it — 10 URLs x 3 views, 2 selections, ZERO
+ * modified — and no test asserted the PAIR, so nothing was red.
+ *
+ * The sibling lesson from this same phase, and it is the same shape of hole: plan 40-05 moved a
+ * visibility predicate out of a `WHERE` clause into a post-fetch `.filter()` and all 25 behavioural
+ * assertions stayed green, because the caller received the same list either way. It took a
+ * `.toSQL()` gate to see it. A green suite over the wrong surface is the failure mode; asserting the
+ * composition is the fix.
+ *
+ * So this block CALLS the real functions in the real order and asserts the DISTRIBUTION of their
+ * pairs. It must never recompute selection or modification inline — a sweep that did would be green
+ * against any implementation, which is precisely the defect it exists to catch.
+ */
+
+interface BarState {
+  selectedViewId: string | null
+  isModified: boolean
+  /** Mirrors the wrapper's own one-line derivation; B-5's live row needs it beside `isModified`. */
+  canUpdateSelected: boolean
+}
+
+/**
+ * The wrapper's decision path, minus the two database reads: `pickFilterParams` ->
+ * `validateVisibleViews` -> `parseViewSelection` -> `selectViewForParams` -> `computeIsModified`,
+ * in that order, with the same arguments `resolveSavedViewsBarProps` passes.
+ *
+ * Not a `.db.test.ts`, deliberately: `resolveSavedViewsBarProps` imports `@/db`, which constructs a
+ * postgres client at module load, and these pure functions ARE the whole decision — they are the
+ * thing that was wrong.
+ */
+function composeBarState(
+  entityType: ViewEntityType,
+  rawQuery: string,
+  summaries: readonly SavedViewSummary[],
+  catalog: ViewFilterCatalog,
+): BarState {
+  const rawParams = new URLSearchParams(rawQuery)
+  const urlFilters = pickFilterParams(entityType, rawParams)
+  const views = validateVisibleViews(entityType, summaries, catalog)
+  const selection = parseViewSelection(rawParams)
+  const selectedViewId = selectViewForParams(entityType, urlFilters, views, {
+    viewEscape: selection.kind === "escape",
+    viewId: selection.kind === "selection" ? selection.viewId : null,
+  })
+  const selected =
+    selectedViewId === null
+      ? undefined
+      : views.find((candidate) => candidate.summary.id === selectedViewId)
+
+  return {
+    selectedViewId,
+    isModified: computeIsModified(entityType, selectedViewId, urlFilters, views),
+    canUpdateSelected: selected?.summary.canEdit ?? false,
+  }
+}
+
+/** Three views on `/deals`, differing in filters AND in ownership. */
+const SWEEP_VIEWS: readonly SavedViewSummary[] = [
+  summary({
+    id: VIEW_1,
+    name: "Alpha",
+    entityType: "deal",
+    filters: { pipeline: PIPELINE, stage: STAGE },
+    isOwnedByViewer: true,
+    canEdit: true,
+  }),
+  // Somebody else's shared view: selectable and modifiable, but NOT updatable — B-5's fourth row.
+  summary({
+    id: VIEW_2,
+    name: "Beta",
+    entityType: "deal",
+    filters: { owner: ME },
+    isShared: true,
+    isOwnedByViewer: false,
+    canEdit: false,
+  }),
+  // Degraded: its `owner` no longer exists, so only `stage` survives validation.
+  summary({
+    id: VIEW_3,
+    name: "Gamma",
+    entityType: "deal",
+    filters: { owner: GONE_USER, stage: STAGE },
+    isOwnedByViewer: true,
+    canEdit: true,
+  }),
+]
+
+type SweepTag =
+  | "bare"
+  | "escape"
+  | "filters-only"
+  | "clean"
+  | "modified"
+  | "unresolved"
+  | "junk"
+  | "degraded"
+  | "no-filters"
+
+interface SweepRow {
+  name: string
+  query: string
+  tag: SweepTag
+  expected: { selectedViewId: string | null; isModified: boolean }
+}
+
+/**
+ * SIXTEEN URLs x THREE VIEWS, deliberately shaped like the probe 40-05 ran and got zero from.
+ */
+const SWEEP: readonly SweepRow[] = [
+  { name: "a bare URL", query: "", tag: "bare", expected: { selectedViewId: null, isModified: false } },
+  {
+    name: "the escape alone",
+    query: "view=none",
+    tag: "escape",
+    expected: { selectedViewId: null, isModified: false },
+  },
+  {
+    name: "the escape beside a view's exact filters",
+    query: `view=none&pipeline=${PIPELINE}&stage=${STAGE}`,
+    tag: "escape",
+    expected: { selectedViewId: null, isModified: false },
+  },
+  {
+    name: "a view's EXACT filters with no view key — the 40-05 case",
+    query: `pipeline=${PIPELINE}&stage=${STAGE}`,
+    tag: "filters-only",
+    expected: { selectedViewId: null, isModified: false },
+  },
+  {
+    name: "another view's exact filters with no view key",
+    query: `owner=${ME}`,
+    tag: "filters-only",
+    expected: { selectedViewId: null, isModified: false },
+  },
+  {
+    name: "a view opened cleanly",
+    query: `pipeline=${PIPELINE}&stage=${STAGE}&view=${VIEW_1}`,
+    tag: "clean",
+    expected: { selectedViewId: VIEW_1, isModified: false },
+  },
+  {
+    name: "a view opened cleanly, on page 2 — page is not a filter",
+    query: `page=2&pipeline=${PIPELINE}&stage=${STAGE}&view=${VIEW_1}`,
+    tag: "clean",
+    expected: { selectedViewId: VIEW_1, isModified: false },
+  },
+  {
+    name: "a view with a CHANGED filter",
+    query: `pipeline=${PIPELINE}&stage=stage-other&view=${VIEW_1}`,
+    tag: "modified",
+    expected: { selectedViewId: VIEW_1, isModified: true },
+  },
+  {
+    name: "a view with an ADDED filter",
+    query: `pipeline=${PIPELINE}&stage=${STAGE}&owner=${ME}&view=${VIEW_1}`,
+    tag: "modified",
+    expected: { selectedViewId: VIEW_1, isModified: true },
+  },
+  {
+    name: "a view with a REMOVED filter",
+    query: `pipeline=${PIPELINE}&view=${VIEW_1}`,
+    tag: "modified",
+    expected: { selectedViewId: VIEW_1, isModified: true },
+  },
+  {
+    name: "somebody else's shared view, opened cleanly",
+    query: `owner=${ME}&view=${VIEW_2}`,
+    tag: "clean",
+    expected: { selectedViewId: VIEW_2, isModified: false },
+  },
+  {
+    name: "somebody else's shared view, modified",
+    query: `owner=${THEM}&view=${VIEW_2}`,
+    tag: "modified",
+    expected: { selectedViewId: VIEW_2, isModified: true },
+  },
+  {
+    name: "a well-formed id naming no visible view",
+    query: `pipeline=${PIPELINE}&stage=${STAGE}&view=${UNKNOWN_VIEW}`,
+    tag: "unresolved",
+    expected: { selectedViewId: null, isModified: false },
+  },
+  {
+    name: "a hostile view value beside a real filter",
+    query: `pipeline=${PIPELINE}&stage=${STAGE}&view=%3Cscript%3E`,
+    tag: "junk",
+    expected: { selectedViewId: null, isModified: false },
+  },
+  {
+    name: "a degraded view opened at its surviving keys",
+    query: `stage=${STAGE}&view=${VIEW_3}`,
+    tag: "degraded",
+    expected: { selectedViewId: VIEW_3, isModified: false },
+  },
+  {
+    name: "a selection with no filters at all — U-2 refuses it",
+    query: `view=${VIEW_1}`,
+    tag: "no-filters",
+    expected: { selectedViewId: null, isModified: false },
+  },
+]
+
+interface SweepResult {
+  row: SweepRow
+  actual: BarState
+}
+
+let sweepCache: SweepResult[] | null = null
+
+function sweep(): SweepResult[] {
+  sweepCache ??= SWEEP.map((row) => ({
+    row,
+    actual: composeBarState("deal", row.query, SWEEP_VIEWS, CATALOG),
+  }))
+
+  return sweepCache
+}
+
+/** The distribution, rendered the way 40-05's measurement was, so a reader sees it rather than a boolean. */
+function sweepTable(): string {
+  const lines = sweep().map(({ row, actual }) => {
+    const id =
+      actual.selectedViewId === null ? "null" : `…${actual.selectedViewId.slice(-6)} (${row.tag})`
+
+    return `  ${row.name.padEnd(52)} selected=${id.padEnd(22)} modified=${String(actual.isModified).padEnd(5)} canUpdate=${actual.canUpdateSelected}`
+  })
+  const selectedAndModified = sweep().filter(
+    ({ actual }) => actual.selectedViewId !== null && actual.isModified,
+  ).length
+
+  return [
+    "",
+    `THE SWEEP: ${SWEEP.length} URLs x ${SWEEP_VIEWS.length} views`,
+    ...lines,
+    `  --> selections: ${sweep().filter(({ actual }) => actual.selectedViewId !== null).length}` +
+      `, selected && modified: ${selectedAndModified}`,
+    "",
+  ].join("\n")
+}
+
+describe("the composed bar state — the 40-05 regression", () => {
+  it.each(SWEEP)("$name resolves to its expected pair", (row) => {
+    const actual = composeBarState("deal", row.query, SWEEP_VIEWS, CATALOG)
+
+    expect(
+      { selectedViewId: actual.selectedViewId, isModified: actual.isModified },
+      sweepTable(),
+    ).toEqual(row.expected)
+  })
+
+  it("REACHES `selected && modified` — the state 40-05 measured ZERO of", () => {
+    const reached = sweep().filter(
+      ({ actual }) => actual.selectedViewId !== null && actual.isModified,
+    )
+
+    expect(
+      reached.length,
+      "THE ASSERTION WHOSE ABSENCE LET THE DEFECT SHIP. 40-05 measured this composition over 10 " +
+        "URLs x 3 views and got 2 selections and ZERO cases of selected-and-modified, because " +
+        "selection was derived from filter equality and `isModified` compared the same two sets. " +
+        "If this is 0, `?view=<id>` is no longer carried through a filter change and three " +
+        "UI-SPEC surfaces are unreachable again: the 'view selected, modified' state, slot 2's " +
+        `views.saveChanges (B-5), and the save dialog's target RadioGroup (S-3/S-4).${sweepTable()}`,
+    ).toBeGreaterThan(0)
+  })
+
+  it("ANTI-VACUITY: also reaches `selected && NOT modified`, so a constant true cannot pass", () => {
+    const clean = sweep().filter(
+      ({ actual }) => actual.selectedViewId !== null && !actual.isModified,
+    )
+
+    expect(clean.length, sweepTable()).toBeGreaterThan(0)
+  })
+
+  it("and reaches no selection at all, so a constant id cannot pass either", () => {
+    expect(
+      sweep().filter(({ actual }) => actual.selectedViewId === null).length,
+      sweepTable(),
+    ).toBeGreaterThan(0)
+  })
+
+  it("makes B-5's saveChanges row live — selected, modified AND updatable", () => {
+    // The row that was unreachable: `canSave && selectedViewId && isModified && canUpdateSelected`.
+    expect(
+      sweep().filter(
+        ({ actual }) =>
+          actual.selectedViewId !== null && actual.isModified && actual.canUpdateSelected,
+      ).length,
+      sweepTable(),
+    ).toBeGreaterThan(0)
+
+    // And its sibling, which resolves to `views.saveNew` instead: somebody else's shared view,
+    // modified, not updatable. Both branches of the save dialog's target choice are now reachable.
+    expect(
+      sweep().filter(
+        ({ actual }) =>
+          actual.selectedViewId !== null && actual.isModified && !actual.canUpdateSelected,
+      ).length,
+      sweepTable(),
+    ).toBeGreaterThan(0)
+  })
+
+  it("view=none rows are ALWAYS { null, false }, whatever else the URL says", () => {
+    for (const { row, actual } of sweep().filter(({ row }) => row.tag === "escape")) {
+      expect(
+        { selectedViewId: actual.selectedViewId, isModified: actual.isModified },
+        `${row.query}${sweepTable()}`,
+      ).toEqual({ selectedViewId: null, isModified: false })
+    }
+  })
+
+  it("a filters-only row is ALWAYS { null, false } — even when the filters equal a view's exactly", () => {
+    const rows = sweep().filter(({ row }) => row.tag === "filters-only")
+
+    expect(rows.length).toBeGreaterThan(0)
+
+    for (const { row, actual } of rows) {
+      expect(
+        { selectedViewId: actual.selectedViewId, isModified: actual.isModified },
+        `${row.query} — this is the accepted consequence of the URL carrier: equality never ` +
+          `identified a view uniquely (two views hold identical filters the moment one is forked), ` +
+          `so a URL that does not SAY which view it is showing shows All records.${sweepTable()}`,
+      ).toEqual({ selectedViewId: null, isModified: false })
+    }
+  })
+
+  it("an unknown id and a junk value are both { null, false }, and neither throws", () => {
+    for (const row of SWEEP.filter((r) => r.tag === "unresolved" || r.tag === "junk")) {
+      expect(() => composeBarState("deal", row.query, SWEEP_VIEWS, CATALOG)).not.toThrow()
+
+      const actual = composeBarState("deal", row.query, SWEEP_VIEWS, CATALOG)
+
+      expect({ selectedViewId: actual.selectedViewId, isModified: actual.isModified }).toEqual({
+        selectedViewId: null,
+        isModified: false,
+      })
+    }
+  })
+
+  it("the degraded row is { selected, false } — degraded is not modified", () => {
+    const rows = sweep().filter(({ row }) => row.tag === "degraded")
+
+    expect(rows.length).toBeGreaterThan(0)
+
+    for (const { actual } of rows) {
+      expect(actual.selectedViewId, sweepTable()).toBe(VIEW_3)
+      expect(
+        actual.isModified,
+        `a view whose owner was deleted, opened at the keys that still work, is DEGRADED and not ` +
+          `MODIFIED — labelling it modified invites the user to save the damage (B-2 reason 2)` +
+          sweepTable(),
+      ).toBe(false)
+    }
+  })
+
+  it("never throws over the whole sweep, on any entity type", () => {
+    for (const entityType of ["organization", "person", "deal", "activity"] as const) {
+      for (const row of SWEEP) {
+        expect(() => composeBarState(entityType, row.query, SWEEP_VIEWS, CATALOG)).not.toThrow()
+      }
     }
   })
 })
