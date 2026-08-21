@@ -458,7 +458,7 @@ Plans:
   3. User sets a default view per entity type and lands on it when opening that list
   4. User exports the records matching a saved view
 
-**Plans**: 17 plans in 9 waves
+**Plans**: 18 plans in 10 waves
 
 Plans:
 - [x] 40-01-PLAN.md — the URL vocabulary: whitelist, `withViewEscape`, and the two export predicates
@@ -468,6 +468,7 @@ Plans:
 - [x] 40-05-PLAN.md — the read layer: visibility scoping, degraded-read validation, bar-prop resolution
 - [x] 40-06-PLAN.md — the write layer: create, update, share, default, delete server actions
 - [x] 40-07-PLAN.md — `ExportFilters` extension, the four fetchers, and the guarded capped export action
+- [ ] 40-18-PLAN.md — the `?view=<id>` URL carrier, so `isModified` stops being structurally false
 - [ ] 40-08-PLAN.md — the save/update dialog, with its own height clamp
 - [ ] 40-09-PLAN.md — the manage dialog and the delete confirmation
 - [ ] 40-10-PLAN.md — `SavedViewsBar`, and the V-40-5 parsed-interface gate
