@@ -147,3 +147,48 @@ re-checked.
 - Per-user share grants, rather than a single shared/private flag.
 - Non-CSV export formats.
 </deferred>
+
+---
+
+## AMENDMENTS — corrections to this file from the UI-SPEC's measurements (2026-08-21)
+
+The UI-SPEC found three errors in the decisions above. **Where they conflict, 40-UI-SPEC.md wins.**
+Recorded here rather than silently overwritten, so the reasoning survives.
+
+**A1. The "All records" escape hatch was unreachable as specified.** This file locked the default-view
+redirect to fire "when the incoming URL carries no params" AND an explicit "All records" pseudo-view.
+Those two are mutually exclusive: selecting All records navigates to a bare path and gets redirected
+straight back into the default view. Worse, **six existing controls already navigate to bare paths**
+and would each bounce a user into their default view — the orgs and people empty-search branches,
+`activity-filters.tsx`'s `clearAll` and its last-chip `setFilter`, the activities no-results "Clear
+filters" button, and `deal-filters.tsx`'s `clearAll` with no pipeline set. The UI-SPEC resolves this
+with a `?view=none` param and one `withViewEscape` helper, gated at the call sites (V-40-4).
+
+**A2. The no-empty-filters export guard did not preserve its own intent.** Decision 2 above says the
+guard must make it impossible to export with no filters. But Decision 4 requires a deals view to carry
+`pipeline`, and a pipeline-only view passes any naive non-empty test while resolving to up to 25,195
+deals — precisely the unbounded export 38-CONTEXT.md:110 forbids. Two predicates are required, not
+one: `hasSaveableFilter` counts `pipeline`, `hasExportableFilter` does NOT. Consequence, accepted: a
+`/deals` view carrying only a pipeline is saveable but **not exportable**. That is the correct trade —
+criterion 4 is narrowed rather than the export gate being widened.
+
+**A3. `activity-filters.tsx` is the WRONG host.** This file called it "the richest filter toolbar and
+the natural host". Measured at 320x640, it is the one container in the app that already clips content
+off the top of the viewport: Radix computed `--radix-popover-content-available-height: 347px` and the
+popover rendered **388px tall at `top: -41`**, because `popover.tsx:33` never consumes that variable.
+The views bar therefore mounts on its own row ABOVE `<ActivityFilters>`, and nothing in this phase
+lives in a Popover.
+
+**A4. Criterion 1 breaks visibly on three of four surfaces without a fix this file did not anticipate.**
+The search `<Input>` does not re-sync when the `search` param changes — `defaultValue` is ignored
+post-mount, so navigating to a saved view filters the list correctly while the search box still shows
+the old text. Three call sites. This is a criterion-1 failure, not polish; the UI-SPEC gates it
+(V-40-7).
+
+**A5. Corrections to figures quoted above:** `REQUIRED_DEDUP_KEYS` is **83** (not 79) and
+`REQUIRED_AUDIT_KEYS` is **88** (not 86). Also two of the three live users have `name = NULL`, which
+any "shared by X" attribution must handle.
+
+**A6. Accepted limitation:** because Decision 3 hides private views from admins too, a soft-deleted
+user's private views become permanently unreachable by anyone. Six soft-deleted users exist. Judged
+acceptable — a saved view is a filter set, not data — but recorded rather than discovered later.

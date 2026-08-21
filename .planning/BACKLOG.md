@@ -43,6 +43,21 @@ sensitivity to it.
 Related: `e2e/auth.setup.ts` timed out on `waitForURL` in 2 of 8 invocations (recorded below) — the
 suite has two independent sources of flake, not one.
 
+### `popover.tsx` never consumes Radix's available-height, so filter popovers already overflow at 320px
+**Pre-existing; measured during phase-40 UI research.** `src/components/ui/popover.tsx:33` never
+consumes `--radix-popover-content-available-height`. Measured at 320x640: Radix computed the variable
+as **347px**, and the `/activities` filter popover rendered **388px tall at `top: -41`** with
+`max-height: none` and `overflow-y: visible` — clipped off the top of the viewport with no way to
+scroll to it. `/deals` clears the viewport by only 7px.
+
+Same shape as F-39-07 and deferred for the same reason: the fix touches every popover in the app and
+needs its own reachability suite. Note `DropdownMenuContent` and `SelectContent` ARE height-safe
+(`max-h-(--radix-*-available-height)` + `overflow-y-auto`); `DialogContent` and
+`DropdownMenuSubContent` are not — `DialogContent` has no clamp at all, and the org create dialog is
+already 586px in a 640px viewport, roughly 54px of headroom before F-39-07 recurs elsewhere.
+
+Phase 40 works around this by putting nothing in a Popover.
+
 ### F-39-08 — Enter inside a modal navigates the list behind it
 Pre-existing, shared by six surfaces. `data-table-keyboard.tsx` registers
 `useHotkeys("enter", …, { preventDefault: true })` with **no ref**, so it fires inside a portalled
