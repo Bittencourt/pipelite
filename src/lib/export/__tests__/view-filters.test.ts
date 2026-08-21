@@ -32,7 +32,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { PgDialect } from "drizzle-orm/pg-core"
 import type { SQL } from "drizzle-orm"
-import { readStrippedSource } from "@/components/custom-fields/__tests__/source-scan"
+import {
+  callArguments,
+  readStrippedSource,
+} from "@/components/custom-fields/__tests__/source-scan"
 import {
   EXPORTABLE_FILTER_KEYS,
   SAVEABLE_FILTER_KEYS,
@@ -68,6 +71,12 @@ vi.mock("@/db", () => ({ db: { query: dbSpies } }))
 // Imported AFTER the `vi.mock` above for readability only — vitest hoists the mock regardless.
 import { fetchFilteredData } from "../formatters"
 import type { ExportFilters } from "../types"
+import {
+  ALL_SAVEABLE_KEYS,
+  EXPORT_ROW_CAP,
+  guardExportInput,
+  toExportFilters,
+} from "../view-export-guard"
 
 const FORMATTERS_PATH = "src/lib/export/formatters.ts"
 
@@ -421,5 +430,216 @@ describe("T-40-32: the two deals subqueries bind their values", () => {
     expect(scoped.sql).toContain("FROM stages WHERE pipeline_id =")
     expect(unscoped.sql).not.toContain("FROM stages")
     expect(scoped.sql).not.toBe(unscoped.sql)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE GUARD (T-40-29). 38-CONTEXT.md:110-116's admin gate was REPLACED by this predicate, so a
+// weak guard means Phase 40 made the hole wider than it found it.
+// ---------------------------------------------------------------------------
+
+describe("guardExportInput refuses anything that would not narrow", () => {
+  it("refuses an empty map — the case the whole guard exists for", () => {
+    // An action handed `{}` used to return all 46,054 organizations. It must now read nothing.
+    expect(guardExportInput({ entityType: "organization", filters: {} })).toEqual({
+      ok: false,
+      error: "refused",
+    })
+    expect(guardExportInput({ entityType: "organization", filters: undefined })).toEqual({
+      ok: false,
+      error: "refused",
+    })
+    expect(guardExportInput({ entityType: "organization", filters: null })).toEqual({
+      ok: false,
+      error: "refused",
+    })
+  })
+
+  it("refuses a map of only non-whitelisted keys", () => {
+    // Not special-cased — `pickFilterParams` walks the WHITELIST, so none of these is ever read.
+    const result = guardExportInput({
+      entityType: "organization",
+      filters: { page: "2", view: "abc", sort: "name", format: "json", ids: "x" },
+    })
+
+    expect(result).toEqual({ ok: false, error: "refused" })
+  })
+
+  it("refuses a blank search, because a blank value is not a filter", () => {
+    for (const search of ["", "   ", "\t\n"]) {
+      expect(guardExportInput({ entityType: "organization", filters: { search } })).toEqual({
+        ok: false,
+        error: "refused",
+      })
+    }
+  })
+
+  it("refuses a value over the parser's length cap", () => {
+    // The guard asks about the PICKED map, so a value the parser rejected cannot authorize —
+    // which is the difference between this and a fresh non-empty test on the raw input.
+    expect(
+      guardExportInput({ entityType: "organization", filters: { search: "x".repeat(257) } }),
+    ).toEqual({ ok: false, error: "refused" })
+  })
+
+  it("refuses a deals export scoped only by pipeline — 25,195 deals is the unbounded export 38-CONTEXT forbids", () => {
+    // CRITERION 4'S DELIBERATE NARROWING, and the line where the guard actually falls. A pipeline
+    // is a board selector, not a filter; the app's own UI separates them ("Pipeline:" vs
+    // "Filters"). Any single non-empty predicate passes this input, which is why there are two
+    // tables (40-CONTEXT amendment A2, E-2). If this test ever goes green by returning `ok: true`,
+    // the guard has been widened back to the hole it replaced.
+    expect(guardExportInput({ entityType: "deal", filters: { pipeline: "p1" } })).toEqual({
+      ok: false,
+      error: "refused",
+    })
+  })
+
+  it("refuses a crafted entityType before any query, rather than relying on the fetcher's default", () => {
+    // `keysFor` scans VIEW_ENTITY_TYPES, so an unrecognised type yields no keys, nothing is picked,
+    // and nothing can authorize. It also must not THROW: `SAVEABLE_FILTER_KEYS["__proto__"]` is
+    // `Object.prototype`, whose `.includes` does not exist.
+    for (const entityType of ["__proto__", "constructor", "organizations", ""]) {
+      expect(
+        guardExportInput({
+          entityType: entityType as unknown as ViewEntityType,
+          filters: { search: "acme" },
+        }),
+      ).toEqual({ ok: false, error: "refused" })
+    }
+  })
+
+  it("allows a deals export carrying pipeline PLUS a real filter, and KEEPS the pipeline", () => {
+    // The other half of E-2, and the pair completes it: `pipeline` did not authorize this export,
+    // but it must still narrow it — otherwise the export would return this owner's deals on every
+    // board rather than the one the view was saved on.
+    const result = guardExportInput({
+      entityType: "deal",
+      filters: { pipeline: "p1", owner: "u1" },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.filters).toEqual({ pipeline: "p1", owner: "u1" })
+  })
+
+  it("allows each authorizing key on its own surface", () => {
+    // Anti-vacuity for every refusal above: a guard that refused EVERYTHING would pass all of them.
+    const allowed: [ViewEntityType, ExportFilters][] = [
+      ["organization", { search: "acme" }],
+      ["person", { search: "acme" }],
+      ["deal", { stage: "s1" }],
+      ["deal", { assignee: "u1" }],
+      ["activity", { status: "overdue" }],
+      ["activity", { type: "t1" }],
+    ]
+
+    for (const [entityType, filters] of allowed) {
+      const result = guardExportInput({ entityType, filters: filters as Record<string, unknown> })
+
+      expect(result.ok, `${entityType} with ${JSON.stringify(filters)} must be allowed`).toBe(true)
+      if (!result.ok) continue
+      expect(result.filters).toEqual(filters)
+    }
+  })
+
+  it("never lets `ids` through, so a selection cannot be smuggled into a view export", () => {
+    // `ids` is on no whitelist row, so it is never looked up. The T-38-01 presence-not-length
+    // guards in the fetchers stay reachable only from the bulk actions that own the 100-id cap.
+    const result = guardExportInput({
+      entityType: "organization",
+      filters: { search: "acme", ids: ["a", "b"] },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.filters).toEqual({ search: "acme" })
+    expect("ids" in result.filters).toBe(false)
+  })
+
+  it("maps EVERY saveable key into the export vocabulary — none is silently dropped", () => {
+    // The gate on the bridge table. A key added to SAVEABLE_FILTER_KEYS that has no ExportFilters
+    // home would be authorized by hasExportableFilter and then never reach the query — the T-40-30
+    // failure mode one layer down, where the structural gate cannot see it.
+    const everything = Object.fromEntries(ALL_SAVEABLE_KEYS.map((key) => [key, `v-${key}`]))
+    const mapped = toExportFilters(everything)
+
+    expect(ALL_SAVEABLE_KEYS.length).toBeGreaterThan(0)
+    for (const key of ALL_SAVEABLE_KEYS) {
+      expect(
+        Object.keys(mapped),
+        `the saveable key \`${key}\` has no ExportFilters field, so it would authorize an export ` +
+          `and then narrow nothing. Add it to VIEW_KEY_TO_EXPORT_KEY.`,
+      ).toContain(key)
+    }
+  })
+})
+
+describe("exportViewResults is guarded, capped and not admin-gated", () => {
+  const ACTION_PATH = "src/lib/views/export-action.ts"
+  const actionSource = readStrippedSource(ACTION_PATH)
+
+  it("read the action source at all", () => {
+    // Anti-vacuity for the negative assertions below, which would all pass on an empty string.
+    expect(actionSource).toContain("exportViewResults")
+    expect(actionSource).toContain("guardExportInput")
+    expect(actionSource).toContain("fetchFilteredData")
+  })
+
+  it("authenticates, then guards, then queries — in that order", () => {
+    const authAt = actionSource.indexOf("await auth()")
+    const guardAt = actionSource.indexOf("guardExportInput(")
+    const fetchAt = actionSource.indexOf("fetchFilteredData(")
+
+    expect(authAt).toBeGreaterThan(-1)
+    expect(guardAt).toBeGreaterThan(-1)
+    expect(fetchAt).toBeGreaterThan(-1)
+    // Both controls precede the read. A guard that ran after the query would have already
+    // materialised the rows it was supposed to refuse.
+    expect(authAt).toBeLessThan(fetchAt)
+    expect(guardAt).toBeLessThan(fetchAt)
+  })
+
+  it("contains NO admin gate — E-9 is a deliberate, visible widening of a Phase 38 restriction", () => {
+    // Comments are stripped, so this cannot be satisfied or broken by prose. Adding an admin check
+    // necessarily adds one of these tokens to real code.
+    expect(
+      /["']admin["']/.test(actionSource),
+      `${ACTION_PATH} mentions the admin role. E-9: "Export is available to every authenticated ` +
+        `user, not admin-gated. That is Decision 2's direct consequence: the guard replaces the ` +
+        `gate." An admin gate added here would silently un-widen a recorded widening, and it would ` +
+        `do so invisibly, because this deployment's two admin accounts would still pass every test.`,
+    ).toBe(false)
+    expect(/\brole\b/.test(actionSource)).toBe(false)
+  })
+
+  it("passes EXPORT_ROW_CAP as maxRows at the single fetchFilteredData call site", () => {
+    const calls = callArguments(actionSource, "fetchFilteredData")
+
+    // Exactly one call site: a second, uncapped one would be the whole cap defeated.
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toContain("maxRows: EXPORT_ROW_CAP")
+    // `format` and `includeCustomFields` are LITERALS here, not caller-supplied (T-40-34): a caller
+    // must not be able to request `pipedrive-json` or flip custom-field inclusion.
+    expect(calls[0]).toContain(`format: "csv"`)
+    expect(calls[0]).toContain("includeCustomFields: true")
+    expect(calls[0]).not.toContain("input.format")
+    expect(calls[0]).not.toContain("input.includeCustomFields")
+    // The filter map reaching the query is the GUARD'S output, never the caller's input.
+    expect(calls[0]).toContain("filters: guarded.filters")
+    expect(calls[0]).not.toContain("filters: input.filters")
+  })
+
+  it("EXPORT_ROW_CAP is a number, and one the live volumes make meaningful", () => {
+    expect(typeof EXPORT_ROW_CAP).toBe("number")
+    expect(EXPORT_ROW_CAP).toBe(50_000)
+    // Activities (79,022 live) exceed it and organizations (46,054) do not, so the cap is a branch
+    // that really fires on this data rather than a number no request can reach.
+    expect(EXPORT_ROW_CAP).toBeLessThan(79_022)
+    expect(EXPORT_ROW_CAP).toBeGreaterThan(46_054)
+  })
+
+  it("adds no /api/export route and no new dependency (M-14, N-2)", () => {
+    expect(actionSource).not.toContain("/api/export")
+    expect(actionSource).not.toContain("NextResponse")
   })
 })
