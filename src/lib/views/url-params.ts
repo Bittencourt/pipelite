@@ -35,6 +35,45 @@ export const VIEW_ESCAPE_KEY = "view"
 export const VIEW_ESCAPE_VALUE = "none"
 
 /**
+ * THE SHAPE OF A VIEW ID IN THE URL — a v4 uuid, case-insensitively, anchored at both ends.
+ *
+ * Two facts justify a SHAPE-bounded narrowing here rather than the length-bounded one
+ * `write-guards.ts` uses for a POST body, and they are both measured rather than assumed:
+ *
+ *   1. EVERY view id is a `crypto.randomUUID()`. `saved_views.id` is
+ *      `text("id").primaryKey().$defaultFn(() => crypto.randomUUID())` and `createView` accepts no
+ *      `id` from a caller, so there is no insert path that could supply another shape. A uuid-shaped
+ *      narrowing therefore refuses nothing real.
+ *   2. This value ROUND-TRIPS THROUGH THE ADDRESS BAR. Unlike a POST body — which is looked up and
+ *      refused if it names no row — a `?view=` value is read from a URL the user can be handed and
+ *      is written back into the next navigation target. There, "the lookup would have failed anyway"
+ *      is not the whole story: the string itself is the hazard (T-40-85). Refusing everything that
+ *      is not an id costs nothing and removes the class.
+ *
+ * Declared once and never inlined, and deliberately NOT `g`-flagged: a global regex carries
+ * `lastIndex` between `.test` calls, which would make this predicate depend on call order.
+ */
+export const VIEW_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/**
+ * WHAT THE `view` PARAM SAYS, in three mutually exclusive states.
+ *
+ * `absent` covers two different URLs with one answer: no `view` key, and a `view` key whose value is
+ * neither the escape nor an id. A junk value is ABSENT rather than an error because this module's
+ * whole posture is that a strange URL renders a page — there is no `error.tsx` above any of the four
+ * list routes, so an error state here is a blank page.
+ */
+export type ViewSelection =
+  | { readonly kind: "absent" }
+  | { readonly kind: "escape" }
+  | { readonly kind: "selection"; readonly viewId: string }
+
+/** Shared results, frozen so a caller cannot grow or edit one. */
+const VIEW_ABSENT: ViewSelection = Object.freeze({ kind: "absent" as const })
+const VIEW_ESCAPE: ViewSelection = Object.freeze({ kind: "escape" as const })
+
+/**
  * Never stored in a view's `filters`, on any surface (U-3).
  *
  * `page` because a view lands you on page 1 by definition — storing it would make "open my view"
@@ -241,6 +280,60 @@ function narrowFilterValue(raw: unknown): string | undefined {
 }
 
 /**
+ * A raw `?view=` value narrowed to a view id, or `null` for anything else. Never throws.
+ *
+ * Trimmed, because a padded id is not an id — the same call `write-guards.ts`' `narrowViewId` makes.
+ * NOT lower-cased, and that is the `narrowFilterValue` rule applied here: a parser that repairs its
+ * input is a parser that can be steered, and a hand-typed upper-case uuid simply resolves to no
+ * visible view, which the resolver already handles by rendering the unfiltered list.
+ *
+ * `"none"` is rejected explicitly, ahead of the pattern that would reject it anyway. The escape is a
+ * DIFFERENT state, not a malformed id, and stating that here means `parseViewSelection` cannot be
+ * reordered into treating it as one.
+ *
+ * THE ASYMMETRY WITH `narrowViewId` IS DELIBERATE. That one is length-bounded (1..64) because it
+ * narrows a POST body about to be looked up; this one is shape-bounded because its output is echoed
+ * into an address bar. Both are correct for their own job, they have disjoint consumers, and
+ * `write-guards.ts` imports THIS module — so unifying them would also be a circular import.
+ */
+export function narrowViewSelectionId(raw: unknown): string | null {
+  if (typeof raw !== "string") return null
+
+  const trimmed = raw.trim()
+
+  if (trimmed === VIEW_ESCAPE_VALUE) return null
+  if (!VIEW_ID_PATTERN.test(trimmed)) return null
+
+  return trimmed
+}
+
+/**
+ * WHAT DOES THIS URL SAY ABOUT WHICH VIEW IS OPEN?
+ *
+ * The one grammar for the `view` param. `withViewEscape` reads it to decide what to preserve and
+ * `resolve.ts` reads it to decide what is selected, so the escape and the selection cannot drift
+ * apart into two definitions — which is the T-37-03 defect class this module exists to avoid.
+ *
+ * It reuses `readRawValue` and `firstParam` rather than re-reading the source shape: those two
+ * already own "read one key out of any source without reaching a prototype and without throwing",
+ * and a second reader would be a second thing to keep correct. The consequence worth naming is that
+ * a REPEATED param takes its FIRST value, so `?view=none&view=<uuid>` is the escape — the same rule
+ * `pickFilterParams` applies to a repeated filter.
+ *
+ * The escape is matched EXACTLY, with no trimming, which is what the merged `hasViewEscape` did
+ * before this function replaced it. Widening it to `" none "` would be this parser repairing input.
+ */
+export function parseViewSelection(source: FilterParamSource): ViewSelection {
+  const raw = firstParam(readRawValue(source, VIEW_ESCAPE_KEY))
+
+  if (raw === VIEW_ESCAPE_VALUE) return VIEW_ESCAPE
+
+  const viewId = narrowViewSelectionId(raw)
+
+  return viewId === null ? VIEW_ABSENT : { kind: "selection", viewId }
+}
+
+/**
  * THE INPUT-VALIDATION CONTROL FOR THE SAVED-VIEW SURFACES (T-40-01, T-40-02).
  *
  * Whatever comes in — a crafted URL, a repeated param, a stored blob — what comes out is a plain
@@ -325,7 +418,13 @@ function cloneSearchParams(params: URLSearchParams): URLSearchParams {
 }
 
 /**
- * SERIALISE PARAMS FOR A NAVIGATION, APPENDING `view=none` IFF NO SAVEABLE FILTER SURVIVES (U-1).
+ * SERIALISE PARAMS FOR A NAVIGATION THAT DOES NOT ITSELF CHANGE THE SELECTION.
+ *
+ * Two things come out of that one sentence: `view=none` is appended iff no saveable filter survives
+ * (U-1), and an existing `?view=<id>` selection is PRESERVED iff one does. A filter change, a
+ * keystroke, a chip removal, a `clearAll` and a Load More are all navigations of this kind — they
+ * change WHAT is filtered, never WHICH view you have open. `withViewSelection` is the other
+ * function, for the navigation that does change it.
  *
  * WHY THIS FUNCTION EXISTS. Two locked decisions were mutually exclusive without it. The
  * default-view redirect fires when the incoming URL carries NO params — deliberately, so that a
@@ -369,8 +468,38 @@ function cloneSearchParams(params: URLSearchParams): URLSearchParams {
  * delete `view`, pick, maybe set, stringify) does NOT produce the plan's own asserted result for
  * `?search=` — it would return `search=&view=none`. The assertion is the contract and the recipe was
  * incomplete; the rewrite loop below is the reconciliation. Recorded in 40-01-SUMMARY.md.
+ *
+ * WHY A SELECTION IS PRESERVED HERE RATHER THAN DELETED (plan 40-18, and this paragraph is the
+ * reason the plan existed). As merged, this function deleted `view` unconditionally and re-appended
+ * only the escape. Thirteen call sites route through it and EVERY ONE of them is a filter change, a
+ * search change, a clear or a page change — so the first keystroke after opening a view destroyed
+ * the selection. Plan 40-05 then measured the consequence: `selectedViewId` was derived from filter
+ * equality and `computeIsModified` compared the same two sets, so `selected && modified` was
+ * unrepresentable. 10 URLs x 3 views, 2 selections, ZERO modified. Three designed surfaces were
+ * unreachable: the "view selected, modified" state, slot 2's `views.saveChanges` (B-5) and the save
+ * dialog's target `RadioGroup` (S-3/S-4). "Update an existing view" was impossible.
+ *
+ * NO CALL SITE NEEDS EDITING TO GET PRESERVATION. That is why the rule lives in this helper instead
+ * of being threaded as a prop through six files: every writer already passes the current
+ * `useSearchParams()`, which already carries the `view` key, so the selection survives by virtue of
+ * being in the input. Thirteen call sites, zero edits.
+ *
+ * ESCAPE AND SELECTION ARE MUTUALLY EXCLUSIVE, AND NO-FILTERS WINS. A URL naming two views is
+ * meaningless, so at most one `view` key is ever emitted. When the last filter goes, the selection
+ * goes with it and the escape takes over: a view must carry at least one whitelisted key to be
+ * saveable at all (U-2), so "this view, with no filters" is not a state that can exist.
+ *
+ * THE UUID NARROWING IS ASSERTED SOMEWHERE ELSE THAN YOU WOULD EXPECT, and this was measured. The
+ * hostile-value test above (T-40-05) passes IDENTICALLY with a permissive 1..64-character parser,
+ * because it feeds hostile values with NO filter present and the no-filters branch returns
+ * `view=none` either way. The rows that discriminate carry a hostile value ALONGSIDE a surviving
+ * filter — `?search=acme&view=%3Cscript%3E`, `?search=acme&view=a&view=b` — and they live in
+ * `describe("withViewEscape PRESERVES a selection")`. Loosen `narrowViewSelectionId` and those go
+ * red while T-40-05 stays green.
  */
 export function withViewEscape(entityType: ViewEntityType, params: URLSearchParams): string {
+  // Read BEFORE the clone is written to, because the delete below is what erases the answer.
+  const selection = parseViewSelection(params)
   const clone = cloneSearchParams(params)
   const saveableKeys = keysFor(SAVEABLE_FILTER_KEYS, entityType)
 
@@ -391,9 +520,51 @@ export function withViewEscape(entityType: ViewEntityType, params: URLSearchPara
 
   if (Object.keys(picked).length === 0) {
     clone.set(VIEW_ESCAPE_KEY, VIEW_ESCAPE_VALUE)
+  } else if (selection.kind === "selection") {
+    // A filter survived and the URL named a view: the user changed a filter WITH that view open, so
+    // it stays open and `isModified` becomes true. This is the branch 40-05's measurement was
+    // missing. A hostile value never reaches here — it parsed as `absent` and was deleted above.
+    clone.set(VIEW_ESCAPE_KEY, selection.viewId)
   }
 
   return clone.toString()
+}
+
+/**
+ * SERIALISE A NAVIGATION THAT OPENS A VIEW: its filters, in canonical order, plus `view=<id>`.
+ *
+ * The counterpart to `withViewEscape`, and the difference between the two is the whole point of
+ * having both. This one is a FRESH navigation INTO a view, so it starts clean: `page` and every other
+ * param this module does not own are DROPPED, because V-9 says a view lands you on page 1 and a view
+ * that reopened at whatever page you were on when you saved it is not the view you saved.
+ * `withViewEscape` is a modification of the URL you are already on, so it keeps those params.
+ *
+ * TWO REFUSALS, both delegating to `withViewEscape` so there is one definition of "what a navigation
+ * with no filters looks like":
+ *
+ *   - NO SAVEABLE FILTER SURVIVES. A view must carry at least one whitelisted key to be saveable
+ *     (U-2), so "selected, with no filters" is not a state and the bar must not mint one. Refusing
+ *     here rather than trusting the caller is the T-40-90 mitigation: a selection over an unfiltered
+ *     list would be a URL asserting something the write side cannot produce.
+ *   - THE ID FAILS `narrowViewSelectionId`. A caller must not be able to put a string in the address
+ *     bar that a crafted URL could not (T-40-85). The result is the filters with NO `view` key —
+ *     never a junk one.
+ */
+export function withViewSelection(
+  entityType: ViewEntityType,
+  filters: FilterParamSource,
+  viewId: string,
+): string {
+  // Whitelist-only by construction: `filtersToSearchParams` emits the picked map in canonical order
+  // and nothing else, so `page`, `sort` and any pre-existing `view` are gone before we start.
+  const params = filtersToSearchParams(entityType, filters)
+  const narrowed = narrowViewSelectionId(viewId)
+
+  if (narrowed === null || params.toString() === "") return withViewEscape(entityType, params)
+
+  params.set(VIEW_ESCAPE_KEY, narrowed)
+
+  return params.toString()
 }
 
 /**

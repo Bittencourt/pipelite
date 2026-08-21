@@ -42,13 +42,14 @@ import { pipelines, stages } from "@/db/schema/pipelines"
 import { users } from "@/db/schema/users"
 
 import {
-  VIEW_ESCAPE_KEY,
-  VIEW_ESCAPE_VALUE,
   countFilters,
   filtersToSearchParams,
   hasExportableFilter,
   hasSaveableFilter,
+  narrowViewSelectionId,
+  parseViewSelection,
   pickFilterParams,
+  withViewSelection,
 } from "./url-params"
 import { validateStoredFilters } from "./validate"
 
@@ -129,10 +130,15 @@ export function validateVisibleViews(
   })
 }
 
-/** How `selectViewForParams` learns that the user explicitly asked for "All records". */
+/** What the URL's `view` param said, handed to `selectViewForParams` as two narrow facts. */
 export interface SelectViewOptions {
   /** `true` when the URL carried `?view=none`. */
   viewEscape?: boolean
+  /**
+   * The id the URL named, from `?view=<id>`. `null`/absent for a URL that named none — which
+   * includes a URL whose `view` value was junk, because `parseViewSelection` reads that as `absent`.
+   */
+  viewId?: string | null
 }
 
 /**
@@ -150,24 +156,44 @@ function comparisonKey(entityType: ViewEntityType, source: FilterParamSource): s
 /**
  * WHICH VIEW, IF ANY, IS THE URL CURRENTLY SHOWING?
  *
- * A view is selected when its VALIDATED filter set equals the URL's, key for key and value for
- * value. Validated and not stored: selecting a degraded view navigates to the keys that still work
- * (see `resolveSavedViewsBarProps` step 10), so those are the keys that must match on the way back.
+ * SELECTION IS WHAT THE URL *SAYS*, NOT WHAT ITS FILTERS *IMPLY*. The URL names an id (`?view=<id>`)
+ * and this function resolves that id against the views the viewer may see. Nothing here compares
+ * filter sets.
  *
- * `null` in two cases, and they are different questions with the same answer:
- *   - THE URL CARRIES NO FILTERS. An unfiltered list is not "a view with no filters"; a view must
- *     carry at least one whitelisted key to be saveable at all (U-2).
- *   - `?view=none` WAS PRESENT. That is the explicit "All records" selection (U-1). It normally
- *     implies an empty filter set — `withViewEscape` only appends it when nothing survived — so this
- *     branch is reached by a hand-written `?view=none&search=acme`, where honouring the escape is
- *     the honest reading of a URL that says both things.
+ * WHY IT IS NO LONGER EQUALITY, because the previous design was careful and wrong. A view used to be
+ * selected when its validated filter set equalled the URL's — and `computeIsModified` then compared
+ * those SAME TWO SETS. So `selectedViewId && isModified` was unrepresentable BY CONSTRUCTION, not by
+ * accident: the condition that produced the selection was the negation of the condition that would
+ * have made it modified. Plan 40-05 measured it rather than arguing it — 10 URLs x 3 stored views,
+ * 2 selections, ZERO cases of selected-and-modified. Three designed surfaces were therefore
+ * unreachable: the "view selected, modified" state, slot 2's `views.saveChanges` (B-5) and the save
+ * dialog's target `RadioGroup` (S-3/S-4). "Update an existing view" was impossible.
  *
- * THE TIEBREAK IS TOTAL, and it needs to be: the moment a user forks a teammate's shared view they
- * own two views with identical filters, and a picker that highlighted a different one on each render
- * would look broken. Owned before shared (your own workspace wins), then `name` ascending (the order
- * the menu already renders in, V-3), then `id` — the last a pure determinism backstop, since
- * (owner, entityType, name) is unique in the database and two of the viewer's own views cannot in
- * fact share a name.
+ * THE ACCEPTED CONSEQUENCE, STATED RATHER THAN HIDDEN: a URL carrying a view's exact filters but no
+ * `?view=<id>` shows "All records". That is a real behaviour change — a hand-edited or bookmarked
+ * pre-40-18 link no longer highlights the view it matches. It is the right trade, because equality
+ * never identified a view UNIQUELY anyway: two views hold identical filters the moment a user forks
+ * a teammate's shared one, which is precisely what the old tiebreak (owned-before-shared, then name,
+ * then id) was papering over. A tiebreak is a coin toss with a rule; the address bar is an answer.
+ *
+ * `null` in five cases, which are five different questions with one answer:
+ *   - `?view=none` WAS PRESENT. The explicit "All records" selection (U-1), and it BEATS a named id:
+ *     an escape that could resolve to a view would not be an escape.
+ *   - THE URL NAMED NO VIEW, or named one whose value failed the URL grammar.
+ *   - THE ID NAMES NO VISIBLE VIEW. Three causes — deleted, unshared, or another user's private view
+ *     — and deliberately one answer: no selection, the URL's filters still apply, NO NOTICE AND NO
+ *     THROW. That is the locked "a default view was deleted by its owner -> the list renders
+ *     unfiltered, with no error and no notice" decision generalised. Telling the user which of the
+ *     three it was would confirm the row exists (T-40-87). `views.degraded` must NOT fire either:
+ *     nothing was dropped from the FILTER set, and `droppedFilterKeys` is about filter keys.
+ *   - THE URL CARRIES NO FILTERS. The one thing `urlFilters` is still consulted for. An unfiltered
+ *     list is not "a view with no filters": a view must carry at least one whitelisted key to be
+ *     saveable at all (U-2), so `?view=<id>` with nothing else is incoherent.
+ *   - `views` IS NOT AN ARRAY. A failed read degrades to no selection, like everything else here.
+ *
+ * The id is re-narrowed through `narrowViewSelectionId` even though `resolveSavedViewsBarProps` only
+ * ever passes an already-parsed one: this function is exported and unit-tested directly, and one
+ * grammar for the param means one grammar at every entry point (T-40-85).
  */
 export function selectViewForParams(
   entityType: ViewEntityType,
@@ -178,28 +204,18 @@ export function selectViewForParams(
   if (options.viewEscape === true) return null
   if (!Array.isArray(views)) return null
 
-  const target = comparisonKey(entityType, urlFilters)
+  const viewId = narrowViewSelectionId(options.viewId)
 
-  if (target === "") return null
+  if (viewId === null) return null
 
-  const matches = views.filter(
-    (candidate) => comparisonKey(entityType, candidate.summary.filters) === target,
-  )
+  // U-2: a selection with no surviving filter is refused. `comparisonKey` is the same serialisation
+  // `computeIsModified` uses, so "no filters" means the same thing to both.
+  if (comparisonKey(entityType, urlFilters) === "") return null
 
-  if (matches.length === 0) return null
+  // `find` with `===`, never a property lookup: an id of `__proto__` is an ordinary non-member.
+  const selected = views.find((candidate) => candidate.summary.id === viewId)
 
-  const best = matches.reduce((winner, candidate) => {
-    if (candidate.summary.isOwnedByViewer !== winner.summary.isOwnedByViewer) {
-      return candidate.summary.isOwnedByViewer ? candidate : winner
-    }
-    if (candidate.summary.name !== winner.summary.name) {
-      return candidate.summary.name < winner.summary.name ? candidate : winner
-    }
-
-    return candidate.summary.id < winner.summary.id ? candidate : winner
-  })
-
-  return best.summary.id
+  return selected === undefined ? null : selected.summary.id
 }
 
 /**
@@ -255,12 +271,27 @@ export function computeIsModified(
  * is kept rather than asserted.
  *
  * The target is built by `filtersToSearchParams`, so it carries the whitelisted keys in canonical
- * order and nothing else: no `page` (a view lands you on page 1 by definition) and no `view` (the
- * escape exists to STOP a redirect, so emitting it as the destination of one would be incoherent).
+ * order and nothing else: no `page` (a view lands you on page 1 by definition) and never `view=none`
+ * (the escape exists to STOP a redirect, so emitting it as the destination of one would be
+ * incoherent).
+ *
+ * `viewId` IS OPTIONAL, and every existing two-argument call keeps its meaning — that is why it was
+ * added at the end rather than folded into the second parameter. Supplied, the target NAMES the view
+ * it is opening, which is required rather than cosmetic: a bare-URL landing on a default view would
+ * otherwise be an UNSELECTED url, the user's first filter tweak would have no selection to preserve,
+ * and the landing path would be the one place `isModified` stayed unreachable after plan 40-18. It
+ * is also U-4 honoured properly — after the redirect the address bar says both what is filtered and
+ * which view it is.
+ *
+ * A junk id emits NO `view` key rather than a junk one: the same refusal `withViewSelection` makes,
+ * because a redirect is a navigation target the SERVER chose and a crafted value must not reach one
+ * (T-40-85). And the empty-set `null` above is checked FIRST, so naming a view cannot reintroduce
+ * the bare-URL redirect loop (T-40-20).
  */
 export function redirectTargetFor(
   entityType: ViewEntityType,
   validatedFilters: FilterParamSource,
+  viewId?: string | null,
 ): string | null {
   if (validatedFilters === null || validatedFilters === undefined) return null
 
@@ -270,38 +301,16 @@ export function redirectTargetFor(
   // every filter was dropped. All three mean the same thing to the caller.
   if (query === "") return null
 
-  return `?${query}`
+  const narrowed = narrowViewSelectionId(viewId)
+
+  // `withViewSelection` owns "filters plus a selection", so there is one definition of that string.
+  // Its no-filters branch is unreachable from here: `query` is non-empty by the guard above.
+  return narrowed === null ? `?${query}` : `?${withViewSelection(entityType, validatedFilters, narrowed)}`
 }
 
 /* =========================================================================
  * The data-gathering wrappers
  * ====================================================================== */
-
-/**
- * Was `?view=none` on the incoming URL?
- *
- * Read here rather than in `url-params.ts` because `pickFilterParams` deliberately drops `view` —
- * it is a control param and not a filter — so by the time the resolver has its filter map the
- * escape is gone. The constants are imported rather than re-spelled, so there is one definition of
- * the escape and this cannot drift from `withViewEscape`'s.
- */
-function hasViewEscape(source: FilterParamSource): boolean {
-  if (source === null || source === undefined || typeof source !== "object") return false
-
-  try {
-    const raw =
-      source instanceof URLSearchParams
-        ? source.get(VIEW_ESCAPE_KEY)
-        : Object.prototype.hasOwnProperty.call(source, VIEW_ESCAPE_KEY)
-          ? (source as Record<string, unknown>)[VIEW_ESCAPE_KEY]
-          : undefined
-    const value = Array.isArray(raw) ? raw[0] : raw
-
-    return value === VIEW_ESCAPE_VALUE
-  } catch {
-    return false
-  }
-}
 
 /**
  * WHAT THE EXISTENCE CHECKS NEED, AND ONLY WHAT THIS ENTITY TYPE NEEDS.
@@ -402,7 +411,21 @@ export interface ResolveBarPropsInput {
  *
  * `views` CARRIES THE VALIDATED FILTERS, so selecting a degraded view navigates to the keys that
  * still work instead of re-applying the dead one — which is also what makes the selection round-trip
- * (the URL it navigates to is the URL `selectViewForParams` will match next render).
+ * (the URL it navigates to is the URL `selectViewForParams` will resolve next render).
+ *
+ * ALL EIGHT PROPS KEEP THEIR NAMES, TYPES AND MEANINGS after plan 40-18 — `SavedViewsBarProps` is
+ * unchanged, so V-40-5's parsed-interface gate needs no update. What changed is REACHABILITY:
+ * `canUpdateSelected` still resolves from the selected view's `canEdit` and still falls to `false`
+ * with nothing selected, but it is now reachable TOGETHER WITH `isModified`, which is what makes
+ * B-5's `views.saveChanges` row a state a user can actually be in.
+ *
+ * ACCEPTED WART, RECORDED HERE RATHER THAN DISCOVERED LATER. `withViewEscape` runs on the CLIENT and
+ * has no view list, so it cannot know that an id is unresolvable — it preserves any well-formed
+ * `?view=<id>` through every filter change. So a `view=<id>` whose view was deleted (or unshared)
+ * PERSISTS in the address bar until the user selects something else or clears their last filter.
+ * This resolver makes it harmless: no selection, `isModified` false, no `views.degraded` notice, no
+ * throw, and the URL's filters still apply. Scrubbing it would need a client-side redirect on every
+ * render of an affected page, which is a worse trade than a stale param nothing reads.
  */
 export async function resolveSavedViewsBarProps({
   entityType,
@@ -410,7 +433,11 @@ export async function resolveSavedViewsBarProps({
   rawSearchParams,
 }: ResolveBarPropsInput): Promise<SavedViewsBarProps> {
   const urlFilters = pickFilterParams(entityType, rawSearchParams)
-  const viewEscape = hasViewEscape(rawSearchParams)
+  // READ THE `view` PARAM FROM THE RAW SOURCE, ONCE. `pickFilterParams` deliberately drops `view` —
+  // it is a control param and not a filter — so by the time the resolver has its filter map the
+  // escape and the selection are both gone. `parseViewSelection` is the ONE grammar for that param,
+  // shared with `withViewEscape`, so the reader and the writer cannot drift apart.
+  const selection = parseViewSelection(rawSearchParams)
 
   // Computed before the reads, so a total database failure still yields coherent props: an empty
   // picker over a list the user can still filter, save-and-export gating intact.
@@ -436,7 +463,10 @@ export async function resolveSavedViewsBarProps({
     ])
 
     const views = validateVisibleViews(entityType, summaries, catalog)
-    const selectedViewId = selectViewForParams(entityType, urlFilters, views, { viewEscape })
+    const selectedViewId = selectViewForParams(entityType, urlFilters, views, {
+      viewEscape: selection.kind === "escape",
+      viewId: selection.kind === "selection" ? selection.viewId : null,
+    })
     const selected =
       selectedViewId === null
         ? undefined
@@ -484,7 +514,11 @@ export async function resolveDefaultViewRedirect(
     const catalog = await loadFilterCatalog(entityType)
     const { filters } = validateStoredFilters(entityType, defaultView.filters, catalog)
 
-    return redirectTargetFor(entityType, filters)
+    // THE TARGET NAMES THE VIEW. Required, not cosmetic: without the id the default landing is an
+    // unselected URL, so the user's first filter tweak has no selection to preserve and this one
+    // path would still produce the unreachable `isModified` plan 40-05 measured. The id is already
+    // in hand — `readDefaultViewForUser` returns it — and `redirectTargetFor` re-narrows it.
+    return redirectTargetFor(entityType, filters, defaultView.id)
   } catch (error) {
     console.error(`${LOG_PREFIX} could not resolve the default redirect for ${entityType}:`, error)
     return null
