@@ -464,10 +464,10 @@ Plans:
 - [x] 40-01-PLAN.md — the URL vocabulary: whitelist, `withViewEscape`, and the two export predicates
 - [x] 40-02-PLAN.md — `saved_views` + `saved_view_defaults` schema and migration 0018
 - [x] 40-03-PLAN.md — 61 `views.*` keys x 3 locales and the `REQUIRED_VIEWS_KEYS` exact-set contract
-- [ ] 40-04-PLAN.md — e2e harness: a member storageState and the saved-view fixture module
-- [ ] 40-05-PLAN.md — the read layer: visibility scoping, degraded-read validation, bar-prop resolution
-- [ ] 40-06-PLAN.md — the write layer: create, update, share, default, delete server actions
-- [ ] 40-07-PLAN.md — `ExportFilters` extension, the four fetchers, and the guarded capped export action
+- [x] 40-04-PLAN.md — e2e harness: a member storageState and the saved-view fixture module
+- [x] 40-05-PLAN.md — the read layer: visibility scoping, degraded-read validation, bar-prop resolution
+- [x] 40-06-PLAN.md — the write layer: create, update, share, default, delete server actions
+- [x] 40-07-PLAN.md — `ExportFilters` extension, the four fetchers, and the guarded capped export action
 - [ ] 40-08-PLAN.md — the save/update dialog, with its own height clamp
 - [ ] 40-09-PLAN.md — the manage dialog and the delete confirmation
 - [ ] 40-10-PLAN.md — `SavedViewsBar`, and the V-40-5 parsed-interface gate
@@ -574,7 +574,7 @@ Plans:
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
 | 38. Bulk Operations | 19/20 | In Progress|  |
 | 39. Duplicate Detection & Merge | 21/21 | Complete   | 2026-08-21 |
-| 40. Saved Views & Shared Filters | 3/17 | In Progress|  |
+| 40. Saved Views & Shared Filters | 7/17 | In Progress|  |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
 | 43. Type Safety & Deployment Docs | 0/? | Not started | - |
