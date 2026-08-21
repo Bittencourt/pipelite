@@ -192,3 +192,34 @@ any "shared by X" attribution must handle.
 **A6. Accepted limitation:** because Decision 3 hides private views from admins too, a soft-deleted
 user's private views become permanently unreachable by anyone. Six soft-deleted users exist. Judged
 acceptable — a saved view is a filter set, not data — but recorded rather than discovered later.
+
+**A7. CORRECTION — every locale figure quoted in A5 and in UI-SPEC M-13 is WRONG.** Parsed properly
+and cross-checked against the JSON leaves by the planner, then confirmed by the orchestrator against
+the one hard pin in the file:
+
+| Constant | A5 / UI-SPEC M-13 claimed | Actual |
+|---|---|---|
+| `REQUIRED_DEDUP_KEYS` | 83 | **80** |
+| `REQUIRED_AUDIT_KEYS` | 88 | **86** |
+| `REQUIRED_BULK_KEYS` | 47 | **46** |
+| `REQUIRED_TRASH_KEYS` | 66 | **63** |
+
+`src/messages/locale-parity.test.ts:867` asserts `expect(REQUIRED_DEDUP_KEYS).toHaveLength(80)`, which
+settles it. **A plan that "corrects" 80 to 83 breaks the suite.** A naive `grep`/`awk` count over the
+array returns 83 because it also counts quoted strings inside comments — which is almost certainly how
+83 entered M-13. Treat any key count in a document as unverified until parsed from the file.
+`ICU_PLURAL_KEYS` = 11 and `IDENTICAL_TRANSLATION_ALLOWED` = 3 were correct.
+
+**A8. The export guard has a SECOND hole, on `/activities`, that neither this file nor the UI-SPEC
+caught.** `hasExportableFilter("activity", { status: "overdue" })` is true, but the list applies no
+`status` predicate at all except `=== "completed"` (`activities/page.tsx:92`), and `dateFrom`/`dateTo`
+are filtered **in JavaScript after the `limit` slice** (`page.tsx:165-178`), so neither narrows the
+query. Against 79,022 live activities a "filter" that narrows nothing would authorize a 79k-row
+export — exactly the failure mode the guard exists to prevent.
+
+Plan 40-13 therefore closes the LIST side by making `status` and the date range real SQL predicates.
+This is admitted scope beyond Decision 1's "no new filters", and it is justified: these three params
+are already in the URL contract, already written by the toolbar, and already rendered as removable
+chips — they simply never reached the query. That is a defect, not a new feature, and it is the same
+class as the stale search input in A4 which is already ruled in scope. Without it, the export would be
+NARROWER than the list it claims to match.

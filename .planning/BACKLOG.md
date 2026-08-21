@@ -58,6 +58,18 @@ already 586px in a 640px viewport, roughly 54px of headroom before F-39-07 recur
 
 Phase 40 works around this by putting nothing in a Popover.
 
+### `/activities` date filtering runs in JavaScript after the pagination slice
+**Correctness bug, found while verifying phase-40 planning.** `src/app/activities/page.tsx:165-178`
+applies `dateFrom`/`dateTo` with `Array.prototype.filter` *after* `allActivities` has already been
+sliced to `PAGE_SIZE * pageNum`. So a date range does not narrow the query — it removes rows from an
+already-paginated page, meaning a user can see a short page (or an empty one) while matching rows
+exist beyond the slice. `status` has a related gap: only `=== "completed"` maps to a predicate, so
+`pending` and `overdue` narrow nothing server-side.
+
+Phase 40 plan 40-13 makes `status` and the date range real SQL predicates, because the phase's export
+guard depends on a filter actually filtering. **The pagination interaction is broader than that fix**
+— any surface applying a JS filter after a limit has the same defect shape. Worth a sweep.
+
 ### F-39-08 — Enter inside a modal navigates the list behind it
 Pre-existing, shared by six surfaces. `data-table-keyboard.tsx` registers
 `useHotkeys("enter", …, { preventDefault: true })` with **no ref**, so it fires inside a portalled
