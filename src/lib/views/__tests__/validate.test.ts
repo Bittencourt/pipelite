@@ -21,6 +21,9 @@
  * The catalog is a plain value object, so every test here is a pure-function test with no database
  * and no mock. That is the point of the signature.
  */
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+
 import { describe, it, expect } from "vitest"
 
 import { validateStoredFilters, type ViewFilterCatalog } from "../validate"
@@ -67,6 +70,76 @@ const EMPTY_CATALOG: ViewFilterCatalog = {
   stageIdsByPipeline: new Map(),
   activityTypeIds: new Set(),
 }
+
+describe("validate.ts imports no database module", () => {
+  /**
+   * WHY THIS IS PARSED AND NOT GREPPED. 40-05-PLAN's done criterion for this task reads
+   * `grep -c "@/db" src/lib/views/validate.ts` is 0. Run against the implementation it returns 1 —
+   * because the module header contains the sentence FORBIDDING that import. That is the raw-token
+   * grep trap Phase 39 hit five times: the comment explaining a rule trips its own gate, and the
+   * "fix" that satisfies the grep is deleting the explanation, which makes the codebase worse while
+   * turning the light green.
+   *
+   * So the property is asserted where it actually lives: the module's import specifiers. Prose can
+   * say `@/db` as often as it needs to; an `import … from "@/db"` is what would put `pg` in this
+   * module's graph and turn a pure function into an N-query loop. Deleting the comment does not
+   * change this assertion's outcome, and adding the import does.
+   */
+  const source = readFileSync(join(__dirname, "..", "validate.ts"), "utf8")
+
+  /** Every module specifier in a static `import`/`export … from` or a dynamic `import()`. */
+  function importSpecifiers(code: string): string[] {
+    const withoutComments = code
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+    const found: string[] = []
+    const patterns = [
+      /(?:^|\n)\s*import\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']/g,
+      /(?:^|\n)\s*export\s+[\s\S]*?\s+from\s+["']([^"']+)["']/g,
+      /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+      /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
+    ]
+
+    for (const pattern of patterns) {
+      for (const match of withoutComments.matchAll(pattern)) found.push(match[1])
+    }
+
+    return found
+  }
+
+  it("resolves its imports to url-params and types only", () => {
+    const specifiers = importSpecifiers(source)
+
+    // Non-empty, or the parser is broken and every assertion below is vacuous.
+    expect(specifiers.length).toBeGreaterThan(0)
+    expect(new Set(specifiers)).toEqual(new Set(["./url-params", "./types"]))
+  })
+
+  it("imports nothing that could reach the database or a server-only module", () => {
+    const forbidden = [/^@\/db(\/|$)/, /(^|\/)db(\/|$)/, /drizzle/, /^pg$/, /^@\/lib\/db/, /queries/]
+
+    for (const specifier of importSpecifiers(source)) {
+      for (const pattern of forbidden) {
+        expect(specifier).not.toMatch(pattern)
+      }
+    }
+  })
+
+  it("would notice a db import: the parser finds one in a synthetic source", () => {
+    // Proof that the two assertions above can fail — a gate whose detector never fires is a gate
+    // that proves nothing (the vacuous-assertion class this phase was warned about).
+    const synthetic = `
+      /** A comment mentioning @/db, which must NOT be detected. */
+      import { db } from "@/db"
+      import { pickFilterParams } from "./url-params"
+    `
+    const specifiers = importSpecifiers(synthetic)
+
+    expect(specifiers).toContain("@/db")
+    expect(specifiers).toContain("./url-params")
+    expect(specifiers).toHaveLength(2)
+  })
+})
 
 describe("validateStoredFilters — anti-vacuity: a fully valid set survives verbatim", () => {
   it("returns a deal view's every key untouched, with no dropped keys", () => {
