@@ -16,6 +16,14 @@
  *   `computeIsModified`     — must return TRUE in at least one test, for the same reason.
  *   `redirectTargetFor`     — must return `null` for an all-dropped default, or a bare URL loops
  *                             forever against the redirect guard (U-2).
+ *
+ * PLAN 40-18 CHANGED WHAT `selectViewForParams` MEANS, and the amended cases below are deliberate.
+ * Selection is now what the URL SAYS (`?view=<id>`), not what its filters IMPLY. Under the old
+ * equality rule, `selectedViewId` and `isModified` were derived from the SAME comparison, so
+ * `selected && modified` was unrepresentable — measured over 10 URLs x 3 views, 2 selections and
+ * ZERO modified. The `deterministic tiebreak` block is gone with it: a URL names one id, so there is
+ * nothing left to break a tie between. Not one `computeIsModified` test changed, which is the point
+ * of the composition sweep at the bottom of this file — every unit was already correct.
  */
 import { describe, it, expect } from "vitest"
 
@@ -26,7 +34,7 @@ import {
   validateVisibleViews,
   type ValidatedView,
 } from "../resolve"
-import { VIEW_ESCAPE_VALUE } from "../url-params"
+import { VIEW_ESCAPE_VALUE, parseViewSelection } from "../url-params"
 
 import type { ViewFilterCatalog } from "../validate"
 import type { SavedViewSummary, ViewEntityType, ViewFilters } from "../types"
@@ -40,6 +48,19 @@ const THEM = "user-them"
 const GONE_USER = "user-gone"
 const PIPELINE = "pipe-1"
 const STAGE = "stage-1"
+
+/**
+ * VIEW IDS ARE UUIDS, and from plan 40-18 that shape is load-bearing rather than incidental:
+ * `selectViewForParams` narrows the incoming `viewId` through the same `narrowViewSelectionId` the
+ * URL grammar uses, so a fixture id of `"v1"` would not be selectable. Every id in `saved_views` is
+ * a `crypto.randomUUID()` (there is no insert path that supplies one), so these fixtures are the
+ * production id space and not a convenience.
+ */
+const VIEW_1 = "0b7e4d1a-3c5f-4a8b-9d2e-7f6a1b2c3d4e"
+const VIEW_2 = "5f8d0c2b-6a1e-4d3c-8b7a-9e0f1d2c3b4a"
+const VIEW_3 = "9c1a2b3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d"
+/** A well-formed uuid that names no visible view: deleted, unshared, or somebody else's private. */
+const UNKNOWN_VIEW = "11111111-2222-4333-8444-555555555555"
 
 const CATALOG: ViewFilterCatalog = {
   userIds: new Set([ME, THEM]),
@@ -148,36 +169,73 @@ describe("validateVisibleViews", () => {
  * ------------------------------------------------------------------------- */
 
 describe("selectViewForParams", () => {
-  it("returns the id of the view whose validated filters equal the URL", () => {
+  it("returns the id the URL names", () => {
     // ANTI-VACUITY. Without a non-null expectation somewhere, a function that always returned
     // `null` would satisfy every other assertion in this block.
     const views = [
-      validated({ id: "v1", filters: { search: "acme" } }),
-      validated({ id: "v2", filters: { search: "other" } }),
+      validated({ id: VIEW_1, filters: { search: "acme" } }),
+      validated({ id: VIEW_2, filters: { search: "other" } }),
     ]
 
-    expect(selectViewForParams("organization", { search: "acme" }, views)).toBe("v1")
+    expect(selectViewForParams("organization", { search: "acme" }, views, { viewId: VIEW_1 })).toBe(
+      VIEW_1,
+    )
+    // And it is the URL's id that decides, not the filters: the same filter set with the OTHER id
+    // named selects the other view, even though its stored filters do not match at all.
+    expect(selectViewForParams("organization", { search: "acme" }, views, { viewId: VIEW_2 })).toBe(
+      VIEW_2,
+    )
+  })
+
+  it("FILTER EQUALITY ALONE DOES NOT SELECT — the regression 40-05 measured", () => {
+    // THE NAMED DEFECT THIS PLAN EXISTS TO FIX. Selection used to be exact equality between the
+    // URL's validated filters and a view's stored ones, and `computeIsModified` then compared those
+    // same two sets — so `selectedViewId && isModified` was unrepresentable BY CONSTRUCTION.
+    // Measured over 10 URLs x 3 views: 2 selections, ZERO modified. Three designed surfaces were
+    // therefore unreachable (the "selected, modified" state, slot 2's `views.saveChanges` (B-5), and
+    // the save dialog's target RadioGroup (S-3/S-4)) and "update an existing view" was impossible.
+    const views = [validated({ id: VIEW_1, filters: { search: "acme" } })]
+
+    expect(
+      selectViewForParams("organization", { search: "acme" }, views),
+      "A URL whose filters exactly equal a view's must NOT select it. Selection is what the URL " +
+        "SAYS (?view=<id>), never what its filters imply — reintroducing equality here makes " +
+        "`selected && modified` structurally impossible again, and 40-05 proved that empirically.",
+    ).toBeNull()
+    // The accepted consequence, stated rather than hidden: that URL shows "All records".
+    expect(selectViewForParams("organization", { search: "acme" }, views, { viewId: null })).toBeNull()
   })
 
   it("returns null when the URL carries no filters, even with views available", () => {
-    const views = [validated({ id: "v1", filters: { search: "acme" } })]
+    const views = [validated({ id: VIEW_1, filters: { search: "acme" } })]
 
     expect(selectViewForParams("organization", {}, views)).toBeNull()
+    // U-2 REFUSAL, which is the one thing `urlFilters` is still consulted for: a view must carry at
+    // least one whitelisted key to be saveable at all, so `?view=<id>` with nothing else is
+    // incoherent and resolves to no selection rather than to a filterless view.
+    expect(selectViewForParams("organization", {}, views, { viewId: VIEW_1 })).toBeNull()
+    expect(selectViewForParams("organization", { search: "   " }, views, { viewId: VIEW_1 })).toBeNull()
+    expect(selectViewForParams("organization", { page: "2" } as unknown as ViewFilters, views, {
+      viewId: VIEW_1,
+    })).toBeNull()
   })
 
-  it("returns null when nothing matches", () => {
-    const views = [validated({ id: "v1", filters: { search: "acme" } })]
+  it("returns null when the URL names no view", () => {
+    const views = [validated({ id: VIEW_1, filters: { search: "acme" } })]
 
     expect(selectViewForParams("organization", { search: "different" }, views)).toBeNull()
-  })
-
-  it("matches regardless of the order the URL keys were written in", () => {
-    // `filtersToSearchParams` serialises in whitelist order, which is what makes this a string
-    // comparison. A view saved as {stage, owner} and a URL built as ?owner=…&stage=… must match, or
-    // every view renders "Modified" (the reason 40-01 gave the whitelist a canonical order).
-    const views = [validated({ id: "v1", filters: { stage: STAGE, owner: ME } })]
-
-    expect(selectViewForParams("deal", { owner: ME, stage: STAGE }, views)).toBe("v1")
+    // THREE CAUSES, ONE ANSWER: deleted, unshared, or another user's private view. Distinguishing
+    // them would confirm the row exists (T-40-87), so an unresolved id is simply no selection —
+    // no notice, no throw, and the URL's filters still apply.
+    expect(
+      selectViewForParams("organization", { search: "acme" }, views, { viewId: UNKNOWN_VIEW }),
+    ).toBeNull()
+    // A junk id is refused by the same grammar the URL uses, so a caller cannot select with a
+    // string a crafted URL could not carry (T-40-85).
+    expect(
+      selectViewForParams("organization", { search: "acme" }, views, { viewId: "<script>" }),
+    ).toBeNull()
+    expect(selectViewForParams("organization", { search: "acme" }, [], { viewId: VIEW_1 })).toBeNull()
   })
 
   it("returns null when ?view=none was present, even alongside a crafted filter", () => {
@@ -192,70 +250,76 @@ describe("selectViewForParams", () => {
     ).toBeNull()
   })
 
-  it("compares the VALIDATED set, so a degraded view is still selectable at its surviving keys", () => {
+  it("the escape BEATS a selection, so ?view=none can never resolve to a view", () => {
+    // Not reachable from `parseViewSelection`, whose three states are exclusive — but
+    // `selectViewForParams` is exported and a later caller could pass both. The escape must win, or
+    // "All records" would become a URL that reopens the view it was escaping from.
+    const views = [validated({ id: VIEW_1, filters: { search: "acme" } })]
+
+    expect(
+      selectViewForParams("organization", { search: "acme" }, views, {
+        viewEscape: true,
+        viewId: VIEW_1,
+      }),
+    ).toBeNull()
+  })
+
+  it("selects a DEGRADED view by id at its surviving keys, and it is not Modified", () => {
+    // B-2 reason 2 restated under the id-based contract, and it must not regress: a view whose
+    // `owner` was deleted, opened at the keys that still work, is DEGRADED — not modified. Labelling
+    // it "Modified" would invite the user to save the damage.
     const views = validateVisibleViews(
       "deal",
-      [summary({ id: "v1", filters: { owner: GONE_USER, stage: STAGE } })],
+      [summary({ id: VIEW_1, filters: { owner: GONE_USER, stage: STAGE } })],
       CATALOG,
     )
 
-    // The stored blob has two keys; only one survives, and that one is what the URL carries.
-    expect(selectViewForParams("deal", { stage: STAGE }, views)).toBe("v1")
-    expect(selectViewForParams("deal", { owner: GONE_USER, stage: STAGE }, views)).toBeNull()
+    expect(views[0].droppedKeys).toEqual(["owner"])
+    expect(selectViewForParams("deal", { stage: STAGE }, views, { viewId: VIEW_1 })).toBe(VIEW_1)
+    expect(computeIsModified("deal", VIEW_1, { stage: STAGE }, views)).toBe(false)
+    // And the dead key coming back in the URL IS a modification, so this is not a constant `false`.
+    expect(selectViewForParams("deal", { owner: GONE_USER, stage: STAGE }, views, {
+      viewId: VIEW_1,
+    })).toBe(VIEW_1)
+    expect(computeIsModified("deal", VIEW_1, { owner: GONE_USER, stage: STAGE }, views)).toBe(true)
   })
 
-  describe("deterministic tiebreak when several views match", () => {
-    it("prefers the viewer's own view over a shared one", () => {
-      // This happens the moment a user forks somebody's shared view: two views, identical filters.
-      const shared = validated({
-        id: "a-shared",
-        name: "A",
-        filters: { search: "acme" },
-        isShared: true,
-        isOwnedByViewer: false,
-      })
-      const mine = validated({
-        id: "z-mine",
-        name: "Z",
-        filters: { search: "acme" },
-        isOwnedByViewer: true,
-      })
-
-      // Asserted in both input orders, so the result is the rule and not the array order.
-      expect(selectViewForParams("organization", { search: "acme" }, [shared, mine])).toBe("z-mine")
-      expect(selectViewForParams("organization", { search: "acme" }, [mine, shared])).toBe("z-mine")
-    })
-
-    it("then prefers the lower name", () => {
-      const later = validated({ id: "v-later", name: "Beta", filters: { search: "acme" } })
-      const earlier = validated({ id: "v-earlier", name: "Alpha", filters: { search: "acme" } })
-
-      expect(selectViewForParams("organization", { search: "acme" }, [later, earlier])).toBe(
-        "v-earlier",
-      )
-      expect(selectViewForParams("organization", { search: "acme" }, [earlier, later])).toBe(
-        "v-earlier",
-      )
-    })
-
-    it("then prefers the lower id, so the result is total", () => {
-      const b = validated({ id: "id-b", name: "Same", filters: { search: "acme" } })
-      const a = validated({ id: "id-a", name: "Same", filters: { search: "acme" } })
-
-      expect(selectViewForParams("organization", { search: "acme" }, [b, a])).toBe("id-a")
-      expect(selectViewForParams("organization", { search: "acme" }, [a, b])).toBe("id-a")
-    })
-  })
-
-  it("never throws on a hostile filter map", () => {
-    const views = [validated({ id: "v1", filters: { search: "acme" } })]
+  it("never throws on a hostile filter map or a hostile viewId", () => {
+    const views = [validated({ id: VIEW_1, filters: { search: "acme" } })]
     const hostile = [null, undefined, { search: 42 }, { search: ["a"] }, ["search"], "search=acme"]
+    const hostileIds = [
+      null,
+      undefined,
+      "",
+      "   ",
+      "<script>",
+      "//evil.example",
+      "__proto__",
+      "constructor",
+      "x".repeat(1024 * 1024),
+      42,
+      [VIEW_1],
+      { toString: () => VIEW_1 },
+    ]
 
     for (const filters of hostile) {
       expect(() =>
         selectViewForParams("organization", filters as unknown as ViewFilters, views),
       ).not.toThrow()
+
+      for (const viewId of hostileIds) {
+        expect(() =>
+          selectViewForParams("organization", filters as unknown as ViewFilters, views, {
+            viewId: viewId as string | null,
+          }),
+        ).not.toThrow()
+      }
     }
+
+    // `__proto__` as an id must not resolve through the prototype chain either.
+    expect(
+      selectViewForParams("organization", { search: "acme" }, views, { viewId: "__proto__" }),
+    ).toBeNull()
   })
 })
 
@@ -423,5 +487,83 @@ describe("redirectTargetFor", () => {
     const rogue = "__proto__" as ViewEntityType
 
     expect(redirectTargetFor(rogue, { search: "acme" })).toBeNull()
+  })
+
+  /* --- plan 40-18: the optional third parameter names the view --------------- */
+
+  it("NAMES THE VIEW when given one, so a default landing arrives selected", () => {
+    // Required rather than cosmetic. Without the id, a bare-URL landing on a default view is an
+    // UNSELECTED url: the user's first filter tweak has no selection to preserve, and the landing
+    // path would be the one place `isModified` stayed unreachable after 40-18. It is also U-4
+    // honoured properly — the address bar says both what is filtered and which view it is.
+    expect(redirectTargetFor("organization", { search: "acme" }, VIEW_1)).toBe(
+      `?search=acme&view=${VIEW_1}`,
+    )
+    expect(redirectTargetFor("deal", { owner: ME, stage: STAGE }, VIEW_2)).toBe(
+      `?stage=${STAGE}&owner=${ME}&view=${VIEW_2}`,
+    )
+  })
+
+  it("still returns null for an empty validated set even when a view is named (T-40-20)", () => {
+    // The no-loop guarantee must not be weakened by the new parameter: a redirect to `?view=<id>`
+    // with no filters would be a target U-2 says cannot exist, and a bare path lands on the very
+    // guard that just fired.
+    expect(redirectTargetFor("organization", {}, VIEW_1)).toBeNull()
+    expect(redirectTargetFor("organization", null, VIEW_1)).toBeNull()
+    expect(redirectTargetFor("deal", { search: "acme" }, VIEW_1)).toBeNull()
+
+    const [gutted] = validateVisibleViews(
+      "deal",
+      [summary({ id: VIEW_1, filters: { owner: GONE_USER, pipeline: "pipe-deleted" } })],
+      CATALOG,
+    )
+
+    expect(redirectTargetFor("deal", gutted.summary.filters, VIEW_1)).toBeNull()
+  })
+
+  it("emits NO view key rather than a junk one when the id fails the grammar", () => {
+    // The same refusal `withViewSelection` makes: a crafted value must never reach a navigation
+    // target (T-40-85), and a redirect is a navigation target the server chose.
+    for (const junk of ["<script>", "//evil.example", "a", "", "   ", "x".repeat(1024 * 1024)]) {
+      const target = redirectTargetFor("organization", { search: "acme" }, junk)
+
+      expect(target).toBe("?search=acme")
+      expect(target).not.toContain("view=")
+    }
+
+    expect(redirectTargetFor("organization", { search: "acme" }, null)).toBe("?search=acme")
+    expect(redirectTargetFor("organization", { search: "acme" }, undefined)).toBe("?search=acme")
+  })
+
+  it("never emits view=none, with or without a named view", () => {
+    expect(redirectTargetFor("organization", { search: "acme" }, VIEW_1)).not.toContain(
+      `view=${VIEW_ESCAPE_VALUE}`,
+    )
+    expect(redirectTargetFor("organization", { search: "acme" }, "none")).not.toContain("view=")
+  })
+
+  it("round-trips through the URL grammar: the target parses back to the same selection", () => {
+    const target = redirectTargetFor("activity", { type: "call", search: "acme" }, VIEW_3)
+
+    expect(target).not.toBeNull()
+
+    const parsed = new URLSearchParams((target as string).slice(1))
+
+    expect(parseViewSelection(parsed)).toEqual({ kind: "selection", viewId: VIEW_3 })
+    expect(Object.fromEntries(parsed.entries())).toEqual({
+      type: "call",
+      search: "acme",
+      view: VIEW_3,
+    })
+  })
+
+  it("never throws on a hostile viewId", () => {
+    const hostileIds = [null, undefined, "", "   ", "<script>", 42, [VIEW_1], { a: 1 }]
+
+    for (const viewId of hostileIds) {
+      expect(() =>
+        redirectTargetFor("organization", { search: "acme" }, viewId as string | null),
+      ).not.toThrow()
+    }
   })
 })
