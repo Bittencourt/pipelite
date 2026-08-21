@@ -30,7 +30,7 @@
  */
 
 import { revalidatePath } from "next/cache"
-import { and, eq } from "drizzle-orm"
+import { and, eq, ne } from "drizzle-orm"
 import type { Session } from "next-auth"
 
 import { auth } from "@/auth"
@@ -40,6 +40,7 @@ import { savedViewDefaults, savedViews } from "@/db/schema"
 import type { ViewEntityType, ViewFilters } from "./types"
 import {
   canMutateView,
+  canSeeView,
   guardSaveInput,
   isDuplicateViewName,
   listRouteFor,
@@ -83,6 +84,12 @@ export interface SavedViewIdentity {
 }
 
 export type SaveViewResult = ViewActionResult<SavedViewIdentity>
+
+/** A manage-dialog toggle answers with nothing but its outcome (G-4 commits on toggle). */
+export type ManageViewResult = ViewActionResult<Record<never, never>>
+
+/** A delete answers with the name, because the confirmation toast interpolates a row that is gone. */
+export type DeleteViewResult = ViewActionResult<{ name: string }>
 
 /** The session fields every action reads, resolved once. `null` means no session. */
 interface Viewer {
@@ -302,6 +309,193 @@ export async function updateView(input: {
     if (isDuplicateViewName(error)) return { success: false, error: "name_taken" }
 
     console.error("updateView failed", redactDbError(error))
+
+    return { success: false, error: "failed" }
+  }
+}
+
+/**
+ * SHARE OR UNSHARE A VIEW (the G-4 switch, which commits on toggle).
+ *
+ * MAKING A VIEW PRIVATE ALSO CLEARS EVERY OTHER USER'S DEFAULT ON IT, in the same transaction.
+ *
+ * THIS IS A CONSEQUENCE 40-CONTEXT DOES NOT STATE, and it is written here rather than left to be
+ * discovered. A default pointing at a view its holder can no longer see would redirect them into a
+ * view the resolver then declines to resolve — a silent, permanent no-op on every visit to that
+ * list, with nothing on screen to explain it. Dropping the stale row degrades them to the
+ * unfiltered list instead, which is exactly the behaviour the locked decision already chose for a
+ * DELETED shared view ("falls back to unfiltered, with no error"). One rule, two ways of reaching
+ * it.
+ *
+ * The OWNER's own default survives, which is why the delete is scoped away from `row.ownerId`
+ * rather than applied to every row pointing at this view: they can still see their own private
+ * view, so their default still resolves.
+ */
+export async function setViewShared(input: {
+  id: string
+  isShared: boolean
+}): Promise<ManageViewResult> {
+  const viewer = toViewer(await auth())
+
+  if (viewer === null) return { success: false, error: "not_authenticated" }
+
+  const id = narrowViewId(input.id)
+
+  if (id === null) return { success: false, error: "failed" }
+
+  const isShared = input.isShared === true
+
+  try {
+    const row = await db.query.savedViews.findFirst({
+      where: eq(savedViews.id, id),
+      columns: { id: true, ownerId: true, entityType: true, isShared: true },
+    })
+
+    if (!row) return { success: false, error: "failed" }
+    if (!canMutateView(row, viewer)) return { success: false, error: "forbidden" }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(savedViews)
+        .set({ isShared, updatedAt: new Date() })
+        .where(eq(savedViews.id, id))
+
+      if (!isShared) {
+        await tx
+          .delete(savedViewDefaults)
+          .where(and(eq(savedViewDefaults.viewId, id), ne(savedViewDefaults.userId, row.ownerId)))
+      }
+    })
+
+    revalidateListFor(row.entityType)
+
+    return { success: true }
+  } catch (error) {
+    console.error("setViewShared failed", redactDbError(error))
+
+    return { success: false, error: "failed" }
+  }
+}
+
+/**
+ * SET OR CLEAR THIS USER'S DEFAULT VIEW FOR ONE ENTITY TYPE.
+ *
+ * THIS ACTION DELIBERATELY DOES NOT AUTHORIZE ON OWNERSHIP, and that absence is a requirement
+ * rather than an oversight. A default is PER USER — which is the whole reason plan 40-02 put it in
+ * its own table keyed `(userId, entityType)` instead of a boolean on the view row, because a
+ * boolean would have made one user's choice the owner's choice too. UI-SPEC G-7 calls the asymmetry
+ * "the one thing this row must make legible", and 40-CONTEXT gives the reason: a user MAY set
+ * someone else's shared view as their own default, otherwise sharing has little payoff. So the
+ * default switch stays live on a row whose other controls are absent.
+ *
+ * VISIBILITY IS STILL REQUIRED, AND IT IS A DIFFERENT PREDICATE. `canSeeView` has no admin branch
+ * (Decision 3), so a private view belongs to exactly one person. Without this check a member could
+ * point their default at an admin's private view and then read its filter values out of their own
+ * address bar after the redirect — an information disclosure an ownership check would NOT have
+ * caught, because ownership is not the question being asked (T-40-24).
+ */
+export async function setViewDefault(input: {
+  entityType: ViewEntityType
+  viewId: string | null
+}): Promise<ManageViewResult> {
+  const viewer = toViewer(await auth())
+
+  if (viewer === null) return { success: false, error: "not_authenticated" }
+
+  const entityType = narrowEntityType(input.entityType)
+
+  if (entityType === null) return { success: false, error: "failed" }
+
+  try {
+    if (input.viewId === null || input.viewId === undefined) {
+      // Clearing the default. There is no row to authorize against and nothing to disclose: a user
+      // may always stop one of their own lists from opening somewhere.
+      await db
+        .delete(savedViewDefaults)
+        .where(
+          and(
+            eq(savedViewDefaults.userId, viewer.id),
+            eq(savedViewDefaults.entityType, entityType),
+          ),
+        )
+
+      revalidateListFor(entityType)
+
+      return { success: true }
+    }
+
+    const viewId = narrowViewId(input.viewId)
+
+    if (viewId === null) return { success: false, error: "failed" }
+
+    const row = await db.query.savedViews.findFirst({
+      where: eq(savedViews.id, viewId),
+      columns: { id: true, ownerId: true, entityType: true, isShared: true },
+    })
+
+    if (!row) return { success: false, error: "failed" }
+    if (!canSeeView(row, viewer)) return { success: false, error: "forbidden" }
+
+    // The default is keyed by entity type, so a view of a DIFFERENT type would make this list
+    // redirect to filters no query on it applies. Refused rather than silently rewritten to the
+    // row's own type, which would make the submitted argument decorative.
+    if (row.entityType !== entityType) return { success: false, error: "failed" }
+
+    await db.transaction(async (tx) => {
+      await upsertDefault(tx, viewer.id, entityType, viewId)
+    })
+
+    revalidateListFor(entityType)
+
+    return { success: true }
+  } catch (error) {
+    console.error("setViewDefault failed", redactDbError(error))
+
+    return { success: false, error: "failed" }
+  }
+}
+
+/**
+ * DELETE A VIEW, FOR EVERYONE.
+ *
+ * There is no `deletedAt` on `saved_views` and no views tab in `/trash` (D-2): the row goes, and
+ * the records it resolved to are untouched.
+ *
+ * NO MANUAL CLEANUP OF THE DEFAULTS TABLE IS NEEDED OR WANTED, and the omission is deliberate.
+ * Both of that table's foreign keys cascade — plan 40-02 exercised it against the live database and
+ * measured zero orphaned defaults after deleting a shared view somebody else had defaulted to — so
+ * a teammate who had defaulted here simply has no default afterwards. The ABSENCE of that row IS
+ * the locked decision, "falls back to unfiltered, with no error". An explicit delete would be a
+ * second implementation of a database guarantee, and one a transaction boundary could get wrong.
+ *
+ * The name is read before the delete because the confirmation toast interpolates it and the row is
+ * gone by the time the client renders.
+ */
+export async function deleteView(input: { id: string }): Promise<DeleteViewResult> {
+  const viewer = toViewer(await auth())
+
+  if (viewer === null) return { success: false, error: "not_authenticated" }
+
+  const id = narrowViewId(input.id)
+
+  if (id === null) return { success: false, error: "failed" }
+
+  try {
+    const row = await db.query.savedViews.findFirst({
+      where: eq(savedViews.id, id),
+      columns: { id: true, ownerId: true, entityType: true, isShared: true, name: true },
+    })
+
+    if (!row) return { success: false, error: "failed" }
+    if (!canMutateView(row, viewer)) return { success: false, error: "forbidden" }
+
+    await db.delete(savedViews).where(eq(savedViews.id, id))
+
+    revalidateListFor(row.entityType)
+
+    return { success: true, name: row.name }
+  } catch (error) {
+    console.error("deleteView failed", redactDbError(error))
 
     return { success: false, error: "failed" }
   }
