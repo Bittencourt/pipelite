@@ -25,6 +25,8 @@ import { httpTemplates } from "./http-templates"
 import { notes } from "./notes"
 import { dealStageHistory } from "./deal-stage-history"
 import { auditLog } from "./audit-log"
+import { savedViews } from "./saved-views"
+import { savedViewDefaults } from "./saved-views"
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   notificationPreferences: one(notificationPreferences, {
@@ -44,6 +46,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   assignedActivities: many(activities, { relationName: 'assignedActivities' }),
   importSessions: many(importSessions),
   workflows: many(workflows),
+  savedViews: many(savedViews),
 }))
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -281,5 +284,37 @@ export const auditLogRelations = relations(auditLog, ({ one }) => ({
   importSession: one(importSessions, {
     fields: [auditLog.importSessionId],
     references: [importSessions.id],
+  }),
+}))
+
+// Registering saved views here is a DELIBERATE choice, not a convention being followed:
+// `dedup_scans` and `duplicate_pairs` both reference `users.id` and are absent from this
+// file, so a foreign key alone does not earn a relation entry in this repo.
+//
+// The `owner` relation below is what earns it. V-5's attribution line is
+// `user.name || user.email` plus a soft-delete check, rendered once per view in the picker
+// and once per row in the manage dialog. Two of the three live users in this deployment
+// have `name = NULL` and six more are soft-deleted, so the attribution genuinely needs the
+// user row rather than just the id — and without this relation that is one extra query per
+// view. `db.query.savedViews.findMany({ with: { owner: true } })` is the read this exists
+// for; `src/db/schema/saved-views.test.ts` holds a compile-time proof that it typechecks.
+export const savedViewsRelations = relations(savedViews, ({ one, many }) => ({
+  owner: one(users, {
+    fields: [savedViews.ownerId],
+    references: [users.id],
+  }),
+  // The defaults pointing AT this view, which may belong to users other than the owner —
+  // that is the whole reason `saved_view_defaults` is a separate table (UI-SPEC G-7).
+  defaults: many(savedViewDefaults),
+}))
+
+export const savedViewDefaultsRelations = relations(savedViewDefaults, ({ one }) => ({
+  view: one(savedViews, {
+    fields: [savedViewDefaults.viewId],
+    references: [savedViews.id],
+  }),
+  user: one(users, {
+    fields: [savedViewDefaults.userId],
+    references: [users.id],
   }),
 }))
