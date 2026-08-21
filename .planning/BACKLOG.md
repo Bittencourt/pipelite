@@ -25,6 +25,24 @@ locales) and passed — **height and reachability were never covered**, which is
 green viewport gate. Any future viewport suite should assert the submit control is clickable, not
 merely that the page does not scroll sideways.
 
+### Hydration mismatch on three list pages can swallow a click (found during phase-39 verification)
+**Pre-existing and app-wide; surfaced as e2e flakiness.** Found by the Phase 39 verifier, which ran
+the full Playwright suite three times and got **33/33, then 31/33, then 32/33** — every failure in
+`e2e/org-duplicate-warning.spec.ts` with "the create dialog did not open."
+
+Root cause is NOT phase-39 code. A React hydration mismatch (`Minified React error #418`) occurs on
+`/people`, `/organizations` and `/activities` — but **not** `/deals`, which is what confirms it
+predates Phase 39. A click landing during hydration recovery can be swallowed, including a
+dialog-trigger click. Reproduced independently with a standalone script.
+
+Not a DEDUP-01 blocker: it is not specific to the duplicate button and is invisible at human click
+timing. But it makes the e2e suite intermittently red, which erodes the value of every gate that
+depends on it. Two separate things to fix: the hydration mismatch itself, and the suite's
+sensitivity to it.
+
+Related: `e2e/auth.setup.ts` timed out on `waitForURL` in 2 of 8 invocations (recorded below) — the
+suite has two independent sources of flake, not one.
+
 ### F-39-08 — Enter inside a modal navigates the list behind it
 Pre-existing, shared by six surfaces. `data-table-keyboard.tsx` registers
 `useHotkeys("enter", …, { preventDefault: true })` with **no ref**, so it fires inside a portalled
