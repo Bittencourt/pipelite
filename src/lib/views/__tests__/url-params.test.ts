@@ -19,11 +19,14 @@ import {
   MAX_FILTER_VALUE_LENGTH,
   SAVEABLE_FILTER_KEYS,
   VIEW_ENTITY_TYPES,
+  VIEW_ESCAPE_KEY,
+  VIEW_ESCAPE_VALUE,
   countFilters,
   filtersToSearchParams,
   hasExportableFilter,
   hasSaveableFilter,
   pickFilterParams,
+  withViewEscape,
   type FilterParamSource,
 } from "../url-params"
 import type { ViewEntityType } from "../types"
@@ -422,5 +425,215 @@ describe("filtersToSearchParams — stable order, so plan 40-05's comparison is 
 
   it.each(TOTALITY_TABLE)("never throws: $entityType with $name", ({ entityType, source }) => {
     expect(() => filtersToSearchParams(entityType, source as FilterParamSource)).not.toThrow()
+  })
+})
+
+/**
+ * A `URLSearchParams` that refuses to be written to, standing in for `next/navigation`'s
+ * `ReadonlyURLSearchParams`. Four of the six call sites build their query string from
+ * `useSearchParams()`, which returns exactly that, so a `withViewEscape` that mutated its argument
+ * instead of a clone would throw in the browser and pass every value-based assertion here.
+ */
+class ReadonlyParams extends URLSearchParams {
+  override delete(): never {
+    throw new TypeError("cannot mutate a read-only URLSearchParams")
+  }
+  override set(): never {
+    throw new TypeError("cannot mutate a read-only URLSearchParams")
+  }
+  override append(): never {
+    throw new TypeError("cannot mutate a read-only URLSearchParams")
+  }
+}
+
+/** Every shape a caller's query string can take, and what each must mean. */
+const ESCAPE_TABLE = [
+  { name: "no params at all", entityType: "organization", query: "" },
+  { name: "a real search filter", entityType: "organization", query: "search=acme" },
+  { name: "an empty search value", entityType: "organization", query: "search=" },
+  { name: "a whitespace-only search value", entityType: "organization", query: "search=%20%20" },
+  { name: "a pipeline-only deals URL", entityType: "deal", query: "pipeline=p1" },
+  { name: "page alone", entityType: "organization", query: "page=2" },
+  {
+    name: "a pre-existing escape beside a real filter",
+    entityType: "organization",
+    query: "search=acme&view=none",
+  },
+  { name: "an already-escaped bare URL", entityType: "organization", query: "view=none" },
+  { name: "a hostile view value", entityType: "organization", query: "view=%3Cscript%3E" },
+  {
+    name: "only non-saveable keys",
+    entityType: "activity",
+    query: "page=2&view=none&sort=name&foo=bar",
+  },
+  {
+    name: "a full activities filter set",
+    entityType: "activity",
+    query: "type=call&status=overdue&search=acme&page=3",
+  },
+] as const satisfies readonly { name: string; entityType: ViewEntityType; query: string }[]
+
+describe("withViewEscape — U-1, the ?view=none serialiser", () => {
+  it("returns a query string with no leading question mark", () => {
+    for (const { entityType, query } of ESCAPE_TABLE) {
+      expect(withViewEscape(entityType, new URLSearchParams(query)).startsWith("?")).toBe(false)
+    }
+  })
+
+  it("appends the escape to a URL with no params at all", () => {
+    expect(withViewEscape("organization", new URLSearchParams())).toBe("view=none")
+    expect(`${VIEW_ESCAPE_KEY}=${VIEW_ESCAPE_VALUE}`).toBe("view=none")
+  })
+
+  it("leaves a URL that already carries a real filter alone", () => {
+    const result = withViewEscape("organization", new URLSearchParams("search=acme"))
+
+    expect(new URLSearchParams(result).has("view")).toBe(false)
+    expect(result).toBe("search=acme")
+  })
+
+  it("escapes an EMPTY search value — the /organizations empty-search branch", () => {
+    // The exact case that must not bounce the user into their default view: clearing the search box
+    // navigates to a path whose only param is `search=`, which is not a filter.
+    expect(withViewEscape("organization", new URLSearchParams("search="))).toBe("view=none")
+    expect(withViewEscape("person", new URLSearchParams("search=%20%20"))).toBe("view=none")
+  })
+
+  it("does NOT escape a pipeline-only deals URL — pipeline is saveable", () => {
+    // Which is why kanban-board.tsx's two router.replace(?pipeline=…) calls are already safe and
+    // must not be "fixed".
+    const result = withViewEscape("deal", new URLSearchParams("pipeline=p1"))
+
+    expect(new URLSearchParams(result).has("view")).toBe(false)
+    expect(result).toBe("pipeline=p1")
+  })
+
+  it("preserves page and still escapes — page is not a filter but Load More depends on it", () => {
+    const result = withViewEscape("organization", new URLSearchParams("page=2"))
+
+    expect(result).toContain("page=2")
+    expect(result).toContain("view=none")
+  })
+
+  it("REMOVES a pre-existing escape once a real filter is present", () => {
+    const result = withViewEscape("organization", new URLSearchParams("search=acme&view=none"))
+
+    expect(new URLSearchParams(result).has("view")).toBe(false)
+    expect(result).toBe("search=acme")
+  })
+
+  it("normalises a hostile view value rather than carrying it into a navigation (T-40-05)", () => {
+    expect(withViewEscape("organization", new URLSearchParams("view=%3Cscript%3E"))).toBe(
+      "view=none",
+    )
+    expect(withViewEscape("organization", new URLSearchParams("view=%2F%2Fevil.example"))).toBe(
+      "view=none",
+    )
+    expect(
+      withViewEscape("organization", new URLSearchParams("view=a&view=b&view=c")),
+      "every value of a repeated view param is deleted, not just the first",
+    ).toBe("view=none")
+  })
+
+  it("removes a whitelisted key whose value the parser rejected, and keeps the rest", () => {
+    // The plan's five-step recipe would have returned `search=&view=none` here. `/organizations`
+    // and `/people` push the bare path with no `search` key when the box is emptied
+    // (data-table.tsx:293), so routing that through this helper must not start leaving one behind.
+    expect(withViewEscape("organization", new URLSearchParams("search=&page=2"))).toBe(
+      "page=2&view=none",
+    )
+    expect(
+      withViewEscape("deal", new URLSearchParams(`owner=${"u".repeat(1024 * 1024)}&stage=s1`)),
+    ).toBe("stage=s1")
+    expect(withViewEscape("organization", new URLSearchParams("search=a&search=b"))).toBe(
+      "search=a",
+    )
+  })
+
+  it("emits the whitelisted portion in whitelist order, whatever order it arrived in", () => {
+    // Which is what lets plan 40-05 compare a URL against a stored blob as strings.
+    expect(withViewEscape("deal", new URLSearchParams("dateTo=2026-01-31&pipeline=p1&owner=u1"))).toBe(
+      withViewEscape("deal", new URLSearchParams("owner=u1&dateTo=2026-01-31&pipeline=p1")),
+    )
+    expect([
+      ...new URLSearchParams(
+        withViewEscape("activity", new URLSearchParams("search=acme&page=3&type=call")),
+      ).keys(),
+    ]).toEqual(["page", "type", "search"])
+  })
+
+  it("keeps params it does not own, escape or no escape", () => {
+    const escaped = new URLSearchParams(
+      withViewEscape("activity", new URLSearchParams("sort=name&foo=bar")),
+    )
+    expect(escaped.get("sort")).toBe("name")
+    expect(escaped.get("foo")).toBe("bar")
+
+    const unescaped = new URLSearchParams(
+      withViewEscape("activity", new URLSearchParams("sort=name&type=call")),
+    )
+    expect(unescaped.get("sort")).toBe("name")
+    expect(unescaped.has("view")).toBe(false)
+  })
+
+  it("ANTI-VACUITY: a params object of ONLY non-saveable keys still gets the escape", () => {
+    // This is the one assertion a regression that simply dropped the escape would fail. Every
+    // "has no view key" test above would still pass with `withViewEscape` reduced to
+    // `params.toString()`, so without this test the suite would be green on a broken helper.
+    const result = new URLSearchParams(
+      withViewEscape("activity", new URLSearchParams("page=2&view=none&sort=name&foo=bar")),
+    )
+
+    expect(result.getAll(VIEW_ESCAPE_KEY)).toEqual([VIEW_ESCAPE_VALUE])
+  })
+
+  it.each(ESCAPE_TABLE)("is idempotent: $name", ({ entityType, query }) => {
+    const once = withViewEscape(entityType, new URLSearchParams(query))
+    const twice = withViewEscape(entityType, new URLSearchParams(once))
+    const thrice = withViewEscape(entityType, new URLSearchParams(twice))
+
+    expect(twice).toBe(once)
+    expect(thrice).toBe(once)
+    // And the escape never accumulates: at most one `view` key, always the canonical value.
+    expect(new URLSearchParams(once).getAll(VIEW_ESCAPE_KEY).length).toBeLessThanOrEqual(1)
+  })
+
+  it("never mutates the caller's params", () => {
+    const original = new URLSearchParams("search=acme&view=none")
+    withViewEscape("organization", original)
+    expect(original.toString()).toBe("search=acme&view=none")
+
+    const bare = new URLSearchParams("page=2")
+    withViewEscape("organization", bare)
+    expect(bare.toString()).toBe("page=2")
+  })
+
+  it("works on a read-only URLSearchParams, which is what useSearchParams returns", () => {
+    expect(() =>
+      withViewEscape("organization", new ReadonlyParams("search=acme&view=none")),
+    ).not.toThrow()
+    expect(withViewEscape("organization", new ReadonlyParams("search=acme&view=none"))).toBe(
+      "search=acme",
+    )
+    expect(withViewEscape("organization", new ReadonlyParams("page=2"))).toContain("view=none")
+  })
+
+  it.each(TOTALITY_TABLE)("never throws: $entityType with $name", ({ entityType, source }) => {
+    expect(() => withViewEscape(entityType, source as URLSearchParams)).not.toThrow()
+  })
+
+  it("never throws on invalid percent-encoding or a megabyte value", () => {
+    expect(() =>
+      withViewEscape("organization", new URLSearchParams("search=%E0%A4%A")),
+    ).not.toThrow()
+    expect(() =>
+      withViewEscape("organization", new URLSearchParams(`search=${"x".repeat(1024 * 1024)}`)),
+    ).not.toThrow()
+    // A megabyte value is not a filter (T-40-02), so the bare-URL escape applies.
+    expect(
+      new URLSearchParams(
+        withViewEscape("organization", new URLSearchParams(`search=${"x".repeat(1024 * 1024)}`)),
+      ).getAll(VIEW_ESCAPE_KEY),
+    ).toEqual([VIEW_ESCAPE_VALUE])
   })
 })

@@ -305,6 +305,98 @@ export function filtersToSearchParams(
 }
 
 /**
+ * Copy a params object so the original is never written to.
+ *
+ * `useSearchParams()` returns a `ReadonlyURLSearchParams`, whose `set`/`delete`/`append` THROW, and
+ * four of the six call sites build their query string from it. So cloning is not tidiness — it is
+ * the difference between working and throwing in the browser.
+ *
+ * The `catch` covers the constructor rejecting an init it cannot read (a one-dimensional array, an
+ * object with a throwing accessor). An unreadable source has no params worth preserving, and an
+ * empty clone then takes the escape, which is the safe end of that decision: the user lands on an
+ * unfiltered list rather than on an error page.
+ */
+function cloneSearchParams(params: URLSearchParams): URLSearchParams {
+  try {
+    return new URLSearchParams(params)
+  } catch {
+    return new URLSearchParams()
+  }
+}
+
+/**
+ * SERIALISE PARAMS FOR A NAVIGATION, APPENDING `view=none` IFF NO SAVEABLE FILTER SURVIVES (U-1).
+ *
+ * WHY THIS FUNCTION EXISTS. Two locked decisions were mutually exclusive without it. The
+ * default-view redirect fires when the incoming URL carries NO params — deliberately, so that a
+ * bare-filter visit is never hijacked — and there is also an explicit "All records" pseudo-view as
+ * the escape hatch from a default view. Selecting All records navigates to a bare path, which is
+ * exactly the condition that triggers the redirect, so the user is thrown straight back into the
+ * default view they were trying to leave. And it is not only that one control: SIX existing controls
+ * already navigate to bare or can-be-bare paths and would each bounce the user the same way — the
+ * `/organizations` and `/people` empty-search branches, `activity-filters.tsx`'s `clearAll`, its
+ * `setFilter(key, "")` on the last remaining chip, `activities-client.tsx`'s no-results
+ * "Clear filters" button, and `deal-filters.tsx`'s `clearAll` when no pipeline param was set. A
+ * SEVENTH was found while planning: `activity-filters.tsx`'s `handleSearchChange`, which produces
+ * `${pathname}?` when the search box was the last filter standing.
+ *
+ * WHY IT CANNOT LOOP (U-2). The redirect guard is "no params at all", and `view=none` IS a param.
+ * So the escape URL is never itself bare, the redirect does not fire on it, and there is no second
+ * code path for "arrived by default".
+ *
+ * WHY IT IS IDEMPOTENT BY CONSTRUCTION, not by luck. `view` is deleted UNCONDITIONALLY and
+ * re-appended only when required, so `f(f(x)) === f(x)` holds for every input — including a URL
+ * that already carries the escape, and a URL that carries a crafted `?view=<script>` (T-40-05: the
+ * hostile value is deleted before anything is decided, so it can never survive into the navigation
+ * target). Six call sites apply this helper and 40-14 gates them; a helper whose result changed when
+ * applied twice would make the order of those applications matter.
+ *
+ * TWO CLASSES OF PARAM, TREATED DIFFERENTLY, AND THE DIFFERENCE IS DELIBERATE:
+ *
+ *   - Params this module does not own — `page`, `sort`, anything else — are PRESERVED VERBATIM.
+ *     `page` in particular is what "Load more" depends on, and it does not count as a filter, so a
+ *     `?page=2` URL comes back as `page=2&view=none`.
+ *   - Params it DOES own (the whitelist) are REWRITTEN from `pickFilterParams`. So a key whose
+ *     value the parser rejected — blank, non-string, over the length cap — is removed rather than
+ *     left in the address bar meaning nothing, and a repeated key collapses to its first value.
+ *     `?search=` therefore comes back as plain `view=none`, which is what `/organizations` and
+ *     `/people` already do today: their empty-search branch pushes the bare path with no `search`
+ *     key at all (`organizations/data-table.tsx:293`), and routing that through this helper must not
+ *     start leaving a `?search=` behind. The side benefit is a canonical key order for the
+ *     whitelisted portion, which is what lets plan 40-05 compare a URL to a stored blob as strings.
+ *
+ * NOTE FOR THE READER WHO CHECKS THIS AGAINST 40-01-PLAN.md: the plan's five-step recipe (clone,
+ * delete `view`, pick, maybe set, stringify) does NOT produce the plan's own asserted result for
+ * `?search=` — it would return `search=&view=none`. The assertion is the contract and the recipe was
+ * incomplete; the rewrite loop below is the reconciliation. Recorded in 40-01-SUMMARY.md.
+ */
+export function withViewEscape(entityType: ViewEntityType, params: URLSearchParams): string {
+  const clone = cloneSearchParams(params)
+  const saveableKeys = keysFor(SAVEABLE_FILTER_KEYS, entityType)
+
+  // Unconditional deletes first, re-appends second: that ordering is what makes the function
+  // idempotent by construction rather than by luck, and it is what stops a crafted `?view=`
+  // surviving into the navigation target.
+  clone.delete(VIEW_ESCAPE_KEY)
+
+  const picked = pickFilterParams(entityType, clone)
+
+  for (const key of saveableKeys) clone.delete(key)
+
+  for (const key of saveableKeys) {
+    const value = picked[key]
+
+    if (value !== undefined) clone.set(key, value)
+  }
+
+  if (Object.keys(picked).length === 0) {
+    clone.set(VIEW_ESCAPE_KEY, VIEW_ESCAPE_VALUE)
+  }
+
+  return clone.toString()
+}
+
+/**
  * MAY THIS FILTER SET BE SAVED AS A VIEW? Counts every whitelisted key, `pipeline` INCLUDED.
  *
  * `pipeline` counts because Decision 4 requires a deals view to carry the board it was saved on —
