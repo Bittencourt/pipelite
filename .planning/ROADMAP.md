@@ -461,9 +461,9 @@ Plans:
 **Plans**: 17 plans in 9 waves
 
 Plans:
-- [ ] 40-01-PLAN.md — the URL vocabulary: whitelist, `withViewEscape`, and the two export predicates
-- [ ] 40-02-PLAN.md — `saved_views` + `saved_view_defaults` schema and migration 0018
-- [ ] 40-03-PLAN.md — 61 `views.*` keys x 3 locales and the `REQUIRED_VIEWS_KEYS` exact-set contract
+- [x] 40-01-PLAN.md — the URL vocabulary: whitelist, `withViewEscape`, and the two export predicates
+- [x] 40-02-PLAN.md — `saved_views` + `saved_view_defaults` schema and migration 0018
+- [x] 40-03-PLAN.md — 61 `views.*` keys x 3 locales and the `REQUIRED_VIEWS_KEYS` exact-set contract
 - [ ] 40-04-PLAN.md — e2e harness: a member storageState and the saved-view fixture module
 - [ ] 40-05-PLAN.md — the read layer: visibility scoping, degraded-read validation, bar-prop resolution
 - [ ] 40-06-PLAN.md — the write layer: create, update, share, default, delete server actions
@@ -574,7 +574,7 @@ Plans:
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
 | 38. Bulk Operations | 19/20 | In Progress|  |
 | 39. Duplicate Detection & Merge | 21/21 | Complete   | 2026-08-21 |
-| 40. Saved Views & Shared Filters | 0/? | Not started | - |
+| 40. Saved Views & Shared Filters | 3/17 | In Progress|  |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
 | 43. Type Safety & Deployment Docs | 0/? | Not started | - |
