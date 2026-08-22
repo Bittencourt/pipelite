@@ -376,3 +376,292 @@ test.describe("the running image serves this phase's code", () => {
     ).toBeVisible()
   })
 })
+
+/* ============================================================================================
+ * V-40-1 — THE REACHABILITY SUITE.
+ * ========================================================================================== */
+
+interface OverlayMeasurement {
+  label: string
+  x: number
+  y: number
+  width: number
+  height: number
+  scrollHeight: number
+  clientHeight: number
+  overflowY: string
+  fitsOrScrolls: boolean
+}
+
+interface Box {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/**
+ * A bounding box, polled until the element actually has one.
+ *
+ * MEASURED, NOT GUESSED: a first pass that read `boundingBox()` once directly after
+ * `toBeVisible()` failed on 6 of 12 combinations with `Cannot read properties of null`. The cause
+ * is the hydration mismatch BACKLOG records on `/people`, `/organizations` and `/activities`
+ * (minified React error #418): React discards the server HTML and remounts the tree, so the node
+ * `toBeVisible()` just resolved against is detached microseconds later and `boundingBox()` answers
+ * null. `toPass` re-resolves the locator on every attempt, so it measures the node that survived
+ * rather than the one that did not.
+ *
+ * This is a settle, not a retry of an assertion: nothing here is allowed to pass on a second
+ * attempt that failed on the first. Every geometric assertion in this file runs on the box this
+ * returns, once.
+ */
+async function boxOf(locator: Locator, label: string): Promise<Box> {
+  let box: Box | null = null
+  await expect(async () => {
+    await expect(locator).toBeVisible()
+    box = await locator.boundingBox()
+    expect(box, `${label}: has no bounding box`).not.toBeNull()
+  }).toPass({ timeout: 20_000 })
+  return box!
+}
+
+/**
+ * Take every geometric fact about an overlay in one pass, and REPORT it. The numbers are logged
+ * whether or not the assertions pass, because "it passed" is not a measurement and this file's
+ * whole purpose is to produce measurements the phase can be held to.
+ */
+async function measureOverlay(overlay: Locator, label: string): Promise<OverlayMeasurement> {
+  const box = await boxOf(overlay, label)
+
+  const metrics = await overlay.evaluate((el) => {
+    const cs = getComputedStyle(el)
+    return {
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      overflowY: cs.overflowY,
+    }
+  })
+
+  const measurement: OverlayMeasurement = {
+    label,
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
+    ...metrics,
+    // An overlay taller than its own box is FINE if it scrolls, and F-39-07 if it does not.
+    fitsOrScrolls:
+      metrics.scrollHeight <= metrics.clientHeight ||
+      metrics.overflowY === "auto" ||
+      metrics.overflowY === "scroll",
+  }
+
+  console.log(
+    `[40-15] ${label} | box ${measurement.x.toFixed(1)},${measurement.y.toFixed(1)} ` +
+      `${measurement.width.toFixed(1)}x${measurement.height.toFixed(1)} | ` +
+      `scrollHeight ${measurement.scrollHeight} clientHeight ${measurement.clientHeight} ` +
+      `overflow-y ${measurement.overflowY} | fits-or-scrolls ${measurement.fitsOrScrolls}`
+  )
+
+  return measurement
+}
+
+/** Checks 1-3. Check 4 (`click({ trial: true })`) is per-overlay and lives at the call sites. */
+function assertOnScreen(m: OverlayMeasurement): void {
+  expect(
+    m.y,
+    `${m.label}: the TOP edge is off screen at y=${m.y.toFixed(1)} — this is the M-5 failure mode ` +
+      `(the /activities filter popover renders 388px tall at top:-41) and no scrollWidth ` +
+      `comparison can see it`
+  ).toBeGreaterThanOrEqual(0)
+
+  expect(
+    m.y + m.height,
+    `${m.label}: the BOTTOM edge is below the fold — ${(m.y + m.height).toFixed(1)} > ` +
+      `${VIEWPORT_HEIGHT} (box ${m.height.toFixed(1)}px tall at y=${m.y.toFixed(1)}). This is ` +
+      `F-39-07 exactly: a 940px dialog in a 640px viewport whose primary action nobody can press`
+  ).toBeLessThanOrEqual(VIEWPORT_HEIGHT)
+
+  expect(
+    m.fitsOrScrolls,
+    `${m.label}: ${m.scrollHeight}px of content in a ${m.clientHeight}px box with ` +
+      `overflow-y:${m.overflowY} — it neither fits nor scrolls, so the overflow is unreachable`
+  ).toBe(true)
+}
+
+/**
+ * Check 4. `trial: true` runs EVERY actionability check — visible, stable, enabled, receives
+ * pointer events, hit-target — and fires no event. `toBeVisible()` passes on a visible-but-occluded
+ * control; this does not. Firing no event is also what makes it safe to point at a destructive
+ * button.
+ */
+async function assertTrialClickable(target: Locator, label: string): Promise<void> {
+  await expect(target, `${label}: not visible`).toBeVisible()
+  await target.scrollIntoViewIfNeeded()
+  await target.click({ trial: true })
+  console.log(`[40-15] ${label} | trial-clickable`)
+}
+
+/** O-3. Escape must dismiss every overlay this phase adds. */
+async function assertEscapeDismisses(page: Page, overlay: Locator, label: string): Promise<void> {
+  await page.keyboard.press("Escape")
+  await expect(overlay, `${label}: Escape did not dismiss it`).toHaveCount(0)
+  console.log(`[40-15] ${label} | Escape dismissed`)
+}
+
+/** Open the picker and return its `DropdownMenuContent`. */
+async function openPicker(page: Page, messages: Catalog): Promise<Locator> {
+  const trigger = page.getByRole("button", { name: messages.views.picker.label })
+  await expect(trigger).toBeVisible()
+  await trigger.click()
+  const menu = page.getByRole("menu")
+  await expect(menu).toBeVisible()
+  return menu
+}
+
+test.describe("V-40-1 — every overlay is reachable at 320x640", () => {
+  // Five overlays' worth of checks, three page loads and a dozen actionability probes per test,
+  // on a route family whose hydration mismatch is already budgeted for. 30s is not enough and a
+  // timeout here would read as a layout failure.
+  test.describe.configure({ timeout: 180_000 })
+
+  for (const [locale, messages] of Object.entries(CATALOG)) {
+    for (const surface of SURFACES) {
+      test(`${surface.path} @ ${locale}`, async ({ page, baseURL }) => {
+        await useLocale(page, baseURL, locale)
+
+        // ---------------------------------------------------------------------------------
+        // (a) ANCHOR FIRST. Not a redundant smoke check: a blank 200, an error page and a
+        //     /login redirect all satisfy every geometric assertion below in silence.
+        // ---------------------------------------------------------------------------------
+        await gotoSettled(page, `${surface.path}?${surface.filtered}`, surface.anchor(messages))
+
+        // ---------------------------------------------------------------------------------
+        // THE BAR ITSELF. Recorded, not asserted: M-10 measured the bar wrapping to two rows at
+        // 241px in all three locales, and a pixel-width assertion would break on a copy change
+        // without anything actually being unreachable. The measurement belongs in the summary.
+        // ---------------------------------------------------------------------------------
+        const trigger = page.getByRole("button", { name: messages.views.picker.label })
+        await expect(trigger).toBeVisible()
+        const bar = trigger.locator("xpath=..")
+        const slotTwo = bar.getByRole("button", { name: messages.views.saveNew })
+        await expect(
+          slotTwo,
+          "slot 2 must hold `views.saveNew`: the URL carries a saveable filter, so canSave is true"
+        ).toBeVisible()
+
+        const triggerBox = await boxOf(trigger, `BAR trigger ${surface.path} @ ${locale}`)
+        const slotTwoBox = await boxOf(slotTwo, `BAR slot2 ${surface.path} @ ${locale}`)
+        const barBox = await boxOf(bar, `BAR row ${surface.path} @ ${locale}`)
+        const barRows = slotTwoBox.y > triggerBox.y + 2 ? 2 : 1
+        console.log(
+          `[40-15] BAR ${surface.path} @ ${locale} | rows ${barRows} | ` +
+            `bar ${barBox.width.toFixed(1)}x${barBox.height.toFixed(1)} | ` +
+            `trigger ${triggerBox.width.toFixed(1)}x${triggerBox.height.toFixed(1)} at y=` +
+            `${triggerBox.y.toFixed(1)} | slot2 ${slotTwoBox.width.toFixed(1)}x` +
+            `${slotTwoBox.height.toFixed(1)} at y=${slotTwoBox.y.toFixed(1)}`
+        )
+
+        // ---------------------------------------------------------------------------------
+        // (b) THE PICKER MENU.
+        // ---------------------------------------------------------------------------------
+        const menu = await openPicker(page, messages)
+        assertOnScreen(await measureOverlay(menu, `MENU ${surface.path} @ ${locale}`))
+
+        // The LAST item is the one a clipped menu loses, and `views.manageAction` is always last
+        // (V-3 item 6 puts `saveNew` and the export row above it).
+        await assertTrialClickable(
+          menu.getByRole("menuitem", { name: messages.views.manageAction }),
+          `MENU last item (manageAction) ${surface.path} @ ${locale}`
+        )
+
+        // (f) O-3.
+        await assertEscapeDismisses(page, menu, `MENU ${surface.path} @ ${locale}`)
+
+        // ---------------------------------------------------------------------------------
+        // (c) THE SAVE DIALOG, reached from the picker's `views.saveNew` row.
+        // ---------------------------------------------------------------------------------
+        const menuForSave = await openPicker(page, messages)
+        const saveRow = menuForSave.getByRole("menuitem", { name: messages.views.saveNew })
+        await expect(saveRow).toBeVisible()
+        await saveRow.click()
+
+        const saveDialog = page.getByRole("dialog")
+        assertOnScreen(await measureOverlay(saveDialog, `SAVE ${surface.path} @ ${locale}`))
+
+        const submit = saveDialog.getByRole("button", { name: messages.views.save.submit })
+        const cancel = saveDialog.getByRole("button", { name: messages.common.cancel })
+        await expect(submit).toBeInViewport()
+        await assertTrialClickable(submit, `SAVE submit ${surface.path} @ ${locale}`)
+
+        // S-12. `DialogFooter`'s `flex-col-reverse` is not overridden, so at 320px the footer
+        // stacks and the LAST DOM child renders visually FIRST — the primary action on top.
+        const submitBox = await boxOf(submit, `SAVE submit ${surface.path} @ ${locale}`)
+        const cancelBox = await boxOf(cancel, `SAVE cancel ${surface.path} @ ${locale}`)
+        console.log(
+          `[40-15] SAVE footer ${surface.path} @ ${locale} | submit y=${submitBox.y.toFixed(1)} ` +
+            `cancel y=${cancelBox.y.toFixed(1)}`
+        )
+        expect(
+          submitBox.y,
+          `SAVE footer ${surface.path} @ ${locale}: the submit must stack ABOVE Cancel (S-12) — ` +
+            `submit y=${submitBox.y.toFixed(1)}, cancel y=${cancelBox.y.toFixed(1)}`
+        ).toBeLessThan(cancelBox.y)
+
+        await assertEscapeDismisses(page, saveDialog, `SAVE ${surface.path} @ ${locale}`)
+
+        // ---------------------------------------------------------------------------------
+        // (d) THE MANAGE DIALOG. `organization` carries 12 fixture views, which is what makes
+        //     the inner list genuinely longer than its `max-h-[50vh]` and the SECOND clamp
+        //     (O-1b) a measurement rather than an assumption.
+        // ---------------------------------------------------------------------------------
+        const menuForManage = await openPicker(page, messages)
+        const manageRow = menuForManage.getByRole("menuitem", {
+          name: messages.views.manageAction,
+        })
+        await expect(manageRow).toBeVisible()
+        await manageRow.click()
+
+        const manageDialog = page.getByRole("dialog")
+        assertOnScreen(await measureOverlay(manageDialog, `MANAGE ${surface.path} @ ${locale}`))
+
+        // The inner scroller. Located by its measured class rather than by a testid, because the
+        // class IS the mechanism O-1b is about and a testid could survive its removal.
+        const list = manageDialog.locator('div[class*="max-h-[50vh]"]')
+        assertOnScreen(await measureOverlay(list, `MANAGE list ${surface.path} @ ${locale}`))
+
+        const deleteButtons = manageDialog.getByRole("button", {
+          name: messages.views.manage.delete,
+        })
+        const rowCount = await deleteButtons.count()
+        console.log(`[40-15] MANAGE ${surface.path} @ ${locale} | ${rowCount} deletable rows`)
+        expect(rowCount, "every fixture view is admin-owned, so every row is deletable").toBeGreaterThan(0)
+
+        const lastDelete = deleteButtons.last()
+        await assertTrialClickable(
+          lastDelete,
+          `MANAGE last-row delete ${surface.path} @ ${locale}`
+        )
+
+        // ---------------------------------------------------------------------------------
+        // (e) THE DELETE AlertDialog, opened from that last row.
+        // ---------------------------------------------------------------------------------
+        await lastDelete.scrollIntoViewIfNeeded()
+        await lastDelete.click()
+
+        const alert = page.getByRole("alertdialog")
+        assertOnScreen(await measureOverlay(alert, `DELETE ${surface.path} @ ${locale}`))
+
+        // DO NOT CLICK IT FOR REAL. `trial: true` fires no event, which is the only reason a
+        // destructive control can be asserted on at all (T-40-72).
+        await assertTrialClickable(
+          alert.getByRole("button", { name: messages.views.delete.action }),
+          `DELETE destructive action ${surface.path} @ ${locale}`
+        )
+
+        await assertEscapeDismisses(page, alert, `DELETE ${surface.path} @ ${locale}`)
+        await assertEscapeDismisses(page, manageDialog, `MANAGE ${surface.path} @ ${locale}`)
+      })
+    }
+  }
+})
