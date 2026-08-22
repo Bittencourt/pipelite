@@ -271,7 +271,18 @@ const CHECKBOX_CONSUMERS = walkSources(SRC_ROOT)
   .filter(rel => IMPORTS_CHECKBOX.test(readStrippedSource(rel)))
   .sort()
 
-const EXPECTED_CONSUMER_COUNT = 10
+/**
+ * BUMPED 10 -> 11 BY PLAN 40-08, AFTER THE HAND-CHECK THIS COUNT EXISTS TO FORCE.
+ *
+ * The eleventh consumer is `src/components/views/save-view-dialog.tsx`, and it CANNOT reach the
+ * mixed branch: both of its checkboxes are driven by a `boolean` state seeded from `?? false`, and
+ * each `onCheckedChange` collapses Radix's `CheckedState` with `checked === true` before it ever
+ * reaches `setState`. So `checked` is a strict boolean at every render, exactly like `deal-card.tsx`,
+ * and the "proves none of them ever puts the Root into the mixed state" assertion below covers it
+ * for free — that file is deliberately NOT allow-listed, because allow-listing is for phase-38
+ * selection surfaces and would buy a free slot in this count rather than prove anything.
+ */
+const EXPECTED_CONSUMER_COUNT = 11
 
 describe("consumer safety: the new branch is unreachable for existing Checkbox users", () => {
   it("finds the walk itself is not vacuous", () => {
