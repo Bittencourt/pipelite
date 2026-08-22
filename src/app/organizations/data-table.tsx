@@ -37,6 +37,8 @@ import { BulkActionBar } from "@/components/bulk/bulk-action-bar"
 import { BulkFailureReport } from "@/components/bulk/bulk-failure-report"
 import { useSelectColumn } from "@/components/bulk/select-column"
 import type { BulkOutcome } from "@/lib/bulk/types"
+import { SavedViewsBar } from "@/components/views/saved-views-bar"
+import { VIEW_ESCAPE_KEY, withViewEscape } from "@/lib/views/url-params"
 import type { SavedViewsBarProps } from "@/lib/views/types"
 
 /**
@@ -126,6 +128,8 @@ export function DataTable({
   bulkOwners,
   identityFieldNames = [],
   isAdmin = false,
+  viewsBar,
+  selectedViewId,
 }: DataTableProps) {
   const router = useRouter()
   // Scoped to the `dedup` namespace on purpose: this file's other labels are pre-existing English
@@ -305,13 +309,56 @@ export function DataTable({
     refresh?.()
   }
 
+  /**
+   * WHAT EVERY LIST-ROUTE NAVIGATION FROM THIS TABLE STARTS FROM: an empty param set, carrying
+   * `view=<id>` when a view is open.
+   *
+   * The seeding is the whole point and it is not tidiness. `withViewEscape` PRESERVES a selection
+   * whenever a saveable filter survives the navigation — that preservation is what makes "this view,
+   * modified" a state a user can reach at all (plan 40-18) — but it can only preserve what it is
+   * GIVEN. A `new URLSearchParams()` seeded with nothing but `search` and `page` drops `view` and
+   * destroys the selection on the first keystroke, which is exactly the defect 40-18 exists to fix.
+   *
+   * SEEDED FROM THE RESOLVED ID, NOT FROM THE RAW PARAM, and that is strictly better rather than
+   * merely convenient: the server resolver answers `null` for a `view=<id>` whose view has since been
+   * deleted or unshared, so seeding from it SCRUBS the dead id on the next navigation instead of
+   * leaving it haunting the address bar. This file deliberately does not call `useSearchParams` —
+   * the bar is already this page's one Suspense-wrapped consumer of that hook.
+   *
+   * The null guard keeps the key off entirely rather than writing the string "null" into the URL.
+   */
+  const seededParams = () => {
+    const params = new URLSearchParams()
+
+    if (selectedViewId !== null) params.set(VIEW_ESCAPE_KEY, selectedViewId)
+
+    return params
+  }
+
   const handleSearchChange = (value: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       if (value) {
-        router.push(`/organizations?search=${encodeURIComponent(value)}&page=1`)
+        const params = seededParams()
+        params.set("search", value)
+        params.set("page", "1")
+        // Built as params and handed to the helper rather than concatenated: the helper rewrites the
+        // whitelisted keys from its own parser, which is what gives every URL on this surface the
+        // canonical key order plan 40-05 compares against a stored blob as strings.
+        router.push(`/organizations?${withViewEscape("organization", params)}`)
       } else {
-        router.push("/organizations")
+        /*
+         * THE SITE THAT MATTERS (T-40-50). This branch used to push the bare `"/organizations"`, and
+         * the default-view redirect added by this plan reads a params-free URL as "send this user to
+         * their default view" — so a user clearing their search box would find themselves back inside
+         * the filter they were trying to leave. Routed through the helper it lands on `?view=none`,
+         * which IS a param, so the guard does not fire.
+         *
+         * FRESH params, not the seeded ones, and the difference is only rhetorical: clearing the only
+         * filter a view can carry on this surface leaves no filter, so no selection is coherent (U-2)
+         * and `withViewEscape` answers `view=none` from either input. The fresh one says what it means.
+         */
+        router.push(`/organizations?${withViewEscape("organization", new URLSearchParams())}`)
       }
     }, 300)
   }
@@ -351,6 +398,21 @@ export function DataTable({
   return (
     <div className="space-y-4">
       {/*
+        ITS OWN ROW, ABOVE THE TOOLBAR, AND NEVER MERGED INTO IT (R-40-2c).
+
+        Measured, M-4: this page's toolbar ALREADY wraps to two rows at 320px with the three controls
+        it carries — search cluster 50 + "Find duplicates" 133 on row one, "Add Organization" 171 on
+        row two, 80px total. A fourth and fifth control on that row produces four rows of ungrouped
+        buttons, and it also mixes two different questions: "which slice of the list am I seeing"
+        belongs above "search and create", not beside it.
+
+        NOT STICKY AND NOT FIXED (K-8). `bulk-action-bar.tsx` at the bottom of this file already owns
+        one fixed element on this page, and D-45-02 is an open UAT item about a fixed bar occluding
+        content — a second one would be the same finding twice. The bar carries no positioning class
+        of its own; it is a plain first child of this stack, so `space-y-4` gives it its row.
+      */}
+      <SavedViewsBar {...viewsBar} />
+      {/*
         `flex-wrap` and `gap-2` ARE LOAD-BEARING, not tidying. This row was
         `flex items-center justify-between` with no wrap until a third control landed on it, and a
         non-wrapping row with three controls is exactly the defect Phase 45 spent a rebuild fixing
@@ -364,7 +426,26 @@ export function DataTable({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Search className="h-4 w-4 text-muted-foreground" />
+          {/*
+            `key={search}` IS THE RE-SYNC, AND IT IS A BUG FIX RATHER THAN POLISH (B-6).
+
+            `defaultValue` is read once, at mount, and IGNORED afterwards — and app-router navigation
+            re-renders this tree WITHOUT remounting it. So applying a saved view that stores
+            `search=acme` filters the list correctly while the box still shows whatever was in it
+            before, and selecting "All records" clears the filter and leaves "acme" sitting there.
+            Measured, M-9: typed "acme" here, pressed Back, and the URL returned to `/organizations`
+            with the input still reading "acme".
+
+            THE FIX IS `key`, NOT A CONTROLLED INPUT. `value={search}` looks like the obvious answer
+            and is wrong: this is a 300ms-DEBOUNCED writer, so a value fed from the URL fights its own
+            debounce on every keystroke. `key` remounts the input only when the URL search string
+            actually changes, which is exactly the event that has to reset the box.
+
+            The English placeholder is pre-existing and deliberately left alone — translating this
+            file's literals is not this plan's business.
+          */}
           <Input
+            key={search}
             placeholder="Search organizations..."
             defaultValue={search}
             onChange={(e) => handleSearchChange(e.target.value)}
@@ -475,11 +556,19 @@ export function DataTable({
         <div className="flex justify-center pt-2">
           <Button
             variant="outline"
-            onClick={() =>
-              router.push(
-                `/organizations?search=${encodeURIComponent(search)}&page=${currentPage + 1}`
-              )
-            }
+            onClick={() => {
+              /*
+               * SEEDED LIKE THE SEARCH WRITER, so paging inside a view keeps the view open.
+               *
+               * `search` may be `""` here, and the helper treats a blank value as no filter at all:
+               * the result then carries `page` and `view=none`, which is correct rather than merely
+               * harmless — page 2 of an unfiltered list is not a slice anybody saved.
+               */
+              const params = seededParams()
+              params.set("search", search)
+              params.set("page", String(currentPage + 1))
+              router.push(`/organizations?${withViewEscape("organization", params)}`)
+            }}
           >
             Load More
           </Button>

@@ -116,10 +116,16 @@ describe.each(TABLES)("$label — the bar, the input and the escaped writers", (
     const [barAt] = tagIndexes(source, "SavedViewsBar")
     expect(barAt).toBeDefined()
 
-    // Nothing at all between the stack's opening tag and the bar. Comments are already stripped, so
-    // an empty slice means no wrapper div, no sticky container and no sibling smuggled in front of
-    // it — the bar owns the first row of the table's own vertical rhythm.
-    expect(source.slice(rootAt + ROOT.length, barAt).trim()).toBe("")
+    // Nothing at all between the stack's opening tag and the bar: no wrapper div, no sticky
+    // container, no sibling smuggled in front of it — the bar owns the first row of the table's own
+    // vertical rhythm.
+    //
+    // The empty-container strip is not a loophole, it is the shape a JSX comment leaves behind:
+    // `stripComments` removes `/* … */` and leaves the `{` and `}` that wrapped it, so a `{/* … */}`
+    // explaining the mount reduces to a bare `{}`. Only EMPTY containers are removed, so a real
+    // `{someCondition && …}` in front of the bar still fails this row.
+    const before = source.slice(rootAt + ROOT.length, barAt).replace(/\{\s*\}/g, "")
+    expect(before.trim()).toBe("")
   })
 
   it(`${table.label}: the bar is NOT inside the toolbar row (R-40-2c)`, () => {
