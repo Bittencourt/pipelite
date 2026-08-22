@@ -15,6 +15,10 @@ import {
 import { Users } from "lucide-react"
 import { getTranslations } from 'next-intl/server'
 import { readTrashRetentionDays } from "@/lib/trash/settings"
+import {
+  resolveDefaultViewRedirect,
+  resolveSavedViewsBarProps,
+} from "@/lib/views/resolve"
 
 const PAGE_SIZE = 50
 
@@ -98,13 +102,48 @@ export default async function PeoplePage({
   const isAdmin = session.user.role === "admin"
 
   const params = await searchParams
+
+  /*
+   * THE DEFAULT-VIEW REDIRECT (U-2, U-4, T-40-49). Taken here — after the session gate, before any
+   * list query — because a redirect decided after the reads pays for a result that is thrown away on
+   * every params-free visit, and on this route that result is the list itself.
+   *
+   * THE GUARD IS "NO PARAMS AT ALL", AND EVERY WORD OF THAT IS LOAD-BEARING:
+   *
+   *   - `view=none` IS A PARAM. The bar's "All records" entry and this page's own empty-search
+   *     branch both navigate to `?view=none` precisely so this guard does not fire on them. A
+   *     weaker test — `!params.search`, or anything that looks at one key — would read the escape
+   *     URL as "nothing here" and bounce the user straight back into the view they were leaving,
+   *     which is the loop (T-40-49). It is also why the redirect needs no second code path.
+   *   - `?search=` (an empty value) is likewise one param, so a deliberate bare-filter visit is not
+   *     hijacked either.
+   *   - `resolveDefaultViewRedirect` returns `null` when the default's validated filter set comes
+   *     back empty, which is the OTHER half of the loop guard: its target therefore always carries
+   *     at least one whitelisted key plus `view=<id>`, so the URL it sends the user to can never
+   *     satisfy this guard again.
+   *
+   * A REDIRECT, NOT A REWRITE (U-4). After it the address bar carries the view's own params and the
+   * picker resolves the selection from the URL like any other visit, so "arrived by my default view"
+   * and "opened this view by hand" are the same state — there is deliberately no second branch for
+   * the former, and the filters are shareable the moment they are visible.
+   *
+   * `redirect()` works by THROWING, so it must never be wrapped in a try/catch here: Next's
+   * `NEXT_REDIRECT` has to propagate or the page renders the unfiltered list with no error and no
+   * clue. Nothing in this function catches.
+   */
+  if (Object.keys(params).length === 0) {
+    const target = await resolveDefaultViewRedirect("person", session.user)
+
+    if (target) redirect(`/people${target}`)
+  }
+
   const pageNum = Math.max(1, parseInt(params.page ?? "1"))
   const search = params.search ?? ""
 
   const t = await getTranslations('people')
 
   /**
-   * Three independent reads. The owners list is a SEPARATE query rather than a widening of
+   * Four independent reads. The owners list is a SEPARATE query rather than a widening of
    * `getPeople`'s `leftJoin`: that join resolves the owner OF each row for the Owner column,
    * while this one is the pool of users a bulk reassign may target — a different question with
    * a different predicate, and folding them together would make one of the two wrong.
@@ -115,8 +154,19 @@ export default async function PeoplePage({
    * records is a data defect no per-record failure could report, because the write SUCCEEDS.
    * The bulk reassign action re-validates the target once before its loop; this is the half
    * that keeps the picker from ever proposing it (T-38-06).
+   *
+   * `viewsBar` is the FOURTH entry, and it belongs IN this batch rather than in an `await` of its own
+   * above it. It depends on nothing here and nothing here depends on it, so a separate await would
+   * add a whole latency hop to every visit to this page — which is the reason the batch exists at
+   * all. It resolves ALL EIGHT of the bar's props server-side (`SavedViewsBarProps`, declared once in
+   * `src/lib/views/types.ts`) from the RAW `params` object: raw, because the `view` key naming the
+   * open view is a control param that the filter whitelist deliberately drops, and the resolver is
+   * the one place that reads both. It is handed `session.user` after the gate above, so no view the
+   * viewer may not see ever reaches the Flight payload and nothing is filtered client-side
+   * (T-40-51). Every failure inside it degrades to an empty picker over a list the user can still
+   * filter, so a views outage cannot blank this page.
    */
-  const [{ rows: peopleData, hasMore }, retentionDays, ownerRows] = await Promise.all([
+  const [{ rows: peopleData, hasMore }, retentionDays, ownerRows, viewsBar] = await Promise.all([
     getPeople(search || undefined, pageNum),
     readTrashRetentionDays(),
     db.query.users.findMany({
@@ -127,6 +177,11 @@ export default async function PeoplePage({
         email: true,
       },
       orderBy: [users.name],
+    }),
+    resolveSavedViewsBarProps({
+      entityType: "person",
+      viewer: session.user,
+      rawSearchParams: params,
     }),
   ])
 
@@ -178,6 +233,16 @@ export default async function PeoplePage({
               retentionDays={retentionDays}
               bulkOwners={bulkOwners}
               isAdmin={isAdmin}
+              viewsBar={viewsBar}
+              /*
+                The resolved id, by itself, ALONGSIDE the object that already contains it. Not
+                redundancy: the table's three list-route writers seed `view=<id>` into the params they
+                push, and seeding from the RESOLVED id rather than from the raw param is what scrubs a
+                `view=<id>` whose view has since been deleted — the resolver answers `null` for it, so
+                the next navigation drops it instead of leaving it haunting the address bar. Both
+                values come from this one call site, so they cannot drift.
+              */
+              selectedViewId={viewsBar.selectedViewId}
             />
           </CardContent>
         </Card>
