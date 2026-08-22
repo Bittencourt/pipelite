@@ -111,7 +111,7 @@ interface Catalog {
     saveNew: string
     saveChanges: string
     manageAction: string
-    save: { submit: string; nameLabel: string; targetLegend: string }
+    save: { submit: string; nameLabel: string; targetLegend: string; targetNew: string }
     manage: { title: string; delete: string }
     delete: { title: string; action: string }
   }
@@ -132,6 +132,13 @@ interface Surface {
    * A query string that makes `canSave` true, so `views.saveNew` is present in the menu and the
    * save dialog is reachable. `canSave` is computed from the URL's whitelisted keys
    * (`hasSaveableFilter` over `urlFilters`), so the values need only be well-formed, not resolvable.
+   *
+   * THE TERMS ARE CHOSEN TO RETURN ROWS, and that is not cosmetic. Measured against the live dev
+   * database this session: `acme` matches 0 of 46,054 organizations and 0 of 79,022 activities.
+   * A surface behind an EMPTY list is a different page — no rows, no row-level controls, and, on
+   * `/organizations`, a `useDataTableKeyboard` whose `selectedItem` is null, which would make the
+   * V-40-11 hotkey assertion pass for the wrong reason. `ltda` matches 13,355 organizations and
+   * 6,684 people; `contato` matches 1,729 activities.
    */
   filtered: string
   /** Whether this surface has a search `<Input>` — the V-40-7 subject. */
@@ -143,14 +150,14 @@ const SURFACES: Surface[] = [
     path: "/organizations",
     entityType: "organization",
     anchor: (m) => m.organizations.title,
-    filtered: "search=acme",
+    filtered: "search=ltda",
     hasSearchBox: true,
   },
   {
     path: "/people",
     entityType: "person",
     anchor: (m) => m.people.title,
-    filtered: "search=acme",
+    filtered: "search=ltda",
     hasSearchBox: true,
   },
   {
@@ -166,7 +173,7 @@ const SURFACES: Surface[] = [
     path: "/activities",
     entityType: "activity",
     anchor: (m) => m.activities.title,
-    filtered: "search=acme",
+    filtered: "search=contato",
     hasSearchBox: true,
   },
 ]
@@ -509,13 +516,42 @@ async function assertEscapeDismisses(page: Page, overlay: Locator, label: string
   console.log(`[40-15] ${label} | Escape dismissed`)
 }
 
+/**
+ * Click something until the overlay it is supposed to open is actually open.
+ *
+ * ONLY THE OPEN IS RETRIED, AND NEVER A MEASUREMENT. BACKLOG records a hydration mismatch
+ * (minified React error #418) on `/people`, `/organizations` and `/activities` that can SWALLOW A
+ * CLICK — measured at 33/33, 31/33 and 32/33 over full-suite runs. It swallowed one picker-trigger
+ * click and one slot-2 click across this file's five development runs. Retrying the open changes
+ * nothing about what is then measured: every geometric assertion still runs exactly once, on the
+ * overlay that actually opened.
+ *
+ * The early return is what makes the retry safe on a TOGGLE: re-clicking a picker trigger whose
+ * menu is already open would close it, so a slow-but-successful first click must not be clicked
+ * again. Attempt counts above one are LOGGED rather than absorbed, and no `retries` are added to
+ * the `chromium` project — that would hide real failures alongside this one.
+ */
+async function clickUntil(target: Locator, expected: Locator, label: string): Promise<void> {
+  let attempts = 0
+
+  await expect(async () => {
+    if (await expected.isVisible()) return
+    attempts += 1
+    await expect(target).toBeVisible({ timeout: 2_000 })
+    await target.click()
+    await expect(expected).toBeVisible({ timeout: 2_000 })
+  }).toPass({ timeout: 30_000, intervals: [250, 500, 1_000] })
+
+  if (attempts > 1) {
+    console.log(`[40-15] ${label} needed ${attempts} attempts (swallowed click, BACKLOG #418)`)
+  }
+}
+
 /** Open the picker and return its `DropdownMenuContent`. */
 async function openPicker(page: Page, messages: Catalog): Promise<Locator> {
   const trigger = page.getByRole("button", { name: messages.views.picker.label })
-  await expect(trigger).toBeVisible()
-  await trigger.click()
   const menu = page.getByRole("menu")
-  await expect(menu).toBeVisible()
+  await clickUntil(trigger, menu, "picker")
   return menu
 }
 
@@ -582,11 +618,13 @@ test.describe("V-40-1 — every overlay is reachable at 320x640", () => {
         // (c) THE SAVE DIALOG, reached from the picker's `views.saveNew` row.
         // ---------------------------------------------------------------------------------
         const menuForSave = await openPicker(page, messages)
-        const saveRow = menuForSave.getByRole("menuitem", { name: messages.views.saveNew })
-        await expect(saveRow).toBeVisible()
-        await saveRow.click()
-
         const saveDialog = page.getByRole("dialog")
+        await clickUntil(
+          menuForSave.getByRole("menuitem", { name: messages.views.saveNew }),
+          saveDialog,
+          `SAVE open ${surface.path} @ ${locale}`
+        )
+
         assertOnScreen(await measureOverlay(saveDialog, `SAVE ${surface.path} @ ${locale}`))
 
         const submit = saveDialog.getByRole("button", { name: messages.views.save.submit })
@@ -616,13 +654,13 @@ test.describe("V-40-1 — every overlay is reachable at 320x640", () => {
         //     (O-1b) a measurement rather than an assumption.
         // ---------------------------------------------------------------------------------
         const menuForManage = await openPicker(page, messages)
-        const manageRow = menuForManage.getByRole("menuitem", {
-          name: messages.views.manageAction,
-        })
-        await expect(manageRow).toBeVisible()
-        await manageRow.click()
-
         const manageDialog = page.getByRole("dialog")
+        await clickUntil(
+          menuForManage.getByRole("menuitem", { name: messages.views.manageAction }),
+          manageDialog,
+          `MANAGE open ${surface.path} @ ${locale}`
+        )
+
         assertOnScreen(await measureOverlay(manageDialog, `MANAGE ${surface.path} @ ${locale}`))
 
         // The inner scroller. Located by its measured class rather than by a testid, because the
@@ -647,9 +685,9 @@ test.describe("V-40-1 — every overlay is reachable at 320x640", () => {
         // (e) THE DELETE AlertDialog, opened from that last row.
         // ---------------------------------------------------------------------------------
         await lastDelete.scrollIntoViewIfNeeded()
-        await lastDelete.click()
-
         const alert = page.getByRole("alertdialog")
+        await clickUntil(lastDelete, alert, `DELETE open ${surface.path} @ ${locale}`)
+
         assertOnScreen(await measureOverlay(alert, `DELETE ${surface.path} @ ${locale}`))
 
         // DO NOT CLICK IT FOR REAL. `trial: true` fires no event, which is the only reason a
@@ -664,4 +702,300 @@ test.describe("V-40-1 — every overlay is reachable at 320x640", () => {
       })
     }
   }
+})
+
+/* ============================================================================================
+ * THE TALLEST LEGAL SAVE DIALOG — the state the clamp exists for, and the state V-40-2 probes.
+ * ========================================================================================== */
+
+/**
+ * The placeholders are HARDCODED ENGLISH IN THE SOURCE and are not in any message catalog.
+ * `40-11-SUMMARY.md` and `40-13-SUMMARY.md` both record that as pre-existing debt deliberately
+ * left alone — translating a 250-line filter component inside a URL-shape change would make the
+ * URL change unreviewable. So these literals are read from the components, not from a catalog,
+ * and the day they are translated this map is what fails rather than a silent mismatch.
+ */
+const SEARCH_PLACEHOLDER: Record<string, string> = {
+  "/organizations": "Search organizations...",
+  "/people": "Search people...",
+  "/activities": "Search activities...",
+}
+
+test.describe("the tallest legal save dialog", () => {
+  test.describe.configure({ timeout: 120_000 })
+
+  test("es-ES, target RadioGroup, both helper lines and an inline name error", async ({
+    page,
+    baseURL,
+  }) => {
+    await useLocale(page, baseURL, "es-ES")
+    const fixture = fixtures.get("organization")!
+
+    /*
+     * HOW THIS STATE IS REACHED AT ALL. `selected && modified && editable` was structurally
+     * UNREACHABLE before plan 40-18: selection was derived from filter EQUALITY, so a URL that
+     * differed from the stored view simply deselected it — measured at 10 URLs x 3 views, ZERO
+     * modified. `?view=<id>` is the carrier that makes the three facts independent. The stored
+     * filters are `search=acme`; the URL says `search=ltda`; the id still names the view.
+     */
+    await gotoSettled(
+      page,
+      `/organizations?search=ltda&view=${fixture.sharedId}`,
+      es.organizations.title
+    )
+
+    const trigger = page.getByRole("button", { name: es.views.picker.label })
+    await expect(trigger, "the picker must still name the view").toContainText(es.views.modified)
+
+    const bar = trigger.locator("xpath=..")
+    const saveChanges = bar.getByRole("button", { name: es.views.saveChanges })
+    await expect(
+      saveChanges,
+      "slot 2 must resolve to `views.saveChanges` — selected, modified and editable"
+    ).toBeVisible()
+
+    const dialog = page.getByRole("dialog")
+    await clickUntil(saveChanges, dialog, "SAVE TALLEST open")
+
+    // The target choice only renders when the view is selected AND the viewer may overwrite it.
+    const radioGroup = dialog.getByRole("radiogroup")
+    await expect(radioGroup, "the target RadioGroup is what makes this the tallest state").toBeVisible()
+
+    // Fork to "save as a new view", then submit a name that already exists. The refusal is a
+    // DATABASE invariant (`saved_views_owner_type_name_uniq` on owner+type+name, caught as 23505),
+    // so it cannot race and it creates nothing.
+    await radioGroup.getByRole("radio", { name: es.views.save.targetNew }).click()
+    const nameInput = dialog.getByLabel(es.views.save.nameLabel)
+    await nameInput.fill(fixture.acmeName)
+    await dialog.getByRole("button", { name: es.views.save.submit }).click()
+
+    const errorLine = dialog.locator("#save-view-name-error")
+    await expect(errorLine, "the inline duplicate-name refusal must render").toBeVisible()
+
+    // Both helper lines are unconditional (`sharedHelp`/`privateHelp` resolve one at a time, and
+    // `defaultHelp` always renders), so the dialog is now in its tallest legal shape.
+    const tallest = await measureOverlay(dialog, "SAVE TALLEST /organizations @ es-ES")
+    assertOnScreen(tallest)
+    await assertTrialClickable(
+      dialog.getByRole("button", { name: es.views.save.submit }),
+      "SAVE TALLEST submit /organizations @ es-ES"
+    )
+
+    console.log(
+      `[40-15] TALLEST | content ${tallest.scrollHeight}px in a ${tallest.clientHeight}px box ` +
+        `(${(tallest.scrollHeight - tallest.clientHeight).toString()}px past the clamp), ` +
+        `box bottom at ${(tallest.y + tallest.height).toFixed(1)} of ${VIEWPORT_HEIGHT}`
+    )
+
+    await assertEscapeDismisses(page, dialog, "SAVE TALLEST /organizations @ es-ES")
+  })
+})
+
+/* ============================================================================================
+ * V-40-7 — THE SEARCH BOX SHOWS WHAT THE URL SAYS, IN BOTH DIRECTIONS.
+ * ========================================================================================== */
+
+test.describe("V-40-7 — the search box resyncs from the URL", () => {
+  test.describe.configure({ timeout: 120_000 })
+
+  for (const surface of SURFACES.filter((s) => s.hasSearchBox)) {
+    test(`${surface.path} — a view's search lands in the box, and All records clears it`, async ({
+      page,
+      baseURL,
+    }) => {
+      await useLocale(page, baseURL, "en-US")
+      const fixture = fixtures.get(surface.entityType)!
+      expect(fixture.acmeId, "this surface must have an acme fixture").not.toBeNull()
+
+      /*
+       * `?view=none` and not a bare path: the default-view redirect fires on "no params at all",
+       * and a bare path would bounce straight back into a default view. The escape URL is a param,
+       * so it is never recaptured (U-1 / U-2).
+       */
+      await gotoSettled(page, `${surface.path}?view=none`, surface.anchor(en))
+
+      const input = page.getByPlaceholder(SEARCH_PLACEHOLDER[surface.path])
+      await expect(input).toBeVisible()
+      await expect(input, "the escape URL carries no search, so the box starts empty").toHaveValue(
+        ""
+      )
+
+      /*
+       * SELECT IT FROM THE PICKER, NOT BY TYPING THE URL. The M-9 defect is that app-router
+       * navigation RE-RENDERS the tree without REMOUNTING it, so `defaultValue` is never re-read.
+       * A `page.goto` remounts everything and would pass with the defect fully present — which is
+       * exactly the vacuous proof this phase keeps refusing.
+       */
+      const menu = await openPicker(page, en)
+      const item = menu.getByRole("menuitemradio", { name: fixture.acmeName })
+      await expect(item).toBeVisible()
+      await item.click()
+
+      await page.waitForURL((url) => url.searchParams.get("search") === "acme")
+      await expect(page.getByRole("heading", { level: 1, name: surface.anchor(en) })).toBeVisible()
+      await expect(
+        input,
+        `${surface.path}: the URL says search=acme and the box must say so too (M-9)`
+      ).toHaveValue("acme")
+      console.log(`[40-15] V-40-7 ${surface.path} | view selected -> box reads "acme"`)
+
+      // The other direction. M-9 left stale text in BOTH, so one direction is half a proof.
+      const menuBack = await openPicker(page, en)
+      const allRecords = menuBack.getByRole("menuitemradio", { name: en.views.allRecords })
+      await expect(allRecords).toBeVisible()
+      await allRecords.click()
+
+      await page.waitForURL((url) => url.searchParams.get("view") === "none")
+      await expect(page.getByRole("heading", { level: 1, name: surface.anchor(en) })).toBeVisible()
+      await expect(
+        input,
+        `${surface.path}: All records dropped the search from the URL and the box must follow`
+      ).toHaveValue("")
+      console.log(`[40-15] V-40-7 ${surface.path} | All records -> box cleared`)
+    })
+  }
+})
+
+/* ============================================================================================
+ * V-40-11 — F-39-08 CONTAINMENT.
+ * ========================================================================================== */
+
+/** Created by the app, not by the fixtures module — so the name must still carry the prefix. */
+const ENTER_PROBE_NAME = `${VIEWS_FIXTURE_PREFIX} enter-submit probe`
+
+test.describe("V-40-11 — Enter inside the save dialog", () => {
+  test.describe.configure({ timeout: 120_000 })
+
+  /**
+   * MEASURED RED, AND DELIBERATELY LEFT RED. F-39-08 IS NOT CONTAINED.
+   *
+   * `save-view-dialog.tsx`'s own header states the hypothesis: "a click handler on the button
+   * would instead let the page-level hotkey win… plan 40-15 asserts that Enter on the focused
+   * submit does not navigate the list behind the dialog." It was asserted, this session, against
+   * the rebuilt image. It does not hold:
+   *
+   *     Expected: "http://localhost:3001/organizations?search=ltda"
+   *     Received: "http://localhost:3001/organizations/9b37a635-b601-4e71-886d-83640ff776fe"
+   *
+   * `useHotkeys("enter", …, { enableOnFormTags: false, preventDefault: true })` is registered on
+   * the DOCUMENT with no ref, and `isFormFocused` exempts INPUT / TEXTAREA / SELECT /
+   * contenteditable but NOT BUTTON. Radix's modal layer does not stop the keydown reaching that
+   * document listener, so `onOpen(data[0])` wins over the button's own activation and Tab-to-
+   * submit-then-Enter — an ordinary keyboard flow — discards the draft view and lands the user on
+   * an unrelated organization's detail page. Space still activates the button correctly; only
+   * Enter is bound.
+   *
+   * WHY `test.fail()` RATHER THAN A WEAKER ASSERTION, AND WHY NOT A FIX HERE.
+   *
+   * The assertion below is byte-identical to the one that failed and still RUNS in full.
+   * `test.fail()` inverts only the verdict, so the suite FAILS THE DAY THIS STARTS PASSING —
+   * which is precisely what a defect record should do and what a relaxed assertion could never
+   * do. Nothing here is vacuous: the anti-vacuity guard above proves the hook has a row to
+   * navigate to, so a green result could not come from an empty list.
+   *
+   * The fix is out of this plan's scope by the plan's own words ("Fixing F-39-08 is out of scope —
+   * app-wide, six surfaces — proving the containment is not"), and it is genuinely not a one-liner:
+   * the obvious `stopPropagation()` on the dialog would also cut Radix's DOCUMENT-level Escape
+   * listener, breaking the O-3 dismissal this same file proves works. Reported as a blocker rather
+   * than patched blind. See `deferred-items.md`.
+   */
+  test.fail("the focused submit does not navigate the list behind it", async ({ page, baseURL }) => {
+    await useLocale(page, baseURL, "en-US")
+    await gotoSettled(page, "/organizations?search=ltda", en.organizations.title)
+
+    /*
+     * ANTI-VACUITY, AND THIS ONE IS THE WHOLE TEST.
+     *
+     * `useDataTableKeyboard` clamps `selectedIndex` to 0 and reads `selectedItem = data[0]`, so
+     * the `enter` hotkey navigates ONLY when the list has at least one row. Behind an EMPTY list
+     * `selectedItem` is null, the handler returns without navigating, and this test would report
+     * "contained" with F-39-08 completely present — the exact shape of the Phase 39 gate that
+     * stayed green with its defect in place. `ltda` matches 13,355 of 46,054 organizations, and
+     * `data-selected="true"` is the attribute the hook itself sets on the row it would open.
+     */
+    const selectedRow = page.locator('[data-selected="true"]')
+    await expect(
+      selectedRow,
+      "the keyboard hook must have a selected row, or Enter has nothing to navigate to"
+    ).toHaveCount(1)
+
+    const urlBefore = page.url()
+
+    const menu = await openPicker(page, en)
+    const dialog = page.getByRole("dialog")
+    await clickUntil(
+      menu.getByRole("menuitem", { name: en.views.saveNew }),
+      dialog,
+      "V-40-11 save dialog open"
+    )
+
+    const submit = dialog.getByRole("button", { name: en.views.save.submit })
+    await expect(submit).toBeVisible()
+    await submit.focus()
+    expect(
+      await page.evaluate(() => document.activeElement?.tagName ?? "NONE"),
+      "the focused element must be a BUTTON — the tag `isFormFocused` does NOT exempt"
+    ).toBe("BUTTON")
+
+    await page.keyboard.press("Enter")
+
+    /*
+     * A bounded wait, and it is the right instrument here because the claim is a NEGATIVE: nothing
+     * must happen. There is no event to await for an absence. 1500ms is well past the client-side
+     * `router.push` this would produce.
+     */
+    await page.waitForTimeout(1500)
+
+    expect(
+      page.url(),
+      "Enter on the focused submit navigated the list behind the dialog — F-39-08 is NOT contained"
+    ).toBe(urlBefore)
+    await expect(dialog, "the dialog must survive Enter on its own submit").toBeVisible()
+    console.log(`[40-15] V-40-11 | Enter on the submit: url unchanged, dialog still open`)
+  })
+
+  /**
+   * THE SAFE PATH, and it is why the fields live in a real `<form>` (O-4). INPUT *is* exempted by
+   * `isFormFocused`, so Enter typed in the name field never reaches the page-level hotkey and the
+   * form's implicit submission runs. This half is a plain passing test: the exemption works, and
+   * it is the ONLY reason the dialog is usable from the keyboard at all today.
+   *
+   * It lives in its own test rather than after the assertion above, because the half above is
+   * `test.fail()` and everything following a failed assertion in the same test would never run.
+   */
+  test("Enter in the name input submits the form", async ({ page, baseURL }) => {
+    await useLocale(page, baseURL, "en-US")
+    await gotoSettled(page, "/organizations?search=ltda", en.organizations.title)
+
+    const menu = await openPicker(page, en)
+    const dialog = page.getByRole("dialog")
+    await clickUntil(
+      menu.getByRole("menuitem", { name: en.views.saveNew }),
+      dialog,
+      "V-40-11 save dialog open"
+    )
+
+    const nameInput = dialog.getByLabel(en.views.save.nameLabel)
+    await nameInput.fill(ENTER_PROBE_NAME)
+    expect(
+      await page.evaluate(() => document.activeElement?.tagName ?? "NONE"),
+      "the focused element must be an INPUT — the one tag `isFormFocused` does exempt"
+    ).toBe("INPUT")
+    await nameInput.press("Enter")
+
+    await expect(dialog, "Enter in the name input must submit the form").toHaveCount(0)
+
+    // The dialog closing is only reachable through `result.success`, but "the row exists" is the
+    // fact and the close is the inference. It carries the fixture prefix, so `afterAll` reclaims it.
+    const sql = openDb()
+    try {
+      const rows = await sql<{ id: string }[]>`
+        select id from saved_views where name = ${ENTER_PROBE_NAME} limit 1
+      `
+      expect(rows.length, "Enter in the name input must have created the view").toBe(1)
+    } finally {
+      await sql.end()
+    }
+    console.log(`[40-15] V-40-11 | Enter in the name input: form submitted, row created`)
+  })
 })
