@@ -1,0 +1,174 @@
+# Phase 40 — deferred items
+
+Discoveries made while executing a plan, that the plan did not own. Logged rather than fixed, per
+the scope boundary: only issues DIRECTLY caused by a task's own changes are auto-fixed.
+
+---
+
+## D-40-1 — F-39-08 is NOT contained: Enter on a focused button inside a modal navigates the list behind it
+
+**Found by:** plan 40-15, V-40-11, against the rebuilt container on 2026-08-22.
+**Severity:** user-visible data loss (a draft is discarded), on every list surface that mounts
+`useDataTableKeyboard`.
+
+### The measurement, verbatim
+
+```
+Error: Enter on the focused submit navigated the list behind the dialog — F-39-08 is NOT contained
+
+expect(received).toBe(expected) // Object.is equality
+
+Expected: "http://localhost:3001/organizations?search=ltda"
+Received: "http://localhost:3001/organizations/9b37a635-b601-4e71-886d-83640ff776fe"
+```
+
+### What happens
+
+1. Open `/organizations?search=ltda` (13,355 matching rows, so `useDataTableKeyboard`'s
+   `selectedIndex = 0` resolves to a real `selectedItem`).
+2. Open the saved-views picker → "Save view". The save dialog opens.
+3. Tab to (or otherwise focus) the "Save view" submit button and press **Enter**.
+4. The browser navigates to `/organizations/<id>` — the detail page of the FIRST row in the list
+   behind the dialog. The dialog unmounts and the typed name, the share checkbox and the default
+   checkbox are all discarded.
+
+Space still activates the button correctly; only Enter is bound.
+
+### Why
+
+`src/components/keyboard/data-table-keyboard.tsx`:
+
+```ts
+useHotkeys(
+  "enter",
+  () => {
+    if (isFormFocused()) return
+    if (selectedItem && onOpen) onOpen(selectedItem)
+  },
+  { enableOnFormTags: false, preventDefault: true }
+)
+```
+
+- The hotkey is registered with **no ref**, so it listens on the document.
+- `isFormFocused()` exempts `INPUT`, `TEXTAREA`, `SELECT` and `contenteditable` — **not `BUTTON`**.
+- Radix's modal layer does not stop a keydown reaching that document listener.
+- `preventDefault: true` then suppresses the button's own activation, so the hotkey wins outright.
+
+`src/components/views/save-view-dialog.tsx`'s header already names this risk and states the
+mitigation hypothesis — "a click handler on the button would instead let the page-level hotkey win…
+plan 40-15 asserts that Enter on the focused submit does not navigate the list behind the dialog."
+The `<form>` shape does make the NAME INPUT path safe (`INPUT` is exempt, and that half is a
+passing test). It does nothing for the button.
+
+### Blast radius
+
+Every surface mounting `useDataTableKeyboard`, and every modal that can be opened over one — not
+just this phase's save dialog. The org create dialog, the bulk dialogs and the merge screen all
+have focusable buttons over a keyboard-enabled list.
+
+### Why plan 40-15 did not fix it
+
+- The plan says so in as many words: "Fixing F-39-08 is out of scope (app-wide, six surfaces);
+  proving the containment is not." `files_modified` is `e2e/saved-views-320.spec.ts` alone.
+- The obvious one-liner is wrong. `onKeyDown={(e) => e.stopPropagation()}` on the dialog would also
+  cut Radix's **document-level** Escape listener, breaking the O-3 dismissal that the same spec run
+  proves works on all four overlays. A correct fix has to discriminate the key, or guard inside the
+  hook, and either shape needs its own tests across six surfaces.
+
+### How it is tracked
+
+`e2e/saved-views-320.spec.ts` marks the assertion `test.fail()` with the assertion **byte-unchanged
+and still running**. The suite therefore FAILS the day this starts passing, which is the behaviour a
+defect record should have. The test's anti-vacuity guard (`[data-selected="true"]` must exist)
+proves the hook has a row to navigate to, so the recorded failure cannot come from an empty list.
+
+### Suggested fix, for whoever owns it
+
+Guard the hook rather than each dialog — one place, six surfaces:
+
+```ts
+const isFormFocused = useCallback(() => {
+  // …existing tag checks…
+  // A modal owns the keyboard while it is open.
+  if (document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]')) {
+    return true
+  }
+  …
+}, [])
+```
+
+Needs its own plan: five hotkeys (`j/k/enter/e/d/n`) change behaviour on six surfaces, and every
+one of them currently fires over an open dialog.
+
+---
+
+## D-40-2 — `/activities` still uses `key={search}` and loses focus mid-typing
+
+**Found by:** plan 40-15, running the inherited post-40-14 focus proof.
+**Severity:** user-visible; typing into the activities search box silently stops working.
+
+### The measurement, verbatim
+
+```
+Error: /activities: characters typed after the pause were lost
+
+expect(received).toBe(expected) // Object.is equality
+
+Expected: "ltda"
+Received: "lt"
+```
+
+Instrumented output from the same run:
+
+```
+[proofs] PROOF-3a /organizations focus after pause: {"tag":"INPUT","placeholder":"Search organizations..."}
+[proofs] PROOF-3a /organizations final: value="ltda" activeElement=INPUT
+[proofs] PROOF-3a /people        focus after pause: {"tag":"INPUT","placeholder":"Search people..."}
+[proofs] PROOF-3a /people        final: value="ltda" activeElement=INPUT
+[proofs] PROOF-3a /activities    focus after pause: {"tag":"INPUT","placeholder":"Search activities..."}
+[proofs] PROOF-3a /activities    final: value="lt"   activeElement=BODY
+```
+
+### What happens
+
+Type two characters into the `/activities` search box, pause longer than the 300ms debounce, then
+keep typing without clicking back into the box. The later characters go nowhere: focus has moved to
+`<body>`.
+
+### Why
+
+`src/app/activities/activity-filters.tsx:184` still carries the **pre-fix** shape:
+
+```tsx
+<Input
+  key={search}
+  placeholder="Search activities..."
+  defaultValue={search}
+  …
+/>
+```
+
+A `key` change unmounts the fiber and mounts a new DOM node, destroying the focused element. This is
+exactly the defect that commit `85f7c2a` ("the search box resyncs by local state, not by remounting")
+removed from `src/app/organizations/data-table.tsx` and `src/app/people/data-table.tsx` — those two
+now use local state resynced during render and both PASS the same probe. `/activities` was not
+included in that fix.
+
+### What is NOT broken on `/activities`
+
+The M-9 resync half still works, because `key={search}` is what makes `defaultValue` re-read:
+
+```
+[proofs] PROOF-3b /activities after select: url=…/activities?search=acme&view=<id> box="acme"
+[proofs] PROOF-3b /activities after Back:   url=…/activities?view=none            box=""
+```
+
+So the trade 40-11 flagged is live on exactly one surface: `/activities` has correct resync and
+broken focus, while `/organizations` and `/people` now have both.
+
+### Suggested fix
+
+Port `85f7c2a` to `activity-filters.tsx` verbatim — local `searchInput` state, resynced during
+render against a `prevSearch`, `value={searchInput}`, `key` removed. It is a mechanical copy of a
+shape already reviewed and already proven by two passing probes. Out of 40-15's scope because
+`files_modified` is one spec file and the surface belongs to plan 40-13.
