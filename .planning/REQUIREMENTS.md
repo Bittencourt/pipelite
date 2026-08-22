@@ -54,9 +54,9 @@ the motivating evidence stays one hop away.
 
 ### Saved Views & Filters (999.8)
 
-- [ ] **VIEW-01**: User can save the current filter set on a list page as a named view
-- [ ] **VIEW-02**: User can mark a view private or shared, and set one as their default for that entity type
-- [ ] **VIEW-03**: User can export the records matching a saved view
+- [x] **VIEW-01**: User can save the current filter set on a list page as a named view
+- [x] **VIEW-02**: User can mark a view private or shared, and set one as their default for that entity type
+- [x] **VIEW-03**: User can export the records matching a saved view
 
 ### Trash & Restore (999.9)
 
@@ -141,9 +141,9 @@ Which phases cover which requirements. Populated during roadmap creation (2026-0
 | DEDUP-01 | Phase 39 | Complete |
 | DEDUP-02 | Phase 39 | Complete |
 | DEDUP-03 | Phase 39 | Complete |
-| VIEW-01 | Phase 40 | Pending |
-| VIEW-02 | Phase 40 | Pending |
-| VIEW-03 | Phase 40 | Pending |
+| VIEW-01 | Phase 40 | Complete |
+| VIEW-02 | Phase 40 | Complete |
+| VIEW-03 | Phase 40 | Complete |
 | TRASH-01 | Phase 37 | Pending |
 | TRASH-02 | Phase 37 | Pending |
 | TRASH-03 | Phase 37 | Pending |
