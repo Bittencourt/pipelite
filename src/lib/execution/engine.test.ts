@@ -1113,3 +1113,256 @@ describe("executeRun dry-run flag", () => {
     expect(result.output.author).toBe("undefined")
   })
 })
+
+/**
+ * WFOPS-02 / CONTEXT amendment A2 -- a delay node is a no-op under dry run.
+ *
+ * A delay parks its run as `waiting`, and the processor's claim query refuses to start a
+ * `pending` run while any run of the same workflow is `running` or `waiting`
+ * (`execution-processor.ts:122-127`). So one parked dry run blocks EVERY real run of that
+ * workflow until the delay resolves -- up to the 30-day cap. A testing feature that can stall
+ * a production workflow for a month is a self-inflicted outage, which is why A2 skips the wait.
+ *
+ * There are TWO delay sites -- the main loop and `executeBranch` -- and editing one and not the
+ * other is the entire risk in this area, so the branch case below is driven through a real
+ * condition-branch workflow rather than by reaching for an internal helper.
+ *
+ * Every name here contains "delay under dry run" so `-t "delay under dry run"` selects the set.
+ */
+describe("executeRun delay under dry run", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    insertedSteps = []
+    updatedRuns = []
+    updatedSteps = []
+  })
+
+  /** The exact per-node output a skipped dry-run delay must record. Plans 41-13/41-14 render it. */
+  const SIMULATED_DELAY_OUTPUT = { delayed: false, skipped: true, simulated: true }
+
+  /**
+   * Every `status: "waiting"` write of the whole invocation, runs and steps together.
+   *
+   * Counted across both tables rather than asserted site by site so a THIRD delay site added
+   * later is covered by this suite the day it is written, without anybody remembering to.
+   */
+  function waitingWrites(): Array<Record<string, unknown>> {
+    return [...updatedRuns, ...updatedSteps].filter((u) => u.status === "waiting")
+  }
+
+  /** Every write that carries a resumeAt, i.e. every attempt to schedule a wake-up. */
+  function resumeAtWrites(): Array<Record<string, unknown>> {
+    return [...updatedRuns, ...updatedSteps].filter((u) => u.resumeAt !== undefined)
+  }
+
+  /** Persisted resume frames -- the other half of parking a run. */
+  function resumeFrameWrites(): Array<Record<string, unknown>> {
+    return updatedRuns.filter((u) => {
+      const context = u.context as Record<string, unknown> | undefined
+      return context !== undefined && context._resume !== undefined
+    })
+  }
+
+  /** The output recorded for `nodeId` in the last persisted context. */
+  function persistedNodeOutput(nodeId: string): unknown {
+    const withContext = [...updatedRuns].reverse().find((u) => u.context !== undefined)
+    const context = withContext?.context as ExecutionContext | undefined
+    return context?.nodes?.[nodeId]?.output
+  }
+
+  /** The completeStep write whose output belongs to `nodeId`, matched via the persisted context. */
+  function completedStepOutputs(): Array<Record<string, unknown>> {
+    return updatedSteps
+      .filter((u) => u.status === "completed")
+      .map((u) => u.output as Record<string, unknown>)
+  }
+
+  function baseRun(
+    id: string,
+    workflowId: string,
+    dryRun: boolean
+  ): {
+    id: string
+    workflowId: string
+    status: string
+    context: ExecutionContext | null
+    currentNodeId: string | null
+    triggerData: Record<string, unknown> | null
+    dryRun: boolean
+  } {
+    return {
+      id,
+      workflowId,
+      status: "running",
+      context: null,
+      currentNodeId: null,
+      triggerData: { trigger_type: "manual", data: {} },
+      dryRun,
+    }
+  }
+
+  const FUTURE = () => new Date(Date.now() + 60 * 60 * 1000)
+
+  const linearWithDelay = (id: string, delayNext: string | null = "n3") => ({
+    id,
+    createdBy: "author-1",
+    nodes: [
+      makeActionNode("n1", "delay-1"),
+      makeDelayNode("delay-1", delayNext),
+      ...(delayNext === "n3" ? [makeActionNode("n3", null)] : []),
+    ] as WorkflowNode[],
+  })
+
+  /** cond-1 --true--> b1 -> d1 (delay) -> b2, merging at merge-1. The SECOND delay site. */
+  const branchWithDelay = (id: string) => ({
+    id,
+    createdBy: "author-1",
+    nodes: [
+      makeConditionNode("cond-1", "b1", null, "merge-1"),
+      makeActionNode("b1", "d1"),
+      makeDelayNode("d1", "b2"),
+      makeActionNode("b2", null),
+      makeActionNode("merge-1", null),
+    ] as WorkflowNode[],
+  })
+
+  // --- Main loop --------------------------------------------------------------------------
+
+  it("carries a main-loop delay under dry run straight through to the next node", async () => {
+    setupDbMocks(linearWithDelay("wf-a2-1"), baseRun("run-a2-1", "wf-a2-1", true))
+    mockResolveDelay.mockReturnValue(FUTURE())
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-1")
+
+    // The node AFTER the delay ran in the same invocation -- the engine did not return early.
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["n1", "delay-1", "n3"])
+    expect(waitingWrites()).toHaveLength(0)
+    expect(resumeAtWrites()).toHaveLength(0)
+    expect(resumeFrameWrites()).toHaveLength(0)
+    expect(updatedRuns.find((u) => u.status === "completed")).toBeDefined()
+  })
+
+  it("records a main-loop delay under dry run as simulated, exactly", async () => {
+    setupDbMocks(linearWithDelay("wf-a2-2"), baseRun("run-a2-2", "wf-a2-2", true))
+    mockResolveDelay.mockReturnValue(FUTURE())
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-2")
+
+    // `simulated: true` is the whole diagnostic: it surfaces in the existing json-viewer with
+    // no new UI and no new copy, so an operator can see the delay was not exercised.
+    expect(persistedNodeOutput("delay-1")).toEqual(SIMULATED_DELAY_OUTPUT)
+    expect(completedStepOutputs()).toContainEqual(SIMULATED_DELAY_OUTPUT)
+  })
+
+  it("still parks a REAL run on a future main-loop delay, byte-identically to before", async () => {
+    setupDbMocks(linearWithDelay("wf-a2-3"), baseRun("run-a2-3", "wf-a2-3", false))
+    const future = FUTURE()
+    mockResolveDelay.mockReturnValue(future)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-3")
+
+    // The regression half, and the more important one: a real run's delay must be unchanged.
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["n1", "delay-1"])
+    const waitingRun = updatedRuns.find((u) => u.status === "waiting")
+    expect(waitingRun).toBeDefined()
+    expect(waitingRun!.currentNodeId).toBe("n3")
+    expect((waitingRun!.context as Record<string, unknown>)._resume).toEqual({ nodeId: "n3" })
+
+    const waitingStep = updatedSteps.find((u) => u.status === "waiting")
+    expect(waitingStep).toBeDefined()
+    expect(waitingStep!.resumeAt).toBe(future)
+    expect(waitingStep!.output).toEqual({ delayed: true, resumeAt: future.toISOString() })
+  })
+
+  it("keeps the simulated marker on an already-past main-loop delay under dry run", async () => {
+    setupDbMocks(linearWithDelay("wf-a2-4"), baseRun("run-a2-4", "wf-a2-4", true))
+    mockResolveDelay.mockReturnValue(null)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-4")
+
+    // The two dry-run delay paths must be indistinguishable to a reader of the run detail page.
+    expect(persistedNodeOutput("delay-1")).toEqual(SIMULATED_DELAY_OUTPUT)
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["n1", "delay-1", "n3"])
+  })
+
+  it("leaves an already-past REAL delay's output free of the dry-run marker", async () => {
+    setupDbMocks(linearWithDelay("wf-a2-5"), baseRun("run-a2-5", "wf-a2-5", false))
+    mockResolveDelay.mockReturnValue(null)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-5")
+
+    // Exact object: a `simulated` key on a real run would misreport a delay that genuinely
+    // had nothing left to wait for.
+    expect(persistedNodeOutput("delay-1")).toEqual({ delayed: false, skipped: true })
+  })
+
+  it("completes a dry run whose delay is the LAST node instead of parking it", async () => {
+    setupDbMocks(linearWithDelay("wf-a2-6", null), baseRun("run-a2-6", "wf-a2-6", true))
+    mockResolveDelay.mockReturnValue(FUTURE())
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-6")
+
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["n1", "delay-1"])
+    expect(waitingWrites()).toHaveLength(0)
+    expect(updatedRuns.find((u) => u.status === "completed")).toBeDefined()
+    expect(persistedNodeOutput("delay-1")).toEqual(SIMULATED_DELAY_OUTPUT)
+  })
+
+  // --- The branch segment: the SECOND site ------------------------------------------------
+
+  it("carries a delay INSIDE a condition branch under dry run through to the merge node", async () => {
+    setupDbMocks(branchWithDelay("wf-a2-7"), baseRun("run-a2-7", "wf-a2-7", true))
+    mockEvaluateCondition.mockReturnValue(true)
+    mockResolveDelay.mockReturnValue(FUTURE())
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-7")
+
+    // Driven through the real condition walk, so a fix applied to only the main-loop site
+    // fails here rather than passing quietly.
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["cond-1", "b1", "d1", "b2", "merge-1"])
+    expect(waitingWrites()).toHaveLength(0)
+    expect(resumeAtWrites()).toHaveLength(0)
+    expect(resumeFrameWrites()).toHaveLength(0)
+    expect(persistedNodeOutput("d1")).toEqual(SIMULATED_DELAY_OUTPUT)
+    expect(updatedRuns.find((u) => u.status === "completed")).toBeDefined()
+  })
+
+  it("still parks a REAL run on a future delay inside a condition branch", async () => {
+    setupDbMocks(branchWithDelay("wf-a2-8"), baseRun("run-a2-8", "wf-a2-8", false))
+    mockEvaluateCondition.mockReturnValue(true)
+    const future = FUTURE()
+    mockResolveDelay.mockReturnValue(future)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-8")
+
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["cond-1", "b1", "d1"])
+    const waitingRun = updatedRuns.find((u) => u.status === "waiting")
+    expect(waitingRun).toBeDefined()
+    // The full in-branch frame: losing it is how the merge node used to be skipped on resume.
+    expect((waitingRun!.context as Record<string, unknown>)._resume).toEqual({
+      nodeId: "b2",
+      inBranch: true,
+      pendingBranch: null,
+      mergeNodeId: "merge-1",
+    })
+    expect(updatedSteps.find((u) => u.status === "waiting")?.resumeAt).toBe(future)
+  })
+
+  it("guards BOTH delay sites, not one", async () => {
+    const source = readStrippedSource("src/lib/execution/engine.ts")
+
+    // The engine handles delays in two places -- the main loop's switch and executeBranch --
+    // and the behavioural cases above cover both. This counts them structurally as well,
+    // because a future refactor that collapses or duplicates a site should be deliberate.
+    const guards = source.split("resumeAt === null || context._dryRun").length - 1
+    expect(guards).toBe(2)
+  })
+})
