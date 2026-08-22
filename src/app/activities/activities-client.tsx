@@ -311,7 +311,22 @@ export function ActivitiesClient({
         fixing them is out of scope. This phase's obligation is not to spread the pattern, not to
         repay it — a colour change to a stats row is a visual change nobody asked this plan for.
       */}
-      <div className="flex gap-6 text-sm">
+      {/*
+        `flex-wrap` AND `gap-x-6 gap-y-2` — THE THIRD STAT DOES NOT FIT AT 320px (SC-1).
+
+        A two-item row cleared the 305px usable width; three did not. Measured against the rebuilt
+        container the moment the overdue stat landed, and caught by `e2e/viewport-320.spec.ts`:
+
+          /activities @ en-US: scrollWidth 379 > clientWidth 305 (overflow 74px)
+          /activities @ pt-BR: scrollWidth 382 > clientWidth 305 (overflow 77px)
+          /activities @ es-ES: scrollWidth 393 > clientWidth 305 (overflow 88px)
+
+        es-ES is worst because its three labels are the longest, which is the usual shape here: a row
+        that fits in English is not a row that fits. `flex-wrap` lets the third stat drop to its own
+        line rather than pushing the page wider; `gap-y-2` keeps the two lines legible once it does.
+        Nothing changes above 320px, where all three still sit on one line.
+      */}
+      <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
         <div className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-green-500" />
           <span className="text-muted-foreground">{t('completed')}:</span>
