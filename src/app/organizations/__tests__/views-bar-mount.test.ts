@@ -233,6 +233,22 @@ describe.each(TABLES)("$label — the bar, the input and the escaped writers", (
     expect(sets.some((args) => args.includes("VIEW_ESCAPE_KEY") && args.includes("selectedViewId")))
       .toBe(true)
 
+    /*
+     * AND THE TWO FILTER-CARRYING WRITERS ACTUALLY USE IT. Measured hole, closed here: with only the
+     * three rows above, replacing `seededParams()` with a bare `new URLSearchParams()` in the search
+     * writer failed NOTHING — the seeding helper still existed and was still called by Load More, so
+     * every assertion stayed green while the first keystroke inside a view silently dropped the
+     * selection. That is the exact defect this row exists to catch, so the CALL SITES are counted,
+     * not the helper's presence.
+     *
+     * Two, not three: the cleared-search branch deliberately builds fresh params (U-2).
+     */
+    const seeds = callArguments(source, "seededParams")
+    expect(seeds).toHaveLength(2)
+
+    const [writer] = callArguments(source, "setTimeout")
+    expect(callArguments(writer, "seededParams")).toHaveLength(1)
+
     // ONE Suspense-wrapped consumer of the hook per page, and it is the bar. A second one here buys
     // nothing and the resolved id is strictly better than the raw param anyway.
     expect(source).not.toContain("useSearchParams")
