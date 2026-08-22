@@ -163,6 +163,21 @@ async function executeRunGraph(
   // Set workflow creator userId for CRM action mutations
   context._workflowUserId = workflow.createdBy
 
+  // Whether this is a dry run comes from the COLUMN, never from the restored context JSON.
+  // `run.context` is restored a dozen lines above and is a mutable jsonb blob the engine
+  // rewrites after every node; if the flag were read from there, a hand-edited context row
+  // could turn a dry run into a real one mid-execution -- the one thing this flag exists to
+  // prevent. `workflow_runs.dry_run` is written once at insert and never updated.
+  //
+  // The placement (below the restore, above the resume read) buys a second property: a run
+  // that yielded on a delay and comes back minutes later re-derives the flag from the
+  // authoritative row, so a resumed dry run cannot silently become a real one.
+  //
+  // `=== true`, not `!!` and not a coercion: a row predating the dry_run migration reads
+  // `undefined`, and the side-effecting handlers plus the failure-alert path all compare
+  // against `false`, where a falsy-but-not-false value would slip through.
+  context._dryRun = run.dryRun === true
+
   // Pull the resume frame (if any) out of the context. Only the delay yield
   // paths write it back; every other persist stores the context without it,
   // so a completed/failed run never carries a stale frame.

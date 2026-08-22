@@ -4,6 +4,11 @@ import type { ExecutionContext, WorkflowNode, ConditionNode, DelayNode, SplitNod
 // file assert that a real store survives the engine's real awaits, which a stub could not show.
 import { getCurrentActor, type AuditActor } from "@/lib/audit/actor-context"
 import { getCurrentExecutionDepth } from "./recursion"
+// Comment-blind source reader, shared with the CFUI/audit gates. The WFOPS-02 structural
+// assertions below hinge on real code, and the engine edits they cover carry long rationale
+// comments that mention the very identifiers being scanned -- an unstripped read would be
+// satisfied by the prose it exists to make redundant.
+import { readStrippedSource } from "@/components/custom-fields/__tests__/source-scan"
 
 // Mock the DB module
 const mockDb = {
@@ -129,7 +134,7 @@ let updatedSteps: Array<Record<string, unknown>> = []
 
 function setupDbMocks(
   workflow: { id: string; nodes: WorkflowNode[]; createdBy?: string },
-  run: { id: string; workflowId: string; status: string; context: ExecutionContext | null; currentNodeId: string | null; triggerData: Record<string, unknown> | null; depth?: number }
+  run: { id: string; workflowId: string; status: string; context: ExecutionContext | null; currentNodeId: string | null; triggerData: Record<string, unknown> | null; depth?: number; dryRun?: boolean }
 ) {
   insertedSteps = []
   updatedRuns = []
@@ -865,5 +870,246 @@ describe("executeRun actor scope", () => {
 
     expect(getCurrentActor()).toBeUndefined()
     expect(getCurrentExecutionDepth()).toBe(0)
+  })
+})
+
+/**
+ * WFOPS-02 -- where `_dryRun` comes from.
+ *
+ * `context._dryRun` is what the five side-effecting handlers gate on, so the SOURCE the engine
+ * reads it from is the entire security property, not an implementation detail. `executeRunGraph`
+ * restores `context` from `run.context` -- a mutable `jsonb` blob -- a dozen lines above the
+ * assignment site. If the flag came from there, a hand-edited context row would turn a dry run
+ * into a real one mid-execution, which is the one thing the flag exists to prevent.
+ *
+ * Observed from inside `executeAction`, the boundary every real CRM handler sits behind: asserting
+ * the engine assigns a field would prove nothing about what a mutation four awaits deep actually
+ * sees, and that consumer is the only one that matters.
+ *
+ * Every name here contains "dry-run" so `-t "dry-run"` selects the set.
+ */
+describe("executeRun dry-run flag", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    insertedSteps = []
+    updatedRuns = []
+    updatedSteps = []
+  })
+
+  type TestRun = {
+    id: string
+    workflowId: string
+    status: string
+    context: ExecutionContext | null
+    currentNodeId: string | null
+    triggerData: Record<string, unknown> | null
+    depth?: number
+    dryRun?: boolean
+  }
+
+  /**
+   * Run a workflow and return `_dryRun` exactly as the action handler saw it.
+   *
+   * The sentinel distinguishes "the handler observed `undefined`" from "the handler never ran" --
+   * without it a workflow that failed before reaching an action would report `undefined` and pass
+   * an `expect(seen).toBe(undefined)` while proving nothing.
+   */
+  async function observeDryRun(
+    workflow: { id: string; nodes: WorkflowNode[]; createdBy?: string },
+    run: TestRun
+  ): Promise<{ seen: unknown; seenType: string }> {
+    setupDbMocks(workflow, run)
+
+    let seen: unknown = "HANDLER_NEVER_RAN"
+
+    const { executeAction } = await import("./actions")
+    vi.mocked(executeAction).mockImplementationOnce(async (_type, _config, context) => {
+      // Await first: a synchronous read at action entry cannot show that the value survives
+      // the engine's own awaits, and a real CRM mutation reads it after several.
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      seen = context._dryRun
+      return { output: { type: "crm", status: "executed" } }
+    })
+
+    const { executeRun } = await import("./engine")
+    await executeRun(run.id)
+
+    return { seen, seenType: typeof seen }
+  }
+
+  function singleAction(id: string) {
+    return { id, createdBy: "author-1", nodes: [makeActionNode("n1", null)] }
+  }
+
+  function baseRun(id: string, workflowId: string, extra: Partial<TestRun> = {}): TestRun {
+    return {
+      id,
+      workflowId,
+      status: "running",
+      context: null,
+      currentNodeId: null,
+      triggerData: { trigger_type: "manual", data: {} },
+      ...extra,
+    }
+  }
+
+  it("hands the action a dry-run context when the run's dryRun COLUMN is true", async () => {
+    const { seen, seenType } = await observeDryRun(
+      singleAction("wf-dry-1"),
+      baseRun("run-dry-1", "wf-dry-1", { dryRun: true })
+    )
+
+    expect(seen).toBe(true)
+    expect(seenType).toBe("boolean")
+  })
+
+  it("hands the action a real-run context when the dryRun COLUMN is false", async () => {
+    const { seen, seenType } = await observeDryRun(
+      singleAction("wf-dry-2"),
+      baseRun("run-dry-2", "wf-dry-2", { dryRun: false })
+    )
+
+    expect(seen).toBe(false)
+    expect(seenType).toBe("boolean")
+  })
+
+  it("normalises a pre-migration row with no dryRun column to false, not undefined, for a dry-run gate", async () => {
+    // A row read back through an older code path (or any shape predating migration 0019) has
+    // no `dryRun` key at all. `undefined` is falsy but NOT `=== false`, and both the five
+    // handler gates and 41-08's alert path compare against `false` -- so the normalisation is
+    // load-bearing, not cosmetic.
+    const { seen, seenType } = await observeDryRun(
+      singleAction("wf-dry-3"),
+      baseRun("run-dry-3", "wf-dry-3")
+    )
+
+    expect(seen).toBe(false)
+    expect(seenType).toBe("boolean")
+  })
+
+  it("lets the dryRun COLUMN beat a persisted context that claims a dry-run", async () => {
+    const persisted = {
+      trigger: { type: "manual", data: {} },
+      nodes: {},
+      // A hand-edited (or stale) context blob asserting the run is dry.
+      _dryRun: true,
+    } as unknown as ExecutionContext
+
+    // ANTI-VACUITY: snapshot the blob BEFORE the call. The engine restores the very same object
+    // and overwrites the field in place, so reading `persisted._dryRun` afterwards would show
+    // the engine's own value and this test would pass with an empty context proving nothing.
+    const before = JSON.parse(JSON.stringify(persisted)) as { _dryRun?: boolean }
+    expect(before._dryRun).toBe(true)
+
+    const { seen } = await observeDryRun(
+      singleAction("wf-dry-4"),
+      baseRun("run-dry-4", "wf-dry-4", { dryRun: false, context: persisted })
+    )
+
+    expect(seen).toBe(false)
+  })
+
+  it("lets the dryRun COLUMN beat a persisted context that claims a real run, keeping the dry-run gate on", async () => {
+    const persisted = {
+      trigger: { type: "manual", data: {} },
+      nodes: {},
+      _dryRun: false,
+    } as unknown as ExecutionContext
+
+    const before = JSON.parse(JSON.stringify(persisted)) as { _dryRun?: boolean }
+    expect(before._dryRun).toBe(false)
+
+    const { seen } = await observeDryRun(
+      singleAction("wf-dry-5"),
+      baseRun("run-dry-5", "wf-dry-5", { dryRun: true, context: persisted })
+    )
+
+    expect(seen).toBe(true)
+  })
+
+  it("keeps a resumed dry-run dry by re-deriving the flag from the column", async () => {
+    // The case the assignment's PLACEMENT buys. A run that yielded and came back minutes later
+    // arrives with nothing but its row and its context blob; if the flag were merged into the
+    // fresh-context literal instead of written below the restore, this resume would silently
+    // become a real run and start mutating the CRM.
+    const persisted = {
+      trigger: { type: "manual", data: {} },
+      nodes: { n1: { output: { type: "unknown", status: "stub" }, status: "completed" } },
+      _dryRun: false,
+      _resume: { nodeId: "n2" },
+    } as unknown as ExecutionContext
+
+    const before = JSON.parse(JSON.stringify(persisted)) as { _dryRun?: boolean }
+    expect(before._dryRun).toBe(false)
+
+    const { seen, seenType } = await observeDryRun(
+      {
+        id: "wf-dry-6",
+        createdBy: "author-1",
+        nodes: [makeActionNode("n1", "n2"), makeActionNode("n2", null)],
+      },
+      baseRun("run-dry-6", "wf-dry-6", {
+        dryRun: true,
+        context: persisted,
+        currentNodeId: "n2",
+      })
+    )
+
+    // Only the resumed node ran, and it ran dry.
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["n2"])
+    expect(seen).toBe(true)
+    expect(seenType).toBe("boolean")
+  })
+
+  it("assigns the dry-run flag BELOW the context restore and ABOVE the resume read", async () => {
+    const source = readStrippedSource("src/lib/execution/engine.ts")
+
+    const restore = source.indexOf("context._workflowUserId = workflow.createdBy")
+    const assign = source.indexOf("context._dryRun = run.dryRun === true")
+    const resumeRead = source.indexOf("const resume = context._resume")
+
+    // Assert presence FIRST: three `-1`s are trivially "increasing" only in the sense that
+    // they are equal, but a single missing marker would otherwise let a `<` chain pass on
+    // accident rather than on order.
+    expect(restore).toBeGreaterThan(-1)
+    expect(assign).toBeGreaterThan(-1)
+    expect(resumeRead).toBeGreaterThan(-1)
+
+    expect(assign).toBeGreaterThan(restore)
+    expect(resumeRead).toBeGreaterThan(assign)
+  })
+
+  it("never exposes the dry-run flag to user JS inside the QuickJS sandbox", async () => {
+    // `./actions` is mocked for this whole file, so the real transform handler is reached
+    // through the registry directly. The observation point is user JS itself: if a workflow
+    // author could branch on `_dryRun`, a workflow could behave one way under test and
+    // another in production, and "transform runs FOR REAL" would be a lie.
+    const { getHandler } = await import("./actions/registry")
+    await import("./actions/transform")
+
+    const handler = getHandler("javascript_transform")
+    expect(handler).toBeDefined()
+
+    const context: ExecutionContext = {
+      trigger: { type: "manual", data: { a: 1 } },
+      nodes: { n1: { output: { value: 10 }, status: "completed" } },
+      _workflowUserId: "author-1",
+      _dryRun: true,
+    }
+
+    const result = await handler!(
+      {
+        code:
+          "return { keys: Object.keys(input).sort(), dry: typeof input._dryRun, " +
+          "author: typeof input._workflowUserId }",
+      },
+      context,
+      "run-dry-quickjs"
+    )
+
+    // EXACT key set, not a containment check: a future widening of the injection must fail here.
+    expect(result.output.keys).toEqual(["nodes", "trigger"])
+    expect(result.output.dry).toBe("undefined")
+    expect(result.output.author).toBe("undefined")
   })
 })
