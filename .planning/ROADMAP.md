@@ -72,7 +72,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 37: Trash & Restore** - Make soft-deleted records visible, restorable, and eventually purged (completed 2026-08-17)
 - [x] **Phase 38: Bulk Operations** - Multi-select with bulk delete, owner reassignment, and scoped export (completed 2026-08-17; the one remaining human check — dragging a Deals kanban card by its body with a real mouse — is instrument-blocked and carried into Phase 45)
 - [x] **Phase 39: Duplicate Detection & Merge** - Warn on likely duplicates and merge without orphaning children (completed 2026-08-20)
-- [ ] **Phase 40: Saved Views & Shared Filters** - Persist, share, default, and export named filter sets
+- [x] **Phase 40: Saved Views & Shared Filters** - Persist, share, default, and export named filter sets (completed 2026-08-22)
 - [ ] **Phase 41: Workflow Operator Affordances** - Replay, dry-run, failure alerting, and the single-instance constraint documented
 - [ ] **Phase 42: Observability** - Structured logging, opt-in error tracking, and a health endpoint that sees the processors
 - [ ] **Phase 43: Type Safety & Deployment Docs** - Clear the 14 type suppressions and document backup/restore
@@ -478,7 +478,7 @@ Plans:
 - [x] 40-14-PLAN.md — V-40-4 call-site gate over all 17 navigations, and the responsive-class gate
 - [x] 40-15-PLAN.md — the Docker rebuild and the 320px reachability suite, with its negative probe RUN
 - [x] 40-16-PLAN.md — private-visibility in both directions, and the degraded-read gate
-- [ ] 40-17-PLAN.md — dark-mode pass, backlog entries, and the human checkpoint
+- [x] 40-17-PLAN.md — dark-mode pass, backlog entries, and the human checkpoint
 
 **UI hint**: yes
 
@@ -575,7 +575,7 @@ Plans:
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
 | 38. Bulk Operations | 19/20 | In Progress|  |
 | 39. Duplicate Detection & Merge | 21/21 | Complete   | 2026-08-21 |
-| 40. Saved Views & Shared Filters | 17/18 | In Progress|  |
+| 40. Saved Views & Shared Filters | 18/18 | Complete   | 2026-08-22 |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
 | 43. Type Safety & Deployment Docs | 0/? | Not started | - |
