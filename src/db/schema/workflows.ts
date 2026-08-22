@@ -14,6 +14,10 @@ export const workflows = pgTable(
     active: boolean("active").notNull().default(false),
     nextRunAt: timestamp("next_run_at"),
     webhookSecret: text("webhook_secret"),
+    // WFOPS-03 throttle. NULL means "never alerted", which plan 41-08's guarded UPDATE
+    // reads as claimable. Shape copied from activities.reminderSentAt; its writer is NOT
+    // copied — that one is a read-then-write race. No index: only ever read by primary key.
+    failureAlertSentAt: timestamp("failure_alert_sent_at"),
     createdBy: text("created_by")
       .notNull()
       .references(() => users.id),
@@ -43,6 +47,14 @@ export const workflowRuns = pgTable(
     depth: integer("depth").notNull().default(0),
     context: jsonb("context").$type<Record<string, unknown>>().default({}),
     currentNodeId: text("current_node_id"),
+    // WFOPS-02. NOT NULL with DEFAULT false is load-bearing, not stylistic: a nullable
+    // column makes eq(dryRun, false) evaluate to NULL for every pre-existing run row, so
+    // the runs list would render "No runs yet" for every workflow in the database.
+    dryRun: boolean("dry_run").notNull().default(false),
+    // Diagnostic provenance for a replay. Deliberately NO .references(): runs are prunable
+    // (see src/lib/audit/prune.ts and src/lib/trash/prune.ts), and an FK would either block
+    // pruning the origin run or cascade-delete the replay with it.
+    replayedFromRunId: text("replayed_from_run_id"),
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),

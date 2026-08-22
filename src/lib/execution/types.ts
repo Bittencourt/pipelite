@@ -91,6 +91,13 @@ export interface ExecutionContext {
   >
   /** User ID of the workflow creator, used by CRM actions for mutation calls */
   _workflowUserId?: string
+  /**
+   * True when this run is a dry run: the five side-effecting handlers simulate instead of
+   * acting. Authoritative from the `workflow_runs.dry_run` column only — never read back
+   * out of the persisted `workflow_runs.context` blob, so a hand-edited context cannot
+   * turn a dry run into a real one mid-execution.
+   */
+  _dryRun?: boolean
 }
 
 export interface NodeExecutionResult {
