@@ -221,6 +221,8 @@ pm2 logs pipelite
 pm2 status
 ```
 
+PM2 cluster mode (`pm2 start … -i max`) runs one Node process per core, which is the same multi-instance situation as scaling containers — see [Horizontal Scaling](docker.md#horizontal-scaling) in the Docker guide for the one workflow feature that requires a single instance.
+
 #### Configure Auto-Restart
 
 ```bash

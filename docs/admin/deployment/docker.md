@@ -242,6 +242,31 @@ services:
           memory: 1G
 ```
 
+### Horizontal Scaling
+
+Running more than one app container is one flag away:
+
+```bash
+# Two app replicas behind your reverse proxy
+docker compose up -d --scale app=2
+```
+
+Before you do, read this. It is about the **workflow engine's background processors** only — the schedule processor and the execution processor, both registered in `instrumentation.ts` (lines 27-31), so each replica runs its own copy of each. It is not a claim about the rest of the application. Scaling `postgres` is a different question entirely and out of scope here; this section assumes one database.
+
+**One workflow feature does not survive a second replica: the Webhook Response node.** It coordinates through an in-memory map keyed by run id (`pendingResponses`, `src/lib/execution/actions/webhook-response.ts:15`), so the replica holding the caller's HTTP connection and the replica that executes the node can be different processes. When they are, the lookup misses, the node records `sent: false`, and the caller receives the generic `{ "ok": true, "run_id": "…" }` acknowledgement with HTTP 200 instead of the configured status and body. Nothing in the response reveals this.
+
+| Component | Multi-instance | Why |
+|---|---|---|
+| Schedule processor claim (`src/lib/triggers/schedule-processor.ts:65-74`) | **Safe** | One statement: `UPDATE workflows SET next_run_at = NULL WHERE active AND next_run_at <= now RETURNING *`. The losing replica re-evaluates the predicate after the row lock and matches nothing. |
+| Execution processor **pending** claim (`src/lib/execution/execution-processor.ts:115-133`) | **Safe** | `UPDATE workflow_runs SET status='running' WHERE id = (SELECT … WHERE status='pending' … FOR UPDATE SKIP LOCKED) RETURNING *`. The lock is held for the enclosing statement and the predicate re-checked, so exactly one replica claims each run. |
+| Stale-run reclaim (`src/lib/execution/execution-processor.ts:87-95`) | **Safe** | A single idempotent `UPDATE … WHERE status='running' AND started_at < NOW() - interval`; a double-apply is a no-op. |
+| Execution processor **waiting** resume (`src/lib/execution/execution-processor.ts:162-169`) | **Safe — repaired in this release** | It was not. The `SELECT … FOR UPDATE SKIP LOCKED` for elapsed delays ran through `db.execute` on a transaction-free client, so the row locks dropped at statement end, and the follow-up step `UPDATE` had no `WHERE status='waiting'` guard — two replicas could resume the same delayed run. Now wrapped in a transaction with that guard added. On a build from before this release, treat delay resume as unsafe under `--scale`. |
+| **Webhook Response** node (`src/lib/execution/actions/webhook-response.ts:15`) | **Unsafe — no fix this release** | `pendingResponses` is a module-level `Map`, private to one process. The registering replica and the executing replica must be the same for the response to be delivered. |
+
+**What this means in practice**: scale freely unless your workflows use **Webhook Response** nodes. If they do, either stay at `app=1` or restructure those workflows to acknowledge immediately and respond asynchronously.
+
+Two categories of workflow failure also never raise a failure alert — recursion-limit failures and synchronous webhook-response runs. Both are known limitations of where the alert hook lives, not scaling issues; see the [Vercel deployment guide](vercel.md#horizontal-scaling-and-the-webhook-response-constraint) for the full description, which is the canonical copy of this section.
+
 ### Backup Strategy
 
 1. **Database backups:**
