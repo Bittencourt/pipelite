@@ -169,6 +169,12 @@ None — no external service configuration, no migration, no container restart. 
 
 None. No new network endpoint, auth path, file access or schema change — both modules are pure functions over values that already cross the boundaries the plan's register enumerates. Every `mitigate` disposition in the register (T-41-07 through T-41-12, T-41-SC) is implemented and asserted; the register needs no additions.
 
+## Self-Check: PASSED
+
+All four created files exist on disk. All four task commits resolve in `git log`:
+`cfd2686`, `0de1c58`, `4a81a2d`, `e16f795`. Working tree clean. `STATE.md` and `ROADMAP.md`
+untouched — the orchestrator owns those writes.
+
 ---
 *Phase: 41-workflow-operator-affordances*
 *Completed: 2026-08-22*
