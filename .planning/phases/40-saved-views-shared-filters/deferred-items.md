@@ -253,3 +253,66 @@ Per-column pagination is the smallest honest change: fetch the first N cards per
 and load more on scroll. Virtualising the column would cut the DOM cost but not the query. Either
 way it needs a plan of its own — the board is also the drag-and-drop surface, and `@dnd-kit`
 sortable contexts have to know about every item they can reorder.
+
+---
+
+## D-40-4 — `e2e/deals-drag.spec.ts` SC-5 fails, and it is PRE-EXISTING
+
+**Found by:** plan 40-16, running the full Playwright suite for the first time this phase,
+2026-08-22.
+**Severity:** a red suite. Either the kanban cross-stage drag is broken or its harness is; both
+readings need the owner of Phase 45's drag work, not this plan.
+
+### The measurement, verbatim
+
+```
+  1) [chromium] › e2e/deals-drag.spec.ts:362:5 › dragging an unselected card to another stage moves
+     it and leaves the other card's selection intact
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('checkbox', { name: /Bruce Willis/ })
+             .locator('xpath=ancestor::div[contains(@class,"min-w-[280px]")][1]')
+             .getByRole('checkbox', { name: 'Select [e2e] Drag Subject' })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    at e2e/deals-drag.spec.ts:399:5
+```
+
+Full-suite result: **68 passed, 1 failed** — this one. The other three tests in the same file pass,
+including the two that assert the drag DID move a card, so the file's `dndDrag` helper works in
+general.
+
+### It is not caused by plan 40-16, and that was checked rather than assumed
+
+The only non-spec file 40-16 touched is `playwright.config.ts` (`workers: 1` and the `chromium`
+project's `testIgnore`). The base config was restored with
+`git checkout c28ac6e -- playwright.config.ts` and the spec re-run in isolation:
+
+```
+  1 failed
+    [chromium] › e2e/deals-drag.spec.ts:362:5 › dragging an unselected card to another stage moves it
+    and leaves the other card's selection intact
+  3 passed (23.1s)
+```
+
+Byte-identical failure on the pre-40-16 config. The committed config was then restored. The failure
+also reproduces with the file run ALONE, so it is not an interaction with any other spec, and
+`deals-drag.spec.ts` is alphabetically first in `testDir` — it runs before every Phase 40 spec, so
+nothing this phase seeds can have reached it.
+
+### Where the assertion sits
+
+`e2e/deals-drag.spec.ts:399`. The preconditions before it all pass — the anchor is checked, the bulk
+bar reads 1, and the subject card starts in the source column with the right `data-kanban-col`. The
+drag's own in-flight signal (`handleDragOver` optimistically reparenting the card) is awaited inside
+`dndDrag`. What fails is the POST-drop assertion that the subject card is a descendant of the target
+stage's column, so the drop either did not commit or the card returned to its source column.
+
+### Not investigated further here
+
+Out of scope by the plan's boundary: 40-16's `files_modified` is three spec files, none of them this
+one, and Phase 45 owns the kanban drag. Recorded with its verbatim text and its
+not-caused-by-us proof so the next plan starts from a measurement rather than from a rediscovery.
