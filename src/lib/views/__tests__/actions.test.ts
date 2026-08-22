@@ -803,6 +803,124 @@ describe(`${ACTIONS_PATH}: the write layer's authorization ordering`, () => {
     })
   })
 
+  /**
+   * WR-01 — THE MUTATION GATES MUST COMPOSE WITH THE VISIBILITY GATE.
+   *
+   * `queries.ts:38-41` states the invariant as settled fact:
+   *
+   *     `canEdit` KEEPS THE ADMIN BRANCH, and that is not a contradiction. […] an admin can only
+   *     mutate a view they can already see.
+   *
+   * Nothing enforced it. All three mutators fetched the row by primary key with NO visibility
+   * predicate and then asked `canMutateView` alone — which is
+   * `row.ownerId === viewer.id || viewer.role === "admin"`, unconditionally true for an admin. So an
+   * admin holding a private view's id could flip it shared (disclosing its name and its whole filter
+   * set into their own picker, defeating Decision 3 outright), rename it, overwrite its filters, or
+   * delete it and receive `row.name` back in the success payload.
+   *
+   * WHY THIS IS A WARNING AND NOT A CRITICAL, stated so the severity is not overstated: ids are
+   * `crypto.randomUUID()` v4 and no code path hands a private view's id to a non-owner. The defect is
+   * the absence of defence behind an unguessable id, plus a documented invariant that was false.
+   *
+   * THE ASSERTION IS AN ORDERING ONE, and deliberately mirrors the one this file already makes for
+   * `setViewDefault`: visibility FIRST, then ownership, then the write. Order matters here for a
+   * reason beyond tidiness — a row the caller cannot see must be answered exactly as a missing one
+   * (`failed`), never as `forbidden`, or the refusal itself tells an admin that somebody's private
+   * view exists at that id.
+   */
+  describe("WR-01: an admin can only mutate a view they can already SEE", () => {
+    /** Each mutator, and the call its visibility check must precede. */
+    const MUTATORS: ReadonlyArray<{ name: string; write: string }> = [
+      { name: "updateView", write: ".update(" },
+      { name: "setViewShared", write: ".update(" },
+      { name: "deleteView", write: ".delete(" },
+    ]
+
+    it("the predicates themselves disagree about a private view, which is what makes this testable", () => {
+      // Exercised, not assumed. If `canSeeView` and `canMutateView` agreed on this pair there would
+      // be nothing for the composition to add, and every ordering assertion below would be theatre.
+      expect(canSeeView(PRIVATE_ROW, ADMIN)).toBe(false)
+      expect(canMutateView(PRIVATE_ROW, ADMIN)).toBe(true)
+    })
+
+    for (const { name, write } of MUTATORS) {
+      it(`${name} calls canSeeView BEFORE canMutateView and before its write`, () => {
+        const action = actionNamed(name)
+        const seeAt = action.body.indexOf("canSeeView")
+        const mutateAt = action.body.indexOf("canMutateView")
+        const writeAt = action.body.indexOf(write)
+
+        expect(
+          seeAt,
+          `${ACTIONS_PATH}: ${name} never calls canSeeView, so canMutateView's admin branch lets ` +
+            `an admin holding the id read, rename, share or delete a view Decision 3 says belongs ` +
+            `to exactly one person (WR-01). queries.ts:38-41 claims otherwise.`,
+        ).toBeGreaterThan(-1)
+        expect(
+          mutateAt,
+          `${ACTIONS_PATH}: ${name} performs no canMutateView check, so this ordering claim is ` +
+            `vacuous.`,
+        ).toBeGreaterThan(-1)
+        expect(
+          writeAt,
+          `${ACTIONS_PATH}: ${name} performs no ${write}, so this ordering claim is vacuous.`,
+        ).toBeGreaterThan(-1)
+
+        expect(
+          seeAt,
+          `${ACTIONS_PATH}: ${name} asks whether the caller may MUTATE the row before asking ` +
+            `whether they may SEE it. The order is the disclosure: an unseen row must be refused ` +
+            `with the same answer as a missing one.`,
+        ).toBeLessThan(mutateAt)
+        expect(
+          seeAt,
+          `${ACTIONS_PATH}: ${name} writes before checking visibility.`,
+        ).toBeLessThan(writeAt)
+      })
+
+      it(`${name} answers an unseen row exactly as it answers a missing one`, () => {
+        /*
+         * `forbidden` is the sentence G-7 renders — "this view belongs to someone else" — and
+         * returning it here would confirm to an admin that a private view exists at the id they
+         * guessed or kept. `failed` is what a missing row already returns, so the two cases are
+         * indistinguishable from outside.
+         */
+        const body = actionNamed(name).body
+        const refusal = /canSeeView\([^)]*\)\)\s*return\s*\{\s*success:\s*false,\s*error:\s*"failed"\s*\}/
+
+        expect(
+          refusal.test(body),
+          `${ACTIONS_PATH}: ${name}'s canSeeView refusal does not return ` +
+            `{ success: false, error: "failed" }. A distinct code turns the guard itself into the ` +
+            `disclosure it was added to prevent (WR-01).`,
+        ).toBe(true)
+      })
+    }
+
+    it("all three mutators are covered, and setViewDefault is NOT one of them", () => {
+      /*
+       * ANTI-VACUITY AND A BOUNDARY IN ONE. The list above is a literal, so this pins it against the
+       * actions actually exported: every action that calls `canMutateView` must also call
+       * `canSeeView`. `setViewDefault` deliberately calls neither `canMutateView` (G-7: a default is
+       * per user) nor a write this block would recognise, so it is excluded by the predicate rather
+       * than by being forgotten.
+       */
+      const mutating = actions
+        .filter((fn) => fn.body.includes("canMutateView"))
+        .map((fn) => fn.name)
+        .sort()
+
+      expect(mutating).toEqual(["deleteView", "setViewShared", "updateView"])
+
+      for (const name of mutating) {
+        expect(
+          actionNamed(name).body,
+          `${ACTIONS_PATH}: ${name} calls canMutateView without canSeeView (WR-01).`,
+        ).toContain("canSeeView")
+      }
+    })
+  })
+
   describe("no translated string crosses this boundary", () => {
     it("contains zero message-catalog keys", () => {
       // The action returns a machine code; the client picks the sentence. A key returned from

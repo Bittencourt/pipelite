@@ -256,6 +256,12 @@ export async function updateView(input: {
     // A missing row and a refused row answer differently on purpose: the caller supplied this id,
     // so "gone" is not a disclosure, while "forbidden" is the sentence G-7 renders.
     if (!row) return { success: false, error: "failed" }
+    // VISIBILITY FIRST, AND ANSWERED AS A MISSING ROW (WR-01). `canMutateView` has an admin branch
+    // and `canSeeView` has none, so ownership alone would let an admin holding a private view's id
+    // rename it and overwrite its filters — the invariant `queries.ts:38-41` claims ("an admin can
+    // only mutate a view they can already see") with nothing enforcing it. `failed` and not
+    // `forbidden`: the refusal must not tell an admin that somebody's private view exists here.
+    if (!canSeeView(row, viewer)) return { success: false, error: "failed" }
     if (!canMutateView(row, viewer)) return { success: false, error: "forbidden" }
 
     const entityType = narrowEntityType(row.entityType)
@@ -352,6 +358,11 @@ export async function setViewShared(input: {
     })
 
     if (!row) return { success: false, error: "failed" }
+    // VISIBILITY FIRST (WR-01), AND THIS IS THE SITE THAT MATTERED MOST. Without it an admin
+    // holding a private view's id could call `setViewShared({ id, isShared: true })` and the view's
+    // NAME and FULL FILTER SET would appear in their own picker on the next read — Decision 3
+    // defeated outright rather than partially. Refused as `failed`, identically to a missing row.
+    if (!canSeeView(row, viewer)) return { success: false, error: "failed" }
     if (!canMutateView(row, viewer)) return { success: false, error: "forbidden" }
 
     await db.transaction(async (tx) => {
@@ -487,6 +498,10 @@ export async function deleteView(input: { id: string }): Promise<DeleteViewResul
     })
 
     if (!row) return { success: false, error: "failed" }
+    // VISIBILITY FIRST (WR-01). This action RETURNS `row.name` on success, so without the check an
+    // admin holding a private view's id could destroy it AND read back its name — a disclosure the
+    // ownership predicate does not cover, because ownership is not the question being asked.
+    if (!canSeeView(row, viewer)) return { success: false, error: "failed" }
     if (!canMutateView(row, viewer)) return { success: false, error: "forbidden" }
 
     await db.delete(savedViews).where(eq(savedViews.id, id))
