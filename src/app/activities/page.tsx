@@ -10,6 +10,10 @@ import { Button } from "@/components/ui/button"
 import { Plus, Calendar, List } from "lucide-react"
 import { ActivitiesClient } from "./activities-client"
 import { readTrashRetentionDays } from "@/lib/trash/settings"
+import {
+  resolveDefaultViewRedirect,
+  resolveSavedViewsBarProps,
+} from "@/lib/views/resolve"
 import { getTranslations } from 'next-intl/server'
 
 const PAGE_SIZE = 50
@@ -67,6 +71,26 @@ export default async function ActivitiesPage({
     redirect("/login")
   }
 
+  /*
+    U-2 — THE DEFAULT VIEW REDIRECT, AND WHY THE GUARD IS "NO PARAMS AT ALL".
+
+    A user with a default activities view wants `/activities` to land on it. But "arrived with no
+    filters" and "deliberately cleared every filter" are the same URL unless something distinguishes
+    them, so a guard written as "no FILTER params" would recapture the user the instant they pressed
+    Clear — a loop they cannot leave by clearing. `Object.keys(params).length === 0` is the whole
+    distinction: every navigation in this surface that clears a filter routes through
+    `withViewEscape`, which emits `view=none`, and a URL carrying `view=none` HAS a param. So the
+    escape URL is never bare, this branch never fires on it, and there is exactly one code path for
+    "arrived by default".
+
+    `redirect()` signals by THROWING a Next.js control-flow error, so it stays outside any
+    try/catch — a catch here would swallow the navigation and render the unfiltered list instead.
+  */
+  if (Object.keys(params).length === 0) {
+    const target = await resolveDefaultViewRedirect("activity", session.user)
+    if (target) redirect(`/activities${target}`)
+  }
+
   const pageNum = Math.max(1, parseInt(params.page ?? "1"))
   const search = params.search ?? ""
 
@@ -120,7 +144,7 @@ export default async function ActivitiesPage({
   // Fetch one extra row to detect hasMore
   filters.limit = PAGE_SIZE * pageNum + 1
 
-  // Fetch activities, types, deals, and users
+  // Fetch activities, types, deals, users and the saved-views bar props
   const [
     activitiesResult,
     typesResult,
@@ -128,6 +152,7 @@ export default async function ActivitiesPage({
     ownersResult,
     bulkOwnersResult,
     retentionDays,
+    viewsBar,
   ] = await Promise.all([
     getActivities(filters),
     getActivityTypes(),
@@ -160,6 +185,22 @@ export default async function ActivitiesPage({
       orderBy: [users.name],
     }),
     readTrashRetentionDays(),
+    /*
+      RIDES IN THE EXISTING Promise.all RATHER THAN AWAITING SEPARATELY. It depends on nothing above
+      it — only on `params`, which is already resolved — so a sequential await would add a latency
+      hop to every visit to this page for no ordering benefit. All eight props are computed inside
+      the resolver (Rule B-2); this page never assembles them.
+
+      `rawSearchParams: params` is handed over UNTRUSTED and stays that way. The resolver runs it
+      through `pickFilterParams`, which walks the four-key whitelist rather than the object, so a
+      crafted `?__proto__=`, a repeated key or a 1MB value is an ordinary non-member. This page does
+      not pre-clean it, because a second cleaner would be a second thing to keep correct.
+    */
+    resolveSavedViewsBarProps({
+      entityType: "activity",
+      viewer: session.user,
+      rawSearchParams: params,
+    }),
   ])
 
   // Handle errors
@@ -250,6 +291,7 @@ export default async function ActivitiesPage({
         users={usersForAssignee}
         bulkOwners={bulkOwners}
         retentionDays={retentionDays}
+        viewsBar={viewsBar}
         activeFilters={activeFilters}
         hasMore={hasMore}
         search={search}

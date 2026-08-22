@@ -17,6 +17,7 @@ import {
 } from "./actions"
 import { BulkActionBar } from "@/components/bulk/bulk-action-bar"
 import { BulkFailureReport } from "@/components/bulk/bulk-failure-report"
+import type { SavedViewsBarProps } from "@/lib/views/types"
 import type { BulkOutcome } from "@/lib/bulk/types"
 import { useTranslations } from "next-intl"
 
@@ -49,6 +50,15 @@ interface ActivitiesClientProps {
   bulkOwners: Array<{ id: string; name: string }>
   /** `null` means nothing is purged automatically. Never defaulted anywhere in this file. */
   retentionDays: number | null
+  /**
+   * All eight bar props, resolved on the server and spread straight onto `<SavedViewsBar>`.
+   *
+   * ONE PROP AND NOT EIGHT, deliberately: `SavedViewsBarProps` is declared once in
+   * `src/lib/views/types.ts` and this component has no opinion about any member of it. Destructuring
+   * it here would give the eight props a second declaration site that could drift from the first,
+   * and would make this file a thing to edit every time the bar's contract changes.
+   */
+  viewsBar: SavedViewsBarProps
   activeFilters: {
     type: string | null
     owner: string | null
@@ -70,6 +80,7 @@ export function ActivitiesClient({
   users,
   bulkOwners,
   retentionDays,
+  viewsBar,
   activeFilters,
   hasMore = false,
   search = "",
