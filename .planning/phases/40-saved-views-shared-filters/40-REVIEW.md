@@ -47,7 +47,20 @@ findings:
   warning: 6
   info: 6
   total: 13
-status: issues_found
+fixed:
+  critical: 1
+  warning: 5
+  info: 0
+  total: 6
+open:
+  critical: 0
+  warning: 1
+  info: 6
+  total: 7
+fixed_at: 2026-08-22T14:40:00Z
+fixed_ids: [CR-01, WR-01, WR-02, WR-03, WR-05, WR-06]
+open_ids: [WR-04, IN-01, IN-02, IN-03, IN-04, IN-05, IN-06]
+status: fixes_applied
 ---
 
 # Phase 40: Code Review Report
@@ -546,3 +559,96 @@ Recorded so a later reader knows these were attacked rather than skipped:
 _Reviewed: 2026-08-22T14:10:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+
+---
+
+# Fixes applied
+
+Six of the seven Critical/Warning findings are fixed, one atomic commit each. **The reviewer's
+findings above are unchanged** — nothing was edited, softened or deleted. This section is appended.
+
+Every fix has a regression test that FAILED against the unfixed code and PASSES after it. The RED
+run was executed before each fix, not reconstructed afterwards, and the failure counts below are the
+observed ones.
+
+| id | commit | what changed | regression test | RED |
+| --- | --- | --- | --- | --- |
+| CR-01 | `26f6f2e` | `src/lib/filters/date-range.ts` (new, shared) + all three call sites: `activities/actions.ts`, `formatters.ts` × 2 | `src/app/activities/__tests__/get-activities-where.test.ts` (new), `src/lib/export/__tests__/view-filters.test.ts`, `src/lib/filters/__tests__/date-range.test.ts` (new) | 8 failing |
+| WR-05 | `7f8982e` | `getActivities` + `fetchActivities` pending predicate; `activities-client.tsx` stats row | `get-activities-where.test.ts`, `view-filters.test.ts`, `get-activities-filters.test.ts` | 3 failing |
+| WR-01 | `cb6526c` | `canSeeView` composed into `updateView`, `setViewShared`, `deleteView`; `queries.ts` header names its enforcement site | `src/lib/views/__tests__/actions.test.ts` | 7 failing |
+| WR-02 | `636d9b8` | `views.save.sharedHelp` corrected in en-US, pt-BR, es-ES | `src/messages/locale-parity.test.ts` | 4 failing |
+| WR-03 | `8db5ed3` | `clearOtherUsersDefaults` extracted; called by `setViewShared` AND `updateView` | `src/lib/views/__tests__/actions.test.ts` | 7 failing |
+| WR-06 | `a9af8bc` | both optimistic overrides discarded in the success branch | `src/components/views/__tests__/manage-views-dialog-wiring.test.ts` | 1 failing |
+
+## WR-04 is deliberately NOT fixed
+
+Recorded above exactly as written. The decision taken separately: tightening `hasExportableFilter`
+or lowering the row cap is a **change to Decision 2**, not a bug fix, and belongs to whoever owns
+that decision. `view-export-guard.ts` is untouched by every commit in this section — no
+minimum-selectivity rule, no second cap, no policy change. The finding stands open with its
+measurements intact.
+
+The six Info findings are also untouched and remain open.
+
+## Notes on the fixes that go slightly beyond the finding's own line numbers
+
+Recorded because each one is a decision a later reader could otherwise mistake for scope creep.
+
+**CR-01 — the boundary rule became a module.** The review asked for one: "The helper belongs in one
+module imported by both, because `formatters.ts:280` already claims each predicate 'MIRRORS the list
+page it must match' — two copies of a boundary rule is how they stop mirroring." So
+`src/lib/filters/date-range.ts` owns `startOfDayInclusive` / `endOfDayExclusive` and all three sites
+import it. The bound is **half-open** (`dueDate < dateTo + 1 day`) rather than the deleted
+`setHours(23,59,59,999)`: Postgres `timestamp` keeps microseconds and `Date` does not, so the
+`.999` form is wrong at the precision the column actually stores. Both helpers are **UTC-only** and
+the module says so, along with what changes under a non-UTC deployment — the container runs `TZ=UTC`,
+verified.
+
+**WR-05 — the stats row followed the query.** The review noted that `activities-client.tsx:253`
+computing `pendingCount` as `!a.completedAt` was the argument offered FOR the broken predicate, and
+that "the choice needs to be made once and made visible: either the stats row is wrong, or the
+'Overdue' option is redundant." With the predicate fixed, leaving the stats row would have put ONE
+WORD on the screen meaning two different sets — read "Pending: 50", select Pending, get a different
+number. `pendingCount` now matches the filter and `overdueCount` is shown beside it, using
+`t('overdue')`, the same catalog key the filter's third option already renders, so **no string was
+added in any locale**. The three numbers still account for every row on the page.
+
+**WR-03 — the cleanup was extracted rather than copied.** The review's prose asked for exactly this
+("extract the cleanup and call it from both"); its code sketch showed an inline block.
+`clearOtherUsersDefaults` is module-private — Next.js refuses a `"use server"` module that exports a
+non-async-function, and exporting it would make it a public endpoint that deletes defaults. Two
+inline copies of one rule is the shape that produced WR-03, so the gate now FAILS on a second copy
+rather than tolerating it.
+
+## One existing assertion was changed, and it was strengthened
+
+`src/app/activities/__tests__/get-activities-filters.test.ts` required
+`expect(getActivitiesBody).toContain("lte(activities.dueDate")`. That assertion was **pinning CR-01
+in place** — it demanded the inclusive upper bound that drops the end day. It now requires
+`lt(...)`, names the shared helper, and forbids the `lte` spelling outright, which is strictly
+stronger than the "some upper bound exists" claim it replaced. Flagged here rather than left in a
+diff, because a gate that encodes a defect is itself a finding.
+
+Two other existing tests were **extended, not relaxed**:
+
+- `view-filters.test.ts`'s "pending" test keeps its `not.toContain('"activities"."due_date" <')`
+  assertion byte-for-byte — it still guards what it was written for, that a future-dated incomplete
+  row stays pending — and gains the `>=` requirement WR-05 needs.
+- `actions.test.ts`'s "setViewShared clears OTHER users' defaults" test: its four assertions
+  (`savedViewDefaults`, `.delete(`, `ne(`, `ownerId`) moved onto the shared helper, where they now
+  cover BOTH unshare paths instead of one. setViewShared keeps a stronger claim of its own — it
+  calls the helper, inside its transaction, only under `if (!isShared)`.
+
+## Suite state
+
+- `npx tsc --noEmit` — clean.
+- `npx eslint` — 0 errors, 125 warnings (the review-time baseline was 127; nothing was suppressed).
+- `npm test` — **3842 passed / 28 skipped** in the base project plus **8 passed** in the rsc project,
+  0 failures. The baseline was 3791 passed; the 51 new tests are the regression gates listed above.
+
+`npm run test:db` was NOT run — it drops and recreates a database. `formatters-live.test.ts`
+self-skips without `DATABASE_URL` and was not relied on as a gate; every assertion above runs in the
+base project, in CI.
+
+_Fixes applied: 2026-08-22_
+_Fixer: Claude (gsd-code-fixer)_
