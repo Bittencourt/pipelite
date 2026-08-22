@@ -680,7 +680,7 @@
       "targetNew": "Salvar como uma nova visão",
       "targetNewOnly": "Você só pode salvar isso como uma nova visão, porque “{name}” pertence a {owner}.",
       "sharedLabel": "Compartilhar com a equipe",
-      "sharedHelp": "Colegas podem selecionar esta visão e defini-la como padrão. Só você pode editá-la ou excluí-la.",
+      "sharedHelp": "Colegas podem selecionar esta visão e defini-la como padrão. Só você e os administradores podem editá-la ou excluí-la.",
       "privateHelp": "Só você pode ver esta visão. Mais ninguém, nem os administradores.",
       "defaultLabel": "Abrir esta visão por padrão",
       "defaultHelp": "Abrir esta lista sem filtros na barra de endereço leva você para cá.",
