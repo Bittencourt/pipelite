@@ -117,6 +117,160 @@ describe("webhook_response action handler", () => {
   })
 })
 
+// ---- Dry run (WFOPS-02) ----
+//
+// `sendWebhookResponse` is gated under `_dryRun` even though it is ALREADY incidentally safe:
+// `pendingResponses` is only written by `waitForWebhookResponse`, which only the inbound webhook
+// route calls, so a dry run created by a server action never has an entry and the send returns
+// false on the map miss. That safety is an accident of two facts asserted nowhere. The tests below
+// assert the gate against a REGISTERED entry, which is the only way to tell a gate apart from the
+// incidental miss.
+describe("webhook_response dry run", () => {
+  const dryContext = () => makeContext({ _dryRun: true })
+
+  it("leaves a REGISTERED pending response untouched", async () => {
+    const runId = "run-dry-registered"
+    const pending = waitForWebhookResponse(runId, 5000)
+    let settled = false
+    void pending.then(
+      () => {
+        settled = true
+      },
+      () => {
+        settled = true
+      }
+    )
+
+    const result = await webhookResponseHandler(
+      { statusCode: 202, body: { message: "Hi {{trigger.data.body.name}}" } },
+      dryContext(),
+      runId
+    )
+
+    expect(result.output.sent).toBe(false)
+
+    // Drain the microtask and macrotask queues: a resolved promise flips `settled` by now.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(
+      settled,
+      "ANTI-VACUITY: the dry run resolved a LIVE pending webhook response, so the gate is " +
+        "absent. Every other dry-run assertion in this file also passes on the pre-existing " +
+        "INCIDENTAL map miss; this is the only one that proves the gate exists."
+    ).toBe(false)
+
+    // Still pending, and still resolvable for real — which also clears its 5s timeout.
+    expect(sendWebhookResponse(runId, 200, { ok: true })).toBe(true)
+    await expect(pending).resolves.toEqual({
+      statusCode: 200,
+      body: { ok: true },
+    })
+  })
+
+  it("still interpolates the body", async () => {
+    const result = await webhookResponseHandler(
+      { statusCode: 200, body: { message: "Hi {{trigger.data.body.name}}" } },
+      dryContext(),
+      "run-dry-interpolate"
+    )
+
+    expect(result.output.body).toEqual({ message: "Hi Test" })
+  })
+
+  it("still normalises a non-object body to {}", async () => {
+    const unparseable = await webhookResponseHandler(
+      { statusCode: 200, body: "not json at all" },
+      dryContext(),
+      "run-dry-normalize-string"
+    )
+    expect(unparseable.output.body).toEqual({})
+
+    const numeric = await webhookResponseHandler(
+      { statusCode: 200, body: 42 },
+      dryContext(),
+      "run-dry-normalize-number"
+    )
+    expect(numeric.output.body).toEqual({})
+  })
+
+  it("still defaults statusCode to 200", async () => {
+    const result = await webhookResponseHandler(
+      { body: { ok: true } },
+      dryContext(),
+      "run-dry-default-status"
+    )
+
+    expect(result.output.statusCode).toBe(200)
+  })
+
+  it("matches the real output's key set plus exactly `simulated`", async () => {
+    const config = {
+      statusCode: 201,
+      body: { message: "Created {{trigger.data.body.name}}" },
+    }
+
+    const real = await webhookResponseHandler(
+      config,
+      makeContext(),
+      "run-parity-real"
+    )
+    const dry = await webhookResponseHandler(config, dryContext(), "run-parity-dry")
+
+    // Computed from the real output, not listed twice: a real output that grows a key makes the
+    // simulated one fail until it grows the same key. Shape fidelity is the point — a downstream
+    // node reading a field off this output must not get `undefined` in a dry run.
+    const realKeys = new Set(Object.keys(real.output))
+    expect(realKeys.has("simulated")).toBe(false)
+    expect(new Set(Object.keys(dry.output))).toEqual(
+      new Set([...realKeys, "simulated"])
+    )
+    expect(dry.output).toEqual({
+      sent: false,
+      statusCode: 201,
+      body: { message: "Created Test" },
+      simulated: true,
+    })
+  })
+
+  it("still sends for real when _dryRun is false", async () => {
+    const runId = "run-real-explicit-false"
+    const pending = waitForWebhookResponse(runId, 5000)
+
+    const result = await webhookResponseHandler(
+      { statusCode: 201, body: { message: "Created {{trigger.data.body.name}}" } },
+      makeContext({ _dryRun: false }),
+      runId
+    )
+
+    expect(result.output).toEqual({
+      sent: true,
+      statusCode: 201,
+      body: { message: "Created Test" },
+    })
+    // sendWebhookResponse was called exactly once with (runId, statusCode, interpolatedBody):
+    // the pending promise for THIS runId resolved with exactly those values...
+    await expect(pending).resolves.toEqual({
+      statusCode: 201,
+      body: { message: "Created Test" },
+    })
+    // ...and only once, since the entry is now gone.
+    expect(sendWebhookResponse(runId, 200, {})).toBe(false)
+  })
+
+  it("keeps the map-miss behaviour unchanged for a real run", async () => {
+    const result = await webhookResponseHandler(
+      { statusCode: 200, body: { ok: true } },
+      makeContext({ _dryRun: false }),
+      "run-real-unregistered"
+    )
+
+    expect(result.output).toEqual({
+      sent: false,
+      statusCode: 200,
+      body: { ok: true },
+    })
+  })
+})
+
 describe("hasWebhookResponseNode", () => {
   it("returns true when webhook_response node exists", () => {
     const nodes = [

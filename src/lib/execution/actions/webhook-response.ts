@@ -114,6 +114,37 @@ async function webhookResponseHandler(
   // Interpolate template variables in the body
   const interpolatedBody = interpolateDeep(rawBody, context)
 
+  // ---- DRY-RUN GATE (WFOPS-02) ----
+  //
+  // This gate looks redundant, and it is not. `pendingResponses` is only ever written by
+  // `waitForWebhookResponse`, which is called only by the inbound webhook route
+  // (src/app/api/webhooks/in/[workflowId]/[secret]/route.ts) — so a dry run, created by a server
+  // action, never has an entry for its runId and `sendWebhookResponse` already returns false on
+  // the map miss without awaiting, constructing a promise or throwing. That makes today's safety
+  // INCIDENTAL: it depends on the map being keyed by runId and on a dry run never passing through
+  // the webhook route, both true and neither asserted anywhere. The gate costs three lines, makes
+  // the invariant testable against a REGISTERED pending entry, and converts an accident into a
+  // decision.
+  //
+  // Related consequence, recorded so this file and the WFOPS-04 doc agree: replaying a failed run
+  // of a webhook-response workflow also produces `sent: false`, because the original HTTP caller
+  // is long gone. Correct and harmless, but it means such a workflow's replay is not equivalent to
+  // its original run.
+  //
+  // Note what is NOT here: `pendingResponses`, `waitForWebhookResponse` and `sendWebhookResponse`
+  // are untouched. Making webhook-response multi-instance safe is explicitly out of scope
+  // (REQUIREMENTS.md § Out of Scope).
+  if (context._dryRun) {
+    return {
+      output: {
+        sent: false,
+        statusCode,
+        body: interpolatedBody,
+        simulated: true,
+      },
+    }
+  }
+
   // Send response to waiting HTTP handler
   const sent = sendWebhookResponse(runId, statusCode, interpolatedBody)
 
