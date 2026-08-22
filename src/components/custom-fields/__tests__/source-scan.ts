@@ -8,6 +8,26 @@
  * self-invalidating. One implementation so the two cannot drift apart.
  *
  * Not a `.test.ts`, so vitest's include glob does not try to run it.
+ *
+ * SECOND HALF OF THIS FILE: THE JSX EXTRACTORS.
+ *
+ * `openingTagAt`, `tagIndexes`, `elementRegion` and `enclosingConditional` were written for plan
+ * 40-08's save-dialog gate, module-private, after that plan recorded why it could not import the
+ * equivalents from `src/app/organizations/__tests__/toolbar-wiring.test.ts`: those are module-private
+ * there AND hard-wired to that file's marker, the literal `'<div className="flex flex-wrap'`. 40-08's
+ * SUMMARY closed with the condition for promoting them — "if a third 40-* gate needs these, promote
+ * all four into `source-scan.ts` in ONE commit and delete both copies". Plan 40-09's manage-dialog
+ * gate is that third consumer, so they live here now and 40-08's gate imports them.
+ *
+ * They are here rather than in a new file because the property they exist for is the SAME property
+ * the three functions above exist for: an assertion must read real code and never prose. A scoped
+ * assertion is the other half of that guarantee — `stripComments` stops a comment satisfying a gate,
+ * and `elementRegion` stops the WRONG ELEMENT satisfying it. One module so the two halves cannot
+ * drift apart, and so no fourth brace matcher gets written by the next plan that needs one.
+ *
+ * All four take an OPTIONAL `file` label used only in their throw messages. They are shared helpers
+ * and cannot know which file a caller read; passing the path keeps a malformed-source failure
+ * self-locating, exactly as it was when these lived beside a single `COMPONENT` constant.
  */
 import { readFileSync } from "node:fs"
 
@@ -123,4 +143,173 @@ export function callArguments(source: string, callee: string): string[] {
   }
 
   return calls
+}
+
+/* ------------------------------------------------------------------------- *
+ * THE JSX EXTRACTORS — promoted verbatim from plan 40-08's save-dialog gate.
+ * ------------------------------------------------------------------------- */
+
+/** `"path/to/file: "` when a caller named its file, `""` when it did not. */
+function where(file: string): string {
+  return file === "" ? "" : `${file}: `
+}
+
+/**
+ * The opening tag that starts at `at`, up to the `>` that closes it.
+ *
+ * String-aware AND brace-depth-aware: an arrow function in a prop (`onSubmit={(e) => …}`) contains
+ * a `>` that is not the end of the tag, and a naive `indexOf(">")` would truncate the tag right
+ * before the className it is being asked about.
+ */
+export function openingTagAt(source: string, at: number, label: string, file = ""): string {
+  let i = at
+  let depth = 0
+  let quote: string | null = null
+
+  while (i < source.length) {
+    const ch = source[i]
+
+    if (quote) {
+      if (ch === "\\") {
+        i += 2
+        continue
+      }
+      if (ch === quote) quote = null
+      i += 1
+      continue
+    }
+
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch
+      i += 1
+      continue
+    }
+
+    if (ch === "{") depth += 1
+    else if (ch === "}") depth -= 1
+    else if (ch === ">" && depth === 0) return source.slice(at, i + 1)
+
+    i += 1
+  }
+
+  throw new Error(`${where(file)}unterminated opening tag for ${label}`)
+}
+
+/**
+ * Every offset where `<${tagName}` begins as a WHOLE tag name.
+ *
+ * The boundary check is what stops `<Dialog` matching `<DialogContent` and `<RadioGroup` matching
+ * `<RadioGroupItem` — an assertion scoped to the wrong element is not scoped at all.
+ */
+export function tagIndexes(source: string, tagName: string): number[] {
+  const found: number[] = []
+  const marker = `<${tagName}`
+  let from = 0
+
+  for (;;) {
+    const at = source.indexOf(marker, from)
+    if (at === -1) break
+
+    const after = source[at + marker.length]
+    if (after !== undefined && /[A-Za-z0-9_]/.test(after)) {
+      from = at + marker.length
+      continue
+    }
+
+    found.push(at)
+    from = at + marker.length
+  }
+
+  return found
+}
+
+/**
+ * The `<${tagName}> … </${tagName}>` region, by TAG DEPTH rather than by a line range.
+ *
+ * A line range silently drifts the moment anything above the element grows; depth counting does
+ * not, and a nested copy of the same tag cannot close the region early.
+ *
+ * Scoping to a tag that is not the FIRST of its name in the file — a `<div>` among many — is done by
+ * slicing the source at that element's own opening tag and calling this on the slice. That is why
+ * there is no "nth occurrence" parameter: the slice already says which one.
+ */
+export function elementRegion(source: string, tagName: string, file = ""): string {
+  const [at] = tagIndexes(source, tagName)
+  if (at === undefined) throw new Error(`${where(file)}no <${tagName}> found`)
+
+  const open = `<${tagName}`
+  const close = `</${tagName}`
+  let depth = 1
+  let i = at + open.length
+
+  while (i < source.length && depth > 0) {
+    if (source.startsWith(close, i)) {
+      depth -= 1
+      i += close.length
+      continue
+    }
+    if (source.startsWith(open, i)) {
+      depth += 1
+      i += open.length
+      continue
+    }
+    i += 1
+  }
+
+  if (depth !== 0) throw new Error(`${where(file)}unterminated <${tagName}> region`)
+
+  return source.slice(at, i)
+}
+
+/**
+ * The `{<test> && ( … )}` JSX conditional that ENCLOSES `marker`, split into its test and its body,
+ * extracted by paren depth.
+ *
+ * The final containment check is not decoration: without it, a marker that moved out of the
+ * conditional would still find the nearest preceding `&& (` and the gate would happily assert
+ * things about a branch the marker no longer lives in.
+ */
+export function enclosingConditional(
+  source: string,
+  marker: string,
+  file = ""
+): { test: string; body: string } {
+  const at = source.indexOf(marker)
+  if (at === -1) throw new Error(`${where(file)}${marker} not found in the source`)
+
+  const arrow = source.lastIndexOf("&& (", at)
+  if (arrow === -1) {
+    throw new Error(`${where(file)}${marker} is not inside a {… && ( … )} conditional`)
+  }
+
+  const brace = source.lastIndexOf("{", arrow)
+  if (brace === -1) {
+    throw new Error(
+      `${where(file)}no JSX expression container opens the conditional around ${marker}`
+    )
+  }
+
+  let depth = 1
+  let i = arrow + "&& (".length
+  const bodyStart = i
+
+  while (i < source.length && depth > 0) {
+    const ch = source[i]
+    if (ch === "(") depth += 1
+    else if (ch === ")") depth -= 1
+    i += 1
+  }
+
+  if (depth !== 0) throw new Error(`${where(file)}unterminated conditional around ${marker}`)
+
+  const body = source.slice(bodyStart, i - 1)
+
+  if (!body.includes(marker)) {
+    throw new Error(
+      `${where(file)}the conditional found before ${marker} does not contain it — the extraction ` +
+        `latched onto an unrelated branch, so nothing below would be scoped to the right one.`
+    )
+  }
+
+  return { test: source.slice(brace + 1, arrow), body }
 }
