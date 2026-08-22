@@ -217,18 +217,68 @@ export function flattenActivity(
 // ---------------------------------------------------------------------------
 
 /**
+ * The six leading characters Excel and LibreOffice read as the start of an expression.
+ *
+ * Tab and CR are in the list because both spreadsheets strip leading whitespace before deciding
+ * whether a cell is a formula, so `\t=1+1` evaluates exactly as `=1+1` does.
+ */
+const CSV_INJECTION_PREFIXES = new Set(["=", "+", "-", "@", "\t", "\r"])
+
+/**
+ * NEUTRALISE A SPREADSHEET FORMULA IN A CELL (review IN-06).
+ *
+ * `Papa.unparse` quotes and escapes correctly for CSV and does nothing about the FIRST CHARACTER
+ * problem: a cell of `=HYPERLINK("http://evil","click")` is written as valid CSV and then
+ * evaluated when the file is opened. Every text column in every export is attacker-controlled by
+ * anyone who can create a record — an organization's `notes`, any text custom field — so the
+ * mitigation belongs at the shared serialisation point rather than on a chosen column list.
+ *
+ * Prefixing with an apostrophe is the standard fix: spreadsheets treat `'` as "the rest of this
+ * cell is literal text" and do not display it.
+ *
+ * **THE NUMERIC EXEMPTION IS LOAD-BEARING, NOT A LOOPHOLE.** The naive rule — prefix anything
+ * starting with one of the six characters — turns every negative number in the file into text in
+ * Excel: deal values, formula results, amounts. So a string that parses WHOLLY as a finite number
+ * is exempt. `Number()` and not `parseFloat()`, and that is the entire security content of this
+ * function: `parseFloat("-2+3+cmd|'/C calc'!A0")` returns `-2` and would wave the documented
+ * bypass straight through, whereas `Number()` rejects any trailing garbage and yields `NaN`.
+ * Both cases are asserted in `__tests__/csv-injection.test.ts`.
+ *
+ * Non-strings pass through untouched — a real `number` is serialised by papaparse and was never
+ * a formula. Only the string branch can carry an expression.
+ */
+export function neutraliseCsvInjection(value: unknown): unknown {
+  if (typeof value !== "string" || value.length === 0) return value
+  if (!CSV_INJECTION_PREFIXES.has(value[0])) return value
+  // A whole-string numeric parse. See the paragraph above for why this is not `parseFloat`.
+  if (Number.isFinite(Number(value))) return value
+
+  return `'${value}`
+}
+
+/**
  * All four entity exports funnel through here, so this is the single place the column set is
  * decided. `header: true` alone derived it from row 1 only — see `deriveCsvColumns` for the
  * measurement and for why the ordering is what it is (SC-2).
+ *
+ * It is also the single place formula injection is neutralised (IN-06). The value pass runs over
+ * EVERY row, not the first — `deriveCsvColumns` already scans them all for the column set, and a
+ * payload on row 2,000 is the same payload. Keys are untouched: a custom field named `=cmd`
+ * reaches the header as `custom_=cmd`, whose first character is `c`.
  */
 export function exportToCSV(
   data: Record<string, unknown>[]
 ): string {
   const columns = deriveCsvColumns(data)
+  const safe = data.map((row) => {
+    const out: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(row)) out[key] = neutraliseCsvInjection(value)
+    return out
+  })
   // papaparse throws `Option columns is empty` on an empty array, and an empty dataset must
   // still produce an empty string rather than an exception.
-  if (columns.length === 0) return Papa.unparse(data, { header: true })
-  return Papa.unparse(data, { header: true, columns })
+  if (columns.length === 0) return Papa.unparse(safe, { header: true })
+  return Papa.unparse(safe, { header: true, columns })
 }
 
 export function exportToJSON(
