@@ -149,6 +149,42 @@ run's terminal status after `executeRun` returns. **This must also cover `reclai
 ids** — a run killed by the 5-minute lease is precisely the "fails silently forever" case WFOPS-03
 names, and it never passes through `executeRun` at all.
 
+**A5 — the throttle gets its own column, so there are FOUR schema additions, not three.**
+*(amends the alerting decision, which named `digest_log` as the precedent)*
+Pattern mapping read `digest_log` (`src/db/schema/digest-log.ts:3-8` — four columns, no workflow key)
+and its only reader (`src/app/api/internal/email/process/route.ts:113-121`), where **an extra row
+silently returns 0 and kills the weekly digest.** So `digest_log` is not a shared "we already sent
+this" ledger; it is the weekly digest's private state, and writing failure alerts into it would break
+an unrelated feature quietly.
+
+The throttle therefore needs its own storage. The correct precedent is `activities.reminderSentAt`
+(`src/db/schema/activities.ts:15`) — a timestamp on the row being throttled — which makes the fourth
+addition a `lastFailureAlertAt`-style timestamp on `workflows`. **But copy its shape, not its writer:**
+that writer (`route.ts:76-79`) has no `IS NULL` guard and is a read-then-write race. Use the guarded
+claim form from `claimWorkflowRun` (`src/lib/triggers/create-run.ts:65-73`) or `reclaimStaleRuns`
+(`execution-processor.ts:87-97`) so two processor ticks cannot both send.
+
+**Resolutions of the remaining contradictions pattern mapping escalated:**
+
+- **Do not pin a message-key COUNT anywhere.** UI-SPEC says 25, VALIDATION says 23, and
+  `locale-parity.test.ts:1011-1018` records that *every key count in the Phase 40 planning docs was
+  wrong* because a naive count includes dot-paths quoted in comments. The gate must evaluate the
+  `REQUIRED_WORKFLOWS_KEYS` array, never a number written in prose. Both documents' figures are
+  descriptive; the array is normative.
+- **A3 beats RESEARCH Open Question 5.** Research recommended documenting `processWaitingRuns` as
+  unsafe without fixing it; A3 is user-approved and fixes it. A3 wins.
+- **Test file placement follows the local convention of each target directory**, not one global rule.
+  Where neighbouring tests are colocated, colocate; where a `__tests__/` dir already exists, use it.
+  Do not create a new convention in a directory that already has one.
+- **`src/lib/workflows/replay.ts` must be CREATED.** VALIDATION Wave 0 names
+  `__tests__/replay.test.ts` with no module under test. The replayability predicate and the run-input
+  construction are pure functions once extracted — same seam as `runs-filter.ts`.
+- **A post-migration container restart is a required task, not a note.** After the migration, the app
+  container must be restarted and `docker compose logs app | grep -F '[execution-processor] Starting'`
+  confirmed. Without it WFOPS-02 and WFOPS-03 are dead in the running app while every test passes —
+  the exact false-green that cost Phase 24-31 a debugging session (see STATE.md 2026-08-08: all four
+  processors dead in production because the standalone build omitted `instrumentation.js`).
+
 **Also carried from research, not decisions but constraints on the planner:**
 
 - **`dry_run` must be `NOT NULL` with a default.** A nullable column empties the entire runs list,
