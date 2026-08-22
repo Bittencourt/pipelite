@@ -55,6 +55,21 @@ The complete list. Three surfaces, four files changed, three files added.
 - **The "nothing was mutated" proof** is the existing `run-changed-records.tsx` rendering its
   existing empty state. See § Forbidden Copy.
 
+### Visual hierarchy per surface — V-41-1 **[added to close the checker's Dimension 2 FLAG]**
+
+Every surface here is an EXISTING screen gaining a small enumerated affordance, so the anchor is
+already established and this phase must not disturb it. Stated explicitly because all three rows
+WRAP at 320px (R-2, R-3, R-4), and when a row wraps the executor is choosing an order — the reading
+order after a wrap should match the priority below, not the source order that happened to be
+convenient.
+
+| Surface | Primary anchor (unchanged) | This phase's addition |
+|---------|---------------------------|----------------------|
+| Run detail header | The run title + `RunStatusBadge` cluster | Replay is a SECONDARY, right-aligned action. It must not out-weigh the status badge — a failed run's *status* is what the operator came to read; replay is what they do next. The lineage line is tertiary: metadata typography, below the cluster, never beside the title. |
+| Editor toolbar | The workflow-name `Input` and the Save button | Dry run is a secondary action sitting with the other non-Save controls. Save stays the visually dominant commit. When the row wraps, the name field takes the first line alone. |
+| Runs list filter row | The existing status filter | "Show test runs" is a subordinate modifier OF that filter, so it wraps onto the line below it and never above it — a checkbox that appears before the thing it modifies reads as a page-level control. |
+| Notification preferences | The three existing toggle rows | The fourth row is peer-level with them. No emphasis, no "new" marker, no reordering of the existing three. |
+
 ---
 
 ## Design System
