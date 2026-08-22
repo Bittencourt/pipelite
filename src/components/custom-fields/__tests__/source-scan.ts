@@ -232,6 +232,17 @@ export function tagIndexes(source: string, tagName: string): number[] {
  * Scoping to a tag that is not the FIRST of its name in the file — a `<div>` among many — is done by
  * slicing the source at that element's own opening tag and calling this on the slice. That is why
  * there is no "nth occurrence" parameter: the slice already says which one.
+ *
+ * SELF-CLOSING TAGS: `<div />` is a complete element, not an open. Counting it as an open leaves
+ * depth stuck above zero for the rest of the file and the region throws `unterminated`. Plan 40-12
+ * hit this on `kanban-board.tsx`, whose pipeline row holds a `<div />` placeholder for the
+ * `pipelines.length <= 1` case. Whether a tag self-closes is decided from the END of the real
+ * opening tag via `openingTagAt` — brace- and string-aware — because a `>` inside `className={a > b}`
+ * is not the end of the tag and a `/` inside `href="a/"` is not a self-close.
+ *
+ * The returned region ends at the closing tag's NAME and excludes its final `>`; that predates this
+ * function's promotion into this module and several gates read regions on that basis, so it is
+ * deliberately left alone.
  */
 export function elementRegion(source: string, tagName: string, file = ""): string {
   const [at] = tagIndexes(source, tagName)
@@ -239,8 +250,14 @@ export function elementRegion(source: string, tagName: string, file = ""): strin
 
   const open = `<${tagName}`
   const close = `</${tagName}`
+  const label = `<${tagName}>`
+
+  // A self-closing ROOT is the entire region — there is no closing tag to walk to.
+  const rootTag = openingTagAt(source, at, label, file)
+  if (rootTag.endsWith("/>")) return rootTag
+
   let depth = 1
-  let i = at + open.length
+  let i = at + rootTag.length
 
   while (i < source.length && depth > 0) {
     if (source.startsWith(close, i)) {
@@ -249,8 +266,9 @@ export function elementRegion(source: string, tagName: string, file = ""): strin
       continue
     }
     if (source.startsWith(open, i)) {
-      depth += 1
-      i += open.length
+      const tag = openingTagAt(source, i, label, file)
+      if (!tag.endsWith("/>")) depth += 1
+      i += tag.length
       continue
     }
     i += 1
