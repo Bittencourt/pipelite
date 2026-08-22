@@ -37,6 +37,7 @@ import { useSelectColumn } from "@/components/bulk/select-column"
 import { BulkActionBar } from "@/components/bulk/bulk-action-bar"
 import { BulkFailureReport } from "@/components/bulk/bulk-failure-report"
 import type { BulkOutcome } from "@/lib/bulk/types"
+import type { SavedViewsBarProps } from "@/lib/views/types"
 
 interface DataTableProps {
   columns: ColumnDef<Person, unknown>[]
@@ -58,6 +59,26 @@ interface DataTableProps {
    * occurrences, which is why the helper is not named.
    */
   isAdmin?: boolean
+  /**
+   * ALL EIGHT of the saved-views bar's props, resolved server-side and spread straight onto it.
+   *
+   * One prop rather than eight loose ones, and the interface is IMPORTED rather than restated:
+   * `SavedViewsBarProps` is declared once in `src/lib/views/types.ts` so the server resolver and the
+   * `"use client"` bar cannot drift, and a ninth prop added there needs no edit on any of the four
+   * list surfaces.
+   */
+  viewsBar: SavedViewsBarProps
+  /**
+   * The RESOLVED id of the open view, or `null` — the same value as `viewsBar.selectedViewId`, handed
+   * over by itself because the three list-route writers below need only that.
+   *
+   * Why it is not read from `useSearchParams()` here: the bar is already this page's Suspense-wrapped
+   * consumer of that hook and a second one buys nothing, and the resolved id is strictly better than
+   * the raw param anyway. A `?view=<id>` whose view has since been deleted or unshared resolves to
+   * `null`, so seeding from this value SCRUBS it on the next navigation instead of preserving a
+   * selection that no longer exists.
+   */
+  selectedViewId: string | null
 }
 
 export function DataTable({ columns, data, hasMore = false, search = "", currentPage = 1, refresh, retentionDays, bulkOwners, isAdmin = false }: DataTableProps) {
