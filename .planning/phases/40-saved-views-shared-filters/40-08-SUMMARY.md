@@ -278,3 +278,18 @@ None. The dialog adds no endpoint, no auth path and no file access. Its two trus
 already in the register: the form → server-action boundary (re-derived by `guardSaveInput`,
 authorization read from the stored row) and the portalled-dialog → page keyboard boundary (T-40-36,
 accepted with the `<form>` work-around).
+
+## Self-Check: PASSED
+
+| Claim | Verified |
+|---|---|
+| `src/components/views/save-view-dialog.tsx` | FOUND |
+| `src/components/views/__tests__/save-view-dialog-wiring.test.ts` | FOUND |
+| `.planning/phases/40-saved-views-shared-filters/40-08-SUMMARY.md` | FOUND |
+| commit `b941bac` (RED gate) | FOUND |
+| commit `0005af0` (dialog) | FOUND |
+| commit `5af829f` (Checkbox census) | FOUND |
+| commit `3d2632e` (this SUMMARY) | FOUND |
+
+Worktree mode: `STATE.md` and `ROADMAP.md` were deliberately NOT touched — the orchestrator owns
+those writes after the wave merges.
