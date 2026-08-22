@@ -502,3 +502,64 @@ and **not** `el.className`: on an SVG element `className` is an `SVGAnimatedStri
 is the literal `"[object SVGAnimatedString]"`, so a `className`-based sweep silently skips every icon
 in the tree. Measured — the first draft of 40-17's sweep reported zero spinners with a spinner visibly
 on screen, and missed the `circle-check` icon above.
+
+---
+
+## Security findings from Phase 40's code review — untracked until close-out
+
+Both were raised in `.planning/phases/40-saved-views-shared-filters/40-REVIEW.md` and neither made
+it into this file when the phase's other findings did. The phase's verifier caught the omission
+(gap G-3). They are recorded here because a finding that lives only in a phase artifact is a
+finding nobody will read again.
+
+### Export authorization is materially weaker than before Phase 38's gate (review WR-04)
+
+**Where:** `src/lib/export/view-export-guard.ts`, `src/lib/views/export-action.ts`
+**Status:** OPEN by explicit decision — this is a change to 40-CONTEXT Decision 2, not a bug fix,
+so it was deliberately excluded from the review-fix pass.
+
+Phase 38 forbade a filters-taking export action reachable without an admin gate, because an action
+handed `{}` returns every row. Phase 40 Decision 2 (E-9) opened export to every authenticated user
+and preserved the *intent* by refusing an empty filter set. The guard's own header states it "must
+be IMPOSSIBLE to satisfy with no filter" — and it is. But it is trivially satisfiable with a filter
+that narrows almost nothing:
+
+    search=a  →  44,254 of 46,054 organizations (96.1%)
+                 36,893 of 38,348 people
+    — under the 50,000 EXPORT_ROW_CAP, for any authenticated non-admin,
+      with notes and all custom fields, `includeCustomFields: true` hardcoded.
+
+Measured twice independently against the live database: once by the reviewer, once by the verifier.
+
+**The judgement recorded by the verifier, and not overridden:** this should not block Phase 41, but
+it *should* block milestone close and any deployment where non-admins are not trusted with the whole
+customer table. Phase 38 gated this behind admin; Phase 40 removed the gate. That is a net
+regression in posture even though every individual control behaves as specified.
+
+**Candidate fixes**, none free, all needing a decision rather than a patch: a minimum-selectivity
+rule (refuse when a result exceeds some fraction of the table), a lower cap for non-admins, an
+audit-log entry per export, or restoring the admin gate for unfiltered-in-practice exports.
+
+### CSV formula injection, pre-existing, but the audience widened (review IN-06)
+
+**Where:** `src/lib/export/formatters.ts:219-227`, in `exportToCSV`
+
+`Papa.unparse` quotes and escapes correctly for CSV but does nothing about a cell whose first
+character is `=`, `+`, `-`, `@`, tab or CR. Excel and LibreOffice evaluate those as formulas when the
+file is opened. An organization `notes` field, or any text custom field, is attacker-controlled by
+anyone who can create a record.
+
+This is Phase 38 code and is not scored against Phase 40. It is listed because **Phase 40 changed
+who can trigger it**: before, a filters-taking export required an admin; after Decision 2 any
+authenticated user can produce one, and WR-04 above shows the resulting file can contain most of the
+table. The two compound.
+
+**Fix:** prefix at-risk cells with `'` in `exportToCSV` — the single choke point all four entity
+exports already funnel through. Cheap, and independent of the WR-04 decision.
+
+### A third, smaller one from the same review pass
+
+`setViewDefault` returns `forbidden` where the three mutators fixed under WR-01 now return `failed`
+(`src/lib/views/actions.ts`). The WR-01 fix closed an exists-vs-not disclosure by making the
+mutation paths indistinguishable; this one site was missed, so a caller can still tell "this view id
+exists but is not yours" from "no such view". Same class, same fix shape, one call site.

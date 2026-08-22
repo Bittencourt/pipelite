@@ -276,17 +276,39 @@ describe.skipIf(!HAS_DB)("fetchFilteredData against the live database", () => {
       expect(result.count).toBeLessThan(baseline.activities)
     }
 
-    // `completed` and `pending` PARTITION the table: every activity either has a completion
-    // timestamp or does not. If the two do not sum to the total, one of them is not the predicate
-    // it claims to be — and this is the assertion a one-sided "less than total" check would miss.
-    expect(results.completed + results.pending).toBe(baseline.activities)
+    /*
+     * THE PARTITION IS THREE-WAY, NOT TWO-WAY — AND IT CHANGED UNDER THIS ASSERTION.
+     *
+     * As written by plan 40-07 this read `completed + pending === total`, because `pending` was
+     * then the bare `completed_at IS NULL` and therefore swallowed the overdue rows. Review finding
+     * WR-05 established that this made two options of one single-select overlap by 4,151 rows —
+     * "Pending" and "Overdue" both matched the same activities — and narrowed `pending` to
+     * incomplete AND not yet due. The three predicates now carve the table into three disjoint
+     * sets, so the old two-way sum is short by exactly the overdue count and this test went RED:
+     *
+     *   AssertionError: expected 74871 to be 79022     (79,022 - 74,871 = 4,151)
+     *
+     * That was a STALE ASSERTION, not a production defect: measured live at the same moment,
+     * 74,857 completed + 14 pending + 4,151 overdue = 79,022, which is coherent. The assertion is
+     * updated to the partition that now exists rather than relaxed — the sum is still exact, and
+     * exactness is the whole point of the check.
+     *
+     * Why it was not caught by the fix that broke it: this file self-skips on `!DATABASE_URL`,
+     * which vitest does not populate, so it is invisible to a plain `npx vitest run`. It must be
+     * run deliberately with a DATABASE_URL. That is precisely how it stayed red across a review,
+     * a fix pass and a full close-out sweep.
+     */
+    expect(results.completed + results.pending + results.overdue).toBe(baseline.activities)
 
-    // `overdue` is a strict subset of `pending`: incomplete AND past due. Equal would mean the
-    // due-date comparison was dropped; greater would mean it selected completed rows too.
-    expect(results.overdue).toBeLessThanOrEqual(results.pending)
+    // Disjointness, asserted rather than assumed: no activity may be both pending and overdue.
+    // Before WR-05 `overdue` was a strict SUBSET of `pending`, and the assertion here was
+    // `overdue <= pending`. That reading is now wrong in the other direction — the two must not
+    // overlap at all, and with 14 pending against 4,151 overdue a `<=` check would pass only by
+    // accident of which set happens to be larger today.
     expect(results.overdue).toBeGreaterThan(0)
+    expect(results.pending).toBeGreaterThan(0)
 
-    // Recorded for the summary; the phase's context measured 4,165 pending / 4,151 overdue.
+    // Recorded for the summary; measured 74,857 completed / 14 pending / 4,151 overdue.
     console.log("LIVE activity status counts:", JSON.stringify(results), "total", baseline.activities)
   }, 300_000)
 

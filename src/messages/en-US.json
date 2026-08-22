@@ -714,7 +714,7 @@
       "failed": "The view wasn't deleted. Try again."
     },
     "export": {
-      "disabledReason": "Choose at least one filter first. An unfiltered export isn't allowed.",
+      "disabledReason": "Add a filter that narrows the results before exporting.",
       "tooMany": "This view matches more than {max} records. Narrow the filters and export again.",
       "refused": "That export was refused because no filter was applied."
     }

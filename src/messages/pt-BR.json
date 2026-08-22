@@ -714,7 +714,7 @@
       "failed": "A visão não foi excluída. Tente novamente."
     },
     "export": {
-      "disabledReason": "Escolha ao menos um filtro primeiro. Exportar sem filtro não é permitido.",
+      "disabledReason": "Adicione um filtro que restrinja os resultados antes de exportar.",
       "tooMany": "Esta visão corresponde a mais de {max} registros. Restrinja os filtros e exporte de novo.",
       "refused": "Essa exportação foi recusada porque nenhum filtro estava aplicado."
     }
