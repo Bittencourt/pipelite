@@ -233,3 +233,122 @@ export async function purgeViewFixtures(sql: ViewsDb): Promise<PurgeCounts> {
 
   return { defaults: deletedDefaults.count, views: deletedViews.count }
 }
+
+/* ==============================================================================================
+ * THE V-40-8 VISIBILITY TRIAD, DECLARED ONCE.
+ *
+ * WHY HERE AND NOT IN A SPEC (plan 40-16 asked for the choice to be made explicitly, so this is the
+ * answer and the reason).
+ *
+ * The same three fixtures are needed by TWO spec files that run under DIFFERENT projects —
+ * `saved-views-visibility-member.spec.ts` under `chromium-member` and
+ * `saved-views-visibility-admin.spec.ts` under `chromium`. Exporting them from the member spec and
+ * importing that spec from the admin spec would work as a module import and would be a trap: a
+ * Playwright spec file that imports another spec file REGISTERS THAT FILE'S TESTS INTO ITSELF, so
+ * the member spec's tests would also run under the admin project's storageState — running every
+ * "is this invisible to a member?" assertion as an ADMIN. That is precisely the failure mode
+ * `member.setup.ts` exists to rule out, reintroduced through the import graph.
+ *
+ * So the triad lives in this module, which is deliberately NOT a spec (see the file header) and
+ * therefore cannot be collected by any project.
+ *
+ * THE TWO DIRECTIONS ARE NOT SYMMETRIC AND THAT IS THE POINT. `ADMIN_PRIVATE` must be invisible to
+ * the member because it is somebody else's private view — the unsurprising direction. `MEMBER_PRIVATE`
+ * must be invisible to the ADMIN, which departs from this app's `owner || role === "admin"` idiom
+ * (`src/app/deals/actions.ts:83`, locked for Trash in 37-CONTEXT.md:31). Decision 3 breaks that idiom
+ * on purpose: "private" that an admin can read is not private.
+ * ============================================================================================ */
+
+/**
+ * The three names. Distinct enough that `getByText(..., { exact: true })` cannot confuse them, and
+ * all three carry `VIEWS_FIXTURE_PREFIX` so `insertViewFixture` accepts them and the purge reclaims
+ * them.
+ */
+export const VISIBILITY_FIXTURE_NAMES = {
+  adminPrivate: `${VIEWS_FIXTURE_PREFIX} visibility ADMIN_PRIVATE`,
+  adminShared: `${VIEWS_FIXTURE_PREFIX} visibility ADMIN_SHARED`,
+  memberPrivate: `${VIEWS_FIXTURE_PREFIX} visibility MEMBER_PRIVATE`,
+} as const
+
+/**
+ * One `search` term each, and each term NAMES ITS OWN VIEW.
+ *
+ * 40-15's deviation 4 established that a fixture term must return rows wherever an assertion depends
+ * on rows existing — behind an empty list its V-40-11 probe would have passed with the defect
+ * present. NOTHING IN THE V-40-8 SPECS DEPENDS ON A ROW: every assertion is about which view names
+ * appear in a menu, which controls a manage row carries, and which params a redirect emits. A
+ * self-describing term is worth more here than a populated table, because assertion 7 reads
+ * `search=adminshared` back out of the address bar and a term like `ltda` would make the three
+ * fixtures indistinguishable in the URL. Measured: all three match 0 of 46,054 organizations, and
+ * that is accepted for these three fixtures and for no others.
+ */
+export const VISIBILITY_FIXTURE_FILTERS = {
+  adminPrivate: { search: "adminprivate" },
+  adminShared: { search: "adminshared" },
+  memberPrivate: { search: "memberprivate" },
+} as const
+
+export interface VisibilityFixtureIds {
+  adminPrivateId: string
+  adminSharedId: string
+  memberPrivateId: string
+}
+
+export interface SeedVisibilityFixturesInput {
+  adminEmail: string
+  memberEmail: string
+  /**
+   * THE NEGATIVE-PROBE HANDLE, and it is a parameter rather than an edit so the probe can be RUN
+   * from the command line without touching a committed file.
+   *
+   * `E2E_VIEWS_PROBE=share-private` flips both private fixtures to shared. Every "this view is
+   * absent" assertion in both directions must then go RED. That is the non-vacuity proof for a
+   * visibility gate: an assertion that cannot see a view it IS allowed to see proves nothing when
+   * it reports the view is hidden.
+   */
+  shareThePrivateOnes?: boolean
+}
+
+/**
+ * Seed the triad on `entityType: "organization"` and return the three ids.
+ *
+ * `organization` because it is the surface both sessions can reach with no pipeline, no stage and no
+ * activity type to resolve — `SAVEABLE_FILTER_KEYS.organization` is `["search"]` alone, so nothing
+ * here can be dropped by the read-side validator and a `views.degraded` notice cannot appear to
+ * confuse a visibility assertion with a degradation one.
+ */
+export async function seedVisibilityFixtures(
+  sql: ViewsDb,
+  { adminEmail, memberEmail, shareThePrivateOnes = false }: SeedVisibilityFixturesInput
+): Promise<VisibilityFixtureIds> {
+  const adminPrivateId = await insertViewFixture(sql, {
+    ownerEmail: adminEmail,
+    entityType: "organization",
+    name: VISIBILITY_FIXTURE_NAMES.adminPrivate,
+    filters: { ...VISIBILITY_FIXTURE_FILTERS.adminPrivate },
+    isShared: shareThePrivateOnes,
+  })
+
+  const adminSharedId = await insertViewFixture(sql, {
+    ownerEmail: adminEmail,
+    entityType: "organization",
+    name: VISIBILITY_FIXTURE_NAMES.adminShared,
+    filters: { ...VISIBILITY_FIXTURE_FILTERS.adminShared },
+    isShared: true,
+  })
+
+  const memberPrivateId = await insertViewFixture(sql, {
+    ownerEmail: memberEmail,
+    entityType: "organization",
+    name: VISIBILITY_FIXTURE_NAMES.memberPrivate,
+    filters: { ...VISIBILITY_FIXTURE_FILTERS.memberPrivate },
+    isShared: shareThePrivateOnes,
+  })
+
+  return { adminPrivateId, adminSharedId, memberPrivateId }
+}
+
+/** `true` when the run was launched with the V-40-8 non-vacuity probe active. */
+export function visibilityProbeIsActive(): boolean {
+  return process.env.E2E_VIEWS_PROBE === "share-private"
+}
