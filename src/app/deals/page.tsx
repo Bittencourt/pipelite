@@ -6,6 +6,11 @@ import { redirect } from "next/navigation"
 import { KanbanBoard } from "./kanban-board"
 import { readTrashRetentionDays } from "@/lib/trash/settings"
 import { getTranslations } from 'next-intl/server'
+import {
+  resolveDefaultViewRedirect,
+  resolveSavedViewsBarProps,
+} from "@/lib/views/resolve"
+import type { SavedViewsBarProps } from "@/lib/views/types"
 
 
 interface DealWithRelations {
@@ -34,6 +39,14 @@ export default async function DealsPage({
     assignee?: string
     dateFrom?: string
     dateTo?: string
+    /**
+     * WHICH SAVED VIEW THE URL NAMES, or `none` for "I deliberately have none" (plan 40-18).
+     *
+     * Declared here even though this page never reads it directly: it is passed through to
+     * `resolveSavedViewsBarProps`, which owns the one grammar for it, and it is what makes the
+     * no-params redirect guard below un-loopable — `view=none` IS a param.
+     */
+    view?: string
   }>
 }) {
   const session = await auth()
@@ -42,6 +55,29 @@ export default async function DealsPage({
 
   if (!session?.user?.id) {
     redirect("/login")
+  }
+
+  /**
+   * A BARE `/deals` GOES TO THIS USER'S DEFAULT VIEW, IF THEY HAVE ONE (U-2).
+   *
+   * THE GUARD IS "NO PARAMS AT ALL", and that is what makes it un-loopable. `withViewEscape` sends a
+   * user who cleared their last filter to `?view=none`, which IS a param — so the escape URL never
+   * re-enters this branch and there is no second code path meaning "arrived by default". A guard
+   * written as "no FILTER params" would bounce that user straight back into the view they just left.
+   *
+   * The resolver returns `null` for every failure that could otherwise loop — no default, a default
+   * that was unshared, a deleted view, and in particular a default whose stored keys have ALL been
+   * dropped by the validator (T-40-20). So the redirect target always carries at least one filter.
+   *
+   * PLACED BEFORE THE PIPELINE READ, deliberately: a redirect makes every query below it wasted work,
+   * and `allPipelines` is the first of five reads on this page.
+   *
+   * NO try/catch, ever. `redirect()` signals by THROWING; a catch here would swallow the navigation
+   * and render the unfiltered board instead — a silent failure that looks exactly like success.
+   */
+  if (Object.keys(params).length === 0) {
+    const target = await resolveDefaultViewRedirect("deal", session.user)
+    if (target) redirect(`/deals${target}`)
   }
 
   // Fetch all pipelines (not deleted, ordered by isDefault then name)
@@ -72,11 +108,52 @@ export default async function DealsPage({
     )
   }
 
-  // Determine selected pipeline (from query param, default, or first)
-  const selectedPipeline = params.pipeline
-    ? allPipelines.find(p => p.id === params.pipeline)
-    : allPipelines.find(p => p.isDefault) || allPipelines[0]
-  
+  /**
+   * PIPELINE RESOLUTION IN THREE STEPS, AND THE THIRD ONE IS DECISION 4.
+   *
+   * `pipeline` is not a filter, it is a BOARD SELECTOR: it decides which stage set exists and which
+   * slice of the 25,195 live deals is queried. That is why a deals view has to carry it — a deals view
+   * without a pipeline is not reproducible (Decision 4). And it is why the consequence had to be
+   * handled here: a view saved months ago against a pipeline that has since been deleted must land the
+   * user on the DEFAULT BOARD, not on a dead end.
+   *
+   * WHAT THIS REPLACED, because the shape is the entire fix. The previous expression was
+   * `params.pipeline ? allPipelines.find(byId) : allPipelines.find(isDefault) || allPipelines[0]`.
+   * The default branch existed but was unreachable for the one input that needed it: a requested id
+   * that no longer resolves fell to `undefined` and rendered `t('pipelineNotFound')`. MEASURED against
+   * the running container before this change: `GET /deals?pipeline=00000000-0000-4000-8000-000000000000`
+   * returned 200 with `Pipeline not found.` and nothing else — there is no `error.tsx` above this route
+   * (M-14), so a dead end here is the whole page. With 11 live pipelines that is a reachable state, and
+   * to a user it reads as a crash.
+   *
+   * So the default lookup now sits OUTSIDE any test on `params.pipeline`, chained with `??` rather
+   * than nested in a ternary. `find()` returns `undefined` when it misses, which is precisely what
+   * `??` continues on.
+   *
+   * MEASURED, and it is why the last link matters: all 11 live pipelines have `is_default = 0`, so the
+   * `isDefault` lookup returns `undefined` in production TODAY and `allPipelines[0]` — "BDR - Base
+   * Fria", first by the `isDefault DESC, name` ordering above — is what actually renders.
+   *
+   * `pipelineWasDropped` is recorded rather than inferred later: the DEGRADED NOTICE needs to know
+   * that a pipeline was ASKED FOR and lost, and by the time `selectedPipeline` exists that is
+   * indistinguishable from a plain default landing.
+   */
+  const requestedPipeline = params.pipeline
+    ? allPipelines.find((p) => p.id === params.pipeline)
+    : undefined
+  const pipelineWasDropped = Boolean(params.pipeline) && requestedPipeline === undefined
+  const selectedPipeline =
+    requestedPipeline ?? allPipelines.find((p) => p.isDefault) ?? allPipelines[0]
+
+  /*
+   * RETAINED ON PURPOSE, AND NOW UNREACHABLE — say so rather than delete it.
+   *
+   * `allPipelines.length === 0` is guarded above and returns, so `allPipelines[0]` above cannot be
+   * `undefined` and this branch cannot fire. It stays for two reasons: it is what narrows
+   * `selectedPipeline` to non-`undefined` for everything below, and it is the landing for the day the
+   * guard above changes shape. Deleting a branch to make a diff look tidier is how the next reader
+   * loses the narrowing and reaches for a cast instead.
+   */
   if (!selectedPipeline) {
     return (
       <div className="container mx-auto py-8">
@@ -193,6 +270,37 @@ export default async function DealsPage({
   // Get first open stage for default create dialog
   const firstOpenStage = pipelineStages.find(s => s.type === 'open')
 
+  /**
+   * ALL EIGHT BAR PROPS FROM ONE RESOLVER (Rule B-2), then ONE local amendment.
+   *
+   * The resolver validates the SELECTED VIEW'S stored filters against the live catalog, so it already
+   * reports a dead owner or a dead stage in `droppedFilterKeys`. It cannot report a dead pipeline in
+   * the URL: it never queries pipelines for the URL's own params, because that is this page's job and
+   * this page has just done it. V-11 covers a deleted owner, a deleted stage and a deleted pipeline in
+   * ONE sentence, deliberately — so both sources have to reach the same prop, or the third case
+   * renders a silently different board with no notice at all.
+   *
+   * The `includes` check is not defensive padding: when the selected view's OWN stored pipeline is the
+   * one that died, the resolver has already listed the key, and appending it again would print it
+   * twice in the notice.
+   *
+   * `rawSearchParams: params` hands over the untouched param object rather than a pre-picked map. The
+   * resolver owns the whitelist and the `view` grammar; giving it a filtered map would give this page
+   * a second, divergent copy of both.
+   */
+  const resolvedViewsBar = await resolveSavedViewsBarProps({
+    entityType: "deal",
+    viewer: session.user,
+    rawSearchParams: params,
+  })
+  const viewsBar: SavedViewsBarProps =
+    pipelineWasDropped && !resolvedViewsBar.droppedFilterKeys.includes("pipeline")
+      ? {
+          ...resolvedViewsBar,
+          droppedFilterKeys: [...resolvedViewsBar.droppedFilterKeys, "pipeline"],
+        }
+      : resolvedViewsBar
+
   return (
     <div className="container mx-auto py-8">
       <div className="flex items-center justify-between mb-6">
@@ -200,6 +308,7 @@ export default async function DealsPage({
       </div>
 
       <KanbanBoard
+        viewsBar={viewsBar}
         selectedPipelineId={selectedPipelineId}
         pipelines={allPipelines.map(p => ({ id: p.id, name: p.name }))}
         stages={pipelineStages.map(s => ({
