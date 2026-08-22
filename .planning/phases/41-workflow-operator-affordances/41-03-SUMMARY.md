@@ -311,6 +311,14 @@ None — no external service configuration required.
   assertion, and hardcoding English instead is what the gate exists to prevent.
 - STATE.md and ROADMAP.md deliberately untouched — the orchestrator owns those writes after the wave.
 
+## Self-Check: PASSED
+
+- All four modified files exist on disk: `src/messages/locale-parity.test.ts`, `src/messages/en-US.json`,
+  `src/messages/pt-BR.json`, `src/messages/es-ES.json`.
+- All three commits exist in `git log --all`: `c4cd650` (test), `a3b5924` (feat), `820d2e5` (docs).
+- Working tree clean; no untracked files; no deletions in any commit.
+- STATE.md and ROADMAP.md unmodified.
+
 ---
 *Phase: 41-workflow-operator-affordances*
 *Completed: 2026-08-22*
