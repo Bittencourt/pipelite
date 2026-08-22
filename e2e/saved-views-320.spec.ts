@@ -586,16 +586,46 @@ test.describe("V-40-1 — every overlay is reachable at 320x640", () => {
           "slot 2 must hold `views.saveNew`: the URL carries a saveable filter, so canSave is true"
         ).toBeVisible()
 
-        const triggerBox = await boxOf(trigger, `BAR trigger ${surface.path} @ ${locale}`)
-        const slotTwoBox = await boxOf(slotTwo, `BAR slot2 ${surface.path} @ ${locale}`)
-        const barBox = await boxOf(bar, `BAR row ${surface.path} @ ${locale}`)
-        const barRows = slotTwoBox.y > triggerBox.y + 2 ? 2 : 1
+        /*
+         * ONE LAYOUT PASS FOR ALL OF IT, AND THAT IS THE POINT.
+         *
+         * A first version read the trigger's box and slot 2's box in two separate round trips and
+         * derived the wrap from `slot2.y > trigger.y`. On `/activities` it reported "1 row, bar
+         * 241x80" — self-contradictory, because 80px IS two 36px rows plus the 8px gap. The two
+         * reads had straddled a hydration re-layout that moved the whole stack 135px. Reading the
+         * container and every child inside a single `evaluate` makes the numbers describe one
+         * moment, and counting DISTINCT child top offsets asks the flex box itself how many rows it
+         * used instead of inferring it from two positions.
+         */
+        const barGeometry = await bar.evaluate((el) => {
+          const box = el.getBoundingClientRect()
+          const children = Array.from(el.children).map((child) => {
+            const rect = child.getBoundingClientRect()
+            return {
+              tag: child.tagName,
+              x: rect.x,
+              y: rect.y,
+              width: rect.width,
+              height: rect.height,
+            }
+          })
+          return {
+            box: { x: box.x, y: box.y, width: box.width, height: box.height },
+            children,
+            rows: new Set(children.map((child) => Math.round(child.y))).size,
+          }
+        })
+
         console.log(
-          `[40-15] BAR ${surface.path} @ ${locale} | rows ${barRows} | ` +
-            `bar ${barBox.width.toFixed(1)}x${barBox.height.toFixed(1)} | ` +
-            `trigger ${triggerBox.width.toFixed(1)}x${triggerBox.height.toFixed(1)} at y=` +
-            `${triggerBox.y.toFixed(1)} | slot2 ${slotTwoBox.width.toFixed(1)}x` +
-            `${slotTwoBox.height.toFixed(1)} at y=${slotTwoBox.y.toFixed(1)}`
+          `[40-15] BAR ${surface.path} @ ${locale} | rows ${barGeometry.rows} | ` +
+            `bar ${barGeometry.box.width.toFixed(1)}x${barGeometry.box.height.toFixed(1)} ` +
+            `at y=${barGeometry.box.y.toFixed(1)} | ` +
+            barGeometry.children
+              .map(
+                (child) =>
+                  `${child.tag} ${child.width.toFixed(1)}x${child.height.toFixed(1)}@y${child.y.toFixed(1)}`
+              )
+              .join(" ")
         )
 
         // ---------------------------------------------------------------------------------
