@@ -127,6 +127,94 @@ describe("createWorkflowRun with depth enforcement", () => {
     expect(run.error).toBe("Recursion limit reached (5 levels)")
   })
 
+  // -----------------------------------------------------------------------------------------------
+  // BRANCH 1 — THE RECURSION SHORT-CIRCUIT CARRIES THE OPTIONS TOO (plan 41-11).
+  //
+  // This is the insert branch that gets forgotten. It writes an already-`failed` row, so nothing
+  // downstream ever revisits it to add the flags.
+  // -----------------------------------------------------------------------------------------------
+
+  /**
+   * ANTI-VACUITY: the spy must have been called exactly once with a real object, or the
+   * "does not contain" assertions below would pass on an inert mock chain.
+   */
+  function shortCircuitValues(): Record<string, unknown> {
+    expect(mockValues).toHaveBeenCalledTimes(1)
+    const [captured] = mockValues.mock.calls[0] as unknown as [Record<string, unknown>]
+    expect(captured).not.toBeNull()
+    expect(captured).not.toBeUndefined()
+    expect(typeof captured).toBe("object")
+    return captured
+  }
+
+  function failedRunFixture(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "run-limit",
+      workflowId: "wf-1",
+      status: "failed",
+      depth: MAX_RECURSION_DEPTH,
+      triggerData: triggerEnvelope,
+      error: `Recursion limit reached (${MAX_RECURSION_DEPTH} levels)`,
+      context: {},
+      currentNodeId: null,
+      dryRun: false,
+      replayedFromRunId: null,
+      startedAt: null,
+      completedAt: new Date(),
+      createdAt: new Date(),
+      ...overrides,
+    }
+  }
+
+  it("carries dryRun: true into the already-failed short-circuit insert", async () => {
+    mockReturning.mockResolvedValueOnce([failedRunFixture({ dryRun: true })])
+
+    await createWorkflowRun("wf-1", triggerEnvelope, MAX_RECURSION_DEPTH, { dryRun: true })
+
+    expect(
+      shortCircuitValues().dryRun,
+      "A dry run that trips the recursion limit MUST still be marked dryRun. Unmarked, it appears " +
+        "in the runs list as a real failed run — and worse, plan 41-08's alert path would treat it " +
+        "as a real failure and email the workflow's author about a test.",
+    ).toBe(true)
+  })
+
+  it("carries replayedFromRunId into the already-failed short-circuit insert", async () => {
+    mockReturning.mockResolvedValueOnce([failedRunFixture({ replayedFromRunId: "origin-run" })])
+
+    await createWorkflowRun("wf-1", triggerEnvelope, MAX_RECURSION_DEPTH, {
+      replayedFromRunId: "origin-run",
+    })
+
+    expect(
+      shortCircuitValues().replayedFromRunId,
+      "A replay that trips the limit must still record its origin, or the operator sees an " +
+        "unexplained failed run with no lineage line and no way back to what it replayed.",
+    ).toBe("origin-run")
+  })
+
+  it("writes no dryRun key in the short-circuit when no options are supplied", async () => {
+    mockReturning.mockResolvedValueOnce([failedRunFixture()])
+
+    await createWorkflowRun("wf-1", triggerEnvelope, MAX_RECURSION_DEPTH)
+    const captured = shortCircuitValues()
+
+    expect("dryRun" in captured).toBe(false)
+    expect("replayedFromRunId" in captured).toBe(false)
+  })
+
+  it("leaves the short-circuit's error message and completedAt unchanged by the options", async () => {
+    mockReturning.mockResolvedValueOnce([failedRunFixture({ dryRun: true })])
+
+    await createWorkflowRun("wf-1", triggerEnvelope, MAX_RECURSION_DEPTH, { dryRun: true })
+    const captured = shortCircuitValues()
+
+    expect(captured.status).toBe("failed")
+    expect(captured.error).toBe(`Recursion limit reached (${MAX_RECURSION_DEPTH} levels)`)
+    expect(captured.completedAt).toBeInstanceOf(Date)
+    expect(captured.depth).toBe(MAX_RECURSION_DEPTH)
+  })
+
   it("reads depth from AsyncLocalStorage when not provided", async () => {
     const fakeRun = {
       id: "run-3",
