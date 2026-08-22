@@ -9,12 +9,17 @@ import {
   activityTypes,
   users,
 } from "@/db/schema"
-import { eq, and, or, isNull, isNotNull, gte, lte, lt, ilike, inArray, sql } from "drizzle-orm"
+import { eq, and, or, isNull, isNotNull, gte, lt, ilike, inArray, sql } from "drizzle-orm"
 import type { SQL } from "drizzle-orm"
 import type { ExportEntityType, ExportFilters, ExportOptions, ExportResult } from "./types"
 import { toPipedriveFormat, exportToPipedriveCSV } from "./pipedrive"
 import { deriveCsvColumns } from "./csv-columns"
 import { formatFormulaValueForText } from "@/lib/formula-helpers"
+// THE DATE-RANGE BOUNDARY RULE, SHARED WITH THE LIST PAGE. `getActivities`
+// (`src/app/activities/actions.ts`) imports the same two helpers, which is what makes the "each
+// predicate MIRRORS the list page it must match" claim below enforceable rather than aspirational —
+// review finding CR-01 was two copies of this rule drifting apart into a silently narrower CSV.
+import { endOfDayExclusive, startOfDayInclusive } from "@/lib/filters/date-range"
 
 // Re-exported so the export module has one public surface; the implementation lives in a
 // dependency-free module because `pipedrive.ts` needs it too and this file already imports that.
@@ -397,11 +402,15 @@ async function fetchDeals(
       sql`${deals.id} IN (SELECT deal_id FROM deal_assignees WHERE user_id = ${filters.assignee})`
     )
   }
+  // HALF-OPEN, `[dateFrom 00:00, dateTo+1day 00:00)` in UTC — the same rule `getActivities` applies
+  // (CR-01). An `lte` upper bound is MIDNIGHT of the end day, so a deal expected to close at any
+  // time later on that day was silently absent from the CSV. The 324 live deals carrying an
+  // `expected_close_date` are all imported at 00:00:00, which is the only reason nobody saw it.
   if (filters?.dateFrom) {
-    conditions.push(gte(deals.expectedCloseDate, new Date(filters.dateFrom)))
+    conditions.push(gte(deals.expectedCloseDate, startOfDayInclusive(filters.dateFrom)))
   }
   if (filters?.dateTo) {
-    conditions.push(lte(deals.expectedCloseDate, new Date(filters.dateTo)))
+    conditions.push(lt(deals.expectedCloseDate, endOfDayExclusive(filters.dateTo)))
   }
   if (filters?.ids) {
     conditions.push(inArray(deals.id, filters.ids))
@@ -473,11 +482,16 @@ async function fetchActivities(
     // already dropped a value the toolbar cannot produce — but the admin export can pass anything,
     // and an unrecognised status must not silently mean "completed".
   }
+  // HALF-OPEN, `[dateFrom 00:00, dateTo+1day 00:00)` in UTC, from the SAME module `getActivities`
+  // imports (CR-01). The old `lte(dueDate, new Date(dateTo))` bounded at midnight, so the CSV was
+  // missing every activity due later on the last day of the range — which is every activity the app
+  // creates, because the dialog composes `${dueDate}T${dueTime || "09:00"}`. It was silent: the row
+  // count in the success toast comes from this query too.
   if (filters?.dateFrom) {
-    conditions.push(gte(activities.dueDate, new Date(filters.dateFrom)))
+    conditions.push(gte(activities.dueDate, startOfDayInclusive(filters.dateFrom)))
   }
   if (filters?.dateTo) {
-    conditions.push(lte(activities.dueDate, new Date(filters.dateTo)))
+    conditions.push(lt(activities.dueDate, endOfDayExclusive(filters.dateTo)))
   }
   if (filters?.ids) {
     conditions.push(inArray(activities.id, filters.ids))

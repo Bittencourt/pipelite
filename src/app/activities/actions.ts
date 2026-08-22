@@ -3,7 +3,7 @@
 import { auth } from "@/auth"
 import { db } from "@/db"
 import { activities, activityTypes, users } from "@/db/schema"
-import { eq, and, isNull, isNotNull, asc, or, ilike, gte, lte, lt } from "drizzle-orm"
+import { eq, and, isNull, isNotNull, asc, or, ilike, gte, lt } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { runWithActor } from "@/lib/audit/actor-context"
@@ -11,6 +11,7 @@ import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
 import type { BulkFailure, BulkWriteResult } from "@/lib/bulk/types"
 import { fetchFilteredData } from "@/lib/export/formatters"
+import { endOfDayExclusive, startOfDayInclusive } from "@/lib/filters/date-range"
 import type { ExportResult } from "@/lib/export/types"
 import {
   createActivityMutation,
@@ -582,11 +583,27 @@ export async function getActivities(filters?: {
         conditions.push(and(isNull(activities.completedAt), lt(activities.dueDate, new Date()))!)
       }
     }
+    // THE RANGE IS HALF-OPEN: `[dateFrom 00:00, dateTo+1day 00:00)`, both bounds in UTC.
+    //
+    // `dateTo` USED TO BE `lte(dueDate, new Date(dateTo))`, WHICH IS MIDNIGHT — so `dateTo` meant
+    // "the first instant of that day" rather than "that day", and every activity due later on the
+    // last day of the range was dropped from the list, from the CSV, and from the row count in the
+    // success toast (all three come from this one query). The activity dialog composes
+    // `${dueDate}T${dueTime || "09:00"}`, so that is EVERY activity the app itself creates. The live
+    // data hid it completely: all 79,022 imported rows sit at exactly 00:00:00.
+    //
+    // TIMEZONE, STATED: both helpers are UTC-only, and the container runs `TZ=UTC` (verified), so
+    // UTC midnight is the operator's midnight. See `src/lib/filters/date-range.ts` for what changes
+    // under a non-UTC deployment and why `setHours(23,59,59,999)` is NOT the fix.
+    //
+    // ONE MODULE, THREE CALL SITES: `fetchActivities` and `fetchDeals` in
+    // `src/lib/export/formatters.ts` import the same two helpers, so the export and the list cannot
+    // disagree about what a saved date range means.
     if (filters?.dateFrom) {
-      conditions.push(gte(activities.dueDate, new Date(filters.dateFrom)))
+      conditions.push(gte(activities.dueDate, startOfDayInclusive(filters.dateFrom)))
     }
     if (filters?.dateTo) {
-      conditions.push(lte(activities.dueDate, new Date(filters.dateTo)))
+      conditions.push(lt(activities.dueDate, endOfDayExclusive(filters.dateTo)))
     }
     if (filters?.search) {
       conditions.push(

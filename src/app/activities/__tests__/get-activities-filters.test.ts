@@ -137,14 +137,38 @@ describe("the due-date range is a SQL predicate", () => {
         "chips and never reaches the WHERE clause — measured 7,933 matching rows displayed as 0"
     ).toContain("filters?.dateFrom")
     expect(getActivitiesBody).toContain("gte(activities.dueDate")
+    expect(getActivitiesBody).toContain("startOfDayInclusive(filters.dateFrom)")
   })
 
-  it("guards on filters?.dateTo against dueDate", () => {
+  it("guards on filters?.dateTo against dueDate, with an EXCLUSIVE upper bound", () => {
+    /*
+     * THIS ASSERTION WAS CHANGED, AND THE CHANGE IS THE POINT — it previously required
+     * `lte(activities.dueDate`, which is the shape of review finding CR-01. `new Date("2025-03-31")`
+     * is midnight UTC, so an inclusive upper bound at that value excludes every activity due later
+     * on the last day of the range: every activity the app itself creates, because the dialog
+     * composes `${dueDate}T${dueTime || "09:00"}`. The gate was pinning the defect in place.
+     *
+     * It is REPLACED BY A STRICTLY STRONGER ONE, not relaxed: the old form asserted only that SOME
+     * upper bound existed; this asserts which one, names the shared helper, and forbids the
+     * inclusive spelling outright. The behavioural proof — the rendered SQL and its bound instants —
+     * lives in `get-activities-where.test.ts`, which fails RED against the old expression.
+     */
     expect(
       getActivitiesBody,
       "no filters?.dateTo guard: the upper bound of the date range narrows nothing"
     ).toContain("filters?.dateTo")
-    expect(getActivitiesBody).toContain("lte(activities.dueDate")
+    expect(getActivitiesBody).toContain("lt(activities.dueDate")
+    expect(
+      getActivitiesBody,
+      "the upper bound must come from `endOfDayExclusive`, the module `fetchActivities` and " +
+        "`fetchDeals` also import (CR-01). A locally spelled `+ 1 day` here is the second copy " +
+        "that drifts."
+    ).toContain("endOfDayExclusive(filters.dateTo)")
+    expect(
+      getActivitiesBody,
+      "`lte(activities.dueDate` is back: an inclusive bound at `new Date(dateTo)` is midnight, so " +
+        "`dateTo` means the first instant of the day rather than the day (CR-01)."
+    ).not.toContain("lte(activities.dueDate")
   })
 })
 

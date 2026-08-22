@@ -433,6 +433,120 @@ describe("T-40-32: the two deals subqueries bind their values", () => {
   })
 })
 
+/**
+ * CR-01 — THE EXPORTED CSV DROPPED THE WHOLE OF THE END DAY, on both fetchers that take a date range.
+ *
+ * `lte(dueDate, new Date("2025-03-31"))` bounds at MIDNIGHT, so every row later that day was omitted
+ * from the file. Silently: the row count in the success toast comes from the same query, so the
+ * number the user is shown agrees with the number of rows they were wrongly given. The live data
+ * masked it entirely — all 79,022 activities and all 324 deals with an `expected_close_date` were
+ * imported at exactly 00:00:00 — and the first activity created through the app breaks it, because
+ * the dialog composes `${dueDate}T${dueTime || "09:00"}`.
+ *
+ * Both fetchers must apply the SAME rule as `getActivities`, from the SAME module
+ * (`src/lib/filters/date-range.ts`). `formatters.ts` claims each predicate "MIRRORS the list page it
+ * must match"; two copies of a boundary rule is how they stop mirroring, and CR-01 is what that
+ * looked like.
+ */
+describe("CR-01: a date range is half-open, so the end day is included in full", () => {
+  beforeEach(() => {
+    for (const table of Object.values(dbSpies)) table.findMany.mockClear()
+  })
+
+  const NINE_AM_ON_THE_LAST_DAY = Date.parse("2025-03-31T09:00:00.000Z")
+
+  /** Drizzle binds a `timestamp({ mode: "date" })` as an ISO string, not as a `Date`. */
+  function boundInstant(params: unknown[], at: number): number {
+    expect(typeof params[at]).toBe("string")
+
+    const ms = Date.parse(params[at] as string)
+
+    expect(Number.isNaN(ms)).toBe(false)
+
+    return ms
+  }
+
+  it("activities: dateTo bounds at the NEXT midnight, exclusive", async () => {
+    const { sql, params } = await activitiesWhere({ dateTo: "2025-03-31" })
+
+    expect(
+      sql,
+      `the activities export still bounds with <=, i.e. at 2025-03-31T00:00:00.000Z, so every ` +
+        `activity due later on the last day of the range is missing from the CSV (CR-01).`
+    ).toContain(`"activities"."due_date" <`)
+    expect(sql).not.toContain(`"activities"."due_date" <=`)
+    expect(params).toHaveLength(1)
+    expect(new Date(boundInstant(params, 0)).toISOString()).toBe("2025-04-01T00:00:00.000Z")
+    expect(boundInstant(params, 0)).toBeGreaterThan(NINE_AM_ON_THE_LAST_DAY)
+  })
+
+  it("deals: expectedCloseDate's dateTo bounds at the NEXT midnight, exclusive", async () => {
+    const { sql, params } = await dealsWhere({ dateTo: "2025-03-31" })
+
+    expect(
+      sql,
+      `the deals export still bounds expected_close_date with <=, so a deal expected to close ` +
+        `later on the last day of the range is missing from the CSV (CR-01).`
+    ).toContain(`"deals"."expected_close_date" <`)
+    expect(sql).not.toContain(`"deals"."expected_close_date" <=`)
+    expect(params).toHaveLength(1)
+    expect(new Date(boundInstant(params, 0)).toISOString()).toBe("2025-04-01T00:00:00.000Z")
+    expect(boundInstant(params, 0)).toBeGreaterThan(NINE_AM_ON_THE_LAST_DAY)
+  })
+
+  it("both fetchers leave dateFrom INCLUSIVE at that day's midnight", async () => {
+    const activity = await activitiesWhere({ dateFrom: "2025-01-01" })
+
+    expect(activity.sql).toContain(`"activities"."due_date" >=`)
+    expect(new Date(boundInstant(activity.params, 0)).toISOString()).toBe("2025-01-01T00:00:00.000Z")
+
+    for (const table of Object.values(dbSpies)) table.findMany.mockClear()
+
+    const deal = await dealsWhere({ dateFrom: "2025-01-01" })
+
+    expect(deal.sql).toContain(`"deals"."expected_close_date" >=`)
+    expect(new Date(boundInstant(deal.params, 0)).toISOString()).toBe("2025-01-01T00:00:00.000Z")
+  })
+
+  it("a single-day range is 24 hours wide on both fetchers, not zero", async () => {
+    // ANTI-VACUITY, and the shape the date picker actually produces for "just this day". Under the
+    // old bound `dateFrom == dateTo` selected exactly the midnight instant and nothing else.
+    for (const [label, run, column] of [
+      ["activities", activitiesWhere, `"activities"."due_date"`],
+      ["deals", dealsWhere, `"deals"."expected_close_date"`],
+    ] as const) {
+      for (const table of Object.values(dbSpies)) table.findMany.mockClear()
+
+      const { sql, params } = await run({ dateFrom: "2025-03-31", dateTo: "2025-03-31" })
+
+      expect(sql, `${label}: no lower bound`).toContain(`${column} >=`)
+      expect(sql, `${label}: no upper bound`).toContain(`${column} <`)
+      expect(params).toHaveLength(2)
+
+      const from = boundInstant(params, 0)
+      const to = boundInstant(params, 1)
+
+      expect(to - from, `${label}: a one-day range must span 24h`).toBe(24 * 60 * 60 * 1000)
+      expect(from).toBeLessThanOrEqual(NINE_AM_ON_THE_LAST_DAY)
+      expect(to).toBeGreaterThan(NINE_AM_ON_THE_LAST_DAY)
+    }
+  })
+
+  it("neither fetcher touches its date column when no range is given", async () => {
+    // The floor under everything above: an unconditional predicate would satisfy the bound
+    // assertions while narrowing every export whether or not the view carried a range.
+    const activity = await activitiesWhere({})
+
+    expect(activity.sql).not.toContain(`"activities"."due_date"`)
+
+    for (const table of Object.values(dbSpies)) table.findMany.mockClear()
+
+    const deal = await dealsWhere({})
+
+    expect(deal.sql).not.toContain(`"deals"."expected_close_date"`)
+  })
+})
+
 // ---------------------------------------------------------------------------
 // THE GUARD (T-40-29). 38-CONTEXT.md:110-116's admin gate was REPLACED by this predicate, so a
 // weak guard means Phase 40 made the hole wider than it found it.
