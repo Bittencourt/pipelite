@@ -18,6 +18,7 @@ Vercel provides the easiest deployment experience for Pipelite. It's a managed p
 - **No local file storage**: Must use S3 or similar for file uploads
 - **Less control**: Cannot customize server environment
 - **Cold starts**: Initial requests may be slower
+- **Webhook Response nodes**: Workflows that reply to a webhook synchronously need a single instance — see [Horizontal Scaling and the Webhook-Response Constraint](#horizontal-scaling-and-the-webhook-response-constraint)
 
 ## Prerequisites
 
@@ -247,6 +248,40 @@ S3_SECRET_KEY=your-secret-key
 - Use Vercel's Edge Functions for faster cold starts
 - Implement client-side caching
 - Accept slight delay on first request
+
+### Horizontal Scaling and the Webhook-Response Constraint
+
+This section is about the **workflow engine's background processors** and nothing else. Both of them — the schedule processor and the execution processor — are registered in `instrumentation.ts` (lines 27-31) and therefore start in *every* instance, so a second instance runs a second copy of each. On Vercel that matters without you opting in: the platform adds instances on its own. Nothing here is a statement about the rest of the application.
+
+**Problem**: A workflow containing a **Webhook Response** node coordinates through an in-memory map keyed by run id (`pendingResponses`, `src/lib/execution/actions/webhook-response.ts:15`). The instance that received the inbound HTTP request holds the pending promise; the instance that executes the node is the one that wins the run's claim. On a single instance those are the same process and the response is delivered. On two or more they may not be: if another instance's execution processor claims the run first, the lookup in `sendWebhookResponse` misses, the node records `sent: false`, and the original caller gets the generic `{ "ok": true, "run_id": "…" }` acknowledgement with HTTP 200 instead of the status code and body the workflow configured. The handler's pending promise carries a 30-second cap, which is the longest that request will ever wait.
+
+This is **not detectable from the response**: a 200 with a plausible JSON body comes back either way. That is why the constraint is documented here instead of being reported at runtime.
+
+**Solution**: There is no fix for this in the current release. Choose one of:
+
+- Keep the deployment to a single instance. On Vercel this is not something you configure directly, so in practice it means the option below.
+- Do not use **Webhook Response** nodes on a multi-instance deployment. Let the workflow acknowledge the webhook immediately and respond asynchronously instead — an outbound HTTP node calling the sender back, for example.
+
+Every other trigger type is unaffected: schedule triggers, CRM event triggers, inbound webhooks *without* a response node, and manual runs all behave identically on one instance or ten.
+
+| Component | Multi-instance | Why |
+|---|---|---|
+| Schedule processor claim (`src/lib/triggers/schedule-processor.ts:65-74`) | **Safe** | One statement: `UPDATE workflows SET next_run_at = NULL WHERE active AND next_run_at <= now RETURNING *`. Under `READ COMMITTED` the losing instance re-evaluates the predicate after the row lock is released, matches nothing, and creates no runs. |
+| Execution processor **pending** claim (`src/lib/execution/execution-processor.ts:115-133`) | **Safe** | `UPDATE workflow_runs SET status='running' WHERE id = (SELECT … WHERE status='pending' … FOR UPDATE SKIP LOCKED) RETURNING *`. The subselect's lock is held for the duration of the enclosing statement and the predicate is re-checked, so exactly one instance claims each run. |
+| Stale-run reclaim (`src/lib/execution/execution-processor.ts:87-95`) | **Safe** | A single idempotent `UPDATE … WHERE status='running' AND started_at < NOW() - interval`. Two instances applying it produces the same result as one; the second is a no-op. |
+| Execution processor **waiting** resume (`src/lib/execution/execution-processor.ts:162-169`) | **Safe — repaired in this release** | It was not. The `SELECT … FOR UPDATE SKIP LOCKED` that picks up elapsed delays ran through `db.execute` on a transaction-free client, so the row locks were released at the end of that statement, and the follow-up step `UPDATE` carried no `WHERE status='waiting'` guard. Two instances could resume the same delayed run, duplicating every side effect after the delay. See the note below. |
+| **Webhook Response** node (`src/lib/execution/actions/webhook-response.ts:15`, `src/app/api/webhooks/in/[workflowId]/[secret]/route.ts:98-144`) | **Unsafe — no fix this release** | `pendingResponses` is a module-level `Map`, so it is private to one process. `waitForWebhookResponse` registers in the instance that received the request; `sendWebhookResponse` resolves in the instance that runs the node. Across instances the map misses and the caller receives the fallback acknowledgement. |
+
+**Note on the waiting-resume row.** That defect was found while writing this section and fixed in the same release: the resume loop now runs inside a transaction, so the `SKIP LOCKED` row locks are held while the run is transitioned, and the step transition carries an explicit `WHERE status = 'waiting'` guard. The row is kept in the table as history — if you are reading a build from before this release, treat delay resume as unsafe under multiple instances.
+
+**What this means in practice**: scale freely unless your workflows use **Webhook Response** nodes. There is exactly one operational rule, and that is it. The engine's claim paths are database-atomic; the response path is not, because it coordinates in process memory.
+
+**Known alerting gaps**: workflow failure alerts are raised from the execution processor's failure path, so two categories of failure never produce an alert. Both are known and neither is closed:
+
+- **Recursion-limit failures.** A run rejected by the recursion guard is inserted already `failed` (`src/lib/triggers/create-run.ts:22-36`). It is never `pending`, so the processor never claims it and never re-reads it. Check the run list for these.
+- **Synchronous webhook-response runs.** The inbound webhook route claims and executes these runs inline (`route.ts:98-144`); the processor never sees them, and a failure returns `{ "ok": true }` to the caller. This is the same in-memory-coordination limitation as above, seen from the alerting side.
+
+One related consequence, same mechanism: replaying a failed run of a webhook-response workflow records `sent: false` for that node, because the original HTTP caller is long gone — so such a workflow's replay is not equivalent to its original run.
 
 ## Updating
 
