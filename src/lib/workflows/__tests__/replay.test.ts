@@ -253,11 +253,9 @@ describe("buildReplayRunInput — depth 0, lineage recorded, trigger data verbat
   })
 
   it("does not accept or return a dryRun flag", () => {
-    const result = buildReplayRunInput({
-      ...origin(),
-      // A caller trying to smuggle one in. It must not appear in the output.
-      ...({ dryRun: true } as Record<string, never>),
-    })
+    // A caller trying to smuggle one in. It must not appear in the output.
+    const smuggled = { ...origin(), dryRun: true }
+    const result = buildReplayRunInput(smuggled)
 
     expect(
       result,
