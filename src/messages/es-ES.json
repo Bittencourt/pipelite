@@ -680,7 +680,7 @@
       "targetNew": "Guardar como una vista nueva",
       "targetNewOnly": "Solo puedes guardar esto como una vista nueva, porque “{name}” pertenece a {owner}.",
       "sharedLabel": "Compartir con el equipo",
-      "sharedHelp": "Tus compañeros pueden seleccionar esta vista y ponerla como predeterminada. Solo tú puedes editarla o eliminarla.",
+      "sharedHelp": "Tus compañeros pueden seleccionar esta vista y ponerla como predeterminada. Solo tú y los administradores podéis editarla o eliminarla.",
       "privateHelp": "Solo tú puedes ver esta vista. Nadie más, ni los administradores.",
       "defaultLabel": "Abrir esta vista de forma predeterminada",
       "defaultHelp": "Al abrir esta lista sin filtros en la barra de direcciones llegarás aquí.",

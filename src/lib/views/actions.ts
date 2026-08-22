@@ -155,6 +155,35 @@ async function upsertDefault(
 }
 
 /**
+ * TAKING A VIEW PRIVATE ALSO CLEARS EVERY *OTHER* USER'S DEFAULT ON IT.
+ *
+ * ONE IMPLEMENTATION, TWO CALLERS, AND THAT IS THE WHOLE POINT OF EXTRACTING IT. `setViewShared`
+ * documented and performed this cleanup; `updateView` can make the identical state change — the
+ * save dialog's "Share with the team" checkbox is sent as `isShared` and written unconditionally —
+ * and did NOT. Review finding WR-03: A shares view V, B defaults to it, A reopens the save dialog
+ * with V selected, unticks the box and saves. B's `saved_view_defaults` row survived.
+ *
+ * WHY THE SURVIVING ROW MATTERS EVEN THOUGH ITS IMMEDIATE EFFECT IS BENIGN. `readDefaultViewForUser`
+ * carries the visibility predicate in its join (`queries.ts:236-243`), so B just degrades to the
+ * unfiltered list. The non-benign case is the RE-SHARE: if A ever shares V again, B is silently
+ * redirected into a view they last chose weeks ago and have no memory of choosing. It also left the
+ * database in exactly the state `setViewShared`'s header says has been eliminated — so the next
+ * reader of that header believed a guarantee only one of the two paths provided.
+ *
+ * THE OWNER'S OWN DEFAULT SURVIVES, which is why this is scoped away from `ownerId` rather than
+ * applied to every row pointing at the view: they can still see their own private view, so their
+ * default still resolves.
+ *
+ * Takes a transaction handle, never `db`, so the cleanup commits or rolls back with the visibility
+ * change that caused it.
+ */
+async function clearOtherUsersDefaults(tx: Tx, viewId: string, ownerId: string): Promise<void> {
+  await tx
+    .delete(savedViewDefaults)
+    .where(and(eq(savedViewDefaults.viewId, viewId), ne(savedViewDefaults.userId, ownerId)))
+}
+
+/**
  * CREATE A VIEW.
  *
  * The name collision is caught, never pre-checked. A `SELECT` followed by an `INSERT` is advisory
@@ -256,6 +285,12 @@ export async function updateView(input: {
     // A missing row and a refused row answer differently on purpose: the caller supplied this id,
     // so "gone" is not a disclosure, while "forbidden" is the sentence G-7 renders.
     if (!row) return { success: false, error: "failed" }
+    // VISIBILITY FIRST, AND ANSWERED AS A MISSING ROW (WR-01). `canMutateView` has an admin branch
+    // and `canSeeView` has none, so ownership alone would let an admin holding a private view's id
+    // rename it and overwrite its filters — the invariant `queries.ts:38-41` claims ("an admin can
+    // only mutate a view they can already see") with nothing enforcing it. `failed` and not
+    // `forbidden`: the refusal must not tell an admin that somebody's private view exists here.
+    if (!canSeeView(row, viewer)) return { success: false, error: "failed" }
     if (!canMutateView(row, viewer)) return { success: false, error: "forbidden" }
 
     const entityType = narrowEntityType(row.entityType)
@@ -280,6 +315,16 @@ export async function updateView(input: {
           updatedAt: new Date(),
         })
         .where(eq(savedViews.id, id))
+
+      // THIS WRITE CAN TAKE A SHARED VIEW PRIVATE, so it owes the same cleanup `setViewShared`
+      // performs — WR-03. The save dialog's "Share with the team" checkbox arrives as `isShared`
+      // and is written unconditionally above, so unticking it here is the SAME state change the
+      // manage dialog's switch makes, reached from a different surface. `row.isShared` is already
+      // selected, so the "was it shared before?" half costs no extra read; without it, re-sharing
+      // later would silently redirect a teammate into a view they chose weeks ago.
+      if (row.isShared && input.isShared !== true) {
+        await clearOtherUsersDefaults(tx, id, row.ownerId)
+      }
 
       if (input.makeDefault === true) {
         await upsertDefault(tx, viewer.id, entityType, id)
@@ -352,6 +397,11 @@ export async function setViewShared(input: {
     })
 
     if (!row) return { success: false, error: "failed" }
+    // VISIBILITY FIRST (WR-01), AND THIS IS THE SITE THAT MATTERED MOST. Without it an admin
+    // holding a private view's id could call `setViewShared({ id, isShared: true })` and the view's
+    // NAME and FULL FILTER SET would appear in their own picker on the next read — Decision 3
+    // defeated outright rather than partially. Refused as `failed`, identically to a missing row.
+    if (!canSeeView(row, viewer)) return { success: false, error: "failed" }
     if (!canMutateView(row, viewer)) return { success: false, error: "forbidden" }
 
     await db.transaction(async (tx) => {
@@ -361,9 +411,7 @@ export async function setViewShared(input: {
         .where(eq(savedViews.id, id))
 
       if (!isShared) {
-        await tx
-          .delete(savedViewDefaults)
-          .where(and(eq(savedViewDefaults.viewId, id), ne(savedViewDefaults.userId, row.ownerId)))
+        await clearOtherUsersDefaults(tx, id, row.ownerId)
       }
     })
 
@@ -487,6 +535,10 @@ export async function deleteView(input: { id: string }): Promise<DeleteViewResul
     })
 
     if (!row) return { success: false, error: "failed" }
+    // VISIBILITY FIRST (WR-01). This action RETURNS `row.name` on success, so without the check an
+    // admin holding a private view's id could destroy it AND read back its name — a disclosure the
+    // ownership predicate does not cover, because ownership is not the question being asked.
+    if (!canSeeView(row, viewer)) return { success: false, error: "failed" }
     if (!canMutateView(row, viewer)) return { success: false, error: "forbidden" }
 
     await db.delete(savedViews).where(eq(savedViews.id, id))

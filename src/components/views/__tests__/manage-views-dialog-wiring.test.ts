@@ -573,6 +573,124 @@ describe("manage-views-dialog.tsx — the 40-09 wiring gate", () => {
     ).toBe(0)
   })
 
+  it("11. WR-06: a SUCCESSFUL write discards its own override, so the prop stops being shadowed", () => {
+    /*
+     * THE HEADER OF THIS COMPONENT STATES THE MODEL CORRECTLY:
+     *
+     *     The truth is the `views` prop, which the server rebuilds after every action's
+     *     `revalidatePath`. Between the click and that rebuild the switch has to show the position
+     *     the user just chose […]
+     *
+     * The implementation never returned to that truth. `sharedOverride[view.id]` was written on
+     * toggle and cleared ONLY on failure; on success it was left in place, and the render reads
+     * `sharedOverride[view.id] ?? view.isShared` — so from the FIRST successful toggle onward the
+     * prop was permanently shadowed for that view, for the lifetime of the client tree. The dialog
+     * is always mounted (only `open` changes), so closing it does not reset anything either.
+     * `defaultOverride` had the same shape.
+     *
+     * CONCRETELY: unshare view A here (override {A: false}), close, re-share A through the save
+     * dialog's checkbox, reopen. The switch reads "off" and the state words say "Private" while the
+     * row is shared. Clicking the switch then sends `setViewShared({ isShared: true })` — a no-op
+     * that happens to repair the display, which is exactly how this gets misdiagnosed as a
+     * rendering glitch. Same story for a change made in a second tab, or for a shared view a
+     * colleague unshares.
+     *
+     * THE ASSERTION IS AN ORDERING ONE, over the same `<Switch>` opening tags assertion 6 reads: the
+     * success branch must call the setter BEFORE it returns. `revalidatePath` has already been
+     * awaited by the time the action resolves, so dropping the override there cannot flash back to
+     * the old position. Assertion 6's `>= 2` count stays true and is not weakened — the count is now
+     * three, and it is the ORDER that carries the new claim, because a third call sitting after the
+     * `return` would be exactly the failure-path call that already existed.
+     */
+    const source = read()
+    const switches = openingTags(source, "Switch")
+
+    const handlers = [
+      {
+        what: "the SHARE switch",
+        tag: switches.find((tag) => tag.includes("setViewShared({")),
+        setter: "setSharedOverride",
+      },
+      {
+        what: "the DEFAULT switch",
+        tag: switches.find((tag) => tag.includes("setViewDefault({")),
+        setter: "setDefaultOverride",
+      },
+    ]
+
+    for (const { what, tag, setter } of handlers) {
+      expect(tag, `${COMPONENT}: ${what} was not found (G-4).`).toBeDefined()
+
+      const body = tag ?? ""
+      const successAt = body.indexOf("if (result.success)")
+
+      expect(
+        successAt,
+        `${COMPONENT}: ${what} has no \`if (result.success)\` branch, so this ordering claim would ` +
+          `be vacuous.`
+      ).toBeGreaterThan(-1)
+
+      const returnAt = body.indexOf("return", successAt)
+      const clearAt = body.indexOf(`${setter}(`, successAt)
+
+      expect(
+        returnAt,
+        `${COMPONENT}: ${what}'s success branch does not return, so "before the return" means ` +
+          `nothing here.`
+      ).toBeGreaterThan(successAt)
+
+      expect(
+        clearAt,
+        `${COMPONENT}: ${what} never calls ${setter} in its SUCCESS branch (WR-06). The override ` +
+          `is cleared only on failure, so after the first successful toggle the authoritative ` +
+          `\`views\` prop is permanently shadowed by stale local state for that row — the switch ` +
+          `keeps asserting a position the server may have moved away from, and nothing on screen ` +
+          `ever corrects it.`
+      ).toBeGreaterThan(-1)
+
+      expect(
+        clearAt,
+        `${COMPONENT}: ${what} calls ${setter} only AFTER its success branch returns, which is the ` +
+          `failure-path revert and not a reconciliation (WR-06).`
+      ).toBeLessThan(returnAt)
+
+      /*
+       * THREE CALLS NOW, not two: optimistic, discard-on-success, revert-on-failure. Assertion 6
+       * requires at least two and is untouched; this pins the third so deleting it fails here with
+       * a message that names it, rather than silently dropping back to the shadowed behaviour.
+       */
+      expect(
+        occurrences(body, `${setter}(`),
+        `${COMPONENT}: ${what} must call ${setter} three times — optimistically, to DISCARD the ` +
+          `override once the write succeeded (WR-06), and to REVERT it on failure (T-40-40). ` +
+          `Found ${occurrences(body, `${setter}(`)}.`
+      ).toBeGreaterThanOrEqual(3)
+    }
+
+    /*
+     * THE SHAPE OF EACH DISCARD, checked because the two overrides are modelled differently and a
+     * copy-paste between them would be wrong in a way ordering cannot see. Sharing is per view, so
+     * its override is a map and only THIS view's entry may be dropped — assigning `{}` would discard
+     * a sibling row's in-flight position. The default is per (user, entityType), so exactly one view
+     * can hold it and `null` means "no override at all".
+     */
+    const shareTag = switches.find((tag) => tag.includes("setViewShared({")) ?? ""
+
+    expect(
+      shareTag,
+      `${COMPONENT}: the share switch must drop only its OWN key from sharedOverride. Replacing the ` +
+        `whole map would discard another row's in-flight position (WR-06).`
+    ).toContain("delete remaining[view.id]")
+
+    const defaultTag = switches.find((tag) => tag.includes("setViewDefault({")) ?? ""
+
+    expect(
+      defaultTag,
+      `${COMPONENT}: the default switch must clear its override with setDefaultOverride(null) — ` +
+        `the default is per (user, entityType), so "no override" is the whole of it (WR-06).`
+    ).toContain("setDefaultOverride(null)")
+  })
+
   it("9. F-39-04: no ProgressBar", () => {
     const source = read()
 

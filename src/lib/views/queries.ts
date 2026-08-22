@@ -39,6 +39,15 @@
  * says "only the owner (or an admin) may edit or delete a view" — that is about MUTATION, and an
  * admin can only mutate a view they can already see. So the admin branch appears exactly once in
  * this file, in the `canEdit` mapping, and never in a `where` clause.
+ *
+ * WHERE THAT SECOND HALF IS ENFORCED, because for one release it was not. `updateView`,
+ * `setViewShared` and `deleteView` each compose `canSeeView` AHEAD of `canMutateView`
+ * (`actions.ts`), and `src/lib/views/__tests__/actions.test.ts` asserts the ordering per action.
+ * Review finding WR-01 was this paragraph being true as a statement of intent and false as a
+ * statement about the code: the three mutators asked `canMutateView` alone, whose admin branch is
+ * unconditionally true, so an admin holding a private view's id could share it — publishing its name
+ * and filters into their own picker — or delete it and read its name back. A claim in a header is
+ * not a control; name the control.
  * ---------------------------------------------------------------------------------------------
  *
  * BOTH FUNCTIONS DEGRADE RATHER THAN THROW. There is no `error.tsx` above `/organizations`,

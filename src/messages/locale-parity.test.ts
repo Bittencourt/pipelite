@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs"
 import { describe, it, expect } from "vitest"
 
+/*
+ * The saved-view write guards are PURE and import no database module — `actions.test.ts` asserts
+ * that separately — so they can be exercised here. WR-02 is a copy defect whose only stable
+ * definition is "the sentence disagrees with this predicate", and a copy assertion that does not
+ * consult the predicate is just a second literal to keep in sync.
+ */
+import { canMutateView, canSeeView, type ViewViewer } from "@/lib/views/write-guards"
+
 /**
  * Locale drift gate.
  *
@@ -1178,6 +1186,91 @@ describe("locale parity", () => {
         )
         .toEqual({ "{loser}": 2, "{survivor}": 1 })
     }
+  })
+
+  /**
+   * WR-02 — `views.save.sharedHelp` PROMISED A GUARANTEE THE SERVER DOES NOT ENFORCE.
+   *
+   * The helper text under the "Share with the team" checkbox read:
+   *
+   *     "Teammates can select this view and set it as their default. Only you can edit or delete it."
+   *
+   * The second sentence was false. `canMutateView` grants edit and delete to `role === "admin"` on
+   * ANY view, which is the app's documented intent (40-CONTEXT: "only the owner (or an admin) may
+   * edit or delete a view"). The user was being told a stronger guarantee than the one that exists,
+   * on the exact surface where they decide whether to share.
+   *
+   * WHY THIS IS TESTED AGAINST THE PREDICATE AND NOT AGAINST A STRING LITERAL. Asserting the new
+   * sentence verbatim would pin the copy, not the claim, and would go stale the first time somebody
+   * rephrases it. What must hold is that the sentence and `canMutateView` agree, so the predicate is
+   * EXERCISED here and the copy is required to name the party it grants access to. The sibling key
+   * `privateHelp` ("Nobody else, including admins") is checked in the opposite direction as the
+   * anti-vacuity half: one of the two promises was enforced and the other was not, and they sit two
+   * lines apart in the catalog.
+   *
+   * The key NAME is unchanged, so REQUIRED_VIEWS_KEYS stays at 61 and every parity assertion above
+   * still applies to it.
+   */
+  describe("views.save.sharedHelp matches what canMutateView actually allows (WR-02)", () => {
+    /** The word each locale uses for an administrator, lowercased. */
+    const ADMIN_WORD: Record<Locale, string> = {
+      "en-US": "admin",
+      "es-ES": "administradores",
+      "pt-BR": "administradores",
+    }
+
+    const OWNER: ViewViewer = { id: "owner-1", role: "member" }
+    const ADMIN: ViewViewer = { id: "admin-1", role: "admin" }
+    const SHARED_ROW = { ownerId: OWNER.id, isShared: true }
+
+    it("an admin really can mutate somebody else's shared view — the fact the copy must reflect", () => {
+      // Exercised, not assumed. If this were false the sentence would have been correct and there
+      // would be nothing to fix; every assertion below would then be pinning the wrong claim.
+      expect(canMutateView(SHARED_ROW, ADMIN)).toBe(true)
+      expect(canMutateView(SHARED_ROW, OWNER)).toBe(true)
+    })
+
+    for (const locale of LOCALES) {
+      it(`${locale}.json names admins among who can edit or delete a shared view`, () => {
+        const value = resolve(messages[locale], "views.save.sharedHelp")
+
+        expect(value, `views.save.sharedHelp is missing from ${locale}.json`).toBeTypeOf("string")
+
+        expect(
+          (value ?? "").toLowerCase(),
+          `${locale}.json: views.save.sharedHelp tells the user that only they can edit or delete ` +
+            `a shared view. canMutateView grants both to any admin, so the sentence is false on ` +
+            `the exact surface where the user decides whether to share (WR-02).`,
+        ).toContain(ADMIN_WORD[locale])
+      })
+    }
+
+    it("en-US no longer carries the exact false sentence", () => {
+      // The specific claim the review quoted, refused by name so a partial revert is caught.
+      expect(resolve(messages["en-US"], "views.save.sharedHelp")).not.toContain(
+        "Only you can edit or delete it.",
+      )
+    })
+
+    it("privateHelp still promises the exclusivity that IS enforced", () => {
+      /*
+       * THE ANTI-VACUITY HALF, and the reason this block is not merely a copy edit. `canSeeView` has
+       * no admin branch — the whole of `queries.ts`'s header exists to keep that true — so
+       * `privateHelp`'s stronger promise is honest. A "fix" that softened both sentences would
+       * satisfy the assertions above and would give away a guarantee the code actually provides.
+       */
+      expect(canSeeView({ ownerId: OWNER.id, isShared: false }, ADMIN)).toBe(false)
+
+      for (const locale of LOCALES) {
+        const value = (resolve(messages[locale], "views.save.privateHelp") ?? "").toLowerCase()
+
+        expect(
+          value,
+          `${locale}.json: views.save.privateHelp must keep naming admins as excluded — ` +
+            `canSeeView has no admin branch and that promise is enforced.`,
+        ).toContain(ADMIN_WORD[locale])
+      }
+    })
   })
 
   it("all three locales have identical whole-file key sets", () => {

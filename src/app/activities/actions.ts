@@ -3,7 +3,7 @@
 import { auth } from "@/auth"
 import { db } from "@/db"
 import { activities, activityTypes, users } from "@/db/schema"
-import { eq, and, isNull, isNotNull, asc, or, ilike, gte, lte, lt } from "drizzle-orm"
+import { eq, and, isNull, isNotNull, asc, or, ilike, gte, lt } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { runWithActor } from "@/lib/audit/actor-context"
@@ -11,6 +11,7 @@ import { deleteRecordByType, updateRecordOwnerByType } from "@/lib/bulk/dispatch
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
 import type { BulkFailure, BulkWriteResult } from "@/lib/bulk/types"
 import { fetchFilteredData } from "@/lib/export/formatters"
+import { endOfDayExclusive, startOfDayInclusive } from "@/lib/filters/date-range"
 import type { ExportResult } from "@/lib/export/types"
 import {
   createActivityMutation,
@@ -574,19 +575,51 @@ export async function getActivities(filters?: {
       // Anything the toolbar cannot produce adds NO predicate. `pickFilterParams` has already
       // dropped an unrecognised value on the view path, but a direct URL can carry anything and an
       // unknown status must not silently mean "completed".
+      // THE THREE VALUES ARE MUTUALLY EXCLUSIVE, because the control that produces them is a
+      // SINGLE SELECT (`activity-filters.tsx:170-181`). Picking one of three options that overlap
+      // is not a filter, it is a coin toss the user cannot see.
+      //
+      // `pending` WAS A BARE `completedAt IS NULL`, WHICH IS A STRICT SUPERSET OF `overdue`.
+      // Measured on the live table at review time: 4,165 rows incomplete, 4,151 of them already
+      // past due — so a user picking "Pending" to see what is not yet due was shown 4,151 overdue
+      // rows and 14 relevant ones (99.7% overlap). The pre-40-13 JavaScript this replaced had it
+      // right: `!completedAt && dueDate >= now`.
+      //
+      // `now` is computed ONCE per call and shared by the two date branches, so `pending` and
+      // `overdue` partition the incomplete rows against the SAME instant. Two `new Date()` calls
+      // would leave a microsecond window belonging to neither, which is the kind of gap that only
+      // ever shows up as one missing row in a report.
+      const now = new Date()
+
       if (status === "completed") {
         conditions.push(isNotNull(activities.completedAt))
       } else if (status === "pending") {
-        conditions.push(isNull(activities.completedAt))
+        conditions.push(and(isNull(activities.completedAt), gte(activities.dueDate, now))!)
       } else if (status === "overdue") {
-        conditions.push(and(isNull(activities.completedAt), lt(activities.dueDate, new Date()))!)
+        conditions.push(and(isNull(activities.completedAt), lt(activities.dueDate, now))!)
       }
     }
+    // THE RANGE IS HALF-OPEN: `[dateFrom 00:00, dateTo+1day 00:00)`, both bounds in UTC.
+    //
+    // `dateTo` USED TO BE `lte(dueDate, new Date(dateTo))`, WHICH IS MIDNIGHT — so `dateTo` meant
+    // "the first instant of that day" rather than "that day", and every activity due later on the
+    // last day of the range was dropped from the list, from the CSV, and from the row count in the
+    // success toast (all three come from this one query). The activity dialog composes
+    // `${dueDate}T${dueTime || "09:00"}`, so that is EVERY activity the app itself creates. The live
+    // data hid it completely: all 79,022 imported rows sit at exactly 00:00:00.
+    //
+    // TIMEZONE, STATED: both helpers are UTC-only, and the container runs `TZ=UTC` (verified), so
+    // UTC midnight is the operator's midnight. See `src/lib/filters/date-range.ts` for what changes
+    // under a non-UTC deployment and why `setHours(23,59,59,999)` is NOT the fix.
+    //
+    // ONE MODULE, THREE CALL SITES: `fetchActivities` and `fetchDeals` in
+    // `src/lib/export/formatters.ts` import the same two helpers, so the export and the list cannot
+    // disagree about what a saved date range means.
     if (filters?.dateFrom) {
-      conditions.push(gte(activities.dueDate, new Date(filters.dateFrom)))
+      conditions.push(gte(activities.dueDate, startOfDayInclusive(filters.dateFrom)))
     }
     if (filters?.dateTo) {
-      conditions.push(lte(activities.dueDate, new Date(filters.dateTo)))
+      conditions.push(lt(activities.dueDate, endOfDayExclusive(filters.dateTo)))
     }
     if (filters?.search) {
       conditions.push(

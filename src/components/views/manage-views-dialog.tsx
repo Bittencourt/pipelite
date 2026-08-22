@@ -285,6 +285,23 @@ export function ManageViewsDialog({
                               startTransition(async () => {
                                 const result = await setViewShared({ id: view.id, isShared: next })
                                 if (result.success) {
+                                  /*
+                                    THE OVERRIDE IS DISCARDED HERE, NOT LEFT STANDING (WR-06).
+                                    It existed to cover the gap between the click and the server's
+                                    rebuild; the action has resolved, so `revalidatePath` has
+                                    already run and the authoritative `views` prop is on its way.
+                                    Leaving the entry in place shadowed that prop PERMANENTLY for
+                                    this row — the component is always mounted, only `open`
+                                    changes — so a later change from the save dialog, from another
+                                    tab, or by a colleague would render as the position this switch
+                                    last wrote. Only THIS view's key is dropped: replacing the map
+                                    would discard a sibling row's in-flight position.
+                                  */
+                                  setSharedOverride((current) => {
+                                    const remaining = { ...current }
+                                    delete remaining[view.id]
+                                    return remaining
+                                  })
                                   toast.success(t("manage.saved"))
                                   return
                                 }
@@ -328,6 +345,15 @@ export function ManageViewsDialog({
                             startTransition(async () => {
                               const result = await setViewDefault({ entityType, viewId })
                               if (result.success) {
+                                /*
+                                  DISCARDED ON SUCCESS, same rule as the share switch (WR-06). The
+                                  default is per (user, entityType), so exactly one view can hold
+                                  it and `null` IS "no override" — the render falls back to
+                                  `storedDefaultId`, derived from the `views` prop the server has
+                                  just rebuilt. Left standing, this one override would shadow the
+                                  default for EVERY row in the dialog, not just the one clicked.
+                                */
+                                setDefaultOverride(null)
                                 toast.success(t("manage.saved"))
                                 return
                               }

@@ -31,6 +31,8 @@ import { readStrippedSource } from "@/components/custom-fields/__tests__/source-
 
 const ACTIONS = "src/app/activities/actions.ts"
 const PAGE = "src/app/activities/page.tsx"
+/** The stats row lives here, and it renders the SAME catalog keys the status filter offers. */
+const CLIENT = "src/app/activities/activities-client.tsx"
 
 /**
  * The text of one top-level `export async function ${name}` declaration, bounded by the next
@@ -107,7 +109,7 @@ describe("status is a SQL predicate", () => {
         "view carrying it restores a control that narrows nothing"
     ).toContain("filters?.status")
 
-    // "completed" -> completedAt IS NOT NULL, "pending" -> IS NULL,
+    // "completed" -> completedAt IS NOT NULL, "pending" -> IS NULL AND dueDate >= now,
     // "overdue" -> IS NULL AND dueDate < now. Mirrors `fetchActivities` in
     // `src/lib/export/formatters.ts` so the list and the export mean the same thing.
     expect(getActivitiesBody).toContain("isNotNull(activities.completedAt)")
@@ -116,6 +118,81 @@ describe("status is a SQL predicate", () => {
     expect(getActivitiesBody).toContain('"overdue"')
     expect(getActivitiesBody).toContain('"pending"')
     expect(getActivitiesBody).toContain('"completed"')
+  })
+
+  it("computes the status cutoff ONCE, so pending and overdue partition the same instant", () => {
+    /*
+     * WR-05. Two `new Date()` calls in the same block would leave a sub-millisecond window that
+     * belongs to neither branch — invisible in every test and visible in production as one row
+     * missing from a report. The behavioural proof that the two branches are complementary is in
+     * `get-activities-where.test.ts`; this is the cheap structural half of it.
+     */
+    const statusAt = getActivitiesBody.indexOf('if (status === "completed")')
+    const rangeAt = getActivitiesBody.indexOf("filters?.dateFrom")
+
+    expect(statusAt, "the status branch is gone or renamed").toBeGreaterThan(-1)
+    expect(
+      rangeAt,
+      "the date-range branch no longer follows the status branch, so the slice below is not the " +
+        "status block and every count in this test is measuring the wrong region"
+    ).toBeGreaterThan(statusAt)
+
+    const statusBlock = getActivitiesBody.slice(statusAt, rangeAt)
+
+    expect(
+      occurrences(statusBlock, "new Date()"),
+      "the status branch must read the clock exactly once and share it between `pending` and " +
+        "`overdue`; found " +
+        occurrences(statusBlock, "new Date()")
+    ).toBe(0)
+    expect(
+      getActivitiesBody,
+      "the shared cutoff `const now = new Date()` is gone (WR-05)."
+    ).toContain("const now = new Date()")
+  })
+})
+
+describe("WR-05: pending and overdue are exclusive, on the list AND in the stats row", () => {
+  it("pending is NOT-completed AND NOT-yet-due, never a bare isNull(completedAt)", () => {
+    /*
+     * `pending` had been reduced to `conditions.push(isNull(activities.completedAt))` — a strict
+     * SUPERSET of `overdue`, overlapping it by 4,151 of the 4,165 incomplete rows measured on the
+     * live table. The control is a SINGLE SELECT with three options, so it presents them as
+     * mutually exclusive states.
+     */
+    expect(
+      getActivitiesBody,
+      "`pending` is a bare isNull(completedAt) again, so it contains every overdue row (WR-05)."
+    ).not.toContain("conditions.push(isNull(activities.completedAt))")
+
+    expect(getActivitiesBody).toContain("gte(activities.dueDate, now)")
+    expect(getActivitiesBody).toContain("lt(activities.dueDate, now)")
+  })
+
+  it("the stats row counts the same three sets the filter offers", () => {
+    /*
+     * The stats row and the status filter are on the same screen and share the SAME catalog keys
+     * (`activities.pending`, `activities.overdue`). One word meaning two different sets is how a
+     * user reads "Pending: 50", selects Pending, and gets a different number with nothing to
+     * explain the gap. Read as source for the same reason every other gate on this surface is: the
+     * base vitest project has no jsdom.
+     */
+    const client = readStrippedSource(CLIENT)
+
+    expect(
+      client,
+      "activities-client.tsx counts `pending` as every incomplete activity again, which is the " +
+        "definition WR-05 removed from the query (`!a.completedAt` alone includes the overdue rows)."
+    ).not.toContain("activities.filter((a) => !a.completedAt).length")
+
+    expect(client).toContain("const pendingCount")
+    expect(client).toContain("const overdueCount")
+
+    // ANTI-VACUITY: both counts must reach the screen, and both must use the filter's own words.
+    expect(client).toContain("{pendingCount}")
+    expect(client).toContain("{overdueCount}")
+    expect(client).toContain("t('overdue')")
+    expect(client).toContain("t('pending')")
   })
 
   it("imports isNotNull and lt from drizzle-orm as parsed specifiers", () => {
@@ -137,14 +214,38 @@ describe("the due-date range is a SQL predicate", () => {
         "chips and never reaches the WHERE clause — measured 7,933 matching rows displayed as 0"
     ).toContain("filters?.dateFrom")
     expect(getActivitiesBody).toContain("gte(activities.dueDate")
+    expect(getActivitiesBody).toContain("startOfDayInclusive(filters.dateFrom)")
   })
 
-  it("guards on filters?.dateTo against dueDate", () => {
+  it("guards on filters?.dateTo against dueDate, with an EXCLUSIVE upper bound", () => {
+    /*
+     * THIS ASSERTION WAS CHANGED, AND THE CHANGE IS THE POINT — it previously required
+     * `lte(activities.dueDate`, which is the shape of review finding CR-01. `new Date("2025-03-31")`
+     * is midnight UTC, so an inclusive upper bound at that value excludes every activity due later
+     * on the last day of the range: every activity the app itself creates, because the dialog
+     * composes `${dueDate}T${dueTime || "09:00"}`. The gate was pinning the defect in place.
+     *
+     * It is REPLACED BY A STRICTLY STRONGER ONE, not relaxed: the old form asserted only that SOME
+     * upper bound existed; this asserts which one, names the shared helper, and forbids the
+     * inclusive spelling outright. The behavioural proof — the rendered SQL and its bound instants —
+     * lives in `get-activities-where.test.ts`, which fails RED against the old expression.
+     */
     expect(
       getActivitiesBody,
       "no filters?.dateTo guard: the upper bound of the date range narrows nothing"
     ).toContain("filters?.dateTo")
-    expect(getActivitiesBody).toContain("lte(activities.dueDate")
+    expect(getActivitiesBody).toContain("lt(activities.dueDate")
+    expect(
+      getActivitiesBody,
+      "the upper bound must come from `endOfDayExclusive`, the module `fetchActivities` and " +
+        "`fetchDeals` also import (CR-01). A locally spelled `+ 1 day` here is the second copy " +
+        "that drifts."
+    ).toContain("endOfDayExclusive(filters.dateTo)")
+    expect(
+      getActivitiesBody,
+      "`lte(activities.dueDate` is back: an inclusive bound at `new Date(dateTo)` is midnight, so " +
+        "`dateTo` means the first instant of the day rather than the day (CR-01)."
+    ).not.toContain("lte(activities.dueDate")
   })
 })
 

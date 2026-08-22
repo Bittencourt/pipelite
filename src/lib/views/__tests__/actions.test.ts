@@ -722,14 +722,36 @@ describe(`${ACTIONS_PATH}: the write layer's authorization ordering`, () => {
       // return nothing on every visit — a silent, permanent no-op with nothing on screen to
       // explain it. Dropping the stale row degrades them to the unfiltered list instead, which is
       // the behaviour the locked decision already chose for a DELETED shared view.
+      //
+      // THE FOUR ASSERTIONS THIS TEST USED TO MAKE — `savedViewDefaults`, `.delete(`, `ne(` and
+      // `ownerId`, all against setViewShared's own body — ARE STILL MADE, and against a wider
+      // scope: they moved to the block below, which checks the cleanup ONCE in the shared helper
+      // that both unshare paths now call. Leaving them here would have required the delete to stay
+      // inline, which is what let `updateView` ship without it (WR-03).
       const body = actionNamed("setViewShared").body
 
-      expect(body).toContain("savedViewDefaults")
-      expect(body).toContain(".delete(")
-      // Scoped to somebody ELSE: the owner keeps their own default, because they can still see
-      // their own private view. An unscoped delete would take theirs too.
-      expect(body).toContain("ne(")
-      expect(body).toContain("ownerId")
+      expect(
+        body,
+        `${ACTIONS_PATH}: setViewShared no longer clears other users' defaults when the view goes ` +
+          `private.`,
+      ).toContain("clearOtherUsersDefaults(")
+
+      // Inside the transaction that flips the flag, so the two commit or roll back together.
+      const txAt = body.indexOf("db.transaction(")
+      const cleanupAt = body.indexOf("clearOtherUsersDefaults(")
+
+      expect(txAt, `${ACTIONS_PATH}: setViewShared no longer opens a transaction`).toBeGreaterThan(
+        -1,
+      )
+      expect(
+        cleanupAt,
+        `${ACTIONS_PATH}: setViewShared clears the defaults OUTSIDE its transaction, so a failed ` +
+          `update leaves the defaults gone anyway.`,
+      ).toBeGreaterThan(txAt)
+
+      // Only when the view is going PRIVATE. Clearing on every toggle would drop a teammate's
+      // default the moment the owner re-shared.
+      expect(body).toContain("if (!isShared)")
     })
 
     it("setViewDefault does NOT require ownership, because a default is per-user", () => {
@@ -800,6 +822,250 @@ describe(`${ACTIONS_PATH}: the write layer's authorization ordering`, () => {
 
     it("deleteView returns the name, because the row is gone before the toast renders", () => {
       expect(actionNamed("deleteView").body).toContain("name: row.name")
+    })
+  })
+
+  /**
+   * WR-01 — THE MUTATION GATES MUST COMPOSE WITH THE VISIBILITY GATE.
+   *
+   * `queries.ts:38-41` states the invariant as settled fact:
+   *
+   *     `canEdit` KEEPS THE ADMIN BRANCH, and that is not a contradiction. […] an admin can only
+   *     mutate a view they can already see.
+   *
+   * Nothing enforced it. All three mutators fetched the row by primary key with NO visibility
+   * predicate and then asked `canMutateView` alone — which is
+   * `row.ownerId === viewer.id || viewer.role === "admin"`, unconditionally true for an admin. So an
+   * admin holding a private view's id could flip it shared (disclosing its name and its whole filter
+   * set into their own picker, defeating Decision 3 outright), rename it, overwrite its filters, or
+   * delete it and receive `row.name` back in the success payload.
+   *
+   * WHY THIS IS A WARNING AND NOT A CRITICAL, stated so the severity is not overstated: ids are
+   * `crypto.randomUUID()` v4 and no code path hands a private view's id to a non-owner. The defect is
+   * the absence of defence behind an unguessable id, plus a documented invariant that was false.
+   *
+   * THE ASSERTION IS AN ORDERING ONE, and deliberately mirrors the one this file already makes for
+   * `setViewDefault`: visibility FIRST, then ownership, then the write. Order matters here for a
+   * reason beyond tidiness — a row the caller cannot see must be answered exactly as a missing one
+   * (`failed`), never as `forbidden`, or the refusal itself tells an admin that somebody's private
+   * view exists at that id.
+   */
+  describe("WR-01: an admin can only mutate a view they can already SEE", () => {
+    /** Each mutator, and the call its visibility check must precede. */
+    const MUTATORS: ReadonlyArray<{ name: string; write: string }> = [
+      { name: "updateView", write: ".update(" },
+      { name: "setViewShared", write: ".update(" },
+      { name: "deleteView", write: ".delete(" },
+    ]
+
+    it("the predicates themselves disagree about a private view, which is what makes this testable", () => {
+      // Exercised, not assumed. If `canSeeView` and `canMutateView` agreed on this pair there would
+      // be nothing for the composition to add, and every ordering assertion below would be theatre.
+      expect(canSeeView(PRIVATE_ROW, ADMIN)).toBe(false)
+      expect(canMutateView(PRIVATE_ROW, ADMIN)).toBe(true)
+    })
+
+    for (const { name, write } of MUTATORS) {
+      it(`${name} calls canSeeView BEFORE canMutateView and before its write`, () => {
+        const action = actionNamed(name)
+        const seeAt = action.body.indexOf("canSeeView")
+        const mutateAt = action.body.indexOf("canMutateView")
+        const writeAt = action.body.indexOf(write)
+
+        expect(
+          seeAt,
+          `${ACTIONS_PATH}: ${name} never calls canSeeView, so canMutateView's admin branch lets ` +
+            `an admin holding the id read, rename, share or delete a view Decision 3 says belongs ` +
+            `to exactly one person (WR-01). queries.ts:38-41 claims otherwise.`,
+        ).toBeGreaterThan(-1)
+        expect(
+          mutateAt,
+          `${ACTIONS_PATH}: ${name} performs no canMutateView check, so this ordering claim is ` +
+            `vacuous.`,
+        ).toBeGreaterThan(-1)
+        expect(
+          writeAt,
+          `${ACTIONS_PATH}: ${name} performs no ${write}, so this ordering claim is vacuous.`,
+        ).toBeGreaterThan(-1)
+
+        expect(
+          seeAt,
+          `${ACTIONS_PATH}: ${name} asks whether the caller may MUTATE the row before asking ` +
+            `whether they may SEE it. The order is the disclosure: an unseen row must be refused ` +
+            `with the same answer as a missing one.`,
+        ).toBeLessThan(mutateAt)
+        expect(
+          seeAt,
+          `${ACTIONS_PATH}: ${name} writes before checking visibility.`,
+        ).toBeLessThan(writeAt)
+      })
+
+      it(`${name} answers an unseen row exactly as it answers a missing one`, () => {
+        /*
+         * `forbidden` is the sentence G-7 renders — "this view belongs to someone else" — and
+         * returning it here would confirm to an admin that a private view exists at the id they
+         * guessed or kept. `failed` is what a missing row already returns, so the two cases are
+         * indistinguishable from outside.
+         */
+        const body = actionNamed(name).body
+        const refusal = /canSeeView\([^)]*\)\)\s*return\s*\{\s*success:\s*false,\s*error:\s*"failed"\s*\}/
+
+        expect(
+          refusal.test(body),
+          `${ACTIONS_PATH}: ${name}'s canSeeView refusal does not return ` +
+            `{ success: false, error: "failed" }. A distinct code turns the guard itself into the ` +
+            `disclosure it was added to prevent (WR-01).`,
+        ).toBe(true)
+      })
+    }
+
+    it("all three mutators are covered, and setViewDefault is NOT one of them", () => {
+      /*
+       * ANTI-VACUITY AND A BOUNDARY IN ONE. The list above is a literal, so this pins it against the
+       * actions actually exported: every action that calls `canMutateView` must also call
+       * `canSeeView`. `setViewDefault` deliberately calls neither `canMutateView` (G-7: a default is
+       * per user) nor a write this block would recognise, so it is excluded by the predicate rather
+       * than by being forgotten.
+       */
+      const mutating = actions
+        .filter((fn) => fn.body.includes("canMutateView"))
+        .map((fn) => fn.name)
+        .sort()
+
+      expect(mutating).toEqual(["deleteView", "setViewShared", "updateView"])
+
+      for (const name of mutating) {
+        expect(
+          actionNamed(name).body,
+          `${ACTIONS_PATH}: ${name} calls canMutateView without canSeeView (WR-01).`,
+        ).toContain("canSeeView")
+      }
+    })
+  })
+
+  /**
+   * WR-03 — BOTH PATHS THAT CAN TAKE A VIEW PRIVATE OWE THE SAME CLEANUP.
+   *
+   * `setViewShared` documented the consequence at length and implemented it. `updateView` can make
+   * the identical state change — the save dialog's "Share with the team" checkbox arrives as
+   * `isShared` and is written unconditionally — and did not. Reachable in three clicks: A shares V,
+   * B defaults to it, A reopens the save dialog with V selected, unticks the box, saves. B's
+   * `saved_view_defaults` row survived.
+   *
+   * The immediate effect is benign (`readDefaultViewForUser` carries the visibility predicate in its
+   * join, so B degrades to the unfiltered list). The RE-SHARE is not: if A ever shares V again, B is
+   * silently redirected into a view they last chose weeks ago.
+   *
+   * ONE IMPLEMENTATION, ASSERTED ONCE, CALLED FROM BOTH. Two inline copies of the same delete is the
+   * shape that produced this defect, so the gate is written to fail if a second copy appears rather
+   * than to tolerate it.
+   */
+  describe("WR-03: every path that unshares a view clears other users' defaults", () => {
+    /**
+     * The module's private helpers — everything above the first exported action.
+     *
+     * A SLICE, NOT A FOURTH MATCHER. `extractExportedFunctions` above only sees
+     * `export async function`, and `clearOtherUsersDefaults` must NOT be exported: Next.js refuses
+     * to build a `"use server"` module that exports a non-async-function, and exporting it would
+     * also make it a public POST endpoint that deletes defaults. Every private helper in this file
+     * is declared before `createView`, so that offset IS the boundary — asserted, not assumed, in
+     * the first test below.
+     */
+    const helpers = actionsSource.slice(0, actionsSource.indexOf("export async function "))
+
+    it("the helper region really is the private preamble", () => {
+      expect(helpers.length, `${ACTIONS_PATH}: no exported action found at all`).toBeGreaterThan(0)
+      expect(helpers).not.toContain("export async function")
+      expect(helpers).toContain("async function upsertDefault(")
+      expect(helpers).toContain("async function clearOtherUsersDefaults(")
+    })
+
+    it("the cleanup is defined ONCE, scoped away from the owner", () => {
+      /*
+       * The four assertions the setViewShared test used to make against its own body, now made
+       * against the single definition both callers share. Scoped to somebody ELSE: the owner keeps
+       * their own default, because they can still see their own private view, and an unscoped
+       * delete would take theirs too.
+       */
+      expect(helpers).toContain("savedViewDefaults")
+      expect(helpers).toContain(".delete(")
+      expect(helpers).toContain("ne(savedViewDefaults.userId, ownerId)")
+      expect(helpers).toContain("eq(savedViewDefaults.viewId, viewId)")
+
+      // It takes a transaction handle, never `db`, so it commits with the visibility change.
+      expect(helpers).toContain("clearOtherUsersDefaults(tx: Tx")
+      expect(
+        helpers.slice(helpers.indexOf("async function clearOtherUsersDefaults(")),
+        `${ACTIONS_PATH}: clearOtherUsersDefaults reaches for the module-level db handle instead ` +
+          `of the transaction it was handed.`,
+      ).not.toContain("db.delete")
+    })
+
+    it("updateView clears other users' defaults when its write takes the view private", () => {
+      const body = actionNamed("updateView").body
+      const cleanupAt = body.indexOf("clearOtherUsersDefaults(")
+
+      expect(
+        cleanupAt,
+        `${ACTIONS_PATH}: updateView can unshare a view — the save dialog's checkbox is written ` +
+          `unconditionally at its .update() — and never clears the other users' defaults that ` +
+          `setViewShared does. A teammate keeps a stale default row, and re-sharing later silently ` +
+          `redirects them into a view they chose weeks ago (WR-03).`,
+      ).toBeGreaterThan(-1)
+
+      // Conditional on the view HAVING been shared and NOT being shared any more. Unconditional
+      // clearing would wipe teammates' defaults every time the owner merely renamed a shared view.
+      expect(
+        body,
+        `${ACTIONS_PATH}: updateView clears the defaults without checking that the view was shared ` +
+          `and is not any more — a rename of a still-shared view would drop every teammate's ` +
+          `default.`,
+      ).toContain("row.isShared && input.isShared !== true")
+
+      // Inside the same transaction as the update itself.
+      const txAt = body.indexOf("db.transaction(")
+
+      expect(txAt, `${ACTIONS_PATH}: updateView no longer opens a transaction`).toBeGreaterThan(-1)
+      expect(cleanupAt).toBeGreaterThan(txAt)
+    })
+
+    it("updateView still scopes its OWN default-clearing to the viewer, which is a different row set", () => {
+      /*
+       * ANTI-CONFLATION. `updateView` already deleted from `savedViewDefaults`, but scoped to
+       * `viewer.id` — the untick-the-default-checkbox branch, which is the OPPOSITE row set from
+       * the one WR-03 is about. The finding was easy to misread as "it already deletes defaults, so
+       * it is fine"; this assertion keeps both behaviours present so the fix cannot have replaced
+       * one with the other.
+       */
+      const body = actionNamed("updateView").body
+
+      expect(body).toContain("eq(savedViewDefaults.userId, viewer.id)")
+      expect(body).toContain("clearOtherUsersDefaults(")
+    })
+
+    it("no caller re-implements the delete inline", () => {
+      // The gate against the shape that caused WR-03 in the first place: a second copy, added
+      // beside the helper rather than through it, that then fails to be updated with the first.
+      for (const action of actions) {
+        expect(
+          action.body,
+          `${ACTIONS_PATH}: ${action.name} spells the other-users cleanup out inline instead of ` +
+            `calling clearOtherUsersDefaults. Two copies of this rule is exactly how updateView ` +
+            `ended up without one (WR-03).`,
+        ).not.toContain("ne(savedViewDefaults.userId")
+      }
+    })
+
+    it("exactly the two unsharing actions call it — createView and setViewDefault cannot unshare", () => {
+      // Anti-vacuity, and a boundary: `createView` has no previous visibility to change and
+      // `setViewDefault` writes one user's own row. A cleanup call in either would be deleting
+      // other people's defaults for no reason.
+      const callers = actions
+        .filter((fn) => fn.body.includes("clearOtherUsersDefaults("))
+        .map((fn) => fn.name)
+        .sort()
+
+      expect(callers).toEqual(["setViewShared", "updateView"])
     })
   })
 

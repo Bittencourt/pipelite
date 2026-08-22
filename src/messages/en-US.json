@@ -680,7 +680,7 @@
       "targetNew": "Save as a new view",
       "targetNewOnly": "You can only save this as a new view, because “{name}” belongs to {owner}.",
       "sharedLabel": "Share with the team",
-      "sharedHelp": "Teammates can select this view and set it as their default. Only you can edit or delete it.",
+      "sharedHelp": "Teammates can select this view and set it as their default. Only you and admins can edit or delete it.",
       "privateHelp": "Only you can see this view. Nobody else, including admins.",
       "defaultLabel": "Open this view by default",
       "defaultHelp": "Opening this list with no filters in the address bar takes you here.",
