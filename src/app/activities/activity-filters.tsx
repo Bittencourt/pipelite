@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input"
 import { Filter, Search, X } from "lucide-react"
 import { Suspense } from "react"
 import { useTranslations } from "next-intl"
+import { withViewEscape } from "@/lib/views/url-params"
 
 interface ActivityFiltersProps {
   activityTypes: Array<{ id: string; name: string }>
@@ -61,7 +62,24 @@ function ActivityFiltersInner({
 
   const hasFilters = activeFilterCount > 0
 
-  // Set a filter value in URL
+  /*
+    ALL THREE WRITERS BELOW GO THROUGH `withViewEscape`, AND THE THIRD ONE IS THE INTERESTING CASE.
+
+    The rule the helper enforces: a navigation that leaves NO saveable filter behind must carry
+    `view=none`, because `page.tsx`'s default-view redirect fires on "no params at all" and would
+    otherwise recapture the user the moment they finished clearing. A navigation that DOES leave a
+    filter behind keeps whatever `view=<id>` was already in the URL, which is what makes "I changed
+    a filter with my view open" a representable state (plan 40-18) instead of silently deselecting.
+
+    NO CALL SITE HERE NEEDS A `selectedViewId` PROP. All three build their `URLSearchParams` from
+    `searchParams.toString()`, so a live `view` key is already in the input and the helper carries it
+    through. Plan 40-11 does pass a selection into the two `data-table.tsx` files, because those
+    build their query strings from PROPS and have no `searchParams` to preserve from — the asymmetry
+    is about where the two groups get their params, not a gap in one of them.
+  */
+
+  // Set a filter value in URL. Removing the LAST chip empties `params`, so the plain
+  // `${pathname}?${params.toString()}` this replaced produced a bare `?` — no params at all.
   const setFilter = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString())
     if (value) {
@@ -69,15 +87,30 @@ function ActivityFiltersInner({
     } else {
       params.delete(key)
     }
-    router.push(`${pathname}?${params.toString()}`)
+    router.push(`${pathname}?${withViewEscape("activity", params)}`)
   }
 
-  // Clear all filters
+  // Clear all filters. `router.push(pathname)` — the bare path, with no query string whatsoever —
+  // was the most direct route into the redirect guard there is.
   const clearAll = () => {
-    router.push(pathname)
+    router.push(`${pathname}?${withViewEscape("activity", new URLSearchParams())}`)
   }
 
-  // Debounced search handler
+  /*
+    THE SEARCH WRITER — THE CALL SITE 40-UI-SPEC's ESCAPE-PARAM TABLE DOES NOT LIST, AND IT IS THE
+    SAME DEFECT AS THE TWO ABOVE.
+
+    Emptying the search box deletes `search` and `page`. When `search` was the ONLY filter, that
+    leaves `params` with nothing in it, and `${pathname}?${params.toString()}` is `/activities?` —
+    a query string of zero length, which Next parses into an EMPTY `searchParams` object, which is
+    byte-for-byte the condition `Object.keys(params).length === 0` tests. A user backspacing their
+    last search term would be redirected into their default view. Identical in effect to `clearAll`,
+    reached by a much more ordinary gesture.
+
+    The spec's "six call sites" is therefore an undercount: there are seven across the four
+    surfaces. Plan 40-14's gate is written exhaustively against the code rather than against that
+    table, which is why this comment names the discrepancy instead of quietly fixing it.
+  */
   const handleSearchChange = (value: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
@@ -88,7 +121,7 @@ function ActivityFiltersInner({
         params.delete("search")
       }
       params.delete("page")
-      router.push(`${pathname}?${params.toString()}`)
+      router.push(`${pathname}?${withViewEscape("activity", params)}`)
     }, 300)
   }
 
@@ -126,7 +159,29 @@ function ActivityFiltersInner({
       <div className="flex items-center gap-2">
         <div className="relative">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          {/*
+            B-6 — `key={search}`, AND `defaultValue` STAYS.
+
+            THE DEFECT, MEASURED: `defaultValue` is read ONCE, when the DOM node mounts, and ignored
+            on every render after that. App-router navigation re-renders this tree WITHOUT
+            remounting it, so any change to the `search` param that did not come from typing in this
+            box left the box showing the old text — selecting a saved view whose filters include a
+            search term, using the browser Back button, or landing on a default view. The URL said
+            one thing and the input said another.
+
+            THE FIX IS `key` AND NOT A CONTROLLED VALUE. Changing `key` gives React a different
+            element identity, so it discards the old node and mounts a new one, which re-reads
+            `defaultValue`. Making this a controlled `value={search}` input would ALSO resync it —
+            and would break typing: this is a 300ms-DEBOUNCED writer, so between the keystroke and
+            the navigation the URL still holds the previous term, and a controlled value fed from
+            the URL would fight the user's own typing on every character.
+
+            The remount only happens when `search` actually changes, which is also when the box's
+            contents are already being replaced, so no in-flight keystroke is lost that was not
+            already superseded.
+          */}
           <Input
+            key={search}
             placeholder="Search activities..."
             defaultValue={search}
             onChange={(e) => handleSearchChange(e.target.value)}

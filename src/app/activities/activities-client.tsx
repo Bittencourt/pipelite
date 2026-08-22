@@ -17,7 +17,9 @@ import {
 } from "./actions"
 import { BulkActionBar } from "@/components/bulk/bulk-action-bar"
 import { BulkFailureReport } from "@/components/bulk/bulk-failure-report"
+import { SavedViewsBar } from "@/components/views/saved-views-bar"
 import type { SavedViewsBarProps } from "@/lib/views/types"
+import { withViewEscape } from "@/lib/views/url-params"
 import type { BulkOutcome } from "@/lib/bulk/types"
 import { useTranslations } from "next-intl"
 
@@ -182,10 +184,26 @@ export function ActivitiesClient({
     })
   }
 
+  /*
+    ROUTED THROUGH `withViewEscape` EVEN THOUGH IT CANNOT PRODUCE A BARE URL.
+
+    This handler always sets `page`, so its query string is never empty and the redirect guard could
+    never recapture it. It goes through the helper anyway so this file has ONE rule for building a
+    list-route URL rather than two, and so plan 40-14's exhaustive call-site gate needs no exemption
+    for it. The helper preserves `page` verbatim — `page` is not in the saveable whitelist, so a
+    `?page=2` URL comes back as `page=2&view=none` when no filter survives, and as
+    `page=2&<filters>&view=<id>` when one does.
+
+    NO `view=` WRITER IS ADDED HERE, and none is needed. `sp` is cloned from
+    `window.location.search`, so a `view` key already in the URL is already in the input, and
+    `withViewEscape` carries a live selection through untouched (plan 40-18). That is precisely why
+    the preservation rule lives inside the helper instead of being threaded as a prop: this component
+    changes the page, never the selection.
+  */
   const handleLoadMore = () => {
     const sp = new URLSearchParams(window.location.search)
     sp.set("page", String(currentPage + 1))
-    router.push(`/activities?${sp.toString()}`)
+    router.push(`/activities?${withViewEscape("activity", sp)}`)
   }
 
   /**
@@ -258,7 +276,17 @@ export function ActivitiesClient({
         </Button>
       </div>
 
-      {/* Stats */}
+      {/*
+        Stats.
+
+        THE TWO `bg-*-500` DOTS BELOW ARE THE K-2 ANTI-PATTERN, AND THEY ARE LEFT ALONE ON PURPOSE.
+        `bg-green-500` and `bg-amber-500` are raw palette colours rather than semantic tokens, so
+        they do not follow the theme — which is exactly the pattern this phase's bar must not copy,
+        and the reason `saved-views-bar.tsx` uses tokens throughout. Naming them here is the point:
+        they are the nearest bad example to the code this plan added, they are PRE-EXISTING, and
+        fixing them is out of scope. This phase's obligation is not to spread the pattern, not to
+        repay it — a colour change to a stats row is a visual change nobody asked this plan for.
+      */}
       <div className="flex gap-6 text-sm">
         <div className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-green-500" />
@@ -287,6 +315,36 @@ export function ActivitiesClient({
 
         <TabsContent value="list">
           <div className="space-y-4">
+            {/*
+              THE SAVED-VIEWS BAR, AND THE PLACEMENT HAS THREE SEPARATE REASONS.
+
+              RULE P-1 — ONLY THE `list` TAB. The `calendar` tab below reads no filter params at all:
+              `ActivityCalendar` receives the same `activities` array and draws a month grid from it,
+              with no `search`, no chips and no URL writer. A view picker mounted there would offer
+              to restore filters the surface cannot apply and cannot show the user it applied.
+              Mounting the bar OUTSIDE `<TabsContent>` — as a sibling of `<TabsList>`, which is where
+              a "toolbar" instinctively wants to go — would put it in both tabs at once. So it is
+              inside this `TabsContent` and nowhere else.
+
+              NOT INSIDE `activity-filters.tsx`, DESPITE 40-CONTEXT NOMINATING IT as "the richest
+              filter toolbar and the natural host". That nomination is declined on measured grounds
+              (amendment A3). Two measurements, both taken on this surface: its filter row is EXACTLY
+              full at 241px — search input 147 + 8px gap + "Filters" button 86 — with zero slack in
+              en-US, so there is no room for a second control on that line; and its `PopoverContent`
+              renders 388px tall at `top: -41` inside a 640px viewport, clipping 41px off the top of
+              the screen, because `popover.tsx` never consumes Radix's computed available height.
+              Mounting this phase's PRIMARY affordance inside a container that already puts content
+              off screen would reproduce F-39-07 deliberately. The popover defect is pre-existing,
+              recorded in BACKLOG.md and out of scope here — this plan's only obligation toward it is
+              to not add to it, which it discharges by putting nothing inside a `Popover`.
+
+              ITS OWN ROW, NOT STICKY AND NOT FIXED (K-8). `bulk-action-bar.tsx`, mounted at the
+              bottom of this same stack, is already a fixed bar on this page. A second fixed element
+              would compete with it for the bottom of the viewport and for the 80px spacer that bar
+              renders to buy back the space it covers.
+            */}
+            <SavedViewsBar {...viewsBar} />
+
             <ActivityFilters
               activityTypes={activityTypes}
               owners={owners}
@@ -314,7 +372,23 @@ export function ActivitiesClient({
                 <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p className="text-lg font-medium mb-2">{t('noResultsMatch')}</p>
                 <p className="text-sm mb-4">{t('tryAdjusting')}</p>
-                <Button variant="outline" onClick={() => router.push("/activities")}>
+                {/*
+                  THE CLEAREST HIJACK IN THE APP, IF THIS ONE IS LEFT BARE.
+
+                  `router.push("/activities")` produces a URL with NO params, which is exactly the
+                  condition `page.tsx`'s default-view redirect fires on. A user who filtered into an
+                  empty result and pressed "Clear filters" — the one control on screen whose whole
+                  promise is "take the filters off" — would be redirected straight back into their
+                  default view's filters, and would have no way to reach the unfiltered list at all.
+                  `withViewEscape` over an EMPTY `URLSearchParams` yields `view=none`: a param, so the
+                  redirect does not fire, and not a filter, so nothing is restored.
+                */}
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    router.push(`/activities?${withViewEscape("activity", new URLSearchParams())}`)
+                  }
+                >
                   {t('clearFilters')}
                 </Button>
               </div>
