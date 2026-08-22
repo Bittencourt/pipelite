@@ -100,6 +100,70 @@ that starts refactoring the in-memory promise map has left the phase.
 - **No test gate.** A docs-presence grep mostly obstructs rewording. This repo gates heavily and
   deliberately, and this is the case where it should not.
 
+### Amendments — post-research, 2026-08-22
+
+Research (`41-RESEARCH.md`, commit `a1bfa44`) found four places where the decisions above rest on a
+premise the source does not support. These amendments are USER-APPROVED and override the text above
+where they conflict.
+
+**A1 — `notification.ts` is a FIFTH side-effecting handler and MUST simulate under dry run.**
+The dry-run decision above lists four handlers to simulate (`crm`, `email`, `http`,
+`webhook-response`). `src/lib/execution/actions/notification.ts:38` also calls `safeSend`. This is not
+an addition to the decision, it is a correction to its enumeration — the decision's own requirement is
+that a dry run has no side effects. **Verified urgent:** `.env` sets `SMTP_PORT=465` against a real
+`smtp…` relay, NOT mailhog's `localhost:1025`, so an unsimulated notification node in a dry run sends
+real mail from the production sending domain to real user addresses read from the `users` table. Five
+handlers simulate, not four.
+
+**A2 — A dry run SKIPS delay nodes.** *(amends the dry-run decision)*
+A delay node parks its run as `waiting`, and serial enforcement then blocks *every real run of that
+workflow* until the delay resolves — up to the 30-day cap. A testing feature that can stall a
+production workflow for 30 days is a self-inflicted outage, so under dry run a delay is a no-op and
+execution continues to the next node. **Accepted cost, stated so nobody treats it as a bug:** a dry
+run does not exercise delay resolution, so a misconfigured delay is not caught by dry-running. The
+alternatives were both worse — refusing to dry-run any workflow containing a delay denies the feature
+to a large share of real CRM workflows, and letting it park is the outage.
+
+**A3 — WFOPS-04 documents TWO unsafe components, and this phase FIXES one of them.**
+*(amends the single-instance-constraint decision, which said "documentation only")*
+`processWaitingRuns` is also not multi-instance safe: its `SELECT … FOR UPDATE SKIP LOCKED` runs via
+`db.execute` on a transaction-free postgres-js client, so the row locks drop at statement end, and the
+follow-up step `UPDATE` carries no `WHERE status = 'waiting'` guard. Two replicas can resume the same
+delayed run. The "safe" claim in REQUIREMENTS.md ("execution claims are already multi-instance safe")
+is true only of the single-statement *pending* claim.
+
+So: **the matrix names both webhook-response and `processWaitingRuns` as unsafe, narrows the safe
+claim to the pending claim alone, AND this phase applies the ~3-line fix** (transaction wrapper plus a
+`WHERE status = 'waiting'` guard) so delay resume becomes genuinely safe. Publishing a doc that tells
+an operator two replicas are fine when delay resume double-fires was rejected outright. REQUIREMENTS'
+out-of-scope fence covers *horizontal scaling of webhook-response* specifically — it does not cover
+this, and the fix is small enough to take here rather than leave a known double-execution bug in the
+engine's claim path.
+
+**A4 — WFOPS-03 detects failures by re-reading terminal status, because there is no failure path to
+hook.** *(clarifies the alerting decision, does not change its intent)*
+`executeRun` does not throw on a failed run — it calls `failRun()` internally
+(`src/lib/execution/engine.ts:551-562`) and returns normally, so the `catch` at
+`execution-processor.ts:144` only ever sees unexpected exceptions. The alert therefore re-reads the
+run's terminal status after `executeRun` returns. **This must also cover `reclaimStaleRuns`' returned
+ids** — a run killed by the 5-minute lease is precisely the "fails silently forever" case WFOPS-03
+names, and it never passes through `executeRun` at all.
+
+**Also carried from research, not decisions but constraints on the planner:**
+
+- **`dry_run` must be `NOT NULL` with a default.** A nullable column empties the entire runs list,
+  because `NULL = false` evaluates to `NULL`, not `true`.
+- **`recent-runs-mini.tsx` needs the `dryRun` filter** even though it is absent from the UI-SPEC's
+  deliberately-total Surface Inventory. It is a query-only edit rendering no new element, so it
+  implements the dry-run decision rather than violating the inventory. Stated here so the UI checker
+  does not read it as scope creep.
+- **UI-SPEC gate G-6 is not implementable as written** — this repo has no `@testing-library/react`, no
+  jsdom and no `@vitest-environment` pragma anywhere in `src/`, by construction. Research reshaped it
+  into the repo's `enclosingConditional` source-scan idiom, which constrains the implementation: the
+  replay control's render site must be written `{run.status === "failed" && ( … )}`.
+- **Auth on replay is session-only, not `replayDelivery`'s admin gate.** An admin gate would 403
+  exactly the non-admin users the run detail page renders the button to.
+
 ### Claude's Discretion
 
 - Migration mechanics for the three schema additions (`replayedFromRunId`, `dryRun`,
