@@ -1505,7 +1505,24 @@ claims** — verified from `40-01-PLAN.md`, which uses `<task type="auto" tdd="t
 
 ---
 
-## Open Questions
+## Open Questions (ALL RESOLVED — see 41-CONTEXT.md amendments)
+
+> **Every question below was resolved after this document was written**, four of them by user decision
+> and one by the orchestrator. `41-CONTEXT.md` § Amendments is the authority; the recommendations
+> preserved below are the *reasoning that fed those decisions*, not live advice.
+>
+> **Read this before acting on anything in this section.** Question 5's recommendation — document
+> `processWaitingRuns` as unsafe without fixing it — was OVERRULED. The fix is in scope and 41-12
+> implements it. Following the recommendation as written would leave a known double-execution bug in
+> the engine's claim path and publish a deployment doc that contradicts the code.
+
+| # | Question | Resolution |
+|---|----------|-----------|
+| 1 | Delay nodes under dry run | **A2** — skip them (no-op, continue). Recommendation ACCEPTED. |
+| 2 | Auth posture for the two new actions | **A4 / D-A4** — session-only, no admin gate. Recommendation ACCEPTED. |
+| 3 | Failure-template localisation | **A5 / D-A5** — localised as `emails.workflowFailed.*`, a documented addition to the UI-SPEC manifest. Recommendation ACCEPTED. |
+| 4 | Whether to close the two WFOPS-03 coverage gaps | Documented, neither closed. Recommendation ACCEPTED. |
+| 5 | Whether to fix `processWaitingRuns`' claim | **A3 — OVERRULED. The fix IS taken**, in 41-12, and the docs name both unsafe components. |
 
 1. **Delay nodes under dry run (A3).**
    - What we know: delays are engine-level, not handler-level; a dry run with a delay parks as
