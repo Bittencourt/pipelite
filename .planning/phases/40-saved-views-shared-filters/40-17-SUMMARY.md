@@ -11,6 +11,7 @@ provides:
   - "A measured dark-mode record for the phase's four new surfaces — every observation a getComputedStyle value, none an impression"
   - "The F-39-06 non-dependency proof: zero text-primary text across 199 elements examined, with the count reported so the assertion is not vacuous"
   - "Fifteen BACKLOG entries under 'Found in Phase 40', including the locale-parity figure correction and the five items deferred-items.md carried"
+  - "The phase's blocking human checkpoint, ANSWERED: verbatim 'approved' on 2026-08-22, unqualified, zero findings — recorded alongside what a one-word approval does and does not attest"
 affects: [phase-41, phase-43, i18n-copy-pass, kanban-pagination, keyboard-hotkeys]
 
 tech-stack:
@@ -35,7 +36,7 @@ patterns-established:
   - "Anti-vacuity in both directions: assert the examined set is non-empty AND that every carve-out fired"
   - "Report a contrast measurement alongside a zero, so the zero is discriminating"
 
-requirements-completed: []  # VIEW-01/02/03 are not complete until the human checkpoint (Task 3) is approved.
+requirements-completed: [VIEW-01, VIEW-02, VIEW-03]  # unblocked 2026-08-22 by the Task 3 approval.
 
 duration: 22min
 completed: 2026-08-22
@@ -43,22 +44,23 @@ completed: 2026-08-22
 
 # Phase 40 Plan 17: The Dark-Mode Pass, the Backlog Handoff and the Human Checkpoint — Summary
 
-**Phase 40's four new surfaces carry zero `text-primary` text across 199 elements measured in a real dark-mode Chromium, every colour recorded as a `getComputedStyle` value; fifteen findings are written into BACKLOG.md including the locale-parity figures both phase documents got wrong; and the phase's last gate — a human in front of a browser — is open and awaiting a response.**
+**Phase 40's four new surfaces carry zero `text-primary` text across 199 elements measured in a real dark-mode Chromium, every colour recorded as a `getComputedStyle` value; fifteen findings are written into BACKLOG.md including the locale-parity figures both phase documents got wrong; and the phase's last gate — a human in front of a browser — returned `approved`.**
 
-> **STATUS: PAUSED AT A BLOCKING CHECKPOINT.** Tasks 1 and 2 are complete and committed. Task 3 is a
-> `checkpoint:human-verify` with `gate="blocking"` and has NOT been auto-approved. A continuation
-> agent must append the user's verbatim response to the *Task 3* section below before this plan is
-> complete. **Do not mark VIEW-01 / VIEW-02 / VIEW-03 complete until that happens** — this checkpoint
-> exists precisely because plan 39-14's source gates were green while the feature could not fire from
-> any surface.
+> **STATUS: COMPLETE.** All three tasks are done. Task 3, a `checkpoint:human-verify` with
+> `gate="blocking"`, was answered by the user on 2026-08-22 with the single word `approved`. It was
+> **not** auto-approved — auto-mode was off, the executor stopped, and a human replied. The verbatim
+> response and the precise limits of what it does and does not attest are recorded in the *Task 3*
+> section below. VIEW-01 / VIEW-02 / VIEW-03 are unblocked by that approval.
 
 ## Performance
 
-- **Duration:** 22 min (to the checkpoint)
+- **Duration:** 22 min of agent execution (tasks 1–2), plus the wall-clock the checkpoint spent with
+  the user, which is not agent time and is not counted here
 - **Started:** 2026-08-22T12:43:00Z
 - **Completed (tasks 1–2):** 2026-08-22T13:05:20Z
-- **Tasks:** 2 of 3 complete; 1 awaiting a human
-- **Files modified:** 1 (`.planning/BACKLOG.md`)
+- **Completed (task 3, on the human's reply):** 2026-08-22
+- **Tasks:** 3 of 3 complete
+- **Files modified:** 1 (`.planning/BACKLOG.md`) — task 3 changed nothing, by design
 
 ## Accomplishments
 
@@ -79,9 +81,10 @@ completed: 2026-08-22
    temporary and is deleted; `git status --porcelain` is clean and `e2e/` holds exactly the specs it
    held before. Its output is the measurement record below, committed with this SUMMARY.
 2. **Task 2: Write down what this phase measured and declined** — `064c7ec` (docs)
-3. **Task 3: Human verification** — **OPEN.** No commit; this task changes nothing.
+3. **Task 3: Human verification** — **APPROVED, 2026-08-22.** No source commit; this task changes
+   nothing. Its record is the section below, committed with this SUMMARY extension.
 
-**Plan metadata:** this SUMMARY (docs)
+**Plan metadata:** this SUMMARY (docs), extended by the continuation agent to carry task 3
 
 ## Files Created/Modified
 
@@ -388,7 +391,7 @@ Three figures were re-measured against the dev database rather than inherited:
 
 ---
 
-## Task 3 — HUMAN VERIFICATION (OPEN)
+## Task 3 — HUMAN VERIFICATION (APPROVED)
 
 **Type:** `checkpoint:human-verify`, `gate="blocking"`. Auto-mode is off; this was NOT auto-approved.
 
@@ -400,12 +403,57 @@ to a public remote once).
 
 ### The user's response
 
-> _(to be filled in verbatim by the continuation agent — do not paraphrase, and do not record
-> "approved" unless that is what was typed)_
+Received **2026-08-22**. Verbatim, in full — this is the entire reply, not an excerpt:
+
+> approved
+
+That is the `resume-signal` the plan offered as its first option ("Type \"approved\", or describe what
+you saw"). It is an **unqualified approval: no defect was reported, no caveat was attached, and no
+condition was placed on it.** Nothing was withheld or trimmed in transcribing it.
 
 ### Findings
 
-> _(each finding becomes either a fix in this phase or a recorded gap — never a silent pass)_
+**None.** The user reported nothing wrong — not a defect, not a wording complaint, not a hesitation.
+The plan's rule that "any finding becomes either a fix in this phase or a recorded gap — never a
+silent pass" therefore had no input to act on. No gap was opened by this checkpoint, and nothing was
+quietly dropped.
+
+The phase's remaining known defects were already recorded before this checkpoint ran, in the fifteen
+BACKLOG entries of Task 2 (`064c7ec`). They are **deliberately deferred**, not findings from this
+approval, and this plan closes without touching them.
+
+### What this approval does and does not attest
+
+Recorded so a later reader is not misled by a one-word answer.
+
+**It attests:** a human, in a real browser, worked through the presented script and came back
+satisfied. That is what this gate exists to buy. It is the check plan 39-14 did not have — its source
+gates were green while the organization duplicate warning could not fire from any surface, and only a
+person driving a browser found it.
+
+**It does not attest, because the user did not say so:** which of the script's steps they actually
+exercised, in what order, on which surfaces, or with which accounts. They enumerated nothing, and
+this record must not imply they did. In particular, **do not read this as a step-by-step certification
+of criteria 1–4, of the two-account criterion-2 walkthrough, of the ~320px mobile pass, or of the
+dark-mode look** — any of which they may or may not have run. It is a global "yes" from the person
+the phase is for, and it should be cited as exactly that.
+
+### Agent-measured beforehand vs human-judged here
+
+The checkpoint's subject matter was already covered from two different directions. Keeping them apart
+matters: an automated green and a human yes fail in different ways, and a later reader deciding how
+much weight this approval carries needs to know which half is which.
+
+| Area | Agent-measured, before this checkpoint | Human-judged at this checkpoint |
+|---|---|---|
+| ~320px reachability of the picker, save dialog and manage dialog on all four pages | **Yes — plan 40-15**, the `saved-views-320` suite (24 assertions). Machine-verified reachability of the last item, the Save button and the last row's Delete. | Offered as the script's optional "Mobile, if you can" section. Whether it was run is unknown. |
+| View visibility (shared vs private, admin included) and the degraded-read path | **Yes — plan 40-16**, the `saved-views-visibility-admin` / `saved-views-visibility-member` / `saved-views-degraded` specs. | Offered as criterion 2, steps 6–9. Whether it was run is unknown. |
+| Dark mode across the phase's six surfaces | **Yes — Task 1 of this plan**, 199 elements, every value a `getComputedStyle` reading (above). | Offered as the script's closing "Dark mode" paragraph. Whether it was run is unknown. |
+| Criteria 1, 3 and 4 end to end — save, reopen, `Modified` badge, default-view redirect, `?view=none` escape, CSV export, and the deliberate `/deals` export narrowing | Covered piecewise by the phase's suites (40-13's real `status`/date predicates, 40-14's 19 gated navigation rows, the export guard), but **never as one continuous human session**. | **This is the half only this checkpoint could supply**, and the half the approval is most load-bearing for. |
+
+The distinction the plan drew, and which held: the agent-driven half was done by 40-15 and 40-16 and
+was **not** substituted for the human's run. This checkpoint stopped and waited, and the answer came
+from a person.
 
 ---
 
@@ -508,6 +556,8 @@ None. Both storageStates were valid (admin session expires 2026-08-29T12:42:40Z)
 - Temporary spec deleted; `git status --porcelain` clean; `e2e/` back to exactly the phase's specs.
 - `npx vitest run src/messages/locale-parity.test.ts` → **11 passed**, which is what validates the
   counting method behind the BACKLOG correction.
+- The human checkpoint (V-40 / T-40-81): **APPROVED** — verbatim `approved`, 2026-08-22, unqualified,
+  zero findings. Recorded above with the limits of what a one-word answer attests.
 - **No application source was modified**, so the phase baseline (typecheck 0 · lint 0 ·
   vitest 3791 passed / 28 skipped · `saved-views-320` 24 · `viewport-320` 23 · `deals-drag` 4) is
   unchanged by construction. The container was not rebuilt, and is left running and current.
@@ -532,11 +582,30 @@ commit message, or in any command line issued by this plan (T-40-83).
 - `e2e/zz-darkmode-capture.spec.ts` — deliberately ABSENT; `git status --porcelain` clean
 - commit `064c7ec` — FOUND in `git log`
 
+Re-run by the continuation agent after appending Task 3 (2026-08-22):
+
+- `.planning/phases/40-saved-views-shared-filters/40-17-SUMMARY.md` — FOUND, carries the verbatim
+  `approved` and the agent-measured / human-judged split
+- commit `064c7ec` — still FOUND
+- `e2e/zz-darkmode-capture.spec.ts` — still deliberately ABSENT
+- `git status --porcelain` before the close-out commit listed **this SUMMARY and nothing else** —
+  confirming `STATE.md` and `ROADMAP.md` were not touched, as the orchestrator owns them
+
+**Self-Check: PASSED.**
+
 ## Next Steps
 
-**This plan is not complete.** A continuation agent must:
+**This plan is complete.** The three steps the paused version of this SUMMARY listed were carried out
+by the continuation agent:
 
-1. Record the user's response to Task 3 **verbatim** in the section above.
-2. Turn every finding into either a fix in this phase or a recorded gap in BACKLOG.md — never a
-   silent pass.
-3. Only then mark VIEW-01 / VIEW-02 / VIEW-03 complete.
+1. The user's response to Task 3 is recorded verbatim above — `approved`, 2026-08-22. Done.
+2. There were no findings to turn into fixes or gaps; the approval was unqualified. Nothing was passed
+   over silently. Done.
+3. VIEW-01 / VIEW-02 / VIEW-03 are unblocked and marked complete in this SUMMARY's frontmatter. The
+   orchestrator owns the corresponding writes to `STATE.md`, `ROADMAP.md` and `REQUIREMENTS.md`; this
+   agent did **not** touch them.
+
+Nothing else is open on this plan. The phase's deferred defects — D-40-1 / F-39-08 above all, which
+the BACKLOG records as **not contained** — remain deliberately deferred, with their evidence, their
+blast radius and their do-this-first instructions already written down in the fifteen entries of
+Task 2. They are the next phase's input, not this plan's unfinished business.
