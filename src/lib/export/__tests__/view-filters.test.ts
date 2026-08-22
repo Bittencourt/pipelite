@@ -305,14 +305,34 @@ describe("activity status is three real predicates over completedAt and dueDate 
     expect(sql).not.toContain(`"activities"."due_date" <`)
   })
 
-  it("pending selects rows that have NO completion timestamp, with no date comparison", async () => {
-    const { sql } = await activitiesWhere({ status: "pending" })
+  it("pending selects rows that are incomplete AND NOT YET DUE — disjoint from overdue (WR-05)", async () => {
+    const { sql, params } = await activitiesWhere({ status: "pending" })
 
     expect(sql).toContain(`"activities"."completed_at" is null`)
     expect(sql).not.toContain(`"activities"."completed_at" is not null`)
     // `pending` is not `overdue`: a future-dated incomplete activity is pending, and folding the
-    // due-date comparison into this branch would silently drop those rows from the export.
+    // OVERDUE comparison into this branch would silently drop those rows from the export. This
+    // assertion is unchanged and still guards exactly that.
     expect(sql).not.toContain(`"activities"."due_date" <`)
+
+    /*
+     * ADDED FOR WR-05, and it is the other half of the same rule rather than a contradiction of the
+     * line above. `pending` had been a bare `completed_at IS NULL`, which is a strict SUPERSET of
+     * `overdue`: measured on the live table, 4,165 rows incomplete of which 4,151 already past due.
+     * The three values come from a SINGLE SELECT (`activity-filters.tsx:170-181`), which presents
+     * them as mutually exclusive states, so "Pending" showing 4,151 overdue rows and 14 relevant
+     * ones is not a defensible reading of the control. Not-yet-due is `due_date >= now`; overdue is
+     * `due_date < now`; every row satisfies exactly one, so the two sets cannot overlap.
+     */
+    expect(
+      sql,
+      `pending is still a bare completed_at IS NULL, so it CONTAINS every overdue row (WR-05).`
+    ).toContain(`"activities"."due_date" >=`)
+
+    // The cutoff is a BOUND PARAMETER, exactly as it is on the overdue branch — never text.
+    expect(sql).toContain(">= $1")
+    expect(params).toHaveLength(1)
+    expect(typeof params[0]).toBe("string")
   })
 
   it("overdue is incomplete AND past due, with the cutoff bound as a parameter", async () => {

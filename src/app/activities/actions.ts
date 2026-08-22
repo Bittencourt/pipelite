@@ -575,12 +575,28 @@ export async function getActivities(filters?: {
       // Anything the toolbar cannot produce adds NO predicate. `pickFilterParams` has already
       // dropped an unrecognised value on the view path, but a direct URL can carry anything and an
       // unknown status must not silently mean "completed".
+      // THE THREE VALUES ARE MUTUALLY EXCLUSIVE, because the control that produces them is a
+      // SINGLE SELECT (`activity-filters.tsx:170-181`). Picking one of three options that overlap
+      // is not a filter, it is a coin toss the user cannot see.
+      //
+      // `pending` WAS A BARE `completedAt IS NULL`, WHICH IS A STRICT SUPERSET OF `overdue`.
+      // Measured on the live table at review time: 4,165 rows incomplete, 4,151 of them already
+      // past due — so a user picking "Pending" to see what is not yet due was shown 4,151 overdue
+      // rows and 14 relevant ones (99.7% overlap). The pre-40-13 JavaScript this replaced had it
+      // right: `!completedAt && dueDate >= now`.
+      //
+      // `now` is computed ONCE per call and shared by the two date branches, so `pending` and
+      // `overdue` partition the incomplete rows against the SAME instant. Two `new Date()` calls
+      // would leave a microsecond window belonging to neither, which is the kind of gap that only
+      // ever shows up as one missing row in a report.
+      const now = new Date()
+
       if (status === "completed") {
         conditions.push(isNotNull(activities.completedAt))
       } else if (status === "pending") {
-        conditions.push(isNull(activities.completedAt))
+        conditions.push(and(isNull(activities.completedAt), gte(activities.dueDate, now))!)
       } else if (status === "overdue") {
-        conditions.push(and(isNull(activities.completedAt), lt(activities.dueDate, new Date()))!)
+        conditions.push(and(isNull(activities.completedAt), lt(activities.dueDate, now))!)
       }
     }
     // THE RANGE IS HALF-OPEN: `[dateFrom 00:00, dateTo+1day 00:00)`, both bounds in UTC.

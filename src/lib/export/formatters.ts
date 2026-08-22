@@ -469,12 +469,17 @@ async function fetchActivities(
     // `getActivities` from here — different file, different owner in this wave, and a concurrent
     // edit would collide. Until 40-13 lands the export is NARROWER than the list, which is the
     // safe direction to be wrong in.
+    // THE THREE VALUES ARE MUTUALLY EXCLUSIVE (WR-05), and this must stay identical to
+    // `getActivities` or the CSV and the list disagree about what a saved view means. `pending` was
+    // a bare `completedAt IS NULL` — a strict SUPERSET of `overdue`, overlapping it by 4,151 of the
+    // 4,165 incomplete rows on the live table. One `now` for both branches, so they partition the
+    // incomplete rows against the same instant.
     const now = new Date()
 
     if (filters.status === "completed") {
       conditions.push(isNotNull(activities.completedAt))
     } else if (filters.status === "pending") {
-      conditions.push(isNull(activities.completedAt))
+      conditions.push(and(isNull(activities.completedAt), gte(activities.dueDate, now))!)
     } else if (filters.status === "overdue") {
       conditions.push(and(isNull(activities.completedAt), lt(activities.dueDate, now))!)
     }

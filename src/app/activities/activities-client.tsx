@@ -248,9 +248,33 @@ export function ActivitiesClient({
     setOutcome(null)
   }
 
-  // Calculate stats
+  /*
+   * THE STATS ROW USES THE SAME THREE WORDS AS THE STATUS FILTER, AND THEY NOW MEAN THE SAME THING
+   * (review finding WR-05).
+   *
+   * `pendingCount` was `!a.completedAt` — every incomplete activity, overdue ones included. The
+   * status filter's "Pending" option means "not completed AND not yet due" (see `getActivities`),
+   * and the two sat on the same screen using one word for two different sets: a user reading
+   * "Pending: 50" and then selecting "Pending" from the filter got a different number back, with
+   * nothing to explain the gap. That divergence was in fact the argument offered FOR the broken
+   * predicate; the predicate was fixed, so this follows it rather than the other way round.
+   *
+   * OVERDUE IS COUNTED SEPARATELY RATHER THAN FOLDED BACK IN, so the three numbers still account for
+   * every row on the page. Narrowing "Pending" without adding this would have made the overdue rows
+   * vanish from the summary entirely — a worse reading than the one being fixed. `t('overdue')` is
+   * the SAME catalog key the filter's third option renders, so no string was added in any locale.
+   *
+   * The cutoff is read once, so a row cannot be counted in two buckets by a clock tick between the
+   * two filters.
+   */
+  const nowForStats = new Date()
   const completedCount = activities.filter((a) => a.completedAt).length
-  const pendingCount = activities.filter((a) => !a.completedAt).length
+  const pendingCount = activities.filter(
+    (a) => !a.completedAt && new Date(a.dueDate) >= nowForStats
+  ).length
+  const overdueCount = activities.filter(
+    (a) => !a.completedAt && new Date(a.dueDate) < nowForStats
+  ).length
 
   // Check if any filters are active
   const hasActiveFilters = Object.values(activeFilters).some((v) => v !== null)
@@ -297,6 +321,16 @@ export function ActivitiesClient({
           <div className="h-2 w-2 rounded-full bg-amber-500" />
           <span className="text-muted-foreground">{t('pending')}:</span>
           <span className="font-medium">{pendingCount}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {/*
+            A SEMANTIC TOKEN, not a third raw palette colour. The two dots above are pre-existing
+            K-2 violations that the comment on this block declines to repay; the obligation is not
+            to SPREAD the pattern, so the dot this fix adds uses `bg-destructive`.
+          */}
+          <div className="h-2 w-2 rounded-full bg-destructive" />
+          <span className="text-muted-foreground">{t('overdue')}:</span>
+          <span className="font-medium">{overdueCount}</span>
         </div>
       </div>
 

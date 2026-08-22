@@ -20,13 +20,19 @@
  * accepts the statement, or which rows come back. Those belong to the live suites. What it proves is
  * the property the review measured — the BOUND, and which instants fall inside it.
  *
- * THE REVIEW FINDING GATED HERE:
+ * THE TWO REVIEW FINDINGS GATED HERE:
  *
  *   CR-01 — `dateTo` excluded the entire end day. `new Date("2025-03-31")` is midnight UTC, so
  *           `lte(dueDate, that)` dropped every activity due later that day. The create dialog
  *           composes `${dueDate}T${dueTime || "09:00"}`, so that is EVERY app-created activity on the
  *           range's last day. Invisible on the live data (all 79,022 rows are imported at exactly
  *           00:00:00) and invisible in the toast, because the row count comes from the same query.
+ *
+ *   WR-05 — `pending` and `overdue` overlapped by 4,151 of 4,165 rows. The control that produces
+ *           them is a SINGLE SELECT offering three values, so it presents them as mutually exclusive
+ *           states; `pending` had been reduced to a bare `completed_at IS NULL`, a strict superset
+ *           of `overdue`. A user picking "Pending" to see what is not yet due got 4,151 overdue rows
+ *           and 14 relevant ones.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { PgDialect } from "drizzle-orm/pg-core"
@@ -188,5 +194,113 @@ describe("CR-01: the dateTo bound covers the WHOLE of the end day", () => {
 
     expect(sql).not.toContain(`"activities"."due_date"`)
     expect(params).toHaveLength(0)
+  })
+})
+
+describe("WR-05: pending and overdue are DISJOINT, because the control is a single select", () => {
+  it("pending is NOT-completed AND NOT-yet-due, so it excludes the overdue rows", async () => {
+    const before = Date.now()
+    const { sql, params } = await whereFor({ status: "pending" })
+    const after = Date.now()
+
+    expect(sql).toContain(`"activities"."completed_at" is null`)
+    expect(sql).not.toContain(`"activities"."completed_at" is not null`)
+
+    expect(
+      sql,
+      `\`pending\` is a bare \`completed_at IS NULL\`, which is a strict SUPERSET of \`overdue\`. ` +
+        `Measured on the live table: 4,165 rows incomplete, 4,151 of them already past due — so ` +
+        `"Pending" showed 4,151 overdue rows and 14 relevant ones, from a single select that ` +
+        `presents the three states as mutually exclusive.`
+    ).toContain(`"activities"."due_date" >=`)
+
+    expect(params).toHaveLength(1)
+
+    const cutoff = boundInstant(params, 0)
+
+    // Genuinely "now": a hard-coded or epoch-zero cutoff would match every row and make the
+    // predicate narrow nothing, which is the defect class this assertion exists for.
+    expect(cutoff).toBeGreaterThanOrEqual(before - 1_000)
+    expect(cutoff).toBeLessThanOrEqual(after + 1_000)
+  })
+
+  it("overdue is NOT-completed AND already due, unchanged", async () => {
+    const { sql, params } = await whereFor({ status: "overdue" })
+
+    expect(sql).toContain(`"activities"."completed_at" is null`)
+    expect(sql).toContain(`"activities"."due_date" <`)
+    expect(sql).not.toContain(`"activities"."due_date" >=`)
+    expect(params).toHaveLength(1)
+  })
+
+  it("the two predicates use OPPOSITE comparisons against the same column and cutoff", async () => {
+    // The disjointness itself, as far as rendered SQL can carry it: same column, same instant,
+    // complementary operators. Any row satisfies exactly one of `due_date >= now` and
+    // `due_date < now`, so the two sets cannot overlap.
+    const pending = await whereFor({ status: "pending" })
+
+    dbSpies.activities.findMany.mockClear()
+
+    const overdue = await whereFor({ status: "overdue" })
+
+    expect(pending.sql).toContain(`"activities"."due_date" >=`)
+    expect(overdue.sql).toContain(`"activities"."due_date" <`)
+    expect(pending.sql).not.toBe(overdue.sql)
+
+    // Both cutoffs are `now`, computed per call — within a second of each other in this test.
+    expect(Math.abs(boundInstant(pending.params, 0) - boundInstant(overdue.params, 0))).toBeLessThan(
+      5_000
+    )
+  })
+
+  it("completed is the third disjoint state and touches no date at all", async () => {
+    const { sql, params } = await whereFor({ status: "completed" })
+
+    expect(sql).toContain(`"activities"."completed_at" is not null`)
+    expect(sql).not.toContain(`"activities"."completed_at" is null`)
+    expect(sql).not.toContain(`"activities"."due_date"`)
+    expect(params).toHaveLength(0)
+  })
+
+  it("the three options render three DIFFERENT predicates, none of them equal to no filter", async () => {
+    // Anti-vacuity for all four above: three branches that happened to render identically would
+    // pass several of them one at a time.
+    const rendered: string[] = []
+
+    for (const status of ["completed", "pending", "overdue"]) {
+      dbSpies.activities.findMany.mockClear()
+      rendered.push((await whereFor({ status })).sql)
+    }
+
+    dbSpies.activities.findMany.mockClear()
+
+    const none = (await whereFor({})).sql
+
+    expect(new Set(rendered).size).toBe(3)
+    for (const sql of rendered) expect(sql).not.toBe(none)
+  })
+
+  it("the legacy `completed: false` boolean means the SAME thing as status=pending", async () => {
+    // `completed?: boolean` is kept in the signature for callers that predate `status`. It maps
+    // onto the same branch, so it must not survive as a second, weaker definition of "pending".
+    const viaBoolean = await whereFor({ completed: false })
+
+    dbSpies.activities.findMany.mockClear()
+
+    const viaStatus = await whereFor({ status: "pending" })
+
+    expect(viaBoolean.sql).toBe(viaStatus.sql)
+  })
+
+  it("an unrecognised status still adds no predicate at all", async () => {
+    // Unchanged by WR-05 and asserted so the fix cannot have widened the fall-through: a typo must
+    // not silently mean `completed`, and must not silently mean `pending` either.
+    const bogus = await whereFor({ status: "not-a-status" })
+
+    dbSpies.activities.findMany.mockClear()
+
+    const none = await whereFor({})
+
+    expect(bogus).toEqual(none)
   })
 })
