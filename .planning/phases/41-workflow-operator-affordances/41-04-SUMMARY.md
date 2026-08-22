@@ -169,6 +169,10 @@ None. This plan touched only markdown and introduced no network endpoint, auth p
 - **A second, softer coupling:** whoever writes 41-12 should not restate the constraint in a third place. These two docs are the record.
 - STATE.md and ROADMAP.md were **not** touched, per the parallel-executor contract.
 
+## Self-Check: PASSED
+
+All three modified docs and this SUMMARY exist on disk. All three commits (`ef56991`, `a76b3b3`, `db60cfd`) exist in the worktree branch's log against base `dc377c5`. Working tree clean. STATE.md and ROADMAP.md untouched.
+
 ---
 *Phase: 41-workflow-operator-affordances*
 *Completed: 2026-08-22*
