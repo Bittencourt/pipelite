@@ -70,6 +70,31 @@ async function handleEmail(
 
   const template = getWorkflowEmailTemplate(subject, body)
 
+  // DRY-RUN GATE — placed immediately before the only side effect, and deliberately
+  // BELOW resolveRecipientEmails, BELOW the zero-recipients throw and BELOW the
+  // template build.
+  //
+  // Pitfall 2: gate at the side effect, never above the resolution. Gating above
+  // resolveRecipientEmails would make every dry run of a MISCONFIGURED email node
+  // pass — and "the recipient you configured does not resolve to an address" is one
+  // of the two most valuable things a dry run can tell an operator. Building the
+  // template under dry run costs nothing and keeps a template error surfacing too.
+  //
+  // recipientCount/recipients are the REAL resolved addresses: a dry run must report
+  // exactly who WOULD have been mailed. The key set matches the real output plus
+  // `simulated`, so a downstream transform/condition node reading this output behaves
+  // identically.
+  if (context._dryRun) {
+    return {
+      output: {
+        sent: false,
+        simulated: true,
+        recipientCount: emails.length,
+        recipients: emails,
+      },
+    }
+  }
+
   for (const email of emails) {
     await safeSend(email, template)
   }
