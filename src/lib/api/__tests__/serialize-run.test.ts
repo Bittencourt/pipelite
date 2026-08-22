@@ -12,6 +12,11 @@ describe("serializeRun", () => {
       depth: 0,
       context: {},
       currentNodeId: null,
+      // Present because `serializeRun` takes the full `workflowRuns.$inferSelect` row.
+      // The serializer deliberately does NOT emit them — it is an explicit field-by-field
+      // mapping, so the exact-object expectation below stays correct.
+      dryRun: false,
+      replayedFromRunId: null,
       startedAt: new Date("2026-03-28T10:00:00Z"),
       completedAt: new Date("2026-03-28T10:00:02Z"),
       createdAt: new Date("2026-03-28T10:00:00Z"),
@@ -43,6 +48,8 @@ describe("serializeRun", () => {
       depth: 0,
       context: {},
       currentNodeId: null,
+      dryRun: false,
+      replayedFromRunId: null,
       startedAt: null,
       completedAt: null,
       createdAt: new Date("2026-03-28T10:00:00Z"),
