@@ -703,6 +703,106 @@ export const REQUIRED_VIEWS_KEYS: string[] = [
   "views.export.refused",
 ]
 
+/**
+ * The copy contract from 41-UI-SPEC.md § New message keys. Same rule as the seven lists above: a
+ * `workflows.*` string reaching the UI means its dot-path is added here first, and the exact-contract
+ * assertion below turns a string that skipped this list into a red suite rather than copy that ships
+ * gated by nothing.
+ *
+ * This contract is **TOTAL**. 41-UI-SPEC declares no `workflows.*` string outside the namespace — no
+ * `nav` entry, no `admin.dashboard` tile — so `workflowsKeys` below needs no `*_EXTRA_KEYS` sibling
+ * and the comparison against this array is exact in both directions: a `workflows` string that never
+ * entered this array fails here, which is the half a missing-key check cannot see. Contrast
+ * `auditKeys`, `trashKeys` and `shellKeys`, each of which needs an extras array because its contract
+ * straddles a pre-existing namespace a whole-namespace scope would swallow.
+ *
+ * DELIBERATELY NOT IN THIS LIST, and this is what keeps the "total" claim true rather than
+ * decorative (41-UI-SPEC L-41-2): the two `settings.notifications.*` keys and the five
+ * `emails.workflowFailed.*` keys this phase also adds. They live in pre-existing namespaces, they are
+ * covered by the whole-file parity assertion at the bottom of this file, and they are carried
+ * separately below as WORKFLOW_SETTINGS_KEYS / WORKFLOW_EMAIL_KEYS. Widening this array to reach into
+ * `settings` or `emails` would make the exact-contract comparison for the `workflows` namespace fail
+ * on keys that are not in it — i.e. it would force the addition of an "extras" escape hatch and
+ * destroy exactly the property the list exists to have.
+ *
+ * NO LENGTH IS PINNED HERE, on purpose — see the no-duplicates test below for why.
+ */
+export const REQUIRED_WORKFLOWS_KEYS: string[] = [
+  // Replay. `confirmBody` is this phase's blast-radius sentence and the ONLY warning an operator gets
+  // before duplicating every already-succeeded side effect of a failed run: it must keep enumerating
+  // emails, outgoing requests AND record changes in all three locales (T-41-14). `lineage` carries the
+  // phase's one and only interpolation, `{runId}`.
+  "workflows.replay.action",
+  "workflows.replay.confirmTitle",
+  "workflows.replay.confirmBody",
+  "workflows.replay.confirmAction",
+  "workflows.replay.pending",
+  "workflows.replay.success",
+  "workflows.replay.error",
+  "workflows.replay.lineage",
+
+  // Dry run. `action` and `badge` are byte-identical in en-US ("Test run") and are still two keys: one
+  // is an imperative control, the other a noun label on a table row, and they diverge in translation
+  // (pt-BR "Executar teste" vs "Teste"). `notAnObject` deliberately names "a JSON object with named
+  // fields" instead of showing brace syntax — see the literal-brace gate below. `description` states
+  // what is SIMULATED, a factual property of the execution, never what the operator will conclude
+  // (F-41-1); the proof of non-mutation is the changed-records panel reading empty.
+  "workflows.dryRun.action",
+  "workflows.dryRun.dirtyHint",
+  "workflows.dryRun.title",
+  "workflows.dryRun.description",
+  "workflows.dryRun.triggerDataLabel",
+  "workflows.dryRun.prefilledHint",
+  "workflows.dryRun.emptyHint",
+  "workflows.dryRun.invalidJson",
+  "workflows.dryRun.notAnObject",
+  "workflows.dryRun.submit",
+  "workflows.dryRun.running",
+  "workflows.dryRun.timeout",
+  "workflows.dryRun.error",
+  "workflows.dryRun.badge",
+  "workflows.dryRun.showInList",
+]
+
+/**
+ * The two strings phase 41 adds to the PRE-EXISTING `settings.notifications` namespace, for the
+ * `emailWorkflowFailed` preference toggle. Held apart from REQUIRED_WORKFLOWS_KEYS so that contract
+ * stays total (41-UI-SPEC L-41-2); gated here for presence, blankness, translation and braces.
+ */
+const WORKFLOW_SETTINGS_KEYS: string[] = [
+  "settings.notifications.workflowFailed",
+  "settings.notifications.workflowFailedDescription",
+]
+
+/**
+ * The failure-alert email template, localised per 41-CONTEXT amendment A5 / D-A5. This is a
+ * documented ADDITION to 41-UI-SPEC's published manifest, not a silent divergence: the two
+ * un-localised templates (`workflow-email.ts`, `workflow-notification.ts`) carry USER-AUTHORED content
+ * a workflow supplied, while the seven localised ones carry the app's own voice. A failure alert is
+ * the app's own voice, its recipient is a real `users` row, and `users.locale` exists
+ * (`src/db/schema/users.ts:20`), so it is localised. Shape copied from `emails.activityReminder`
+ * (`{ subject, heading, body, buttonText }`) plus `errorLabel`.
+ *
+ * There is deliberately NO `{errorMessage}` placeholder (T-41-15). `workflow_runs.error` can carry
+ * 200 characters of an HTTP response body (`src/lib/execution/actions/http.ts:109-111`), and a `{`
+ * inside a message next-intl is PARSING throws at render. The run error is therefore escaped and
+ * rendered outside the translator, beside `errorLabel`, by plan 41-08.
+ */
+const WORKFLOW_EMAIL_KEYS: string[] = [
+  "emails.workflowFailed.subject",
+  "emails.workflowFailed.heading",
+  "emails.workflowFailed.body",
+  "emails.workflowFailed.errorLabel",
+  "emails.workflowFailed.buttonText",
+]
+
+/** Every key phase 41 authors, across all three namespaces — the scope of the two gates G-5 and G-9. */
+const PHASE_41_AUTHORED_KEYS: string[] = [
+  ...REQUIRED_WORKFLOWS_KEYS,
+  ...WORKFLOW_SETTINGS_KEYS,
+  ...WORKFLOW_EMAIL_KEYS,
+]
+
 /** The two shell strings that live outside the shell namespaces, in the pre-existing `nav`. */
 const SHELL_EXTRA_KEYS = [
   "nav.workflows",
@@ -800,6 +900,7 @@ const TRASH_NAMESPACE = "trash"
 const BULK_NAMESPACE = "bulk"
 const DEDUP_NAMESPACE = "dedup"
 const VIEWS_NAMESPACE = "views"
+const WORKFLOWS_NAMESPACE = "workflows"
 /** The shell contract spans two namespaces; `nav.*` is carried by SHELL_EXTRA_KEYS instead. */
 const SHELL_NAMESPACES = ["admin.nav", "theme"]
 const SHELL_LABEL = "shell"
@@ -844,6 +945,11 @@ const dedupKeys = keysMatching(inNamespace(DEDUP_NAMESPACE))
 // `shellKeys` above, each of which needs an extras array because its contract straddles a
 // pre-existing namespace that a whole-namespace scope would swallow.
 const viewsKeys = keysMatching(inNamespace(VIEWS_NAMESPACE))
+// Same again for phase 41: 41-UI-SPEC adds zero strings outside `workflows` that belong to the
+// `workflows` contract — the two `settings.notifications.*` and five `emails.workflowFailed.*` keys
+// live in their own namespaces and are carried by WORKFLOW_SETTINGS_KEYS / WORKFLOW_EMAIL_KEYS — so
+// this scope IS the whole contract and the comparison against REQUIRED_WORKFLOWS_KEYS below is total.
+const workflowsKeys = keysMatching(inNamespace(WORKFLOWS_NAMESPACE))
 const shellKeys = keysMatching(
   (key) => SHELL_NAMESPACES.some((ns) => inNamespace(ns)(key)) || SHELL_EXTRA_KEYS.includes(key),
 )
@@ -919,6 +1025,85 @@ function placeholderDrift(required: string[]): Record<string, Record<string, str
 }
 
 /**
+ * G-5 (F-41-1) — the phrases a message value must not use to claim that nothing changed.
+ *
+ * 41-CONTEXT § Specific Ideas: *"An empty list that is normally populated is evidence; a reassuring
+ * sentence is not."* The dry run's proof of non-mutation is the existing changed-records panel
+ * reading empty, and a sentence asserting the same thing is worse than nothing — it makes a promise
+ * the copy cannot keep, on the exact surface where the operator decides whether the run was safe.
+ * `workflows.dryRun.description` is allowed to say what is SIMULATED, which is a factual property of
+ * the execution; it is not allowed to say what the operator will conclude.
+ *
+ * The pre-existing `audit.run.empty` is NOT in scope and is NOT a violation. This rule is about
+ * AUTHORSHIP — what phase 41 writes — not about grammar, and it is scoped to
+ * PHASE_41_AUTHORED_KEYS for that reason. A rule that swept the whole catalog would be a
+ * retro-active copy edit of six earlier phases dressed up as a gate.
+ */
+const ABSENCE_ASSERTION_PHRASES: string[] = [
+  "no records were changed",
+  "nothing happened",
+  "nothing was changed",
+  "no changes were made",
+  "nenhum registro",
+  "ningún registro",
+  "nada foi",
+  "nada ha",
+]
+
+/**
+ * Which of `required` assert an absence, keyed `key (locale)`, plus how many values were examined so
+ * the caller can prove the scan was not vacuous.
+ */
+function absenceAssertionsIn(required: string[]): {
+  offenders: Record<string, string[]>
+  scanned: number
+} {
+  const offenders: Record<string, string[]> = {}
+  let scanned = 0
+  for (const key of required) {
+    for (const locale of LOCALES) {
+      const value = resolve(messages[locale], key)
+      if (typeof value !== "string") continue
+      scanned += 1
+      const lower = value.toLowerCase()
+      const hits = ABSENCE_ASSERTION_PHRASES.filter((phrase) => lower.includes(phrase))
+      if (hits.length > 0) offenders[`${key} (${locale})`] = hits
+    }
+  }
+  return { offenders, scanned }
+}
+
+/**
+ * G-9 (L-41-1) — which of `required` carry a literal `{` or `}` outside a recognised placeholder,
+ * keyed `key (locale)`, plus how many values were examined.
+ *
+ * Every `/\{[a-zA-Z0-9_]+\}/g` match is stripped first, so `{runId}` and `{workflowName}` survive and
+ * a message showing brace syntax as an example — *"start again from {}"* — does not. This is an
+ * AVAILABILITY control, not a style rule: next-intl reads `{` as a placeholder delimiter, so such a
+ * message throws at render and takes the whole page down, in one locale only, with nothing else in
+ * this repo catching it (T-41-13).
+ */
+function literalBracesIn(required: string[]): {
+  offenders: Record<string, string>
+  scanned: number
+} {
+  const offenders: Record<string, string> = {}
+  let scanned = 0
+  for (const key of required) {
+    for (const locale of LOCALES) {
+      const value = resolve(messages[locale], key)
+      if (typeof value !== "string") continue
+      scanned += 1
+      const withoutPlaceholders = value.replace(/\{[a-zA-Z0-9_]+\}/g, "")
+      if (withoutPlaceholders.includes("{") || withoutPlaceholders.includes("}")) {
+        offenders[`${key} (${locale})`] = value
+      }
+    }
+  }
+  return { offenders, scanned }
+}
+
+/**
  * The two substrings an ICU plural wrapper cannot lose. `placeholders()` above matches
  * `/\{[a-zA-Z0-9_]+\}/g`, which CANNOT match `{count, plural, one {# …} other {# …}}` — the comma,
  * the spaces and the `#` all fall outside that character class — so `placeholderDrift()` computes
@@ -976,7 +1161,7 @@ function expectIdenticalKeySets(scoped: Record<Locale, string[]>, label: string)
 }
 
 describe("locale parity", () => {
-  it("every required notes, audit, trash, bulk, shell, dedup and views key exists in every locale", () => {
+  it("every required notes, audit, trash, bulk, shell, dedup, views and workflows key exists in every locale", () => {
     // Keyed by locale so a failure diff names the offending file and the exact missing keys.
     expect.soft(missingIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
     expect.soft(missingIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
@@ -985,6 +1170,52 @@ describe("locale parity", () => {
     expect.soft(missingIn(SHELL_CONTRACT_KEYS)).toEqual(emptyPerLocale)
     expect.soft(missingIn(REQUIRED_DEDUP_KEYS)).toEqual(emptyPerLocale)
     expect.soft(missingIn(REQUIRED_VIEWS_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(missingIn(REQUIRED_WORKFLOWS_KEYS)).toEqual(emptyPerLocale)
+    // The two namespaces phase 41 reaches into are gated for presence here rather than inside
+    // REQUIRED_WORKFLOWS_KEYS, which stays total (L-41-2). Presence matters as much for these as for
+    // the namespaced keys: a key rendered without existing renders its own dot-path to the user (the
+    // Phase 45 finding, see :419), and `emails.workflowFailed.*` renders into an EMAIL, where a raw
+    // dot-path cannot be corrected after the fact.
+    expect.soft(missingIn(WORKFLOW_SETTINGS_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(missingIn(WORKFLOW_EMAIL_KEYS)).toEqual(emptyPerLocale)
+  })
+
+  it("the checked-in workflows contract lists no key twice", () => {
+    // NO LENGTH IS PINNED, and that is a decision rather than an omission. `locale-parity.test.ts`
+    // already records at the phase-40 block below that EVERY key count quoted in the phase-40
+    // planning documents was wrong, because a naive count over an array literal also counts the
+    // dot-paths quoted inside its explanatory comments. Phase 41's own documents reproduce the
+    // problem and disagree with each other: 41-UI-SPEC.md § New message keys says 25 keys,
+    // 41-VALIDATION.md says 23. Both figures are DESCRIPTIVE; this array is NORMATIVE.
+    //
+    // So there is deliberately no `toHaveLength(n)` on REQUIRED_WORKFLOWS_KEYS anywhere in this file,
+    // and no `WORKFLOWS:` row was added to the pre-existing pinned-length test below. What the pinned
+    // length was actually buying — catching a list that repeats one dot-path and drops another, which
+    // the exact-set comparison shows only as a confusing diff — is bought here instead, in the
+    // count-free form. It is self-referential and therefore cannot be wrong.
+    expect(
+      new Set(REQUIRED_WORKFLOWS_KEYS).size,
+      "REQUIRED_WORKFLOWS_KEYS lists a key twice",
+    ).toBe(REQUIRED_WORKFLOWS_KEYS.length)
+    expect(new Set(WORKFLOW_SETTINGS_KEYS).size, "WORKFLOW_SETTINGS_KEYS lists a key twice").toBe(
+      WORKFLOW_SETTINGS_KEYS.length,
+    )
+    expect(new Set(WORKFLOW_EMAIL_KEYS).size, "WORKFLOW_EMAIL_KEYS lists a key twice").toBe(
+      WORKFLOW_EMAIL_KEYS.length,
+    )
+    // And the three lists must not overlap, which is what makes "total for `workflows`" checkable:
+    // a `workflows.*` dot-path smuggled into either sibling array would be gated twice and excluded
+    // from the exact-contract comparison by neither, but the overlap would go unnoticed.
+    expect(
+      new Set(PHASE_41_AUTHORED_KEYS).size,
+      "the three phase-41 key lists overlap",
+    ).toBe(PHASE_41_AUTHORED_KEYS.length)
+    expect(
+      WORKFLOW_SETTINGS_KEYS.concat(WORKFLOW_EMAIL_KEYS).filter((k) =>
+        inNamespace(WORKFLOWS_NAMESPACE)(k),
+      ),
+      "a `workflows.*` key was put in a sibling list, which would exempt it from the total contract",
+    ).toEqual([])
   })
 
   it("the checked-in dedup contract still lists exactly 80 keys", () => {
@@ -1026,7 +1257,7 @@ describe("locale parity", () => {
     expect.soft(REQUIRED_DEDUP_KEYS, "phase 40 adds no dedup key").toHaveLength(80)
   })
 
-  it("the notes, audit, trash, bulk, shell, dedup and views namespaces have identical key sets across all three locales", () => {
+  it("the notes, audit, trash, bulk, shell, dedup, views and workflows namespaces have identical key sets across all three locales", () => {
     expectIdenticalKeySets(noteKeys, NOTES_NAMESPACE)
     expectIdenticalKeySets(auditKeys, AUDIT_NAMESPACE)
     expectIdenticalKeySets(trashKeys, TRASH_NAMESPACE)
@@ -1034,6 +1265,7 @@ describe("locale parity", () => {
     expectIdenticalKeySets(shellKeys, SHELL_LABEL)
     expectIdenticalKeySets(dedupKeys, DEDUP_NAMESPACE)
     expectIdenticalKeySets(viewsKeys, VIEWS_NAMESPACE)
+    expectIdenticalKeySets(workflowsKeys, WORKFLOWS_NAMESPACE)
 
     // Stronger than cross-locale identity, and the reason the contract list is checked in: the
     // shipped audit key set must equal REQUIRED_AUDIT_KEYS exactly, so a string added to the
@@ -1101,9 +1333,36 @@ describe("locale parity", () => {
         `${VIEWS_NAMESPACE} key set in ${locale}.json diverges from the checked-in contract`,
       ).toEqual(viewsContract)
     }
+
+    // Same exact-contract rule for workflows, and total for the same reason bulk's, dedup's and
+    // views' are: 41-UI-SPEC adds no `workflows.*` string outside the namespace, so a key added
+    // without its dot-path going into REQUIRED_WORKFLOWS_KEYS fails here. Every UI plan in phase 41
+    // consumes these keys, and a key that does not exist renders its own dot-path to the user (the
+    // Phase 45 finding, :419).
+    //
+    // ANTI-VACUITY, and it matters more here than for the six contracts above, because the two scans
+    // at the bottom of this file (G-5 and G-9) iterate this same key set. `keysMatching` returning
+    // `[]` for a namespace that does not exist would make the `toEqual` below fail loudly — good —
+    // but a later refactor of `inNamespace` that silently matched nothing would leave those two scans
+    // examining zero values and passing. The HARD non-empty assertion closes that; it is deliberately
+    // not `expect.soft`, so a vacuous scope aborts this block instead of being one line of a diff.
+    for (const locale of LOCALES) {
+      expect(
+        workflowsKeys[locale].length,
+        `the ${WORKFLOWS_NAMESPACE} scope is empty in ${locale}.json — every assertion scoped to it ` +
+          `is vacuous, including the G-5 and G-9 scans`,
+      ).toBeGreaterThan(0)
+    }
+    const workflowsContract = [...REQUIRED_WORKFLOWS_KEYS].sort()
+    for (const locale of LOCALES) {
+      expect.soft(
+        workflowsKeys[locale],
+        `${WORKFLOWS_NAMESPACE} key set in ${locale}.json diverges from the checked-in contract`,
+      ).toEqual(workflowsContract)
+    }
   })
 
-  it("every required notes, audit, trash, bulk, shell, dedup and views value is a non-empty string", () => {
+  it("every required notes, audit, trash, bulk, shell, dedup, views and workflows value is a non-empty string", () => {
     expect.soft(blankIn(REQUIRED_NOTE_KEYS)).toEqual(emptyPerLocale)
     expect.soft(blankIn(REQUIRED_AUDIT_KEYS)).toEqual(emptyPerLocale)
     expect.soft(blankIn(REQUIRED_TRASH_KEYS)).toEqual(emptyPerLocale)
@@ -1111,9 +1370,12 @@ describe("locale parity", () => {
     expect.soft(blankIn(SHELL_CONTRACT_KEYS)).toEqual(emptyPerLocale)
     expect.soft(blankIn(REQUIRED_DEDUP_KEYS)).toEqual(emptyPerLocale)
     expect.soft(blankIn(REQUIRED_VIEWS_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(blankIn(REQUIRED_WORKFLOWS_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(blankIn(WORKFLOW_SETTINGS_KEYS)).toEqual(emptyPerLocale)
+    expect.soft(blankIn(WORKFLOW_EMAIL_KEYS)).toEqual(emptyPerLocale)
   })
 
-  it("no required notes, audit, trash, bulk, shell, dedup or views string was left untranslated in both es-ES and pt-BR", () => {
+  it("no required notes, audit, trash, bulk, shell, dedup, views or workflows string was left untranslated in both es-ES and pt-BR", () => {
     // An English string copied verbatim into BOTH other locales is a skipped translation, not a
     // coincidence. Matching one locale is plausible (cognates); matching both is not.
     expect.soft(untranslatedInBoth(REQUIRED_NOTE_KEYS)).toEqual([])
@@ -1133,9 +1395,111 @@ describe("locale parity", () => {
     // Extending the allowlist to make a translation pass would be the wrong fix; this line is here
     // to prove by RUNNING that no such fix is needed.
     expect.soft(untranslatedInBoth(REQUIRED_VIEWS_KEYS)).toEqual([])
+    // No workflows key needed an exemption either, and IDENTICAL_TRANSLATION_ALLOWED is still three
+    // entries. The pair to watch is `workflows.dryRun.action` and `workflows.dryRun.badge`, which are
+    // byte-identical in en-US ("Test run") and must still diverge in BOTH other locales — pt-BR
+    // "Executar teste" (the imperative control) vs "Teste" (the noun row label), es-ES "Ejecutar
+    // prueba" vs "Prueba". Two keys carrying one English string is the shape a translator is most
+    // likely to collapse, which is why 41-UI-SPEC states the intended divergence rather than leaving
+    // it to be discovered.
+    expect.soft(untranslatedInBoth(REQUIRED_WORKFLOWS_KEYS)).toEqual([])
+    expect.soft(untranslatedInBoth(WORKFLOW_SETTINGS_KEYS)).toEqual([])
+    // `emails.workflowFailed.errorLabel` is the near-miss: es-ES "Error" IS byte-identical to en-US,
+    // and passes because pt-BR is "Erro" — this function tests for a value copied into BOTH locales,
+    // which is a skipped translation, not for a cognate in one.
+    expect.soft(untranslatedInBoth(WORKFLOW_EMAIL_KEYS)).toEqual([])
   })
 
-  it("interpolation placeholders survive translation for every required notes, audit, trash, bulk, shell, dedup and views key", () => {
+  it("the dryRun control and the dryRun badge stay two distinct strings in every locale", () => {
+    // The one assertion untranslatedInBoth() structurally cannot make. `dryRun.action` and
+    // `dryRun.badge` are BOTH "Test run" in en-US, so a translator who renders them identically in
+    // pt-BR too produces two values that differ from en-US — passing every assertion above — while
+    // collapsing the distinction the two keys exist for: one is a button that starts a test run, the
+    // other is a label on a row that already is one. If they were meant to be one string they would
+    // be one key.
+    for (const locale of LOCALES) {
+      if (locale === REFERENCE_LOCALE) continue
+      const action = resolve(messages[locale], "workflows.dryRun.action")
+      const badge = resolve(messages[locale], "workflows.dryRun.badge")
+      expect
+        .soft(
+          action === badge,
+          `${locale}.json: workflows.dryRun.action and workflows.dryRun.badge are the same string ` +
+            `("${action}"). They are identical in en-US and must diverge in translation — the ` +
+            `imperative control vs the noun row label (41-UI-SPEC § New message keys).`,
+        )
+        .toBe(false)
+    }
+  })
+
+  it("no string phase 41 authors asserts that nothing changed (G-5 / F-41-1)", () => {
+    // 41-CONTEXT § Specific Ideas: "An empty list that is normally populated is evidence; a
+    // reassuring sentence is not." The dry run proves non-mutation by the changed-records panel
+    // reading empty, and a sentence claiming the same thing is a promise the copy cannot keep on the
+    // exact surface where the operator decides whether the run was safe.
+    const { offenders, scanned } = absenceAssertionsIn(PHASE_41_AUTHORED_KEYS)
+    // Anti-vacuity first and hard: the scan skips keys that do not resolve, so an empty offender map
+    // is meaningless until the scan is known to have examined every authored value in every locale.
+    expect(
+      scanned,
+      "the G-5 scan examined fewer values than phase 41 authors — it is partly vacuous",
+    ).toBe(PHASE_41_AUTHORED_KEYS.length * LOCALES.length)
+    expect(
+      offenders,
+      `a phase-41 message value asserts an absence. 41-CONTEXT § Specific Ideas: "An empty list ` +
+        `that is normally populated is evidence; a reassuring sentence is not." State what is ` +
+        `SIMULATED (a factual property of the execution), never what the operator will conclude.`,
+    ).toEqual({})
+  })
+
+  it("no string phase 41 authors contains a literal brace outside a placeholder (G-9 / L-41-1)", () => {
+    const { offenders, scanned } = literalBracesIn(PHASE_41_AUTHORED_KEYS)
+    expect(
+      scanned,
+      "the G-9 scan examined fewer values than phase 41 authors — it is partly vacuous",
+    ).toBe(PHASE_41_AUTHORED_KEYS.length * LOCALES.length)
+    expect(
+      offenders,
+      `a phase-41 message value contains a literal { or }. next-intl reads { as a placeholder ` +
+        `delimiter and THROWS AT RENDER, in that locale only, taking the whole page down — no ` +
+        `typecheck, lint or build step catches it. Recognised placeholders such as {runId} and ` +
+        `{workflowName} are stripped before this check, so what is left is brace syntax shown as ` +
+        `copy: describe it in words instead ("a JSON object with named fields").`,
+    ).toEqual({})
+  })
+
+  it("the failure-alert template interpolates the workflow name and never the run error (T-41-15)", () => {
+    // Two halves, and the second is the one that matters. `workflow_runs.error` can carry 200
+    // characters of an HTTP response body (`src/lib/execution/actions/http.ts:109-111`), so a run
+    // error containing a `{` would be interpolated into a message next-intl is PARSING and throw at
+    // send time. Plan 41-08 escapes it and renders it outside the translator, beside `errorLabel`;
+    // this assertion is what stops a later edit from "simplifying" that back into a placeholder.
+    for (const locale of LOCALES) {
+      for (const key of ["emails.workflowFailed.subject", "emails.workflowFailed.body"]) {
+        expect
+          .soft(
+            placeholders(resolve(messages[locale], key) ?? ""),
+            `${locale}.json: ${key} must name the workflow`,
+          )
+          .toEqual(["{workflowName}"])
+      }
+      const errorish = WORKFLOW_EMAIL_KEYS.flatMap((key) =>
+        placeholders(resolve(messages[locale], key) ?? "")
+          .filter((token) => /error/i.test(token))
+          .map((token) => `${key} → ${token}`),
+      )
+      expect
+        .soft(
+          errorish,
+          `${locale}.json: emails.workflowFailed.* must not interpolate the run error. It is ` +
+            `attacker-influenced text that can contain a brace, and next-intl throws at render on ` +
+            `a brace inside a message it is parsing (T-41-15).`,
+        )
+        .toEqual([])
+    }
+  })
+
+  it("interpolation placeholders survive translation for every required notes, audit, trash, bulk, shell, dedup, views and workflows key", () => {
     // next-intl throws at render time when a message references a placeholder the caller did not
     // pass, so a translator dropping `{from}` breaks the Spanish UI and only the Spanish UI.
     expect.soft(placeholderDrift(REQUIRED_NOTE_KEYS)).toEqual({})
@@ -1149,6 +1513,15 @@ describe("locale parity", () => {
     // views.delete.body and views.delete.success take {name}; views.save.targetNewOnly takes both;
     // views.export.tooMany takes {max}.
     expect.soft(placeholderDrift(REQUIRED_VIEWS_KEYS)).toEqual({})
+    // Exactly one of the 23 workflows keys interpolates: workflows.replay.lineage takes {runId}
+    // (41-UI-SPEC L-41-1 — this phase has one interpolation and no ICU plural). The brace name must
+    // be byte-identical in all three locales; a translated placeholder NAME is a drift failure, and
+    // at render time it is a next-intl throw rather than a cosmetic defect.
+    expect.soft(placeholderDrift(REQUIRED_WORKFLOWS_KEYS)).toEqual({})
+    expect.soft(placeholderDrift(WORKFLOW_SETTINGS_KEYS)).toEqual({})
+    // {workflowName} in both emails.workflowFailed.subject and .body. There is no {errorMessage}:
+    // the run error is escaped and rendered outside the translator (T-41-15).
+    expect.soft(placeholderDrift(WORKFLOW_EMAIL_KEYS)).toEqual({})
   })
 
   it("every ICU plural wrapper survives translation", () => {

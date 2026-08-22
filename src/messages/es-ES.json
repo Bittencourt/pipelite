@@ -719,6 +719,35 @@
       "refused": "Se rechazó esa exportación porque no había ningún filtro aplicado."
     }
   },
+  "workflows": {
+    "replay": {
+      "action": "Repetir ejecución",
+      "confirmTitle": "¿Repetir esta ejecución?",
+      "confirmBody": "Una nueva ejecución empieza con los mismos datos del disparador. Todos los pasos se ejecutan otra vez desde el principio, incluidos los que ya habían funcionado — así que sus correos, sus peticiones externas y sus cambios en registros ocurren una segunda vez.",
+      "confirmAction": "Iniciar nueva ejecución",
+      "pending": "Iniciando…",
+      "success": "Nueva ejecución iniciada",
+      "error": "La repetición no comenzó, por lo que la ejecución no se repitió. Inténtalo otra vez.",
+      "lineage": "Repetición de la ejecución {runId}"
+    },
+    "dryRun": {
+      "action": "Ejecutar prueba",
+      "dirtyHint": "Guarda tus cambios primero — una prueba usa el flujo guardado.",
+      "title": "Probar este flujo",
+      "description": "Ejecuta el flujo guardado con los datos del disparador de abajo. Las escrituras de registros, los correos y las peticiones externas se simulan, por lo que no salen de esta aplicación. Las condiciones y las transformaciones se ejecutan de verdad.",
+      "triggerDataLabel": "Datos del disparador (JSON)",
+      "prefilledHint": "Rellenado a partir de la ejecución más reciente de este flujo. Edítalo para probar otra cosa.",
+      "emptyHint": "Este flujo aún no se ha ejecutado, así que no hay con qué rellenarlo. Introduce los datos del disparador que quieras probar.",
+      "invalidJson": "Los datos del disparador deben ser JSON válido. Comprueba si falta una coma o una comilla.",
+      "notAnObject": "Los datos del disparador deben ser un objeto JSON con campos con nombre, no una lista ni un valor suelto.",
+      "submit": "Iniciar prueba",
+      "running": "Ejecutando prueba…",
+      "timeout": "La prueba sigue en marcha. Ábrela desde el historial de ejecuciones para ver el resultado.",
+      "error": "La prueba no comenzó, por lo que ningún paso se ejecutó. Inténtalo otra vez.",
+      "badge": "Prueba",
+      "showInList": "Mostrar ejecuciones de prueba"
+    }
+  },
   "settings": {
     "profile": {
       "title": "Configuración de Perfil",
@@ -740,6 +769,8 @@
       "activityReminderDescription": "Recibir recordatorios para actividades proximas",
       "weeklyDigest": "Resumen semanal",
       "weeklyDigestDescription": "Recibir un resumen semanal de tus negocios y actividades",
+      "workflowFailed": "Fallos de flujo de trabajo",
+      "workflowFailedDescription": "Recibir un correo cuando una ejecución de tus flujos de trabajo falle",
       "save": "Guardar",
       "saving": "Guardando...",
       "saved": "Preferencias de notificaciones guardadas",
@@ -1118,6 +1149,13 @@
       "heading": "Recordatorio de Actividad",
       "body": "Tu actividad \"{activityTitle}\" vence a las {dueDate}.",
       "buttonText": "Ver Actividad"
+    },
+    "workflowFailed": {
+      "subject": "Flujo de trabajo fallido: {workflowName}",
+      "heading": "Una ejecución de flujo de trabajo ha fallado",
+      "body": "El flujo de trabajo \"{workflowName}\" se detuvo con un error.",
+      "errorLabel": "Error",
+      "buttonText": "Ver ejecución"
     },
     "weeklyDigest": {
       "subject": "Resumen Semanal - {host}",

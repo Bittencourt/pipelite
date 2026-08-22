@@ -719,6 +719,35 @@
       "refused": "Essa exportação foi recusada porque nenhum filtro estava aplicado."
     }
   },
+  "workflows": {
+    "replay": {
+      "action": "Repetir execução",
+      "confirmTitle": "Repetir esta execução?",
+      "confirmBody": "Uma nova execução começa com os mesmos dados de disparo. Todas as etapas rodam novamente desde o início, incluindo as que já tinham dado certo — então os e-mails, as requisições externas e as alterações de registros delas acontecem uma segunda vez.",
+      "confirmAction": "Iniciar nova execução",
+      "pending": "Iniciando…",
+      "success": "Nova execução iniciada",
+      "error": "A repetição não começou, portanto a execução não foi repetida. Tente outra vez.",
+      "lineage": "Repetição da execução {runId}"
+    },
+    "dryRun": {
+      "action": "Executar teste",
+      "dirtyHint": "Salve suas alterações primeiro — um teste usa o fluxo salvo.",
+      "title": "Executar este fluxo como teste",
+      "description": "Executa o fluxo salvo com os dados de disparo abaixo. Gravações de registros, e-mails e requisições externas são simuladas, portanto não saem deste aplicativo. Condições e transformações rodam de verdade.",
+      "triggerDataLabel": "Dados de disparo (JSON)",
+      "prefilledHint": "Preenchido a partir da execução mais recente deste fluxo. Edite para testar outra coisa.",
+      "emptyHint": "Este fluxo ainda não foi executado, então não há o que preencher. Informe os dados de disparo que você quer testar.",
+      "invalidJson": "Os dados de disparo devem ser um JSON válido. Verifique se falta uma vírgula ou uma aspa.",
+      "notAnObject": "Os dados de disparo devem ser um objeto JSON com campos nomeados, não uma lista nem um valor solto.",
+      "submit": "Iniciar teste",
+      "running": "Executando teste…",
+      "timeout": "O teste ainda está em andamento. Abra-o no histórico de execuções para ver o resultado.",
+      "error": "O teste não começou, portanto nenhuma etapa foi executada. Tente outra vez.",
+      "badge": "Teste",
+      "showInList": "Mostrar execuções de teste"
+    }
+  },
   "settings": {
     "profile": {
       "title": "Configurações de Perfil",
@@ -740,6 +769,8 @@
       "activityReminderDescription": "Receber lembretes para atividades proximas",
       "weeklyDigest": "Resumo semanal",
       "weeklyDigestDescription": "Receber um resumo semanal de seus negocios e atividades",
+      "workflowFailed": "Falhas de fluxo de trabalho",
+      "workflowFailedDescription": "Receber um e-mail quando uma execução dos seus fluxos de trabalho falhar",
       "save": "Salvar",
       "saving": "Salvando...",
       "saved": "Preferencias de notificacao salvas",
@@ -1118,6 +1149,13 @@
       "heading": "Lembrete de Atividade",
       "body": "Sua atividade \"{activityTitle}\" vence em {dueDate}.",
       "buttonText": "Ver Atividade"
+    },
+    "workflowFailed": {
+      "subject": "Fluxo de trabalho falhou: {workflowName}",
+      "heading": "Uma execução de fluxo de trabalho falhou",
+      "body": "O fluxo de trabalho \"{workflowName}\" parou com um erro.",
+      "errorLabel": "Erro",
+      "buttonText": "Ver execução"
     },
     "weeklyDigest": {
       "subject": "Resumo Semanal - {host}",

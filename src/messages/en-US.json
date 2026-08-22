@@ -719,6 +719,35 @@
       "refused": "That export was refused because no filter was applied."
     }
   },
+  "workflows": {
+    "replay": {
+      "action": "Replay run",
+      "confirmTitle": "Replay this run?",
+      "confirmBody": "A new run starts with the same trigger data. Every step runs again from the beginning, including the steps that already succeeded — so their emails, outgoing requests and record changes happen a second time.",
+      "confirmAction": "Start new run",
+      "pending": "Starting…",
+      "success": "New run started",
+      "error": "The replay didn't start, so nothing ran again. Try once more.",
+      "lineage": "Replay of run {runId}"
+    },
+    "dryRun": {
+      "action": "Test run",
+      "dirtyHint": "Save your changes first — a test run uses the saved workflow.",
+      "title": "Test this workflow",
+      "description": "Runs the saved workflow against the trigger data below. Record writes, emails and outgoing requests are simulated, so nothing leaves this app. Conditions and transforms run for real.",
+      "triggerDataLabel": "Trigger data (JSON)",
+      "prefilledHint": "Prefilled from this workflow's most recent run. Edit it to test something else.",
+      "emptyHint": "This workflow hasn't run yet, so there's nothing to prefill. Enter the trigger data you want to test with.",
+      "invalidJson": "Trigger data must be valid JSON. Check for a missing comma or quotation mark.",
+      "notAnObject": "Trigger data must be a JSON object with named fields, not a list or a bare value.",
+      "submit": "Start test run",
+      "running": "Running test…",
+      "timeout": "The test run is still going. Open it from the run history to see the result.",
+      "error": "The test run didn't start, so nothing ran. Try once more.",
+      "badge": "Test run",
+      "showInList": "Show test runs"
+    }
+  },
   "settings": {
     "profile": {
       "title": "Profile Settings",
@@ -740,6 +769,8 @@
       "activityReminderDescription": "Receive reminders for upcoming activities",
       "weeklyDigest": "Weekly digest",
       "weeklyDigestDescription": "Receive a weekly summary of your deals and activities",
+      "workflowFailed": "Workflow failures",
+      "workflowFailedDescription": "Receive an email when one of your workflow runs fails",
       "save": "Save",
       "saving": "Saving...",
       "saved": "Notification preferences saved",
@@ -1118,6 +1149,13 @@
       "heading": "Activity Reminder",
       "body": "Your activity \"{activityTitle}\" is due at {dueDate}.",
       "buttonText": "View Activity"
+    },
+    "workflowFailed": {
+      "subject": "Workflow failed: {workflowName}",
+      "heading": "A workflow run failed",
+      "body": "The workflow \"{workflowName}\" stopped with an error.",
+      "errorLabel": "Error",
+      "buttonText": "View run"
     },
     "weeklyDigest": {
       "subject": "Weekly Summary - {host}",
