@@ -532,17 +532,38 @@ describe("manage-views-dialog.tsx — the 40-09 wiring gate", () => {
 
     /*
      * C-40-2 — Shared / Private / Default are WORDS on a muted line, never a glyph and never a hue.
-     * A lock and a share icon are two more things to learn, and neither says anything to a screen
-     * reader without a label. `Trash2` accompanies the WORD `views.manage.delete` (G-6) and
-     * `Loader2` is the in-flight tint, so those two are the only icons this surface may import.
+     * A lock and a share glyph are two more vocabularies to learn and neither says anything to a
+     * screen reader without a label.
+     *
+     * ASSERTED AS AN ALLOW-LIST OVER THE `lucide-react` IMPORT, not as a deny-list over the file.
+     * A deny-list of glyph names is unsound here and was measured to be: `Check` is a substring of
+     * `onCheckedChange`, so the deny-list form failed on the two Switch handlers this file requires.
+     * The allow-list has no such collision AND is strictly stronger — it refuses every glyph rather
+     * than the handful somebody thought to enumerate. `Trash2` is permitted because G-6 pairs it
+     * with the WORD `views.manage.delete`, and `Loader2` because it is an in-flight tint rather
+     * than a state carrier.
      */
-    for (const glyph of ["Lock", "Globe", "Share2", "Users", "Eye", "Star", "Check"]) {
-      expect(
-        occurrences(source, glyph),
-        `${COMPONENT}: ${glyph} is forbidden (C-40-2) — the state words are WORDS. An icon is a ` +
-          `second vocabulary to learn and is silent to a screen reader without a label.`
-      ).toBe(0)
-    }
+    const lucide = /import\s*\{([^}]*)\}\s*from\s*"lucide-react"/.exec(source)
+
+    expect(
+      lucide,
+      `${COMPONENT}: no lucide-react import found, so the C-40-2 icon allow-list has nothing to ` +
+        `check. G-6 requires a Trash2 beside the delete word.`
+    ).not.toBeNull()
+
+    const icons = (lucide?.[1] ?? "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0)
+      .sort()
+
+    expect(
+      icons,
+      `${COMPONENT}: the only icons this surface may import are Trash2 (paired with the WORD ` +
+        `views.manage.delete, G-6) and Loader2 (an in-flight tint). Found: ${icons.join(", ")}. ` +
+        `A lock or share glyph carrying Shared/Private is C-40-2: a second vocabulary to learn, ` +
+        `and silent to a screen reader without a label.`
+    ).toEqual(["Loader2", "Trash2"])
 
     // K-7 — the switches write from transition callbacks, so there is no effect to write from.
     expect(
