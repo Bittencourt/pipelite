@@ -24,6 +24,7 @@ const defaultPreferences = {
 }
 
 const ACTIONS_FILE = "src/app/settings/notifications/actions.ts"
+const FORM_FILE = "src/app/settings/notifications/notification-form.tsx"
 
 /** Count non-overlapping occurrences of a literal substring. */
 function countOccurrences(haystack: string, needle: string): number {
@@ -204,5 +205,147 @@ describe('actions.ts source wiring — the five edit points', () => {
         'appear exactly as many times. Unlike a hardcoded 5, this survives a refactor that changes ' +
         `the number of edit points. emailWeeklyDigest: ${siblingCount}, emailWorkflowFailed: ${subjectCount}.`
     ).toBe(siblingCount)
+  })
+})
+
+describe('notification-form.tsx — the fourth row, third of four', () => {
+  const form = readStrippedSource(FORM_FILE)
+
+  const ROW_OPEN = '<div className="flex items-start space-x-3">'
+  const LABEL_CLASS = 'className="font-medium cursor-pointer"'
+  const DESCRIPTION_CLASS = 'className="text-sm text-muted-foreground"'
+
+  const dealAt = form.indexOf('id="deal-assigned"')
+  const reminderAt = form.indexOf('id="activity-reminder"')
+  const workflowAt = form.indexOf('id="workflow-failed"')
+  const digestAt = form.indexOf('id="weekly-digest"')
+
+  it('read a non-empty stripped source (anti-vacuity)', () => {
+    expect(form.length, `${FORM_FILE} read as empty — every count below would pass at zero`)
+      .toBeGreaterThan(0)
+  })
+
+  it('found the reference row id="weekly-digest" (anti-vacuity)', () => {
+    expect(
+      digestAt,
+      'weekly-digest is the row the new one is copied from. If the scan cannot see it, the structural ' +
+        'counts below are measuring nothing and would pass at zero.'
+    ).toBeGreaterThan(-1)
+  })
+
+  it('renders a checkbox with id="workflow-failed"', () => {
+    expect(workflowAt, `${FORM_FILE} has no id="workflow-failed" checkbox`).toBeGreaterThan(-1)
+  })
+
+  it('labels it with a matching htmlFor="workflow-failed"', () => {
+    expect(
+      form.includes('htmlFor="workflow-failed"'),
+      'an id without its matching htmlFor is a label that does not activate its checkbox. The other ' +
+        'three rows all pair them, and a user who cannot reliably toggle the control cannot opt out ' +
+        'of the mail at all (T-41-53).'
+    ).toBe(true)
+  })
+
+  it('uses the shared row wrapper class exactly four times', () => {
+    expect(
+      countOccurrences(form, 'className="flex items-start space-x-3"'),
+      'the new row must be structurally identical to the three that exist — same wrapper, not a ' +
+        'variation. UI-SPEC V-41-1: peer-level with them.'
+    ).toBe(4)
+  })
+
+  it('uses the shared label class exactly four times', () => {
+    expect(countOccurrences(form, LABEL_CLASS)).toBe(4)
+  })
+
+  it('uses the shared description class exactly four times', () => {
+    expect(countOccurrences(form, DESCRIPTION_CLASS)).toBe(4)
+  })
+
+  it('reuses the generic handleToggle rather than adding a fifth path', () => {
+    // `handleToggle("` matches call sites only — the declaration is `handleToggle(key: …`.
+    expect(countOccurrences(form, 'handleToggle("emailWorkflowFailed")')).toBe(1)
+    expect(
+      countOccurrences(form, 'handleToggle("'),
+      'handleToggle is generic over keyof NotificationPreferencesData, so four rows means four call ' +
+        'sites and no new handler, prop or piece of state.'
+    ).toBe(4)
+  })
+
+  it('takes both strings from the translator, once each', () => {
+    expect(countOccurrences(form, 't("workflowFailed")')).toBe(1)
+    expect(countOccurrences(form, 't("workflowFailedDescription")')).toBe(1)
+  })
+
+  it('introduces no English literal in the new row', () => {
+    expect(workflowAt).toBeGreaterThan(-1)
+
+    const rowStart = form.lastIndexOf(ROW_OPEN, workflowAt)
+    expect(rowStart, 'the new checkbox is not inside a standard row wrapper').toBeGreaterThan(-1)
+    const nextRow = form.indexOf(ROW_OPEN, workflowAt)
+    const row = form.slice(rowStart, nextRow === -1 ? form.length : nextRow)
+    expect(row).toContain('id="workflow-failed"')
+
+    // No JSX text node: every rendered string must arrive through {t(...)}.
+    const textNodes = [...row.matchAll(/>[ \t]*([^<>{}\s][^<>{}]*)</g)].map((m) => m[1].trim())
+    expect(
+      textNodes,
+      'a hardcoded sentence in the row would render in English for pt-BR and es-ES readers, which ' +
+        'the other three rows never do.'
+    ).toEqual([])
+
+    // The only quoted strings carrying spaces are the shared utility classes.
+    const quoted = [...row.matchAll(/"([^"\n]*)"/g)].map((m) => m[1])
+    const prose = quoted.filter(
+      (s) =>
+        s.includes(' ') &&
+        s !== 'flex items-start space-x-3' &&
+        s !== 'font-medium cursor-pointer' &&
+        s !== 'text-sm text-muted-foreground'
+    )
+    expect(prose, 'unexpected prose string literal in the new row').toEqual([])
+  })
+
+  it('places workflow-failed third of four without reordering the existing three', () => {
+    // Assert every offset is found BEFORE comparing them: a bare toBeLessThan on indexOf results
+    // passes vacuously at -1, the trap measured on a real RED run at
+    // src/app/organizations/__tests__/views-page-wiring.test.ts:161-174.
+    expect(dealAt, 'id="deal-assigned" not found').toBeGreaterThan(-1)
+    expect(reminderAt, 'id="activity-reminder" not found').toBeGreaterThan(-1)
+    expect(workflowAt, 'id="workflow-failed" not found').toBeGreaterThan(-1)
+    expect(digestAt, 'id="weekly-digest" not found').toBeGreaterThan(-1)
+
+    expect(
+      workflowAt,
+      'workflow-failed is an event alert like the two above it, so it belongs with them. Weekly ' +
+        'digest is the only periodic-summary row and reads last; appending after it would split the ' +
+        'event alerts around the digest (UI-SPEC).'
+    ).toBeGreaterThan(reminderAt)
+    expect(workflowAt).toBeLessThan(digestAt)
+
+    expect(
+      dealAt,
+      'the existing three must not be reordered — deal-assigned stays first of four.'
+    ).toBeLessThan(reminderAt)
+  })
+
+  it('adds no heading, divider or "new" marker', () => {
+    // UI-SPEC V-41-1: the fourth row is peer-level with the three that exist. No emphasis.
+    for (const marker of ['<h2', '<h3', 'Separator', '<hr', 'Badge']) {
+      expect(form.includes(marker), `${FORM_FILE} must not contain ${marker}`).toBe(false)
+    }
+  })
+
+  it('keeps exactly one Button — the Save action', () => {
+    expect(
+      countOccurrences(form, '<Button'),
+      'nothing else on this surface changes: no second action was added beside Save.'
+    ).toBe(1)
+  })
+
+  it('uses no raw palette utility', () => {
+    // UI-SPEC C-41-1, narrowed to the touched file.
+    const palette = form.match(/-(red|green|emerald|blue|amber|violet|rose)-[0-9]/)
+    expect(palette, `raw palette utility "${palette?.[0]}" in ${FORM_FILE}`).toBeNull()
   })
 })
