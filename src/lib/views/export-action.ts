@@ -23,6 +23,7 @@
  * module may export nothing but async functions; see that file's header.
  */
 import { auth } from "@/auth"
+import { recordExport } from "@/lib/audit/export-events"
 import { fetchFilteredData } from "@/lib/export/formatters"
 import { EXPORT_ROW_CAP, guardExportInput } from "@/lib/export/view-export-guard"
 import type { ViewEntityType } from "@/lib/views/types"
@@ -81,6 +82,21 @@ export async function exportViewResults(input: {
     // client renders `bulk.error.exportFailed` and the user is told nothing about our internals.
     return { success: false, error: "failed" }
   }
+
+  // THE EXPORT IS NOW ATTRIBUTABLE (review WR-04). Awaited and after the fetch, because
+  // `result.count` must be what the export actually produced — a refused or capped attempt
+  // produced no file and writes no row, so this is evidence of exports, not of probing.
+  //
+  // It does NOT bound the export. `guardExportInput` above refuses an empty filter set and is
+  // satisfied by `search=a`, which reaches 44,254 of 46,054 organizations; that exposure is
+  // unchanged by this line and stays open in BACKLOG.md. `recordExport` swallows its own failure,
+  // so a logging fault cannot fail an export the user already asked for — see its header.
+  await recordExport({
+    actorUserId: session.user.id,
+    entityType: input.entityType,
+    filters: guarded.filters,
+    rowCount: result.count,
+  })
 
   return { success: true, data: result.data, filename: result.filename, count: result.count }
 }

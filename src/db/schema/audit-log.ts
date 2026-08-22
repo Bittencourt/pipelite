@@ -6,7 +6,7 @@ import { workflowRuns } from "./workflows"
 import { importSessions } from "./import-sessions"
 import type { EntityType } from "./custom-fields"
 
-// AuditEntityType widens EntityType by ONE literal. The four CRM literals are IMPORTED
+// AuditEntityType widens EntityType by TWO literals. The four CRM literals are IMPORTED
 // from ./custom-fields and widened by union — never restated (D-01 from Phase 35: the repo
 // has exactly one definition of EntityType and a second copy would drift).
 //
@@ -15,10 +15,20 @@ import type { EntityType } from "./custom-fields"
 // session, not about a single CRM record, so forcing it to claim `entity_type = 'deal'`
 // with a session id in `entity_id` would be a lie the schema tells about itself.
 //
-// The timeline never selects it: `assertEntityType` in src/lib/timeline/assemble.ts:33-41
+// Why the SIXTH exists: Phase 40 review finding WR-04. Decision 2 (E-9) opened view export
+// to every authenticated user, replacing Phase 38's admin gate with a filter guard that
+// `search=a` satisfies — 44,254 of 46,054 organizations. `src/lib/audit/export-events.ts`
+// makes such an export attributable. It is the same shape of fact as an import summary: about
+// an EVENT rather than a record, so it gets its own literal for exactly the reason above.
+// **It bounds nothing** — see that module's header and BACKLOG.md before calling WR-04 closed.
+//
+// The timeline never selects either: `assertEntityType` in src/lib/timeline/assemble.ts:33-41
 // validates against the four CRM literals BEFORE any fragment is composed, so an
-// `import_session` row is unreachable from every record timeline by construction.
-export type AuditEntityType = EntityType | "import_session"
+// `import_session` or `export` row is unreachable from every record timeline by construction.
+// There is deliberately NO `Record<AuditEntityType, …>` map anywhere in the repo (every
+// exhaustive map is keyed on the four-literal `EntityType`), which is what makes adding a
+// literal here a one-line change rather than the four-file cascade `AuditAction` would be.
+export type AuditEntityType = EntityType | "import_session" | "export"
 
 // The fourth literal, `merged`, arrived in Phase 39 (39-09) for the duplicate merge. Adding it
 // is a FOUR-FILE compile cascade, which is exactly why Phase 37's PURGE_MARKER comment

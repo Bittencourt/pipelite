@@ -515,8 +515,25 @@ finding nobody will read again.
 ### Export authorization is materially weaker than before Phase 38's gate (review WR-04)
 
 **Where:** `src/lib/export/view-export-guard.ts`, `src/lib/views/export-action.ts`
-**Status:** OPEN by explicit decision — this is a change to 40-CONTEXT Decision 2, not a bug fix,
-so it was deliberately excluded from the review-fix pass.
+**Status:** **STILL OPEN — now DETECTED, not PREVENTED.** 2026-08-22: the user chose visibility over
+a bound. `src/lib/audit/export-events.ts` writes one `audit_log` row per completed view export
+(who, which entity type, which filters, how many rows), wired into `exportViewResults` after the
+fetch, and `"export"` was added to `AuditEntityType` and to the `/api/v1/audit` filter whitelist.
+
+**The exposure below is UNCHANGED.** A non-admin can still export 44,254 of 46,054 organizations
+through `search=a`; the export is now attributable rather than impossible. Do not close this entry
+on the strength of the audit row — the four candidate fixes at the bottom are all still unbuilt.
+Three residual gaps in the detection itself, each stated in the code:
+
+  1. `recordExport` swallows its own failure (the import-summary precedent), so an export whose
+     audit write fails is an unlogged export. Loud in the log, not silent — but not prevented.
+  2. A REFUSED or CAPPED attempt writes no row, so this is evidence of exports, not of probing.
+  3. There is no UI and no alert. `/admin/audit` is the retention settings page and lists no rows;
+     these rows are readable only by querying `/api/v1/audit?entity_type=export`. Nobody is
+     notified — someone has to go looking.
+
+Also unchanged: the bulk export actions from Phase 38 (`exportSelectedOrganizations` and its three
+siblings) write no audit row. Only the view export path — the one Phase 40 widened — is instrumented.
 
 Phase 38 forbade a filters-taking export action reachable without an admin gate, because an action
 handed `{}` returns every row. Phase 40 Decision 2 (E-9) opened export to every authenticated user
@@ -540,7 +557,22 @@ regression in posture even though every individual control behaves as specified.
 rule (refuse when a result exceeds some fraction of the table), a lower cap for non-admins, an
 audit-log entry per export, or restoring the admin gate for unfiltered-in-practice exports.
 
-### CSV formula injection, pre-existing, but the audience widened (review IN-06)
+### ~~CSV formula injection, pre-existing, but the audience widened (review IN-06)~~ — FIXED 2026-08-22
+
+**FIXED.** `neutraliseCsvInjection` in `src/lib/export/formatters.ts` prefixes an at-risk cell with
+an apostrophe, applied to every row inside `exportToCSV` — the one choke point all four entity
+exports share, so both the view path and the four bulk paths are covered. Gated by
+`src/lib/export/__tests__/csv-injection.test.ts` (10 tests).
+
+The one subtlety worth keeping: a string that parses WHOLLY as a finite number is exempt, because
+the naive rule turns every negative number in the file into text in Excel. The parse is `Number()`
+and not `parseFloat()` — `parseFloat("-2+3+cmd|'/C calc'!A0")` returns `-2` and would wave the
+documented bypass straight through. Both cases are asserted.
+
+Not covered: `exportToPipedriveCSV` in `src/lib/export/pipedrive.ts` is a separate serialiser and
+was left alone — it is a format conversion for re-import, not a file handed to a spreadsheet.
+
+**Original finding, for the record:**
 
 **Where:** `src/lib/export/formatters.ts:219-227`, in `exportToCSV`
 

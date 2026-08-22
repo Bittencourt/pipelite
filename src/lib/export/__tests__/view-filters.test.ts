@@ -776,4 +776,38 @@ describe("exportViewResults is guarded, capped and not admin-gated", () => {
     expect(actionSource).not.toContain("/api/export")
     expect(actionSource).not.toContain("NextResponse")
   })
+
+  /**
+   * WR-04's control is a CALL, so its absence is the failure mode (review WR-04).
+   *
+   * `recordExport` is unit-tested in `src/lib/audit/__tests__/export-events.test.ts`, but a
+   * correct function nobody calls logs nothing — and this is a security control whose whole value
+   * is that it runs on every export. Comments are stripped, so nothing here can be satisfied by
+   * the prose in the action's header.
+   *
+   * This gate does NOT claim the exposure is bounded. It is not: see the WR-04 entry in
+   * `.planning/BACKLOG.md`, which stays open.
+   */
+  it("records the export AFTER the fetch, with the guard's filters and the real row count", () => {
+    const recordAt = actionSource.indexOf("recordExport(")
+    const fetchAt = actionSource.indexOf("fetchFilteredData(")
+
+    expect(recordAt).toBeGreaterThan(-1)
+    // After the fetch, because the row count must be what the export actually produced. Before it,
+    // the count could only be a guess, and a refused export would log as though it had happened.
+    expect(recordAt).toBeGreaterThan(fetchAt)
+
+    const calls = callArguments(actionSource, "recordExport")
+
+    // Exactly one call site: a second export path that skipped it would be the control defeated.
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toContain("actorUserId: session.user.id")
+    expect(calls[0]).toContain("rowCount: result.count")
+    // The filter map recorded is the GUARD'S output, matching what actually narrowed the query —
+    // logging `input.filters` would record a map the database never saw.
+    expect(calls[0]).toContain("filters: guarded.filters")
+    expect(calls[0]).not.toContain("filters: input.filters")
+    // Awaited, so the row is written before the action returns and a caller cannot race it.
+    expect(actionSource).toContain("await recordExport(")
+  })
 })

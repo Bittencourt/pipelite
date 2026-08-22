@@ -49,6 +49,10 @@ const AUDIT_ENTITY_TYPES = [
   // The fifth literal is real: an import writes ONE summary row per session, and that row is
   // about a session rather than a CRM record.
   "import_session",
+  // The sixth, likewise: one row per completed view export (Phase 40 review WR-04). It must be
+  // listed here or the rows are unreachable — this endpoint is the ONLY reader of them, since
+  // /admin/audit lists no rows and the record timeline admits the four CRM literals only.
+  "export",
 ] as const satisfies readonly AuditEntityType[]
 
 const AUDIT_ACTOR_KINDS = [
