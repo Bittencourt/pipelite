@@ -37,6 +37,8 @@ import {
   bulkReassignDealOwner,
   exportSelectedDeals,
 } from "./actions"
+import { SavedViewsBar } from "@/components/views/saved-views-bar"
+import type { SavedViewsBarProps } from "@/lib/views/types"
 import { BulkActionBar } from "@/components/bulk/bulk-action-bar"
 import { BulkFailureReport } from "@/components/bulk/bulk-failure-report"
 import { BULK_MAX_IDS } from "@/lib/bulk/limits"
@@ -49,6 +51,14 @@ import { useKanbanKeyboard } from "@/components/keyboard"
 import { useHotkeysContext } from "react-hotkeys-hook"
 
 interface KanbanBoardProps {
+  /**
+   * The eight saved-views props, resolved server-side in `page.tsx` and passed through as ONE object.
+   *
+   * One prop rather than eight: they are computed together by `resolveSavedViewsBarProps` (Rule B-2)
+   * and consumed together by the bar, so threading them individually through a kanban that already
+   * takes eleven props is how one of them gets dropped in a later refactor.
+   */
+  viewsBar: SavedViewsBarProps
   selectedPipelineId: string
   pipelines: { id: string; name: string }[]
   stages: Array<{
@@ -75,6 +85,7 @@ interface KanbanBoardProps {
 }
 
 export function KanbanBoard({
+  viewsBar,
   selectedPipelineId,
   pipelines,
   stages,
@@ -496,6 +507,27 @@ export function KanbanBoard({
           </Button>
         )}
       </div>
+
+      {/*
+        THE SAVED VIEWS BAR, ON ITS OWN ROW BETWEEN THE PIPELINE ROW AND THE FILTER ROW.
+
+        NOT INSIDE `deal-filters.tsx`. A deals view carries its `pipeline` (Decision 4), because the
+        pipeline decides which board renders at all — and the pipeline control lives in the row ABOVE
+        the filters. A bar that can change the pipeline has to sit above both of the things it changes,
+        not beside one of them.
+
+        NOT MERGED INTO THE PIPELINE ROW. That row is measured EXACTLY full at 241px (M-3): the
+        "Pipeline:" cluster at 118, an 8px gap, "Add Deal" at 115. Zero slack — before pt-BR or es-ES
+        lengthens either label. A third cluster in there overflows on the first translation.
+
+        RULE P-2: THE BAR RENDERS EVEN WHEN ONLY ONE PIPELINE EXISTS. The row above replaces the
+        pipeline cluster with `<div />` when `pipelines.length <= 1`; do NOT copy that guard here. The
+        bar's content does not depend on the pipeline count, and hiding it on a single-pipeline install
+        would hide saved views from that install entirely.
+
+        Not sticky, not fixed (K-8) — it scrolls away with the board it belongs to.
+      */}
+      <SavedViewsBar {...viewsBar} />
 
       {/* Filters */}
       <Suspense fallback={null}>

@@ -18,6 +18,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Filter, X } from "lucide-react"
+import { withViewEscape } from "@/lib/views/url-params"
 
 interface DealFiltersProps {
   stages: Array<{ id: string; name: string }>  // stages for the currently selected pipeline only
@@ -45,15 +46,44 @@ export function DealFilters({ stages, owners, assignees }: DealFiltersProps) {
   const ownerName = ownerId ? owners.find(o => o.id === ownerId)?.name : null
   const assigneeName = assigneeId ? assignees.find(a => a.id === assigneeId)?.name : null
 
+  /**
+   * BOTH WRITERS BELOW GO THROUGH `withViewEscape`, AND BOTH NEEDED IT.
+   *
+   * The obvious reading is that only `clearAll` can produce a bare query, since it deletes the five
+   * filter keys and KEEPS `pipeline`. But the page DEFAULTS the pipeline without putting it in the URL,
+   * so "no pipeline param" is the common case, not the edge — and then `clearAll` leaves `?` with
+   * nothing in it. `setFilter(key, null)` removing the last remaining chip produces exactly the same
+   * bare query by another route. A bare `/deals` is what the new default-view redirect in `page.tsx`
+   * acts on, so either one, left unescaped, would bounce the user straight back into the view they
+   * just cleared (T-40-55).
+   *
+   * `withViewEscape` answers that by appending `view=none` when no saveable filter survives: an
+   * explicit "I have no view", which is a param, so the redirect guard does not fire on it.
+   *
+   * NEITHER SITE WRITES `view=<id>`, AND NEITHER NEEDED A NEW PROP (plan 40-18). These functions
+   * change FILTERS, never the selection — only the bar mints or clears a selection. The URL now carries
+   * `?view=<id>` naming the open view, and the helper PRESERVES it whenever a saveable filter survives,
+   * reading it out of the params it is handed. Both clones below are built from
+   * `searchParams.toString()`, so `view` is already in the input and the selection rides through a
+   * filter change untouched — which is what makes `isModified` reachable, and why the preservation rule
+   * lives in the helper instead of being threaded as a prop through six files.
+   *
+   * No `selectedViewId` prop belongs here either. Plan 40-11 passes one to the two `data-table.tsx`
+   * files because those build their query strings from PROPS and have no `searchParams` to preserve
+   * from. This file has them. The asymmetry is about where the two groups get their params.
+   *
+   * `replace`, not `push`, at both sites: that is the existing behaviour and it is right — a filter
+   * tweak should not put an entry in the back stack for every keystroke of a date.
+   */
   const setFilter = (key: string, value: string | null) => {
-    // Create new URLSearchParams from searchParams.toString() to preserve ?pipeline=
+    // Create new URLSearchParams from searchParams.toString() to preserve ?pipeline= and ?view=
     const params = new URLSearchParams(searchParams.toString())
     if (value) {
       params.set(key, value)
     } else {
       params.delete(key)
     }
-    router.replace(`${pathname}?${params.toString()}`)
+    router.replace(`${pathname}?${withViewEscape("deal", params)}`)
   }
 
   const clearAll = () => {
@@ -64,7 +94,7 @@ export function DealFilters({ stages, owners, assignees }: DealFiltersProps) {
     params.delete("assignee")
     params.delete("dateFrom")
     params.delete("dateTo")
-    router.replace(`${pathname}?${params.toString()}`)
+    router.replace(`${pathname}?${withViewEscape("deal", params)}`)
   }
 
   const clearFilter = (key: string) => {
