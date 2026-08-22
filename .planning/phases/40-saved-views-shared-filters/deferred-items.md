@@ -290,16 +290,53 @@ sortable contexts have to know about every item they can reorder.
 > makes this a product question, not just a test question: on the smallest supported screen, a
 > cross-stage kanban drag stopped working when the bar was added above the board.
 >
-> **Still deferred, deliberately.** Rule P-2 in `kanban-board.tsx` requires the bar to render even
-> when only one pipeline exists, so "hide it on `/deals`" is not available. The candidate fixes —
-> giving the board a taller track, making the bar more compact at the smallest breakpoint, or
-> collapsing the pipeline row into the bar's row — are all design decisions with their own 320px
-> measurements, which is plan-sized work and not something to improvise at close-out.
+> **FIXED, at the user's direction, before plan 40-17 ran.** The 60px the bar cost is reclaimed at
+> the small breakpoint only:
+>
+> | File | Change |
+> |---|---|
+> | `src/app/deals/page.tsx` | `py-8` → `py-4 sm:py-8`, `mb-6` → `mb-4 sm:mb-6` |
+> | `src/app/deals/kanban-board.tsx` | `space-y-6` → `space-y-4 sm:space-y-6` |
+>
+> `sm:` restores the original rhythm, so nothing above 640px changes. Rule P-2 is untouched — the
+> bar still renders unconditionally, including on single-pipeline installs.
+>
+> `e2e/deals-drag.spec.ts` now passes **4/4** at 320×640. `e2e/viewport-320.spec.ts` passes **23/23**
+> including `/deals` in all three locales, so the reclaim did not trade a vertical fix for a
+> horizontal overflow. `saved-views-320.spec.ts` **24/24**, vitest **3791 passed / 28 skipped**.
 
 **Found by:** plan 40-16, running the full Playwright suite for the first time this phase,
-2026-08-22. **Attribution corrected by the orchestrator the same day.**
+2026-08-22. **Attribution corrected, and the defect fixed, by the orchestrator the same day.**
 **Severity:** a red suite, AND a real regression: cross-stage kanban drag is broken at the minimum
 supported viewport.
+
+### A side finding that outlived the fix: the full suite is not reliably green on a loaded machine
+
+Chasing D-40-4 meant running the whole Playwright suite repeatedly, and **a different test failed
+almost every time** — `saved-views-degraded.spec.ts` ANTI-VACUITY, then DEAD_PIPELINE, then two
+`org-duplicate-warning.spec.ts` rows and `viewport-320.spec.ts` `/deals @ en-US`. Every one of them
+passes when its own file is run alone:
+
+| Spec, run alone | Result |
+|---|---|
+| `viewport-320.spec.ts` | 23/23 |
+| `saved-views-320.spec.ts` | 24/24 |
+| `saved-views-degraded.spec.ts` ANTI-VACUITY | passes, 45.2s |
+| `deals-drag.spec.ts` | 4/4 |
+
+Two contributing causes, both worth naming:
+
+1. **D-40-3 is the amplifier.** `/deals` takes 17.7s to render even in an isolated run, and the
+   degraded spec spends most of its 45–53s waiting on boards. Tests that slow sit close enough to
+   their budgets that ordinary contention tips them over. Fixing the kanban's unpaginated render
+   would buy back suite reliability as well as page speed.
+2. **The first login after a container restart exceeds the 30s setup timeout.** Measured: cold
+   `auth.setup.ts` **30.1s → failed**, immediate retry **1.9s → passed**. Playwright's retry masks
+   it, but it makes the first run after any rebuild look broken.
+
+Machine load during these runs was 6.3–8.5 with other containers active, so this is not purely the
+app's fault. Recording it because "the suite is flaky" is exactly the state Phase 39 shipped in and
+that this phase spent nine plans refusing to re-enter: a red run has to mean a defect.
 
 ### The measurement, verbatim
 

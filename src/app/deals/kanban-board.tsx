@@ -478,7 +478,10 @@ export function KanbanBoard({
   const hasActiveFilters = !!(activeFilters.stage || activeFilters.owner || activeFilters.assignee || activeFilters.dateFrom || activeFilters.dateTo)
 
   return (
-    <div className="space-y-6">
+    // `space-y-4 sm:space-y-6` — the other half of the D-40-4 reclaim. The views bar made this a
+    // four-block stack instead of three, so the extra 24px gap is charged here; `sm:` keeps the
+    // original rhythm everywhere the board was not starved of height.
+    <div className="space-y-4 sm:space-y-6">
       {/* Pipeline Selector */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         {pipelines.length > 1 ? (

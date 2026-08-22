@@ -301,9 +301,24 @@ export default async function DealsPage({
         }
       : resolvedViewsBar
 
+  /*
+    `py-4 sm:py-8` AND `mb-4 sm:mb-6` — RECLAIMING THE VERTICAL SPACE THE VIEWS BAR COST (D-40-4).
+
+    Mounting `SavedViewsBar` on its own row pushed the kanban columns down 60px, measured at the
+    320x640 minimum viewport: the first column's top went from y=265 to y=325. That broke the
+    cross-stage drag outright — `e2e/deals-drag.spec.ts` passed at c59575c and failed at e5b1a62
+    with the spec file byte-identical, and raising ONLY the viewport to 320x900 made it pass again.
+
+    The 60px is arithmetic, not mystery: the bar adds a fourth block to a `space-y-6` stack, so it
+    costs its own height plus one more 24px gap.
+
+    Reclaimed at the SMALL breakpoint ONLY. `sm:` restores the original rhythm, so nothing above
+    640px changes — this is not a redesign, it is giving the board back the room the bar took on the
+    one viewport where there was none to spare.
+  */
   return (
-    <div className="container mx-auto py-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="container mx-auto py-4 sm:py-8">
+      <div className="flex items-center justify-between mb-4 sm:mb-6">
         <h1 className="text-3xl font-bold">{t('title')}</h1>
       </div>
 
