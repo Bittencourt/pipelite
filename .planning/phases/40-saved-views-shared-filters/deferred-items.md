@@ -256,12 +256,50 @@ sortable contexts have to know about every item they can reorder.
 
 ---
 
-## D-40-4 — `e2e/deals-drag.spec.ts` SC-5 fails, and it is PRE-EXISTING
+## D-40-4 — `e2e/deals-drag.spec.ts` SC-5 fails — NOT pre-existing, CAUSED BY THIS PHASE
+
+> **CORRECTION, by the orchestrator, after this entry was written.** The heading below originally
+> read "and it is PRE-EXISTING". **That was wrong, and the check that produced it was too narrow.**
+>
+> 40-16 established only that its own `playwright.config.ts` edits were not the cause, by reverting
+> that one file. It never reverted the APPLICATION code — and plan 40-12 mounted `SavedViewsBar`
+> into `src/app/deals/kanban-board.tsx`, the very component this spec drags in.
+>
+> **Measured both ways, whole-tree:**
+>
+> | Tree | `deals-drag.spec.ts` |
+> |---|---|
+> | `c59575c` (end of wave 5, before the bar was mounted on `/deals`) | **4 passed** |
+> | `e5b1a62` (end of wave 9, current) | **1 failed, 3 passed** |
+>
+> Same spec file — `git diff c59575c HEAD -- e2e/deals-drag.spec.ts` is empty, it was written in
+> phase 45 by `abf4b57` and untouched since. Same config. The container was rebuilt for each run,
+> because `docker-compose.yml` has no volume mount and would otherwise serve a stale image.
+>
+> **Root cause isolated — it is vertical space, and it is a real 320px concern, not a harness
+> artifact.** The bar renders on its own row above the board, so the kanban columns now start at
+> `y = 325` with 252px of column height inside a 640px viewport. Raising ONLY the viewport makes it
+> pass:
+>
+> | Viewport | Result |
+> |---|---|
+> | 320×640 (the configured minimum) | **fails** |
+> | 320×900 | **passes** |
+>
+> That 320×640 is the minimum this project supports and the viewport phases 40 and 45 both target
+> makes this a product question, not just a test question: on the smallest supported screen, a
+> cross-stage kanban drag stopped working when the bar was added above the board.
+>
+> **Still deferred, deliberately.** Rule P-2 in `kanban-board.tsx` requires the bar to render even
+> when only one pipeline exists, so "hide it on `/deals`" is not available. The candidate fixes —
+> giving the board a taller track, making the bar more compact at the smallest breakpoint, or
+> collapsing the pipeline row into the bar's row — are all design decisions with their own 320px
+> measurements, which is plan-sized work and not something to improvise at close-out.
 
 **Found by:** plan 40-16, running the full Playwright suite for the first time this phase,
-2026-08-22.
-**Severity:** a red suite. Either the kanban cross-stage drag is broken or its harness is; both
-readings need the owner of Phase 45's drag work, not this plan.
+2026-08-22. **Attribution corrected by the orchestrator the same day.**
+**Severity:** a red suite, AND a real regression: cross-stage kanban drag is broken at the minimum
+supported viewport.
 
 ### The measurement, verbatim
 
@@ -285,7 +323,12 @@ Full-suite result: **68 passed, 1 failed** — this one. The other three tests i
 including the two that assert the drag DID move a card, so the file's `dndDrag` helper works in
 general.
 
-### It is not caused by plan 40-16, and that was checked rather than assumed
+### It is not caused by plan 40-16's CONFIG edits — true, but not the whole question
+
+*(Retained as written. This section's conclusion is correct and its method is sound; the error was
+one of scope — it rules out 40-16's config as the cause and was then read as ruling out the phase.
+The whole-tree bisect in the correction above is what actually settles attribution: plan 40-12,
+not 40-16.)*
 
 The only non-spec file 40-16 touched is `playwright.config.ts` (`workers: 1` and the `chromium`
 project's `testIgnore`). The base config was restored with
