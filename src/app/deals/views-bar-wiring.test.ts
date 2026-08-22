@@ -239,7 +239,14 @@ describe("deals/page.tsx — the 40-12 resolution gate", () => {
 
   it("6. V-11: a dead pipeline in the URL joins the resolver's dropped keys", () => {
     const source = read(PAGE)
-    const merge = between(source, "const viewsBar", "return (", PAGE)
+    /*
+     * BOUNDED BY `<KanbanBoard`, NOT BY `return (`, and the difference is not cosmetic: `between` uses
+     * `indexOf` for both markers, and the FIRST `return (` in this file belongs to the `noPipelines`
+     * empty state — which sits far above `const viewsBar`. That slice would be inverted, and the
+     * inversion guard inside `between` caught it during GREEN rather than the assertion silently
+     * passing over an empty string. Recorded in 40-12-SUMMARY.md.
+     */
+    const merge = between(source, "const viewsBar", "<KanbanBoard", PAGE)
 
     /*
      * The resolver validates the SELECTED VIEW'S stored filters. It cannot know that the URL's own
