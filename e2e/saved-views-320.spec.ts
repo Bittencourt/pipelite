@@ -884,6 +884,54 @@ test.describe("V-40-7 — the search box resyncs from the URL", () => {
       console.log(`[40-15] V-40-7 ${surface.path} | All records -> box cleared`)
     })
   }
+
+  /**
+   * V-40-7b — THE OTHER HALF OF THE SAME REQUIREMENT: RESYNCING MUST NOT COST THE CARET.
+   *
+   * The tests above prove the box follows the URL. They pass just as happily when the box follows
+   * the URL by being DESTROYED and rebuilt, which is what `key={search}` did — and a remount takes
+   * focus with it. Measured as D-40-2 on `/activities`: typing "ltda" with a pause past the 300ms
+   * debounce yielded `Expected "ltda", Received "lt"` with `activeElement=BODY`.
+   *
+   * That defect shipped on THREE surfaces and the resync tests above were green on all three the
+   * whole time. It was caught by an ad-hoc measurement, and then survived a fix that reached only
+   * two of the three files. This test exists so neither can happen again: it is per-surface, so a
+   * surface fixed in isolation cannot mask one that was missed.
+   *
+   * The pause is the load-bearing part. Typing straight through never lets the debounce fire, so a
+   * remount never happens and the assertion would be vacuous.
+   */
+  for (const surface of SURFACES.filter((s) => s.hasSearchBox)) {
+    test(`${surface.path} — typing past the debounce keeps the caret in the box (D-40-2)`, async ({
+      page,
+      baseURL,
+    }) => {
+      await useLocale(page, baseURL, "en-US")
+      await gotoSettled(page, `${surface.path}?view=none`, surface.anchor(en))
+
+      const input = page.getByPlaceholder(SEARCH_PLACEHOLDER[surface.path])
+      await expect(input).toBeVisible()
+      await input.click()
+
+      // First burst, then a pause LONGER than the 300ms debounce so the navigation actually lands.
+      await input.pressSequentially("lt", { delay: 40 })
+      await page.waitForURL((url) => url.searchParams.get("search") === "lt")
+
+      expect(
+        await page.evaluate(() => document.activeElement?.tagName ?? "NONE"),
+        `${surface.path}: the debounced navigation landed and took focus off the search box — the box was remounted rather than resynced (D-40-2)`
+      ).toBe("INPUT")
+
+      // Keep typing into the SAME node. If it was remounted these characters go nowhere.
+      await input.pressSequentially("da", { delay: 40 })
+      await expect(
+        input,
+        `${surface.path}: characters typed after the debounce fired were dropped — the box lost the caret mid-typing (D-40-2)`
+      ).toHaveValue("ltda")
+
+      console.log(`[40-15] V-40-7b ${surface.path} | caret survived the debounced navigation`)
+    })
+  }
 })
 
 /* ============================================================================================

@@ -1,7 +1,7 @@
 "use client"
 
 import { useSearchParams, usePathname, useRouter } from "next/navigation"
-import { useRef } from "react"
+import { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -41,6 +41,32 @@ function ActivityFiltersInner({
   const router = useRouter()
   const t = useTranslations('activities')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /**
+   * The search box is controlled by LOCAL state, resynced from the URL during render.
+   *
+   * This replaces a `key={search}` on the `<Input>`. That did resync the box (B-6/M-9), but by
+   * REMOUNTING it: the 300ms debounce fires, `router.push` lands, `search` changes, the key
+   * changes, and React throws the focused DOM node away mid-typing. MEASURED by plan 40-15's
+   * reachability suite against the rebuilt container, recorded as D-40-2: typing "ltda" with a
+   * pause yielded `Expected "ltda", Received "lt"` with `activeElement=BODY`.
+   *
+   * `value={search}` is wrong in the other direction — a value fed straight from the URL fights
+   * its own debounce on every keystroke, which is the objection the previous comment here raised
+   * and answered with `key`. Local state satisfies both: keystrokes are immediate and never
+   * interrupted, only the router push stays debounced, and the adjust-state-during-render block
+   * below still resyncs the box on the one event that must reset it — the URL's `search` actually
+   * changing (applying a saved view, a default-view landing, pressing Back).
+   *
+   * The sibling surfaces got this shape in commit 85f7c2a; this file was missed there because it
+   * has no row-selection block to hang the resync on, so the comparison state is declared here.
+   */
+  const [searchInput, setSearchInput] = useState(search)
+  const [prevSearch, setPrevSearch] = useState(search)
+  if (prevSearch !== search) {
+    setPrevSearch(search)
+    setSearchInput(search)
+  }
 
   // Read filter values from URL
   const typeId = searchParams.get("type") || ""
@@ -160,31 +186,31 @@ function ActivityFiltersInner({
         <div className="relative">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           {/*
-            B-6 — `key={search}`, AND `defaultValue` STAYS.
+            B-6 — THE RE-SYNC IS LOCAL STATE (see `searchInput` above).
 
-            THE DEFECT, MEASURED: `defaultValue` is read ONCE, when the DOM node mounts, and ignored
-            on every render after that. App-router navigation re-renders this tree WITHOUT
+            THE FIRST DEFECT, MEASURED: `defaultValue` is read ONCE, when the DOM node mounts, and
+            ignored on every render after that. App-router navigation re-renders this tree WITHOUT
             remounting it, so any change to the `search` param that did not come from typing in this
             box left the box showing the old text — selecting a saved view whose filters include a
             search term, using the browser Back button, or landing on a default view. The URL said
             one thing and the input said another.
 
-            THE FIX IS `key` AND NOT A CONTROLLED VALUE. Changing `key` gives React a different
-            element identity, so it discards the old node and mounts a new one, which re-reads
-            `defaultValue`. Making this a controlled `value={search}` input would ALSO resync it —
-            and would break typing: this is a 300ms-DEBOUNCED writer, so between the keystroke and
-            the navigation the URL still holds the previous term, and a controlled value fed from
-            the URL would fight the user's own typing on every character.
+            THE SECOND DEFECT, ALSO MEASURED (D-40-2): `key={search}` fixed the first one by giving
+            React a different element identity — which discards the focused node mid-typing once the
+            300ms debounce lands. Plan 40-15 measured `Expected "ltda", Received "lt"` with
+            `activeElement=BODY` against the rebuilt container.
 
-            The remount only happens when `search` actually changes, which is also when the box's
-            contents are already being replaced, so no in-flight keystroke is lost that was not
-            already superseded.
+            `value={search}` is not the answer either: fed straight from the URL it fights its own
+            debounce on every character. Local state resynced during render is what satisfies both
+            — immediate keystrokes, and a box that still resets when the URL's `search` changes.
           */}
           <Input
-            key={search}
             placeholder="Search activities..."
-            defaultValue={search}
-            onChange={(e) => handleSearchChange(e.target.value)}
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value)
+              handleSearchChange(e.target.value)
+            }}
             className="pl-8 max-w-sm"
           />
         </div>
