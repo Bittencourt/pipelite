@@ -26,6 +26,8 @@ import { join } from "node:path"
 
 import { describe, it, expect } from "vitest"
 
+import { callArguments, readStrippedSource } from "@/components/custom-fields/__tests__/source-scan"
+
 import { VALID_RUN_STATUSES } from "../runs-filter"
 import { EMPTY_REPLAY_ENVELOPE, buildReplayRunInput, isRunReplayable } from "../replay"
 
@@ -384,5 +386,293 @@ describe("replay.ts structural constraints", () => {
     // per replay, and no bound is principled for a human-driven action.
     expect(withoutComments).not.toMatch(/MAX_REPLAY/)
     expect(withoutComments).not.toMatch(/chainLength/)
+  })
+})
+
+// -------------------------------------------------------------------------------------------------
+// THE SERVER-ACTION GATE — `src/app/workflows/actions.ts` (plan 41-11).
+//
+// WHY A SOURCE SCAN AND NOT A UNIT TEST. That module is `"use server"` and imports `@/auth`, so its
+// three actions cannot be called from a vitest process. Everything they DECIDE, though, is decidable
+// from the source: which gate runs first, whether the origin lookup is scoped by one id or two,
+// whether the dry-run flag is a literal or a parameter, and whether the insert goes through
+// `createWorkflowRun`. Those are the four claims the threat register (T-41-60, T-41-62, T-41-63,
+// T-41-64) hangs on, so they are asserted here rather than left to inspection.
+//
+// EVERY NEGATIVE ASSERTION IS SCOPED TO ONE FUNCTION'S BODY. A whole-file negative would be both
+// unsatisfiable and misleading: `removeHttpTemplate` in the same file legitimately reads a role and
+// compares it to `"admin"`, and it is not one of this plan's actions.
+// -------------------------------------------------------------------------------------------------
+
+const ACTIONS_PATH = "src/app/workflows/actions.ts"
+
+/**
+ * The BODY of `export async function ${name}(…)`, by brace depth and string-aware.
+ *
+ * Module-private here rather than promoted into `source-scan.ts`, following the precedent that file's
+ * header records: the JSX extractors were kept module-private in plan 40-08 and only promoted when a
+ * third gate needed them. This is the first consumer of a TypeScript function-body extractor.
+ *
+ * `elementRegion` cannot do this job — it matches `<tag>…</tag>` — and `callArguments` bounds an
+ * argument list, not a body.
+ *
+ * THE SIGNATURE SHAPE IS ASSERTED, NOT ASSUMED. Between the parameter list's `)` and the body's `{`
+ * there must be nothing but `: Promise<NamedResult>`. That is `src/app/duplicates/actions.ts:117-127`'s
+ * stated reason for naming its result types — an inline `Promise<{ success: true; … }>` puts a brace
+ * in the signature, and a body finder that took "the next `{`" would return the return TYPE and every
+ * assertion below would be scoped to three lines of type annotation.
+ */
+function functionRegion(source: string, name: string): string {
+  const marker = `export async function ${name}(`
+  const at = source.indexOf(marker)
+  if (at === -1) throw new Error(`${ACTIONS_PATH}: no \`${marker}\` in the stripped source`)
+
+  let i = at + marker.length
+  let depth = 1
+  let quote: string | null = null
+
+  while (i < source.length && depth > 0) {
+    const ch = source[i]
+
+    if (quote) {
+      if (ch === "\\") {
+        i += 2
+        continue
+      }
+      if (ch === quote) quote = null
+      i += 1
+      continue
+    }
+
+    if (ch === '"' || ch === "'" || ch === "`") quote = ch
+    else if (ch === "(") depth += 1
+    else if (ch === ")") depth -= 1
+
+    i += 1
+  }
+
+  if (depth !== 0) throw new Error(`${ACTIONS_PATH}: unterminated parameter list for ${name}`)
+
+  const braceAt = source.indexOf("{", i)
+  if (braceAt === -1) throw new Error(`${ACTIONS_PATH}: no body brace for ${name}`)
+
+  const between = source.slice(i, braceAt)
+  if (!/^\s*:\s*Promise<[A-Za-z0-9_$]+>\s*$/.test(between)) {
+    throw new Error(
+      `${ACTIONS_PATH}: ${name}'s return type must be a NAMED result alias (\`): Promise<XResult> {\`), ` +
+        `found "${between.trim()}". An inline object literal in the return type puts a brace in the ` +
+        `signature, and every region-scoped assertion below would then be scoped to the annotation ` +
+        `instead of the body. src/app/duplicates/actions.ts:117-127 names its result types for exactly ` +
+        `this reason.`,
+    )
+  }
+
+  let braceDepth = 1
+  let j = braceAt + 1
+  quote = null
+
+  while (j < source.length && braceDepth > 0) {
+    const ch = source[j]
+
+    if (quote) {
+      if (ch === "\\") {
+        j += 2
+        continue
+      }
+      if (ch === quote) quote = null
+      j += 1
+      continue
+    }
+
+    if (ch === '"' || ch === "'" || ch === "`") quote = ch
+    else if (ch === "{") braceDepth += 1
+    else if (ch === "}") braceDepth -= 1
+
+    j += 1
+  }
+
+  if (braceDepth !== 0) throw new Error(`${ACTIONS_PATH}: unterminated body for ${name}`)
+
+  return source.slice(braceAt + 1, j - 1)
+}
+
+/** Does any `and(…)` in `region` scope a lookup by BOTH the run id and the workflow id? */
+function scopedByBothIds(region: string): boolean {
+  const clauses = callArguments(region, "and")
+
+  return clauses.some(
+    (clause) =>
+      clause.includes("eq(workflowRuns.id") && clause.includes("eq(workflowRuns.workflowId"),
+  )
+}
+
+describe("the WFOPS-01 / WFOPS-02 server actions — src/app/workflows/actions.ts", () => {
+  const source = readStrippedSource(ACTIONS_PATH)
+
+  const SCOPING_REASON =
+    "T-41-60: scoping the origin lookup by runId ALONE lets any authenticated user replay or poll " +
+    "any run of any workflow from a guessed or leaked run id. The control already exists and is the " +
+    "one to reuse — the run detail page's own predicate at " +
+    "src/app/workflows/[id]/runs/[runId]/page.tsx:32, " +
+    "`and(eq(workflowRuns.id, runId), eq(workflowRuns.workflowId, id))`."
+
+  const D_A4 =
+    "D-A4: auth on these actions is SESSION-ONLY, deliberately not `replayDelivery`'s admin gate. " +
+    "Workflows are not owner-scoped in this product (STATE.md), `triggerManualRun` has no role gate, " +
+    "and the run detail page renders the replay button to any authenticated user — so a role check " +
+    "here would 403 exactly the users the button is rendered to while granting no capability they " +
+    "did not already have via manual trigger."
+
+  const NO_HAND_ROLLED_INSERT =
+    "T-41-64: `createWorkflowRun` owns the MAX_RECURSION_DEPTH short-circuit. A bespoke " +
+    "db.insert(workflowRuns) in an action skips the recursion guard entirely."
+
+  // ANTI-VACUITY for every negative assertion below: if the read failed or the path moved, an empty
+  // string would satisfy all of them.
+  it("reads a non-empty stripped source containing the pre-existing actions", () => {
+    expect(source.length).toBeGreaterThan(500)
+    expect(source).toContain("getHttpTemplates")
+    expect(source).toContain("use server")
+  })
+
+  describe("replayWorkflowRun", () => {
+    it("is exported", () => {
+      expect(source).toContain("export async function replayWorkflowRun")
+    })
+
+    it("checks isRunReplayable BEFORE calling buildReplayRunInput", () => {
+      const region = functionRegion(source, "replayWorkflowRun")
+      const predicateAt = region.indexOf("isRunReplayable")
+      const buildAt = region.indexOf("buildReplayRunInput")
+
+      expect(predicateAt).toBeGreaterThan(-1)
+      expect(buildAt).toBeGreaterThan(-1)
+      expect(
+        predicateAt,
+        "The predicate IS the authorization and must run before the construction. Plan 41-02 " +
+          "asserted anti-vacuously that buildReplayRunInput does NOT consult the predicate itself, " +
+          "precisely so this ordering could not be quietly dropped — leaving the render-site check, " +
+          "which is a client-side check, as the only gate (T-41-11).",
+      ).toBeLessThan(buildAt)
+    })
+
+    it("gates on the session BEFORE any database read", () => {
+      const region = functionRegion(source, "replayWorkflowRun")
+      const authAt = region.indexOf("auth()")
+      const readAt = region.indexOf(".select(")
+
+      expect(authAt).toBeGreaterThan(-1)
+      expect(readAt).toBeGreaterThan(-1)
+      expect(
+        authAt,
+        "An unauthenticated caller must learn nothing about which run ids exist — the refusal costs " +
+          "zero database reads whatever id is sent.",
+      ).toBeLessThan(readAt)
+      expect(region).toContain("Not authenticated")
+    })
+
+    it("scopes the origin lookup by BOTH workflowRuns.id and workflowRuns.workflowId", () => {
+      const region = functionRegion(source, "replayWorkflowRun")
+
+      expect(callArguments(region, "and").length, SCOPING_REASON).toBeGreaterThan(0)
+      expect(scopedByBothIds(region), SCOPING_REASON).toBe(true)
+    })
+
+    it("contains no role check and no admin literal", () => {
+      const region = functionRegion(source, "replayWorkflowRun")
+
+      expect(region.length).toBeGreaterThan(0)
+      expect(region.length).toBeLessThan(source.length)
+      expect(region, D_A4).not.toContain("session.user.role")
+      expect(region, D_A4).not.toContain("admin")
+    })
+
+    it("creates the new run through createWorkflowRun and never a hand-rolled insert", () => {
+      const region = functionRegion(source, "replayWorkflowRun")
+
+      expect(region, NO_HAND_ROLLED_INSERT).toContain("createWorkflowRun")
+      expect(region, NO_HAND_ROLLED_INSERT).not.toContain("db.insert(workflowRuns")
+      expect(source, NO_HAND_ROLLED_INSERT).not.toContain("db.insert(workflowRuns")
+    })
+
+    it("passes replayedFromRunId and revalidates the runs list", () => {
+      const region = functionRegion(source, "replayWorkflowRun")
+
+      expect(region).toContain("replayedFromRunId")
+      expect(region).toContain("revalidatePath")
+    })
+
+    it("never reads replayedFromRunId in a where clause — the column is diagnostic, not a guard", () => {
+      const clauses = callArguments(source, "where")
+
+      // Anti-vacuity: the file has where clauses, so `every` is not quantifying over nothing.
+      expect(clauses.length).toBeGreaterThan(0)
+      for (const clause of clauses) {
+        expect(
+          clause,
+          "T-41-12: replayedFromRunId is DIAGNOSTIC. Walking the chain needs a recursive query per " +
+            "replay and no bound is principled for a human-driven action, so there is no chain " +
+            "length check anywhere.",
+        ).not.toContain("replayedFromRunId")
+      }
+      expect(source).not.toContain("MAX_REPLAY")
+      expect(source).not.toContain("chainLength")
+    })
+  })
+
+  describe("getWorkflowRunStatus — the poll target", () => {
+    it("is exported", () => {
+      expect(source).toContain("export async function getWorkflowRunStatus")
+    })
+
+    it("gates on the session BEFORE the lookup", () => {
+      const region = functionRegion(source, "getWorkflowRunStatus")
+      const authAt = region.indexOf("auth()")
+      const readAt = region.indexOf(".select(")
+
+      expect(authAt).toBeGreaterThan(-1)
+      expect(readAt).toBeGreaterThan(-1)
+      expect(
+        authAt,
+        "getScanProgress's property, copied: the gate precedes the lookup, so a refusal costs zero " +
+          "database reads whatever id is sent.",
+      ).toBeLessThan(readAt)
+    })
+
+    it("scopes its lookup by BOTH ids", () => {
+      const region = functionRegion(source, "getWorkflowRunStatus")
+
+      expect(callArguments(region, "and").length, SCOPING_REASON).toBeGreaterThan(0)
+      expect(scopedByBothIds(region), SCOPING_REASON).toBe(true)
+    })
+
+    it("answers an absent row with success and nulls, not an error", () => {
+      const region = functionRegion(source, "getWorkflowRunStatus")
+
+      expect(
+        region.replace(/\s+/g, " "),
+        "T-41-67: a throwing or erroring poll target makes the dry-run dialog retry forever. An " +
+          "absent row is a legal answer — the run may have been pruned — so the poller can stop.",
+      ).toContain("success: true, status: null, dryRun: null")
+    })
+
+    it("returns no Date across the server-action boundary", () => {
+      const region = functionRegion(source, "getWorkflowRunStatus")
+
+      // The dialog only needs terminal-status detection, so the timestamps are not returned at all
+      // rather than returned as ISO strings — nothing to serialise is stronger than serialising it.
+      expect(region).not.toContain("startedAt")
+      expect(region).not.toContain("completedAt")
+      expect(region).not.toContain("toISOString")
+    })
+
+    it("contains no role check and no admin literal", () => {
+      const region = functionRegion(source, "getWorkflowRunStatus")
+
+      expect(region.length).toBeGreaterThan(0)
+      expect(region.length).toBeLessThan(source.length)
+      expect(region, D_A4).not.toContain("session.user.role")
+      expect(region, D_A4).not.toContain("admin")
+    })
   })
 })
