@@ -113,10 +113,29 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
    * dependency, which is why it is not an array — the "dependency" is the `search !== prevSearch`
    * test itself, and `data` cannot get into it.
    */
+  /**
+   * The search box is controlled by LOCAL state, resynced from the URL in the block below.
+   * Declared BEFORE that block: it is read and written there, and a `const` referenced above its
+   * own declaration is a temporal-dead-zone ReferenceError, not a hoisted undefined.
+   *
+   * This replaces an earlier `key={search}` on the `<Input>`. That did resync the box, but by
+   * REMOUNTING it: the 300ms debounce fires, `router.push` lands, `search` changes, the key
+   * changes, and React throws the focused DOM node away mid-typing. Pausing briefly while typing
+   * a search lost the cursor.
+   *
+   * `value={search}` is also wrong — a value fed straight from the URL fights its own debounce on
+   * every keystroke. Local state is the shape that satisfies both: it updates synchronously on
+   * each keystroke so typing is never interrupted, while only the router push stays debounced,
+   * and the adjust-during-render resync below still clears the box when the URL's search actually
+   * changes (applying a view, choosing "All records", pressing Back — the M-9 defect, B-6).
+   */
+  const [searchInput, setSearchInput] = useState(search)
+
   const [prevSearch, setPrevSearch] = useState(search)
   if (search !== prevSearch) {
     setPrevSearch(search)
     setRowSelection({})
+    setSearchInput(search)
   }
 
   const handleAddNew = () => {
@@ -367,29 +386,33 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Search className="h-4 w-4 text-muted-foreground" />
           {/*
-            `key={search}` IS THE RE-SYNC, AND IT IS A BUG FIX RATHER THAN POLISH (B-6).
+            THE RE-SYNC IS LOCAL STATE, AND IT IS A BUG FIX RATHER THAN POLISH (B-6).
 
-            `defaultValue` is read once, at mount, and IGNORED afterwards — and app-router navigation
-            re-renders this tree WITHOUT remounting it. So applying a saved view that stores
-            `search=acme` filters the list correctly while the box still shows whatever was in it
-            before, and selecting "All records" clears the filter and leaves "acme" sitting there.
-            Measured on the sibling surface, M-9: typed "acme" on `/organizations`, pressed Back, and
-            the URL returned to `/organizations` with the input still reading "acme". This file's
-            input is the same shape.
+            `defaultValue` alone is read once, at mount, and IGNORED afterwards — and app-router
+            navigation re-renders this tree WITHOUT remounting it. So applying a saved view that
+            stores `search=acme` filters the list correctly while the box still shows whatever was
+            in it before, and selecting "All records" clears the filter and leaves "acme" sitting
+            there. Measured on the sibling surface, M-9: typed "acme" on `/organizations`, pressed
+            Back, and the URL returned to `/organizations` with the input still reading "acme".
+            This file's input is the same shape.
 
-            THE FIX IS `key`, NOT A CONTROLLED INPUT. `value={search}` looks like the obvious answer
-            and is wrong: this is a 300ms-DEBOUNCED writer, so a value fed from the URL fights its own
-            debounce on every keystroke. `key` remounts the input only when the URL search string
-            actually changes, which is exactly the event that has to reset the box.
+            Neither `key={search}` nor `value={search}` is the right fix. `key` resyncs by
+            REMOUNTING, which destroys focus mid-typing once the debounce lands. `value={search}`
+            feeds a 300ms-DEBOUNCED writer from the URL, so it fights its own debounce on every
+            keystroke. Local state resynced during render (see `searchInput` above) does both jobs:
+            keystrokes are immediate and never interrupted, and the box still resets on the one
+            event that must reset it — the URL's search actually changing.
 
             The English placeholder is pre-existing and deliberately left alone — translating this
             file's literals is not this plan's business.
           */}
           <Input
-            key={search}
             placeholder="Search people..."
-            defaultValue={search}
-            onChange={(e) => handleSearchChange(e.target.value)}
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value)
+              handleSearchChange(e.target.value)
+            }}
             className="max-w-sm"
           />
         </div>

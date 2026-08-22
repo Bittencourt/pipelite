@@ -15,9 +15,16 @@
  *      app-router navigation re-renders WITHOUT remounting, so applying a view that stores
  *      `search=acme` filters the list and leaves the box showing whatever was there before — measured,
  *      M-9: typed "acme" on `/organizations`, pressed Back, URL returned to `/organizations` with the
- *      input still reading "acme". `key={search}` is the fix; a controlled `value={search}` is NOT,
- *      because these are 300ms-debounced writers and a value fed from the URL fights its own debounce
- *      on every keystroke. Both halves are asserted.
+ *      input still reading "acme".
+ *
+ *      THE SHAPE CHANGED AFTER 40-11 SHIPPED. `key={search}` was the original fix and it did resync,
+ *      but by REMOUNTING: the 300ms debounce lands, `search` changes, the key changes, and React
+ *      destroys the focused DOM node mid-typing. `value={search}` is wrong for the opposite reason —
+ *      a value fed straight from the URL fights its own debounce on every keystroke. The shipped
+ *      shape is LOCAL STATE (`searchInput`) resynced inside the adjust-state-during-render block that
+ *      already clears row selection. Three rows assert it: the input is controlled and NOT keyed, the
+ *      resync exists inside that block, and typing drives both local state and the debounced writer.
+ *      Controlling the input without the resync row would reproduce M-9 exactly.
  *   3. EVERY LIST-ROUTE NAVIGATION GOES THROUGH `withViewEscape` (T-40-50), and the DETAIL-route one
  *      does not. The empty-search branch is the site that matters: it used to push the bare
  *      `"/organizations"`, which the new redirect guard reads as "no params" — so a user clearing
@@ -140,7 +147,7 @@ describe.each(TABLES)("$label — the bar, the input and the escaped writers", (
     expect(region).not.toContain("SavedViewsBar")
   })
 
-  it(`${table.label}: the search Input carries key={search} beside defaultValue (B-6, M-9)`, () => {
+  it(`${table.label}: the search Input is controlled by local state, not remounted (B-6, M-9)`, () => {
     const source = read()
     const region = toolbarRegion(source, table.label)
     const [inputAt] = tagIndexes(region, "Input")
@@ -148,23 +155,60 @@ describe.each(TABLES)("$label — the bar, the input and the escaped writers", (
 
     const tag = openingTagAt(region, inputAt, "<Input>", table.label)
 
-    expect(tag).toContain("key={search}")
-    // `defaultValue` STAYS. `key` is what makes it take effect again: it remounts only when the URL
-    // actually changes, which is exactly the event that must reset the box.
-    expect(tag).toContain("defaultValue={search}")
+    // The box is driven by LOCAL state so a keystroke is never interrupted.
+    expect(tag).toContain("value={searchInput}")
+
+    // `key={search}` is now the ANTI-pattern this row forbids. It did resync the box, but by
+    // remounting it: the 300ms debounce lands, `search` changes, the key changes, and React throws
+    // the focused DOM node away mid-typing. Resync moved to the adjust-during-render block, which
+    // the row below pins.
+    expect(tag).not.toContain("key={search}")
+
+    // Controlled and `defaultValue` together is a React warning and an ambiguous source of truth.
+    // SUBSTRING COLLISION, CHECKED DELIBERATELY (the 40-09 lesson, where `Check` matched inside
+    // `onCheckedChange`): `defaultValue={` contains `Value={` with a CAPITAL V, so this lowercase
+    // `value={searchInput}` requirement above cannot be satisfied by a leftover `defaultValue={`.
+    expect(tag).not.toContain("defaultValue={")
   })
 
-  it(`${table.label}: the search Input was NOT converted to a controlled input`, () => {
+  it(`${table.label}: a URL search change resyncs the box during render (B-6, M-9)`, () => {
+    const source = read()
+
+    // THIS IS THE ROW THAT ACTUALLY DELIVERS B-6. Controlling the input is not enough on its own:
+    // local state initialised once would reproduce M-9 exactly (applying a saved view that stores
+    // `search=acme` would filter the list while the box kept its old text). The resync has to live
+    // in the adjust-state-during-render block that already clears row selection, so scope the
+    // assertion to THAT block rather than searching the file.
+    const marker = source.indexOf("setRowSelection({})")
+    expect(marker, `${table.label}: no setRowSelection({}) resync block found`).toBeGreaterThan(-1)
+
+    const open = source.lastIndexOf("if (", marker)
+    // Bound on the block's own closing brace at component indentation. NOT `indexOf("}", marker)`:
+    // that lands on the `{}` inside `setRowSelection({})` and truncates the block before the
+    // statements this row exists to find — which is exactly how this assertion first passed
+    // vacuously while the resync sat outside the slice.
+    const close = source.indexOf("\n  }", open)
+    expect(open, `${table.label}: could not bound the resync block`).toBeGreaterThan(-1)
+    expect(close, `${table.label}: resync block never closes at component indentation`).toBeGreaterThan(open)
+    const block = source.slice(open, close + 4)
+
+    // The block must be keyed on the URL's search actually changing...
+    expect(block).toMatch(/prevSearch\s*!==\s*search|search\s*!==\s*prevSearch/)
+    // ...and must push that new value into the box.
+    expect(block).toContain("setSearchInput(search)")
+  })
+
+  it(`${table.label}: typing updates local state AND the debounced writer`, () => {
     const source = read()
     const region = toolbarRegion(source, table.label)
     const [inputAt] = tagIndexes(region, "Input")
     const tag = openingTagAt(region, inputAt, "<Input>", table.label)
 
-    // SUBSTRING COLLISION, CHECKED DELIBERATELY (the 40-09 lesson, where `Check` matched inside
-    // `onCheckedChange`): `defaultValue={` contains `Value={` with a CAPITAL V, so the lowercase
-    // `value={` below cannot match it. Verified by the row above, which requires `defaultValue={`
-    // to be present in the very same extracted tag this row requires `value={` to be absent from.
-    expect(tag).not.toContain("value={")
+    // Both halves matter. Without `setSearchInput` the box is frozen — a controlled input whose
+    // value never changes ignores every keystroke. Without `handleSearchChange` nothing ever
+    // navigates, so the debounced writer and every withViewEscape below it are dead code.
+    expect(tag).toContain("setSearchInput(e.target.value)")
+    expect(tag).toContain("handleSearchChange(e.target.value)")
   })
 
   it(`${table.label}: there are exactly three withViewEscape sites, all for ${table.entityType}`, () => {
