@@ -18,25 +18,30 @@
  * file asserts, cannot satisfy anything below. That is the K-9 trap Phase 39 hit five times: a gate
  * satisfied by the comment explaining the rule it was supposed to enforce.
  *
- * ON THE EXTRACTORS — COPIED IN SHAPE, NOT IMPORTED, and here is why.
- * `readStrippedSource` and `callArguments` ARE imported: they are the shared helpers, and
- * `callArguments` is the repo's existing paren matcher, reused for assertion 12 rather than
- * reimplemented. The tag/paren walkers below are copied in shape from
+ * ON THE EXTRACTORS — NOW IMPORTED, NOT COPIED.
+ * This file originally carried `openingTagAt`, `tagIndexes`, `elementRegion` and
+ * `enclosingConditional` as module-private copies, because the equivalents in
  * `src/app/organizations/__tests__/toolbar-wiring.test.ts` (`extractToolbarRegion` /
- * `extractAdminConditional`) because those two functions are module-private there AND hard-wired to
- * that file's marker — `'<div className="flex flex-wrap'` — so importing them would mean first
- * exporting and generalising a helper that two gates use for different shapes. That generalisation
- * is exactly the consolidation `.planning/BACKLOG.md` already tracks under "Two brace matchers
- * should be consolidated", and doing it here would smuggle a cross-file refactor into a plan that
- * is about one dialog. **No third brace matcher is added:** the walkers below track depth over JSX
- * tag names and parens while scanning, and the one `{`/`}` count is inside the opening-tag scanner
- * because `onSubmit={(event) => …}` puts a `>` inside a prop.
+ * `extractAdminConditional`) are module-private there AND hard-wired to that file's marker — the
+ * literal `'<div className="flex flex-wrap'`. This file's own SUMMARY set the condition for undoing
+ * that duplication: "if a third 40-* gate needs these, promote all four into `source-scan.ts` in ONE
+ * commit and delete both copies". Plan 40-09's manage-dialog gate is that third consumer, so all four
+ * now live in `source-scan.ts` beside `stripComments` / `readStrippedSource` / `callArguments`, and
+ * the copies below are gone. **Zero brace matchers were added to the repo by either plan.**
+ *
+ * The only difference from the copies is a trailing optional `file` label on the three that throw,
+ * which is what the local `COMPONENT` constant used to supply. Every assertion's behaviour is
+ * unchanged: the promotion was verified by re-running this file, 13/13, before and after.
  */
 import { describe, it, expect } from "vitest"
 
 import {
   callArguments,
+  elementRegion,
+  enclosingConditional,
+  openingTagAt,
   readStrippedSource,
+  tagIndexes,
 } from "@/components/custom-fields/__tests__/source-scan"
 
 const COMPONENT = "src/components/views/save-view-dialog.tsx"
@@ -44,77 +49,10 @@ const COMPONENT = "src/components/views/save-view-dialog.tsx"
 /** Read fresh inside every test, so one missing class reports as a named failing assertion. */
 const read = () => readStrippedSource(COMPONENT)
 
-/**
- * The opening tag that starts at `at`, up to the `>` that closes it.
- *
- * String-aware AND brace-depth-aware: an arrow function in a prop (`onSubmit={(e) => …}`) contains
- * a `>` that is not the end of the tag, and a naive `indexOf(">")` would truncate the tag right
- * before the className it is being asked about.
- */
-function openingTagAt(source: string, at: number, label: string): string {
-  let i = at
-  let depth = 0
-  let quote: string | null = null
-
-  while (i < source.length) {
-    const ch = source[i]
-
-    if (quote) {
-      if (ch === "\\") {
-        i += 2
-        continue
-      }
-      if (ch === quote) quote = null
-      i += 1
-      continue
-    }
-
-    if (ch === '"' || ch === "'" || ch === "`") {
-      quote = ch
-      i += 1
-      continue
-    }
-
-    if (ch === "{") depth += 1
-    else if (ch === "}") depth -= 1
-    else if (ch === ">" && depth === 0) return source.slice(at, i + 1)
-
-    i += 1
-  }
-
-  throw new Error(`${COMPONENT}: unterminated opening tag for ${label}`)
-}
-
-/**
- * Every offset where `<${tagName}` begins as a WHOLE tag name.
- *
- * The boundary check is what stops `<Dialog` matching `<DialogContent` and `<RadioGroup` matching
- * `<RadioGroupItem` — an assertion scoped to the wrong element is not scoped at all.
- */
-function tagIndexes(source: string, tagName: string): number[] {
-  const found: number[] = []
-  const marker = `<${tagName}`
-  let from = 0
-
-  for (;;) {
-    const at = source.indexOf(marker, from)
-    if (at === -1) break
-
-    const after = source[at + marker.length]
-    if (after !== undefined && /[A-Za-z0-9_]/.test(after)) {
-      from = at + marker.length
-      continue
-    }
-
-    found.push(at)
-    from = at + marker.length
-  }
-
-  return found
-}
-
 function openingTags(source: string, tagName: string): string[] {
-  return tagIndexes(source, tagName).map((at) => openingTagAt(source, at, `<${tagName}`))
+  return tagIndexes(source, tagName).map((at) =>
+    openingTagAt(source, at, `<${tagName}`, COMPONENT)
+  )
 }
 
 /** The single `<${tagName}` opening tag, refusing zero and refusing two. */
@@ -132,93 +70,12 @@ function soleOpeningTag(source: string, tagName: string): string {
   return tags[0]
 }
 
-/**
- * The `<${tagName}> … </${tagName}>` region, by TAG DEPTH rather than by a line range.
- *
- * A line range silently drifts the moment anything above the element grows; depth counting does
- * not, and a nested copy of the same tag cannot close the region early.
- */
-function elementRegion(source: string, tagName: string): string {
-  const [at] = tagIndexes(source, tagName)
-  if (at === undefined) throw new Error(`${COMPONENT}: no <${tagName}> found`)
-
-  const open = `<${tagName}`
-  const close = `</${tagName}`
-  let depth = 1
-  let i = at + open.length
-
-  while (i < source.length && depth > 0) {
-    if (source.startsWith(close, i)) {
-      depth -= 1
-      i += close.length
-      continue
-    }
-    if (source.startsWith(open, i)) {
-      depth += 1
-      i += open.length
-      continue
-    }
-    i += 1
-  }
-
-  if (depth !== 0) throw new Error(`${COMPONENT}: unterminated <${tagName}> region`)
-
-  return source.slice(at, i)
-}
-
-/**
- * The `{<test> && ( … )}` JSX conditional that ENCLOSES `marker`, split into its test and its body,
- * extracted by paren depth.
- *
- * The final containment check is not decoration: without it, a marker that moved out of the
- * conditional would still find the nearest preceding `&& (` and the gate would happily assert
- * things about a branch the marker no longer lives in.
- */
-function enclosingConditional(source: string, marker: string): { test: string; body: string } {
-  const at = source.indexOf(marker)
-  if (at === -1) throw new Error(`${COMPONENT}: ${marker} not found in the source`)
-
-  const arrow = source.lastIndexOf("&& (", at)
-  if (arrow === -1) {
-    throw new Error(`${COMPONENT}: ${marker} is not inside a {… && ( … )} conditional`)
-  }
-
-  const brace = source.lastIndexOf("{", arrow)
-  if (brace === -1) {
-    throw new Error(`${COMPONENT}: no JSX expression container opens the conditional around ${marker}`)
-  }
-
-  let depth = 1
-  let i = arrow + "&& (".length
-  const bodyStart = i
-
-  while (i < source.length && depth > 0) {
-    const ch = source[i]
-    if (ch === "(") depth += 1
-    else if (ch === ")") depth -= 1
-    i += 1
-  }
-
-  if (depth !== 0) throw new Error(`${COMPONENT}: unterminated conditional around ${marker}`)
-
-  const body = source.slice(bodyStart, i - 1)
-
-  if (!body.includes(marker)) {
-    throw new Error(
-      `${COMPONENT}: the conditional found before ${marker} does not contain it — the extraction ` +
-        `latched onto an unrelated branch, so nothing below would be scoped to the right one.`
-    )
-  }
-
-  return { test: source.slice(brace + 1, arrow), body }
-}
-
 /** The opening tag that contains the byte at `at`. */
 function tagContaining(source: string, at: number): string {
   const open = source.lastIndexOf("<", at)
   if (open === -1) throw new Error(`${COMPONENT}: no opening tag encloses offset ${at}`)
 
-  return openingTagAt(source, open, `the tag enclosing offset ${at}`)
+  return openingTagAt(source, open, `the tag enclosing offset ${at}`, COMPONENT)
 }
 
 function offsetsOf(source: string, pattern: RegExp): number[] {
@@ -292,7 +149,7 @@ describe("save-view-dialog.tsx — the 40-08 wiring gate", () => {
   })
 
   it("4. S-12: Cancel precedes the submit in the DialogFooter DOM order", () => {
-    const footer = elementRegion(read(), "DialogFooter")
+    const footer = elementRegion(read(), "DialogFooter", COMPONENT)
     const cancelAt = footer.indexOf('variant="outline"')
     const submitAt = footer.indexOf('type="submit"')
 
@@ -397,7 +254,7 @@ describe("save-view-dialog.tsx — the 40-08 wiring gate", () => {
 
   it("10. S-3: the target RadioGroup is reachable and defaults to targetUpdate", () => {
     const source = read()
-    const { test, body } = enclosingConditional(source, "<RadioGroup")
+    const { test, body } = enclosingConditional(source, "<RadioGroup", COMPONENT)
 
     const reachability =
       `${COMPONENT}: the target RadioGroup must render only when a view is selected AND the ` +
@@ -450,7 +307,7 @@ describe("save-view-dialog.tsx — the 40-08 wiring gate", () => {
 
   it("11. S-4: the refusal and the RadioGroup are mutually exclusive", () => {
     const source = read()
-    const { body } = enclosingConditional(source, "<RadioGroup")
+    const { body } = enclosingConditional(source, "<RadioGroup", COMPONENT)
 
     /*
      * Both-or-neither is the failure mode this catches. A user who may not overwrite someone else's
@@ -469,7 +326,7 @@ describe("save-view-dialog.tsx — the 40-08 wiring gate", () => {
         `selected view sees a GAP where the target choice was (S-4).`
     ).toBeGreaterThan(0)
 
-    const refusal = enclosingConditional(source, "save.targetNewOnly")
+    const refusal = enclosingConditional(source, "save.targetNewOnly", COMPONENT)
     expect(
       refusal.test,
       `${COMPONENT}: the targetNewOnly refusal must be the negation of the same canUpdateSelected ` +
@@ -521,7 +378,7 @@ describe("save-view-dialog.tsx — the 40-08 wiring gate", () => {
     expect(source).toContain('useTranslations("views")')
     expect(source).toContain('useTranslations("common")')
     expect(
-      elementRegion(source, "DialogFooter"),
+      elementRegion(source, "DialogFooter", COMPONENT),
       `${COMPONENT}: the Cancel button must read common.cancel, not a new label (K-4, S-11).`
     ).toContain('("cancel")')
   })
