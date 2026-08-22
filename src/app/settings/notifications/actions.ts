@@ -11,6 +11,7 @@ const updatePreferencesSchema = z.object({
   emailDealAssigned: z.boolean(),
   emailActivityReminder: z.boolean(),
   emailWeeklyDigest: z.boolean(),
+  emailWorkflowFailed: z.boolean(),
 })
 
 export type NotificationPreferencesData = z.infer<typeof updatePreferencesSchema>
@@ -19,6 +20,10 @@ const defaultPreferences: NotificationPreferencesData = {
   emailDealAssigned: true,
   emailActivityReminder: true,
   emailWeeklyDigest: true,
+  // Opt-OUT, matching the column default and the failure-alert path, which treats an absent
+  // notification_preferences row as "send". A false here would render the toggle off for a
+  // user who is still receiving the mail.
+  emailWorkflowFailed: true,
 }
 
 /**
@@ -43,6 +48,7 @@ export async function getNotificationPreferences(): Promise<NotificationPreferen
     emailDealAssigned: prefs.emailDealAssigned,
     emailActivityReminder: prefs.emailActivityReminder,
     emailWeeklyDigest: prefs.emailWeeklyDigest,
+    emailWorkflowFailed: prefs.emailWorkflowFailed,
   }
 }
 
@@ -69,14 +75,19 @@ export async function updateNotificationPreferences(
       emailDealAssigned: parsed.data.emailDealAssigned,
       emailActivityReminder: parsed.data.emailActivityReminder,
       emailWeeklyDigest: parsed.data.emailWeeklyDigest,
+      emailWorkflowFailed: parsed.data.emailWorkflowFailed,
       updatedAt: new Date(),
     })
+    // This set block repeats every field from .values above. A field present in one and absent
+    // from the other TYPECHECKS and silently never persists on update — the first save appears to
+    // work and every save after it discards the change. Add a preference in BOTH places or neither.
     .onConflictDoUpdate({
       target: notificationPreferences.userId,
       set: {
         emailDealAssigned: parsed.data.emailDealAssigned,
         emailActivityReminder: parsed.data.emailActivityReminder,
         emailWeeklyDigest: parsed.data.emailWeeklyDigest,
+        emailWorkflowFailed: parsed.data.emailWorkflowFailed,
         updatedAt: new Date(),
       },
     })
