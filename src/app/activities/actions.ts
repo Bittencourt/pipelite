@@ -3,7 +3,7 @@
 import { auth } from "@/auth"
 import { db } from "@/db"
 import { activities, activityTypes, users } from "@/db/schema"
-import { eq, and, isNull, asc, or, ilike } from "drizzle-orm"
+import { eq, and, isNull, isNotNull, asc, or, ilike, gte, lte, lt } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { runWithActor } from "@/lib/audit/actor-context"
@@ -489,8 +489,43 @@ export async function toggleActivityCompletion(
  * - Validates user is authenticated
  * - Returns activities with relations (type, deal, owner)
  * - Filters out deleted activities
- * - Optional filters: typeId, dealId, ownerId, completed status
+ * - Optional filters: typeId, dealId, ownerId, assigneeId, status, date range, search
  * - Orders by dueDate ascending
+ *
+ * WHY `status`, `dateFrom` AND `dateTo` ARE HERE, GIVEN THAT PHASE 40 ADDS NO NEW FILTERS.
+ *
+ * This is not a new filter. All three are already in the URL contract (`page.tsx`'s
+ * `searchParams` type), already written by `activity-filters.tsx`, and already rendered as
+ * removable chips. They simply never reached the query. Leaving them broken makes the phase's
+ * first criterion false on this surface — a saved view would restore a chip that filters nothing —
+ * which is the same class of defect as the stale search input that 40-CONTEXT amendment A4 and
+ * UI-SPEC B-6 already ruled in scope. It also leaves a live export hole:
+ * `hasExportableFilter("activity", { status: "overdue" })` is `true`, so an ineffective filter
+ * would authorize an export of all 79,022 live activities, which is exactly what the E-2 guard
+ * exists to prevent. And after plan 40-07 the export DOES filter by date and status, so leaving
+ * the list alone would make the export narrower than the list it claims to match.
+ *
+ * WHAT WAS MEASURED BEFORE THIS CHANGE, on the live database (79,022 live activities):
+ *   - `?status=overdue`  — 4,151 rows match; the list rendered **0** and showed "no results".
+ *   - `?status=pending`  — 4,165 rows match; the list rendered **0**.
+ *   - `?dateFrom=2025-01-01&dateTo=2025-03-31` — 7,933 rows match; the list rendered **0**.
+ * All three for the same reason: Postgres applied `limit` to the UNNARROWED set ordered by
+ * `dueDate` ascending, and the narrowing then ran in JavaScript over the 50 rows that came back —
+ * the oldest activities, all of them completed. A post-fetch filter beneath a `limit` cannot
+ * return the rows it is filtering for.
+ *
+ * `completed?: boolean` IS KEPT IN THE SIGNATURE and mapped to the same predicate as
+ * `status: "completed"`. `page.tsx` was this action's only caller in `src/app` (the two
+ * `activitiesApi.getActivities(` hits in `src/lib/import/pipedrive-api-client.ts` are the
+ * Pipedrive SDK's unrelated method), and it now passes `status` — but the parameter stays so a
+ * future caller reading the signature is not told the boolean was removed when the behaviour it
+ * asked for is still available.
+ *
+ * EVERY PREDICATE MIRRORS `fetchActivities` IN `src/lib/export/formatters.ts`, line for line, so
+ * the list and the export cannot disagree about what a view means. That file's `status` block
+ * carries the note "Plan 40-13 closes the list side" — this is that closure. Do not change one
+ * side without the other; `src/lib/export/__tests__/view-filters.test.ts` gates the export half
+ * and `__tests__/get-activities-filters.test.ts` gates this half.
  */
 export async function getActivities(filters?: {
   typeId?: string
@@ -498,6 +533,9 @@ export async function getActivities(filters?: {
   ownerId?: string
   assigneeId?: string
   completed?: boolean
+  status?: string
+  dateFrom?: string
+  dateTo?: string
   search?: string
   limit?: number
 }): Promise<{ success: true; data: unknown[] } | { success: false; error: string }> {
@@ -524,8 +562,31 @@ export async function getActivities(filters?: {
     if (filters?.assigneeId) {
       conditions.push(eq(activities.assigneeId, filters.assigneeId))
     }
-    if (filters?.completed === true) {
-      conditions.push(isNull(activities.deletedAt)) // completedAt is not null - need different approach
+    // `completed: true` and `status: "completed"` are the SAME predicate, expressed once. The
+    // boolean form is the older spelling; both land on `completedAt IS NOT NULL` rather than on the
+    // no-op duplicate `isNull(activities.deletedAt)` this replaced, whose own comment admitted it
+    // needed "a different approach".
+    const status =
+      filters?.status ??
+      (filters?.completed === true ? "completed" : filters?.completed === false ? "pending" : undefined)
+
+    if (status) {
+      // Anything the toolbar cannot produce adds NO predicate. `pickFilterParams` has already
+      // dropped an unrecognised value on the view path, but a direct URL can carry anything and an
+      // unknown status must not silently mean "completed".
+      if (status === "completed") {
+        conditions.push(isNotNull(activities.completedAt))
+      } else if (status === "pending") {
+        conditions.push(isNull(activities.completedAt))
+      } else if (status === "overdue") {
+        conditions.push(and(isNull(activities.completedAt), lt(activities.dueDate, new Date()))!)
+      }
+    }
+    if (filters?.dateFrom) {
+      conditions.push(gte(activities.dueDate, new Date(filters.dateFrom)))
+    }
+    if (filters?.dateTo) {
+      conditions.push(lte(activities.dueDate, new Date(filters.dateTo)))
     }
     if (filters?.search) {
       conditions.push(
@@ -547,18 +608,15 @@ export async function getActivities(filters?: {
         },
       },
       orderBy: [asc(activities.dueDate)],
+      // THE LIMIT NOW BOUNDS AN ALREADY-NARROWED SET, which is also what makes the caller's
+      // `hasMore` true. Previously the limit was applied to every live activity and the narrowing
+      // ran below this call, so `?status=completed` returned fewer than 50 completed rows even
+      // though 74,857 exist, and the Load More button disagreed with the row count it sat under.
       limit: filters?.limit,
     })
 
-    // Filter by completion status if specified (Drizzle doesn't have isNotNull easily)
-    let filteredResults = result
-    if (filters?.completed !== undefined) {
-      filteredResults = result.filter(a =>
-        filters.completed ? a.completedAt !== null : a.completedAt === null
-      )
-    }
-
-    return { success: true, data: filteredResults }
+    // Nothing is filtered after the fetch. Every filter above is a `where` condition.
+    return { success: true, data: result }
   } catch (error) {
     console.error("Failed to get activities:", error)
     return { success: false, error: "Failed to get activities" }

@@ -10,6 +10,10 @@ import { Button } from "@/components/ui/button"
 import { Plus, Calendar, List } from "lucide-react"
 import { ActivitiesClient } from "./activities-client"
 import { readTrashRetentionDays } from "@/lib/trash/settings"
+import {
+  resolveDefaultViewRedirect,
+  resolveSavedViewsBarProps,
+} from "@/lib/views/resolve"
 import { getTranslations } from 'next-intl/server'
 
 const PAGE_SIZE = 50
@@ -67,6 +71,26 @@ export default async function ActivitiesPage({
     redirect("/login")
   }
 
+  /*
+    U-2 — THE DEFAULT VIEW REDIRECT, AND WHY THE GUARD IS "NO PARAMS AT ALL".
+
+    A user with a default activities view wants `/activities` to land on it. But "arrived with no
+    filters" and "deliberately cleared every filter" are the same URL unless something distinguishes
+    them, so a guard written as "no FILTER params" would recapture the user the instant they pressed
+    Clear — a loop they cannot leave by clearing. `Object.keys(params).length === 0` is the whole
+    distinction: every navigation in this surface that clears a filter routes through
+    `withViewEscape`, which emits `view=none`, and a URL carrying `view=none` HAS a param. So the
+    escape URL is never bare, this branch never fires on it, and there is exactly one code path for
+    "arrived by default".
+
+    `redirect()` signals by THROWING a Next.js control-flow error, so it stays outside any
+    try/catch — a catch here would swallow the navigation and render the unfiltered list instead.
+  */
+  if (Object.keys(params).length === 0) {
+    const target = await resolveDefaultViewRedirect("activity", session.user)
+    if (target) redirect(`/activities${target}`)
+  }
+
   const pageNum = Math.max(1, parseInt(params.page ?? "1"))
   const search = params.search ?? ""
 
@@ -75,7 +99,9 @@ export default async function ActivitiesPage({
     typeId?: string
     ownerId?: string
     assigneeId?: string
-    completed?: boolean
+    status?: string
+    dateFrom?: string
+    dateTo?: string
     search?: string
     limit?: number
   } = {}
@@ -89,8 +115,27 @@ export default async function ActivitiesPage({
   if (params.assignee) {
     filters.assigneeId = params.assignee
   }
-  if (params.status === "completed") {
-    filters.completed = true
+  /*
+    ALL THREE OF THESE REACH THE `where` CLAUSE NOW, and none of them is a new filter — every one
+    was already in the `searchParams` type above, already written by `activity-filters.tsx` and
+    already drawn as a removable chip. What they were not was applied.
+
+    `status` replaces the old `params.status === "completed"` branch, which mapped exactly one of
+    three values onto a boolean and left `pending` and `overdue` to a JavaScript pass further down
+    this file. `dateFrom`/`dateTo` had no server-side leg at all. The measured consequence, on
+    79,022 live activities: `?status=overdue` matched 4,151 rows and rendered 0, `?status=pending`
+    matched 4,165 and rendered 0, `?dateFrom=2025-01-01&dateTo=2025-03-31` matched 7,933 and
+    rendered 0 — because the narrowing ran over the 50 rows a `limit` had already chosen from the
+    unnarrowed set, ordered by `dueDate` ascending, all of them completed.
+  */
+  if (params.status) {
+    filters.status = params.status
+  }
+  if (params.dateFrom) {
+    filters.dateFrom = params.dateFrom
+  }
+  if (params.dateTo) {
+    filters.dateTo = params.dateTo
   }
   if (search) {
     filters.search = search
@@ -99,7 +144,7 @@ export default async function ActivitiesPage({
   // Fetch one extra row to detect hasMore
   filters.limit = PAGE_SIZE * pageNum + 1
 
-  // Fetch activities, types, deals, and users
+  // Fetch activities, types, deals, users and the saved-views bar props
   const [
     activitiesResult,
     typesResult,
@@ -107,6 +152,7 @@ export default async function ActivitiesPage({
     ownersResult,
     bulkOwnersResult,
     retentionDays,
+    viewsBar,
   ] = await Promise.all([
     getActivities(filters),
     getActivityTypes(),
@@ -139,6 +185,22 @@ export default async function ActivitiesPage({
       orderBy: [users.name],
     }),
     readTrashRetentionDays(),
+    /*
+      RIDES IN THE EXISTING Promise.all RATHER THAN AWAITING SEPARATELY. It depends on nothing above
+      it — only on `params`, which is already resolved — so a sequential await would add a latency
+      hop to every visit to this page for no ordering benefit. All eight props are computed inside
+      the resolver (Rule B-2); this page never assembles them.
+
+      `rawSearchParams: params` is handed over UNTRUSTED and stays that way. The resolver runs it
+      through `pickFilterParams`, which walks the four-key whitelist rather than the object, so a
+      crafted `?__proto__=`, a repeated key or a 1MB value is an ordinary non-member. This page does
+      not pre-clean it, because a second cleaner would be a second thing to keep correct.
+    */
+    resolveSavedViewsBarProps({
+      entityType: "activity",
+      viewer: session.user,
+      rawSearchParams: params,
+    }),
   ])
 
   // Handle errors
@@ -159,29 +221,21 @@ export default async function ActivitiesPage({
     completedAt: a.completedAt ? new Date(a.completedAt) : null,
   }))
 
-  // Detect hasMore and trim the extra row
+  /*
+    THE LAST THING DONE TO THE ROW SET, AND NOW THE ONLY THING.
+
+    `hasMore` is meaningful only because the narrowing happens in SQL: the extra 51st row the query
+    asked for is the 51st row THAT MATCHES, so its presence really does mean "there is another
+    page". Three post-fetch narrowing passes used to run BELOW this point — a date range and a
+    pending/overdue status, in JavaScript, over the already-trimmed page. They are gone, replaced by
+    real predicates in `getActivities`. Two things were wrong with them and only the first is
+    obvious: they could not see rows the `limit` had never fetched (4,151 overdue activities
+    rendering as 0), and they ran AFTER `hasMore` was computed, so the button and the visible row
+    count described different result sets.
+  */
   const hasMore = allActivities.length > PAGE_SIZE * pageNum
   if (hasMore) {
     allActivities = allActivities.slice(0, PAGE_SIZE * pageNum)
-  }
-
-  // Apply client-side date range filtering (server-side would need SQL date comparison)
-  if (params.dateFrom) {
-    const fromDate = new Date(params.dateFrom)
-    fromDate.setHours(0, 0, 0, 0)
-    allActivities = allActivities.filter((a: Activity) => new Date(a.dueDate) >= fromDate)
-  }
-  if (params.dateTo) {
-    const toDate = new Date(params.dateTo)
-    toDate.setHours(23, 59, 59, 999)
-    allActivities = allActivities.filter((a: Activity) => new Date(a.dueDate) <= toDate)
-  }
-
-  // Filter for pending/overdue status (not completed)
-  if (params.status === "pending") {
-    allActivities = allActivities.filter((a: Activity) => !a.completedAt && new Date(a.dueDate) >= new Date())
-  } else if (params.status === "overdue") {
-    allActivities = allActivities.filter((a: Activity) => !a.completedAt && new Date(a.dueDate) < new Date())
   }
 
   const activityTypes = typesResult.data as Array<{
@@ -237,6 +291,7 @@ export default async function ActivitiesPage({
         users={usersForAssignee}
         bulkOwners={bulkOwners}
         retentionDays={retentionDays}
+        viewsBar={viewsBar}
         activeFilters={activeFilters}
         hasMore={hasMore}
         search={search}
