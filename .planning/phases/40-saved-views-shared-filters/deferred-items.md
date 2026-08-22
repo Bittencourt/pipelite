@@ -104,6 +104,21 @@ one of them currently fires over an open dialog.
 
 ## D-40-2 — `/activities` still uses `key={search}` and loses focus mid-typing
 
+> **RESOLVED in `4402cce`, after this file was written.** `activity-filters.tsx` now uses the same
+> local-state resync as the two data-tables, and the defect is pinned by a permanent per-surface
+> test — `V-40-7b` in `e2e/saved-views-320.spec.ts`, which asserts `document.activeElement` is
+> still `INPUT` after the debounced navigation lands and that later characters reach the same node.
+>
+> The negative proof was RUN: reverting `activity-filters.tsx` to `key={search}` and rebuilding
+> turned **only** the `/activities` row red — `Expected: "INPUT", Received: "BODY"` — while
+> `/organizations` and `/people` stayed green. That per-surface isolation is deliberate: this
+> defect shipped on three surfaces and then survived a fix that reached two of them, so a suite
+> that could be satisfied by any one surface would have missed it again.
+>
+> Kept in this file rather than deleted, because the *shape* of the miss is the reusable lesson:
+> `activity-filters.tsx` has no row-selection block, which is what the sibling fix hung its resync
+> on, so a search-and-replace over the pattern skipped it.
+
 **Found by:** plan 40-15, running the inherited post-40-14 focus proof.
 **Severity:** user-visible; typing into the activities search box silently stops working.
 
