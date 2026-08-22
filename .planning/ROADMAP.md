@@ -494,7 +494,24 @@ Plans:
   3. When a run fails, the user is notified rather than discovering it by browsing run history
   4. Deployment docs state the webhook-response single-instance constraint and which engine components are already multi-instance safe
 
-**Plans**: TBD
+**Plans**: 15 plans in 4 waves
+
+Plans:
+- [ ] 41-01-PLAN.md — Four schema columns, the ExecutionContext._dryRun contract, the 0019 migration, and the container restart
+- [ ] 41-02-PLAN.md — Pure modules: parseRunsSearchParams (default-hidden filter) and isRunReplayable / buildReplayRunInput
+- [ ] 41-03-PLAN.md — All new message keys in three locales plus the total REQUIRED_WORKFLOWS_KEYS contract
+- [ ] 41-04-PLAN.md — WFOPS-04: the multi-instance safety matrix in vercel.md, docker.md and a bare-metal cross-reference
+- [ ] 41-05-PLAN.md — Engine: _dryRun derived from the run column, and a delay node is a no-op under dry run (A2)
+- [ ] 41-06-PLAN.md — Dry-run gates on crm_action (three mutations) and webhook_response
+- [ ] 41-07-PLAN.md — Dry-run gates on email, notification (A1) and http, with validateUrl preserved
+- [ ] 41-08-PLAN.md — failure-alert.ts: the atomic 60-minute throttle, the preference default, and the escaped failure template
+- [ ] 41-09-PLAN.md — emailWorkflowFailed through all five edit points plus the fourth notification row
+- [ ] 41-10-PLAN.md — Runs list: SQL dry-run filter, Show test runs checkbox, DryRunBadge, recent-runs filter, R-4
+- [ ] 41-11-PLAN.md — createWorkflowRun options bag plus replayWorkflowRun, startDryRun and getWorkflowRunStatus
+- [ ] 41-12-PLAN.md — Execution processor: the A3 guarded waiting claim and three failure-alert call sites
+- [ ] 41-13-PLAN.md — Replay UI: the confirm dialog, the lineage line, R-1/R-2, and the reshaped G-6 gate
+- [ ] 41-14-PLAN.md — Dry-run dialog: JSON editor, submit-time validation, bounded poll, and R-3
+- [ ] 41-15-PLAN.md — G-3 + G-4 sweep: every touched flex row wraps, and zero new palette utilities
 **UI hint**: yes
 
 ### Phase 42: Observability
