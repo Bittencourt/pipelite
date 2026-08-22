@@ -476,7 +476,7 @@ Plans:
 - [x] 40-12-PLAN.md — `/deals`: mount, redirect, escape, deleted-pipeline fallback
 - [x] 40-13-PLAN.md — `/activities`: mount, redirect, escape x3, search resync, real status/date predicates
 - [x] 40-14-PLAN.md — V-40-4 call-site gate over all 17 navigations, and the responsive-class gate
-- [ ] 40-15-PLAN.md — the Docker rebuild and the 320px reachability suite, with its negative probe RUN
+- [x] 40-15-PLAN.md — the Docker rebuild and the 320px reachability suite, with its negative probe RUN
 - [ ] 40-16-PLAN.md — private-visibility in both directions, and the degraded-read gate
 - [ ] 40-17-PLAN.md — dark-mode pass, backlog entries, and the human checkpoint
 
@@ -575,7 +575,7 @@ Plans:
 | 37. Trash & Restore | 15/15 | Complete   | 2026-08-17 |
 | 38. Bulk Operations | 19/20 | In Progress|  |
 | 39. Duplicate Detection & Merge | 21/21 | Complete   | 2026-08-21 |
-| 40. Saved Views & Shared Filters | 15/18 | In Progress|  |
+| 40. Saved Views & Shared Filters | 16/18 | In Progress|  |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
 | 42. Observability | 0/? | Not started | - |
 | 43. Type Safety & Deployment Docs | 0/? | Not started | - |
