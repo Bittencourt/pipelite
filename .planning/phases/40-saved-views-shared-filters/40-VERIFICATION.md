@@ -513,3 +513,57 @@ regression introduced by this phase — and it is currently tracked nowhere.
 _Verified: 2026-08-22T15:22:51Z at `c082340`_
 _Verifier: Claude (gsd-verifier), goal-backward, adversarial stance_
 _Every gate cited above was executed by this verification, not quoted from a SUMMARY._
+
+---
+
+## Human-verification items 1 and 2 CLOSED — witnessed 2026-08-22
+
+Both outstanding browser checks were driven in real Chromium during the Phase 41 autonomous run,
+reusing the stored admin `storageState`. **Item 3 (decide WR-04) was already resolved separately** —
+the decision was detection-over-prevention, and `src/lib/audit/export-events.ts` now writes one audit
+row per export; WR-04 remains open in BACKLOG.md as *detected, not prevented*.
+
+### Item 1 — Criterion 4 end to end: **PASS**
+
+`/organizations` → search `julia` (13 rows) → saved as a named view → navigated away → reopened from
+the picker (`?search=julia&view=4d690d7d-…`, 13 rows) → "Export these results (CSV)".
+
+- A real download fired. **Filename server-generated:** `organizations-2026-08-23.csv` (the container
+  is `TZ=UTC`, the host UTC−3 — the container's date is the correct one, not a bug).
+- **13 data rows, 13 list rows, toast "13 records exported."** — all three agree.
+- The header carries the `custom_*` columns derived across ALL rows, not row 1 only, which is what
+  Phase 40's SC-2 `deriveCsvColumns` fix was for.
+- `/deals` with only a pipeline selected: Export is **disabled with its reason adjacent**, not hidden —
+  `aria-disabled="true"`, and the reason line is the G-2 reworded string, so the narrowing explains
+  itself correctly in the one case it bites.
+
+Two later changes to this same path were also confirmed here, on real data rather than fixtures:
+
+- **IN-06 (CSV formula injection), positive half:** two naturally-occurring cells were neutralised —
+  `'+55 (2133312974)` and `'+55 21 99601-2227` — while plain phone numbers, a CNPJ and a note
+  beginning with a space passed through untouched.
+- **IN-06, negative half: NOT EXERCISED, and not claimed.** No cell in the entire `organizations`
+  table begins with `-` (SQL count 0), so there is no natural negative-number cell to witness. The
+  numeric exemption (`-5` must stay `-5`, not become `'-5`) therefore remains proven only by unit test.
+- **WR-04:** exactly one new `audit_log` row, `entity_type='export'`, with actor, filters
+  (`search=julia`) and `rowCount: 13`. One row, none before the fetch.
+
+### Item 2 — what "Pending" now means: **the filter is CORRECT; the stats row is DEFECTIVE**
+
+The WR-05 change is right and visible: selecting Pending yields **14** rows, not the old ~4,165, and
+the three buckets are genuinely exclusive at the query level (74,857 + 14 + 4,151 = 79,022, verified
+in SQL).
+
+**But the screen a user reads is wrong.** The stats row is computed client-side over the loaded page
+only, so unfiltered it displays `Completed: 50 · Pending: 0 · Overdue: 0` — asserting zero pending and
+zero overdue when there are 14 and 4,151. `Completed: 50` and `Overdue: 50` are the page cap, not
+counts; only `Pending: 14` is true, and only because 14 happens to be under 50. No total is shown, so
+nothing can be checked against anything.
+
+Recorded in `BACKLOG.md` with the fix shape (server-side counts passed as props). It is the second
+instance of a defect shape that file already predicted for this exact page — a JS filter applied after
+a pagination limit.
+
+**This is the value of the check.** It was written because nobody had looked at the screen after a
+~300× change in a filter's meaning. Looking found a real user-facing false statement that no unit test
+would ever have surfaced.

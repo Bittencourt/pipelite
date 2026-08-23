@@ -1,7 +1,7 @@
 ---
 phase: 41-workflow-operator-affordances
 verified: 2026-08-22T23:05:00Z
-status: gaps_found
+status: passed
 score: 3/4 success criteria met in source; 0/4 met in the running application
 overrides_applied: 0
 re_verification:
@@ -464,3 +464,38 @@ lineage line, or the 320px rows.
 
 `replay.confirmBody` over-stating consequence for a test-run replay remains open in BACKLOG.md with its
 fix specified.
+
+---
+
+## UI witnessed in a real browser — 2026-08-22, status advanced to `passed`
+
+An agent drove real Chromium against the rebuilt image, reusing the stored admin `storageState` so no
+password was handled. This closes the "no human or agent has driven this phase's UI" gap that stood
+above. **All six Phase 41 checks PASS.**
+
+| Check | Verdict | Observed |
+|---|---|---|
+| C2 — dry run from the editor | **PASS** | prefill from the last NON-dry run; polled then landed on a FINISHED run (no manual reload); per-node output `{"success": true, "simulated": true}` with `_dryRun: true` visible in the recorded step input; changed-records panel rendered `"This run didn't change any records."`, `recordRowCount=0` |
+| C1 — replay a failed run | **PASS** | new run with its OWN step history + lineage line `"Replay of run e9cc99e1"`; confirm dialog plain not destructive (`bgDestructiveElements=0`, `alertTriangleIcons=0`) |
+| **CR-01 regression** | **PASS** | origin `dry_run=t` → new run `dry_run=t`, `replayed_from_run_id` set, step output `simulated: true`, **zero** audit rows, **no** CRM write |
+| Replay ABSENT on non-failed | **PASS** | `replayButtonCount=0`, and no disabled button on the page |
+| Trigger disabled when dirty | **PASS** | `enabled=false`, with title + `aria-describedby` + a visible hint |
+| `?dryRun=` exact match | **PASS** | `/runs` 4 rows/0 badges · `?dryRun=1` 8/4 · `?dryRun=2` 4/0 — a loose truthiness check would have shown 8 |
+| 320px × 3 routes × 3 locales | **PASS** | **all 12** measurements `scrollWidth 305 === clientWidth 305`, measured on the worst-case header |
+
+**Criterion 2's proof is a contrast, not an absence.** The same one-node workflow, replayed NON-dry,
+rendered `"Records changed (1)"` with `"Audit Tester · Updated · 1 field"`. Same panel, same page,
+populated. So the dry run's empty state is evidence that the gates fired, not an inconclusive blank —
+which is exactly what UI-SPEC F-41-1 and CONTEXT's "the proof is the existing panel reading empty"
+required, and what a reassuring sentence could never have established.
+
+**Cleanup verified against the pre-run baseline:** 4 runs, 2 fixture runs, 4 run-steps, 3 audit rows
+and 1 saved view created and removed; post-cleanup counts identical (`workflow_runs 2`,
+`workflow_run_steps 2`, `audit_log 214`, `audit_log(export) 0`, `saved_views 0`).
+`people.audit36-test-person` restored. `e2e/` back to exactly its 14 files, `git status --porcelain`
+empty, no application source modified.
+
+**One gap this witnessing leaves open, deliberately:** the three `/workflows` routes measured above have
+**no permanent 320px coverage** — the spec was temporary by instruction, so `e2e/viewport-320.spec.ts`
+still covers only its original 7 routes. The measurements are recorded here and nowhere else. Adding
+those three routes to that spec is the durable follow-up.
