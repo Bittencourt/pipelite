@@ -34,6 +34,7 @@ import { alias } from "drizzle-orm/pg-core"
 
 import { db } from "@/db"
 import { deals, duplicatePairs, notes, organizations, people } from "@/db/schema"
+import { log } from "@/lib/log"
 
 import { PAIR_PAGE_SIZE } from "./constants"
 import type {
@@ -42,8 +43,6 @@ import type {
   DuplicatePairStatus,
   MergeableEntityType,
 } from "./types"
-
-const LOG_PREFIX = "[dedup-queries]"
 
 /**
  * How deep a caller may page.
@@ -221,7 +220,7 @@ export async function countPairs(): Promise<PairCounts | null> {
       person: { open: value(2), dismissed: value(3) },
     }
   } catch (error) {
-    console.error(`${LOG_PREFIX} countPairs failed:`, error)
+    log.error("dedup-queries", "countPairs failed", { err: error })
     return null
   }
 }
@@ -317,10 +316,12 @@ export async function listPairs(
       })),
     }
   } catch (error) {
-    console.error(
-      `${LOG_PREFIX} listPairs failed for ${entityType} page ${page} (dismissed=${dismissed}):`,
-      error
-    )
+    log.error("dedup-queries", "listPairs failed", {
+      entityType,
+      page,
+      dismissed,
+      err: error,
+    })
     return { ok: false }
   }
 }
@@ -431,7 +432,7 @@ export async function getPairDetail(pairId: string): Promise<PairDetail | null> 
       recordB: { id: pair.recordBId, row: recordB, childCounts: countsB },
     }
   } catch (error) {
-    console.error(`${LOG_PREFIX} getPairDetail failed for pair ${pairId}:`, error)
+    log.error("dedup-queries", "getPairDetail failed", { pairId, err: error })
     return null
   }
 }

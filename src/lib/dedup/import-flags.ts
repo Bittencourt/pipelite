@@ -54,8 +54,8 @@
  * ---
  * NOTHING HERE THROWS (S-5). A count that fails must not turn a successful import into a reported
  * failure — the rows are already in the database, and the same reasoning is written out at the
- * importers' own swallowed audit writes. A rejection logs `[dedup-import-flags]` with identifiers
- * and counts only (T-39-10) and returns 0, which renders as no notice at all.
+ * importers' own swallowed audit writes. A rejection logs under scope `dedup-import-flags` with
+ * identifiers and counts only (T-39-10) and returns 0, which renders as no notice at all.
  * ---
  * THE TIER DECISION IS NOT MADE HERE. `scoring.ts` decides, exactly as in `matching.ts`: the
  * queries narrow candidates and the pure classifiers post-filter, so the importer's notion of a
@@ -66,6 +66,7 @@ import { and, eq, inArray, isNull, type SQL } from "drizzle-orm"
 
 import { db } from "@/db"
 import { auditLog, organizations, people } from "@/db/schema"
+import { log } from "@/lib/log"
 
 import { readOrgIdentityFields } from "./identity-settings"
 import { isComparableOrgName } from "./normalize"
@@ -76,8 +77,6 @@ import {
   type OrganizationMatchSide,
 } from "./scoring"
 import type { MergeableEntityType } from "./types"
-
-const LOG_PREFIX = "[dedup-import-flags]"
 
 /** Ids per batch. One batch costs at most two queries, whatever it contains. */
 export const IMPORT_FLAG_BATCH_SIZE = 100
@@ -363,11 +362,13 @@ export async function countFlaggedImportedRecords(
     return flagged
   } catch (error) {
     // Identifiers and counts only — never a record's name, e-mail or custom-field value (T-39-10).
-    // `error` is the driver's own message and carries no row contents.
-    console.error(
-      `${LOG_PREFIX} flagged-import count failed for entityType=${entityType}; reporting 0:`,
-      error instanceof Error ? error.message : error
-    )
+    // `error` is the driver's own message and carries no row contents. The narrowing to `.message`
+    // is deliberate and survives the structured-logging migration: passing the whole `Error` would
+    // let `log.ts` serialise a stack trace this line never carried before.
+    log.error("dedup-import-flags", "flagged-import count failed; reporting 0", {
+      entityType,
+      err: error instanceof Error ? error.message : error,
+    })
     return 0
   }
 }

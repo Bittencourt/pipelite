@@ -299,7 +299,7 @@ describe("countPairs", () => {
     await expect(countPairs()).resolves.toBeNull()
 
     const logged = vi.mocked(console.error).mock.calls.map((call) => String(call[0])).join("\n")
-    expect(logged).toContain("[dedup-queries]")
+    expect(logged).toContain('"scope":"dedup-queries"')
   })
 })
 
@@ -468,7 +468,7 @@ describe("getPairDetail", () => {
     await expect(getPairDetail("pair-1")).resolves.toBeNull()
 
     const logged = vi.mocked(console.error).mock.calls.map((call) => String(call[0])).join("\n")
-    expect(logged).toContain("[dedup-queries]")
+    expect(logged).toContain('"scope":"dedup-queries"')
   })
 
   it("counts children on the SAME predicates mergeRecordsMutation reparents on", async () => {

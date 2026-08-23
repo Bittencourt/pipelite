@@ -106,6 +106,7 @@
 import { sql, type SQL } from "drizzle-orm"
 
 import { db } from "@/db"
+import { log } from "@/lib/log"
 
 import {
   MIN_PERSON_NAME_LENGTH,
@@ -117,8 +118,6 @@ import {
 import { readOrgIdentityFields, readSimilarityThreshold } from "./identity-settings"
 import { isScanCancelled, updateScanState } from "./scan-state"
 import type { MergeableEntityType } from "./types"
-
-const LOG = "[dedup-scan]"
 
 /**
  * Thrown INSIDE the transaction when the scan wrote more pairs than the entity has records, so
@@ -549,9 +548,12 @@ export async function runDuplicateScan(
       // above `total` would push UI-SPEC P-1's bar past its own track.
       const comparedRows = Math.min(firstNumber(stats, "grouped_rows"), rowCount)
 
-      console.log(
-        `${LOG} ${entityType} scan ${scanId}: ${rowCount} record(s), ${groupCount} distinct normalized name(s)`
-      )
+      log.info("dedup-scan", "scope resolved", {
+        entityType,
+        scanId,
+        rowCount,
+        groupCount,
+      })
       await updateScanState(scanId, { current: 0, total: rowCount })
 
       // ---- 3. The trigram floor, transaction-locally --------------------------------
@@ -566,8 +568,10 @@ export async function runDuplicateScan(
             organizationCertainStatement(entityType, scanId, identityFields)
           )
         } else {
-          console.log(
-            `${LOG} ${entityType} scan ${scanId}: no identity field configured, so no certain tier`
+          log.info(
+            "dedup-scan",
+            "no identity field configured, so no certain tier",
+            { entityType, scanId }
           )
         }
       } else {
@@ -582,7 +586,7 @@ export async function runDuplicateScan(
       // `isScanCancelled` reads through the module-level `db`, i.e. a connection that can see a
       // cancel another request committed while this transaction has been open.
       if (await isScanCancelled(scanId)) {
-        console.log(`${LOG} ${entityType} scan ${scanId} cancelled before the fuzzy tier`)
+        log.info("dedup-scan", "cancelled before the fuzzy tier", { entityType, scanId })
         assertPairCount(await executor.execute(pairCountStatement(entityType)), rowCount, scanId)
         return "cancelled" as const
       }
@@ -601,10 +605,10 @@ export async function runDuplicateScan(
     // The terminal status is written AFTER the transaction resolves. Writing it inside would
     // report `completed` over a connection that cannot know whether the commit succeeded.
     await updateScanState(scanId, { status: outcome })
-    console.log(`${LOG} ${entityType} scan ${scanId} ${outcome}`)
+    log.info("dedup-scan", "scan finished", { entityType, scanId, outcome })
   } catch (error) {
     // Identifiers and counts only (T-39-10).
-    console.error(`${LOG} ${entityType} scan ${scanId} failed:`, error)
+    log.error("dedup-scan", "scan failed", { entityType, scanId, err: error })
     await updateScanState(scanId, { status: "error" })
   }
 }
@@ -622,9 +626,11 @@ export async function runDuplicateScan(
 function assertPairCount(rows: unknown, rowCount: number, scanId: string): void {
   const pairCount = firstNumber(rows, "n")
   if (pairCount >= rowCount) {
-    console.error(
-      `${LOG} scan ${scanId}: ${pairCount} pair(s) against ${rowCount} record(s) — rolling back`
-    )
+    log.error("dedup-scan", "pair count exceeded the record count — rolling back", {
+      scanId,
+      pairCount,
+      rowCount,
+    })
     throw new Error(PAIR_COUNT_EXPLOSION)
   }
 }

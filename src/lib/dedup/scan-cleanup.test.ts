@@ -6,17 +6,24 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
  * Everything below runs against a mocked `@/db` inside vitest, so it can only show that
  * `cleanupStaleDedupScans` issues the right three statements and swallows a failure. Whether the
  * reaper is actually invoked at container boot is a completely separate question, because
- * `instrumentation.ts` registration is not evidence of execution: `Dockerfile:24` copies the built
- * `instrumentation.js` into `.next/standalone/` with a step ending in `2>/dev/null || true`, so a
- * build whose chunk layout changes fails silently and `register()` never runs. That exact breakage
- * killed all four background processors in production on 2026-08-08 **while every test passed** —
- * conflating "the unit test is green" with "the reaper runs" IS the 2026-08-08 failure mode.
+ * `instrumentation.ts` registration is not evidence of execution: `Dockerfile:35-38` copies the
+ * built `instrumentation.js` into `.next/standalone/`, and until phase 42 that step ended in a
+ * suppressed failure, so a build whose chunk layout changed failed silently and `register()` never
+ * ran. That exact breakage killed all four background processors in production on 2026-08-08
+ * **while every test passed** — conflating "the unit test is green" with "the reaper runs" IS the
+ * 2026-08-08 failure mode. Phase 42 turned that copy into an assertion that exits 1, which closes
+ * the silent-copy mechanism at build time and says nothing about whether this function was called.
  *
  * The gate for execution is behavioural and lives outside this file:
  *   docker compose up -d --build app
- *   rtk proxy docker compose logs app --tail 300 | grep -F '[dedup-scan-cleanup] Starting'
+ *   rtk proxy docker compose logs app --tail 300 | grep -F '"scope":"dedup-scan-cleanup"'
  * (plain `docker compose logs` is intercepted by the RTK hook, which digests the output and hides
  * startup lines — `rtk proxy` is required for raw output).
+ *
+ * The line is structured JSON since phase 42, so the gate greps the `scope` FIELD rather than the
+ * bracketed prefix it used to grep — that prefix no longer exists in the source. `log.ts` emits
+ * `level`, `scope`, `msg`, `ts` in that fixed order, so pinning the startup line specifically is
+ * the one contiguous `grep -F '"scope":"dedup-scan-cleanup","msg":"Starting"'`.
  */
 
 vi.mock("@/db", () => ({
@@ -165,7 +172,15 @@ describe("cleanupStaleDedupScans", () => {
     await cleanupStaleDedupScans()
 
     const lines = log.mock.calls.map((call) => String(call[0]))
-    expect(lines.some((line) => line.includes("[dedup-scan-cleanup] Starting"))).toBe(true)
+    // One string used to pin both facts (the scope and the message). Split, not weakened: the
+    // scope and the message must still appear on the SAME line, which is what rules out the
+    // result line — it carries the same scope with a different `msg`.
+    expect(
+      lines.some(
+        (line) =>
+          line.includes('"scope":"dedup-scan-cleanup"') && line.includes('"msg":"Starting"')
+      )
+    ).toBe(true)
     // And a result line after the work, also unconditional.
     expect(lines.length).toBeGreaterThanOrEqual(2)
     log.mockRestore()
@@ -181,7 +196,7 @@ describe("cleanupStaleDedupScans", () => {
 
     await expect(cleanupStaleDedupScans()).resolves.toBeUndefined()
 
-    expect(String(error.mock.calls[0]?.[0])).toContain("[dedup-scan-cleanup]")
+    expect(String(error.mock.calls[0]?.[0])).toContain('"scope":"dedup-scan-cleanup"')
     error.mockRestore()
   })
 
@@ -196,7 +211,14 @@ describe("cleanupStaleDedupScans", () => {
 
     // The behavioural gate greps for `Starting`. If that line moved inside the try/catch after the
     // first query, a DB hiccup at boot would make the gate report "the reaper never ran".
-    expect(log.mock.calls.map((call) => String(call[0])).some((line) => line.includes("[dedup-scan-cleanup] Starting"))).toBe(true)
+    expect(
+      log.mock.calls
+        .map((call) => String(call[0]))
+        .some(
+          (line) =>
+            line.includes('"scope":"dedup-scan-cleanup"') && line.includes('"msg":"Starting"')
+        )
+    ).toBe(true)
     vi.restoreAllMocks()
   })
 })

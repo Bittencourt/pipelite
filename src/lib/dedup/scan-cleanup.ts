@@ -22,14 +22,24 @@
  * copied here, and a grep for that condition in this file returns nothing (the plan's acceptance
  * criteria gate it). That shape makes a behavioural verification IMPOSSIBLE — a silent log is
  * indistinguishable from a function that never ran — and a behavioural verification is the only
- * kind `instrumentation.ts` accepts. Its own closing comment says why: `Dockerfile:24` copies the
- * built `instrumentation.js` into `.next/standalone/` with a step ending in `2>/dev/null || true`,
- * so a build whose chunk layout changes fails silently and `register()` never runs. That is exactly
- * what killed all four background processors in production on 2026-08-08 while every unit test
- * passed. So this reaper logs UNCONDITIONALLY and twice — a fixed-prefix startup line before the
+ * kind `instrumentation.ts` accepts. Its own closing comment says why: `Dockerfile:35-38` copies
+ * the built `instrumentation.js` into `.next/standalone/`, and until phase 42 that step ended in a
+ * suppressed failure, so a build whose chunk layout changed failed silently and `register()` never
+ * ran. That is exactly what killed all four background processors in production on 2026-08-08
+ * while every unit test passed. Phase 42 replaced the suppression with a postcondition that exits
+ * 1, which closes that mechanism at BUILD time — it does not show that `register()` executed the
+ * file, and this reaper is deliberately excluded from `/api/health`, so its runtime evidence is
+ * still this log line and nothing else.
+ *
+ * So this reaper logs UNCONDITIONALLY and twice — a fixed-scope startup line before the
  * work and a result line after it — and the gate is
- * `rtk proxy docker compose logs app | grep -F '[dedup-scan-cleanup] Starting'`, exactly as
- * `[trash-prune] Starting` is gated. Do not "tidy" this back into the analog's conditional form.
+ * `rtk proxy docker compose logs app | grep -F '"scope":"dedup-scan-cleanup"'`, exactly as the
+ * trash pruner's own startup line is gated on `"scope":"trash-prune"`. (Phase 42 turned both of
+ * those bracketed prefixes into a `scope` field, so the two strings this paragraph used to name no
+ * longer exist anywhere. `log.ts` emits `level`, `scope`, `msg`, `ts` in that fixed order, so the
+ * startup line alone is the one contiguous
+ * `grep -F '"scope":"dedup-scan-cleanup","msg":"Starting"'`.)
+ * Do not "tidy" this back into the analog's conditional form.
  *
  * The startup line is OUTSIDE the try/catch on purpose: if it sat after the first query, a DB
  * hiccup at boot would make the gate report that the reaper never ran.
@@ -39,12 +49,11 @@
 
 import { db } from "@/db"
 import { dedupScans } from "@/db/schema"
+import { log } from "@/lib/log"
 import { eq, and, lt } from "drizzle-orm"
 
-const LOG = "[dedup-scan-cleanup]"
-
 export async function cleanupStaleDedupScans(): Promise<void> {
-  console.log(`${LOG} Starting`)
+  log.info("dedup-scan-cleanup", "Starting")
 
   try {
     const now = new Date()
@@ -70,11 +79,12 @@ export async function cleanupStaleDedupScans(): Promise<void> {
       .where(lt(dedupScans.createdAt, thirtyDaysAgo))
       .returning({ id: dedupScans.id })
 
-    console.log(
-      `${LOG} Done: ${staleRunning.length} stranded scan(s) marked error, ` +
-        `${staleIdle.length} idle deleted, ${old.length} expired deleted`
-    )
+    log.info("dedup-scan-cleanup", "Done", {
+      strandedMarkedError: staleRunning.length,
+      idleDeleted: staleIdle.length,
+      expiredDeleted: old.length,
+    })
   } catch (error) {
-    console.error(`${LOG} Failed to clean up stale scans:`, error)
+    log.error("dedup-scan-cleanup", "Failed to clean up stale scans", { err: error })
   }
 }

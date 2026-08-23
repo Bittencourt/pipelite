@@ -443,7 +443,7 @@ describe("runDuplicateScan — the statement family and its order", () => {
     expect(statuses).not.toContain("completed")
 
     const logged = vi.mocked(console.error).mock.calls.map((call) => String(call[0])).join("\n")
-    expect(logged).toContain("[dedup-scan]")
+    expect(logged).toContain('"scope":"dedup-scan"')
   })
 
   it("scans people off the person normalization columns and filters junk e-mail", async () => {
