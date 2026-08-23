@@ -525,7 +525,40 @@ Plans:
   2. With the error-tracking env var unset nothing leaves the deployment; with it set, an unhandled server error appears in the tracker
   3. `/api/health` reports database connectivity plus the liveness of all four background processors, so a dead `register()` is visible from the endpoint alone
 
-**Plans**: TBD
+**Note on the numbers**: `42-CONTEXT.md` records a measured scope correction that supersedes the stale counts above — the migration is **273 call sites in 96 files** (not 108), and OBS-03 covers **six** long-running processors **plus four** `crmBus` event subscribers (not four processors). `/api/health` does not exist today; this phase creates it.
+
+**Plans**: 18 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 42-01-PLAN.md — `src/lib/log.ts`: structured JSON logger with explicit Error serialization and console delegation (OBS-01)
+- [ ] 42-02-PLAN.md — `heartbeat.ts`: globalThis worker registry with the hard-coded EXPECTED_WORKERS roster (OBS-03)
+- [ ] 42-03-PLAN.md — `LOG_LEVEL`/`SENTRY_DSN` env pass-through, `@sentry/nextjs` install, Dockerfile postcondition (OBS-01/02/03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 42-04-PLAN.md — `sentry.ts`: opt-in error tracking with three independent negative proofs (OBS-02)
+- [ ] 42-05-PLAN.md — `GET /api/health`: bounded DB probe + the empty-registry ⇒ 503 proof (OBS-03)
+- [ ] 42-06-PLAN.md — six processors: heartbeat wiring + 33 migrations (OBS-01, OBS-03)
+- [ ] 42-07-PLAN.md — four subscribers: heartbeat wiring + 3 migrations (OBS-01, OBS-03)
+- [ ] 42-08-PLAN.md — migration: mutations deals/people/notes, 26 sites (OBS-01)
+- [ ] 42-09-PLAN.md — migration: mutations organizations/activities/dedup, 24 sites (OBS-01)
+- [ ] 42-10-PLAN.md — migration: fifteen `api/v1` route files, 29 sites (OBS-01)
+- [ ] 42-11-PLAN.md — migration: non-v1 API routes + `lib/api` + the bare-reference catch, 21 sites (OBS-01)
+- [ ] 42-12-PLAN.md — migration: eight dedup modules + the A7 gate repair, 28 sites (OBS-01)
+- [ ] 42-13-PLAN.md — migration: trash/audit/execution/triggers/views + `redactDbError`, 34 sites (OBS-01)
+- [ ] 42-14-PLAN.md — migration: import and admin actions, 22 sites (OBS-01)
+- [ ] 42-15-PLAN.md — migration: duplicates/notes/entity actions, 24 sites (OBS-01)
+- [ ] 42-16-PLAN.md — migration: remaining `lib` modules + five components, 29 sites (OBS-01)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 42-17-PLAN.md — `instrumentation.ts`: `initSentry` first, `onRequestError` exported, A7 gate comment repaired (OBS-02, OBS-03)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 42-18-PLAN.md — flip `no-console` to error, then prove the phase in a freshly built container (OBS-01/02/03)
 
 ### Phase 43: Type Safety & Deployment Docs
 
