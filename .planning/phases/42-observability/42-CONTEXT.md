@@ -123,6 +123,88 @@ ran has missed the point of the phase.
   exactly the 2026-08-16 defect where every audit row was written with `actor_kind = system`; it is
   invisible to a processor-only health check. The two one-shot boot cleanups are NOT reported.
 
+### Amendments — post-research, 2026-08-23
+
+Research (`42-RESEARCH.md`, commit `24a5414`, HIGH confidence) proved two traps that would each have
+shipped a broken phase, and corrected a premise of the decisions above. These override the earlier text
+where they conflict.
+
+**A1 — `EXPECTED_WORKERS` is MANDATORY, and it is the phase's central proof.**
+*(adds a hard requirement to the health-endpoint decision)*
+If the route builds its response by iterating the heartbeat registry, then a completely dead
+`register()` serializes as `processors: {}` — and `Object.values({}).every(...)` is **`true`**. The
+endpoint would return **200 ok on precisely the failure it exists to detect.** Vacuous truth on an
+empty collection.
+
+So the response MUST be built from a hard-coded roster of all ten workers, with any worker absent from
+the registry reported `alive: false`. **The single test "empty registry ⇒ 503 with all ten workers
+`alive:false`" is this phase's most important assertion** — without it the endpoint is decoration that
+passes its own tests.
+
+**A2 — the module-graph hazard is FOUR instances, including two inside one `register()`.**
+*(strengthens the `globalThis` requirement; it is not merely advisable)*
+Module IDs extracted from `.next/` (BUILD_ID 2026-08-21) show `src/lib/events/bus.ts` existing as four
+independent instances physically duplicated across nine chunks: `587400` (instrumentation graph),
+`117126` (execution-processor's sub-chunk **of that same graph**), `930245` (route + server-action
+graph), `947362` (SSR/RSC graph). Turbopack's runtime module cache cannot dedupe them — it is keyed by
+module ID.
+
+Two consequences the earlier text did not anticipate: a module-level `const` is duplicated **even
+between two processors started by the same `register()` call**, and there are three graphs to bridge,
+not two. A route handler IS in the same graph as a server action (both `930245`); the RSC render graph
+is separate. The `globalThis` singleton pattern from `crmBus` and `actor-context.ts` is therefore
+mandatory, not stylistic.
+
+**A3 — the logger must delegate to `console` methods and must serialise `Error` explicitly.**
+*(constrains the logger decision)*
+Two traps that pass every test while destroying value:
+- **`JSON.stringify(new Error())` is `{}`.** A naive JSON logger silently annihilates the stack trace
+  on all 231 `console.error(msg, err)` migrations — the single most valuable field in the file. The
+  logger must serialise `Error` explicitly (message, stack, cause).
+- **40 test files hold 89 `vi.spyOn(console, …)` calls.** Delegating to the matching `console` method
+  rather than `process.stdout.write` reduces the blast radius to **exactly 3** argument-shape
+  assertions (named with file:line in RESEARCH). Writing to stdout directly would break 89.
+
+**A4 — the scope-harvest premise was WRONG: only 26% of sites carry a prefix.**
+*(corrects the logger decision's line-shape claim)*
+Measured: **73 of 278** call sites carry a `[scope]`-style prefix, not "most" as the decision above
+asserts. So roughly 200 sites need a **path-derived** scope (e.g. from the module path), and the plan
+must cover that rather than assuming a harvest.
+
+Also corrected: the real count is **273 call sites in 96 files**, tool-verified with
+`eslint --rule no-console:error`. The raw grep's 278 includes five non-code hits — four comments and
+**one JSX string at `src/app/workflows/[id]/edit/components/config-forms/transform-config.tsx:45`
+which is user-facing UI copy and must NOT be migrated.**
+
+**A5 — `LOG_LEVEL` and `SENTRY_DSN` must be added to `docker-compose.yml`, or BOTH features silently
+no-op.** `docker-compose.yml:6-17` enumerates its nine env vars explicitly with **no `env_file:`**, so
+a variable that is not listed simply never reaches the container. Everything would appear to work while
+neither feature functioned. This is a required task, not a note.
+
+**A6 — Sentry: `@sentry/nextjs` 10.70.0, WITHOUT `withSentryConfig`, reached only via guarded dynamic
+imports.** `instrumentation.ts` is compiled for the **edge runtime as well** (verified in
+`.next/server/edge/chunks/_52aa5b93._.js`, which contains `async function t(){}` — empty *only* because
+every dependency sits behind `await import()` inside the `NEXT_RUNTIME` guard). This rules out Sentry's
+own documented one-liner `export const onRequestError = Sentry.captureRequestError`, which needs a
+top-level import. The `@sentry/node`-vs-`nextjs` OTel-footprint argument is a wash (nextjs depends on
+node); what nextjs buys is `captureRequestError`, the maintained Next→Sentry adapter. Next is
+`16.1.6`; `onRequestError` is the real seam.
+
+**A7 — this phase BREAKS the two one-shot cleanups' only verification, and must repair it.** Their
+liveness is currently proven by three `grep -F '[scope] Starting'` sites (`instrumentation.ts:40`,
+`scan-cleanup.ts:31`, `scan-cleanup.test.ts:17`). Migrating those log lines changes the string. The
+cleanups stay OUT of `processors` per the decision above, but the three comments/assertions must be
+updated to the new grep string in the same phase.
+
+**A8 — NO `app` healthcheck in `docker-compose.yml` this phase.** Combined with
+`restart: unless-stopped`, a healthcheck on an endpoint that legitimately returns 503 when degraded
+could restart-loop the container — turning the observability feature into an outage. Recommended
+against by research and accepted.
+
+**Operational warning for the planner:** `slopcheck install` mutates the repo (it runs `npm install`
+and added both Sentry packages to `package.json`). Research reverted it and re-verified the baseline.
+Prefer `slopcheck scan`, or budget an explicit revert step.
+
 ### Claude's Discretion
 
 - The heartbeat registry's API shape and where it lives.
