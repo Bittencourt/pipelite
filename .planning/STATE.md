@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-22T15:43:01.907Z"
+last_updated: "2026-08-22T23:55:00.000Z"
 last_activity: 2026-08-22
 progress:
   total_phases: 14
-  completed_phases: 11
-  total_plans: 152
-  completed_plans: 151
-  percent: 79
+  completed_phases: 12
+  total_plans: 167
+  completed_plans: 166
+  percent: 86
 ---
 
 # Session State
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** none — Phase 40 closed 2026-08-22. Phases 41, 42 and 43 remain in v1.3 and all
-three are still `Plans: TBD`, so the next step is planning rather than executing.
+**Current focus:** Phase 41 executed 2026-08-22 (15/15 plans, 4 waves) — code review and goal
+verification pending. Phases 42 and 43 remain in v1.3, both still `Plans: TBD`.
 
 ## Position
 
-Phase: 40 - Saved Views & Shared Filters
-Plan: 18 of 18 complete
-Status: Phase 40 COMPLETE — verified `achieved_with_qualifications`; next phase not started
+Phase: 41 - Workflow Operator Affordances
+Plan: 15 of 15 complete
+Status: Phase 41 EXECUTED — all 15 plans merged; code review and goal verification pending
 Last activity: 2026-08-22
 
 Progress: [██████████] 100%

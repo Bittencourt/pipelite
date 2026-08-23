@@ -73,7 +73,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 38: Bulk Operations** - Multi-select with bulk delete, owner reassignment, and scoped export (completed 2026-08-17; the one remaining human check — dragging a Deals kanban card by its body with a real mouse — is instrument-blocked and carried into Phase 45)
 - [x] **Phase 39: Duplicate Detection & Merge** - Warn on likely duplicates and merge without orphaning children (completed 2026-08-20)
 - [x] **Phase 40: Saved Views & Shared Filters** - Persist, share, default, and export named filter sets (completed 2026-08-22)
-- [ ] **Phase 41: Workflow Operator Affordances** - Replay, dry-run, failure alerting, and the single-instance constraint documented
+- [x] **Phase 41: Workflow Operator Affordances** - Replay, dry-run, failure alerting, and the single-instance constraint documented (completed 2026-08-22; 15/15 plans, 4 waves)
 - [ ] **Phase 42: Observability** - Structured logging, opt-in error tracking, and a health endpoint that sees the processors
 - [ ] **Phase 43: Type Safety & Deployment Docs** - Clear the 14 type suppressions and document backup/restore
 - [x] **Phase 44: Custom Field UI Repair** - Restore the ability to add custom fields to Deals, and make the formula display agree with the stored value (completed 2026-08-15)
@@ -497,21 +497,21 @@ Plans:
 **Plans**: 15 plans in 4 waves
 
 Plans:
-- [ ] 41-01-PLAN.md — Four schema columns, the ExecutionContext._dryRun contract, the 0019 migration, and the container restart
-- [ ] 41-02-PLAN.md — Pure modules: parseRunsSearchParams (default-hidden filter) and isRunReplayable / buildReplayRunInput
-- [ ] 41-03-PLAN.md — All new message keys in three locales plus the total REQUIRED_WORKFLOWS_KEYS contract
-- [ ] 41-04-PLAN.md — WFOPS-04: the multi-instance safety matrix in vercel.md, docker.md and a bare-metal cross-reference
-- [ ] 41-05-PLAN.md — Engine: _dryRun derived from the run column, and a delay node is a no-op under dry run (A2)
-- [ ] 41-06-PLAN.md — Dry-run gates on crm_action (three mutations) and webhook_response
-- [ ] 41-07-PLAN.md — Dry-run gates on email, notification (A1) and http, with validateUrl preserved
-- [ ] 41-08-PLAN.md — failure-alert.ts: the atomic 60-minute throttle, the preference default, and the escaped failure template
-- [ ] 41-09-PLAN.md — emailWorkflowFailed through all five edit points plus the fourth notification row
-- [ ] 41-10-PLAN.md — Runs list: SQL dry-run filter, Show test runs checkbox, DryRunBadge, recent-runs filter, R-4
-- [ ] 41-11-PLAN.md — createWorkflowRun options bag plus replayWorkflowRun, startDryRun and getWorkflowRunStatus
-- [ ] 41-12-PLAN.md — Execution processor: the A3 guarded waiting claim and three failure-alert call sites
-- [ ] 41-13-PLAN.md — Replay UI: the confirm dialog, the lineage line, R-1/R-2, and the reshaped G-6 gate
-- [ ] 41-14-PLAN.md — Dry-run dialog: JSON editor, submit-time validation, bounded poll, and R-3
-- [ ] 41-15-PLAN.md — G-3 + G-4 sweep: every touched flex row wraps, and zero new palette utilities
+- [x] 41-01-PLAN.md — Four schema columns, the ExecutionContext._dryRun contract, the 0019 migration, and the container restart
+- [x] 41-02-PLAN.md — Pure modules: parseRunsSearchParams (default-hidden filter) and isRunReplayable / buildReplayRunInput
+- [x] 41-03-PLAN.md — All new message keys in three locales plus the total REQUIRED_WORKFLOWS_KEYS contract
+- [x] 41-04-PLAN.md — WFOPS-04: the multi-instance safety matrix in vercel.md, docker.md and a bare-metal cross-reference
+- [x] 41-05-PLAN.md — Engine: _dryRun derived from the run column, and a delay node is a no-op under dry run (A2)
+- [x] 41-06-PLAN.md — Dry-run gates on crm_action (three mutations) and webhook_response
+- [x] 41-07-PLAN.md — Dry-run gates on email, notification (A1) and http, with validateUrl preserved
+- [x] 41-08-PLAN.md — failure-alert.ts: the atomic 60-minute throttle, the preference default, and the escaped failure template
+- [x] 41-09-PLAN.md — emailWorkflowFailed through all five edit points plus the fourth notification row
+- [x] 41-10-PLAN.md — Runs list: SQL dry-run filter, Show test runs checkbox, DryRunBadge, recent-runs filter, R-4
+- [x] 41-11-PLAN.md — createWorkflowRun options bag plus replayWorkflowRun, startDryRun and getWorkflowRunStatus
+- [x] 41-12-PLAN.md — Execution processor: the A3 guarded waiting claim and three failure-alert call sites
+- [x] 41-13-PLAN.md — Replay UI: the confirm dialog, the lineage line, R-1/R-2, and the reshaped G-6 gate
+- [x] 41-14-PLAN.md — Dry-run dialog: JSON editor, submit-time validation, bounded poll, and R-3
+- [x] 41-15-PLAN.md — G-3 + G-4 sweep: every touched flex row wraps, and zero new palette utilities
 **UI hint**: yes
 
 ### Phase 42: Observability
