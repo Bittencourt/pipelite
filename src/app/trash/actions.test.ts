@@ -327,7 +327,7 @@ describe("restoreWithLinked", () => {
       count: 2,
       unrestoredParents: 1,
     })
-    expect(errorLines().some((line) => line.includes("[trash-actions]"))).toBe(true)
+    expect(errorLines().some((line) => line.includes('"scope":"trash-actions"'))).toBe(true)
   })
 
   it("behaves exactly like restoreRecord when nothing linked is in trash", async () => {

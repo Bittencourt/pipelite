@@ -57,6 +57,7 @@ import { buildMergeFieldGroups, type MergeField } from "@/lib/dedup/field-groups
 import { resolveMergeDefaults } from "@/lib/dedup/merge-defaults"
 import { getPairDetail, type PairChildCounts, type PairRecordDetail } from "@/lib/dedup/queries"
 import type { MergeableEntityType } from "@/lib/dedup/types"
+import { log } from "@/lib/log"
 
 import {
   MergeForm,
@@ -64,8 +65,6 @@ import {
   type MergeOrientation,
   type MergeRecordView,
 } from "./merge-form"
-
-const LOG_PREFIX = "[merge-page]"
 
 const REVIEW_LIST_HREF = "/duplicates"
 
@@ -229,7 +228,7 @@ async function readDefinitions(
   try {
     return await getActiveFieldDefinitions(entityType)
   } catch (error) {
-    console.error(`${LOG_PREFIX} could not read the ${entityType} field definitions:`, error)
+    log.error("merge-page", "could not read the field definitions", { entityType, err: error })
     return []
   }
 }
@@ -276,7 +275,10 @@ async function readReferences(
   } catch (error) {
     // Fails closed to an empty map: the two option cards then read "no longer available" instead
     // of taking the page down. Logged with identifiers only (T-37-09).
-    console.error(`${LOG_PREFIX} could not resolve ${ids.length} organization reference(s):`, error)
+    log.error("merge-page", "could not resolve organization references", {
+      referenceCount: ids.length,
+      err: error,
+    })
   }
 
   return references

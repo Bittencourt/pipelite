@@ -15,6 +15,7 @@ import type { RunStep } from "./components/run-step-list"
 import { RunChangedRecords } from "./components/run-changed-records"
 import { readRunChangedRecords } from "@/lib/audit/linked-records"
 import type { RunChangedRecord } from "@/lib/audit/linked-records"
+import { log } from "@/lib/log"
 
 export default async function RunDetailPage({
   params,
@@ -127,7 +128,7 @@ export default async function RunDetailPage({
     changedRecords = await readRunChangedRecords(runId)
   } catch (error) {
     // Logged in full server-side; the user is told only that the section is unavailable.
-    console.error("Run changed-records read failed:", error)
+    log.error("workflows/[id]/runs/[runId]", "Run changed-records read failed", { err: error })
     changedRecordsFailed = true
   }
 

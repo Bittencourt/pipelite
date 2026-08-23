@@ -48,8 +48,7 @@ import {
   SCAN_ALREADY_RUNNING,
 } from "@/lib/dedup/scan-state"
 import type { MergeableEntityType } from "@/lib/dedup/types"
-
-const LOG_PREFIX = "[duplicates-actions]"
+import { log } from "@/lib/log"
 
 // ---------------------------------------------------------------------------------------
 // The result vocabulary
@@ -249,7 +248,11 @@ export async function startDuplicateScan(
     }
 
     // Identifiers and the entity type only, never record contents (T-37-09).
-    console.error(`${LOG_PREFIX} could not create scan ${id} (${scannable}):`, error)
+    log.error("duplicates-actions", "could not create scan", {
+      scanId: id,
+      scannable,
+      err: error,
+    })
     return { success: false, code: "FAILED" }
   }
 
@@ -260,7 +263,11 @@ export async function startDuplicateScan(
   void Promise.resolve(
     runWithActor({ kind: "user", userId }, () => runDuplicateScan(id, scannable))
   ).catch((error: unknown) => {
-    console.error(`${LOG_PREFIX} scan ${id} (${scannable}) rejected:`, error)
+    log.error("duplicates-actions", "scan rejected", {
+      scanId: id,
+      scannable,
+      err: error,
+    })
   })
 
   // No `revalidatePath` here: the scan has produced nothing yet, and the client watches it through
@@ -429,7 +436,7 @@ export async function dismissPair(pairId: string): Promise<DismissPairResult> {
       return { success: false, code: "PAIR_GONE" }
     }
   } catch (error) {
-    console.error(`${LOG_PREFIX} could not dismiss pair ${id}:`, error)
+    log.error("duplicates-actions", "could not dismiss pair", { pairId: id, err: error })
     return { success: false, code: "FAILED" }
   }
 
@@ -483,7 +490,7 @@ export async function undismissPair(pairId: string): Promise<DismissPairResult> 
       return { success: false, code: "PAIR_GONE" }
     }
   } catch (error) {
-    console.error(`${LOG_PREFIX} could not undismiss pair ${id}:`, error)
+    log.error("duplicates-actions", "could not undismiss pair", { pairId: id, err: error })
     return { success: false, code: "FAILED" }
   }
 
@@ -541,9 +548,10 @@ export async function saveOrgIdentityFields(
   if (!result.success) {
     // The module's own message names bounds and nothing else, but it is prose, and prose does not
     // cross this boundary — the count is what the UI needs and the code is what it switches on.
-    console.error(
-      `${LOG_PREFIX} could not save ${identityFields.length} identity field(s): ${result.error}`
-    )
+    log.error("duplicates-actions", "could not save identity fields", {
+      fieldCount: identityFields.length,
+      reason: result.error,
+    })
     return { success: false, code: "FAILED" }
   }
 
