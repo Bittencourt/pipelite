@@ -5,6 +5,7 @@ import { auditLog } from "@/db/schema"
 import { getCurrentActor } from "@/lib/audit/actor-context"
 import { buildChanges } from "@/lib/audit/diff"
 import { recordTick, registerSubscriber } from "@/lib/observability/heartbeat"
+import { log } from "@/lib/log"
 
 /**
  * The twelve create/update/delete events across the four CRM entities.
@@ -103,7 +104,9 @@ export function registerAuditSubscriber(): void {
           workflowRunId: actor?.workflowRunId ?? null,
           importSessionId: actor?.importSessionId ?? null,
         })
-        .catch((err) => console.error("[audit]", err))
+        // The arrow is required. Handing `log.error` to `.catch` as a bare method reference would
+        // pass the `Error` into its `scope` parameter — that compiles, and it is wrong.
+        .catch((err) => log.error("audit", "insert failed", { err }))
     })
   }
 

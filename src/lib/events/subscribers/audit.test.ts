@@ -282,7 +282,20 @@ describe("registerAuditSubscriber", () => {
 
       await flush()
 
-      expect(errorSpy).toHaveBeenCalledWith("[audit]", boom)
+      // ONE argument now, not two: the structured logger emits a single JSON line. Asserting on
+      // the SERIALIZED message rather than on object identity is the point — `JSON.stringify(new
+      // Error())` is `"{}"` because `name`/`message`/`stack` are non-enumerable, so this assertion
+      // is also the proof that `log.ts`'s explicit `Error` branch survived the round trip. Without
+      // it the migration would silently annihilate the stack trace while every test stayed green.
+      expect(errorSpy).toHaveBeenCalledOnce()
+      const line = errorSpy.mock.calls[0][0] as string
+      expect(errorSpy.mock.calls[0]).toHaveLength(1)
+      expect(line).toContain('"scope":"audit"')
+      const parsed = JSON.parse(line) as { scope: string; err: { message: string; stack: string } }
+      expect(parsed.scope).toBe("audit")
+      expect(parsed.err.message).toBe(boom.message)
+      expect(parsed.err.stack).toBeTruthy()
+
       expect(unhandled).toHaveLength(0)
     } finally {
       process.off("unhandledRejection", onUnhandled)

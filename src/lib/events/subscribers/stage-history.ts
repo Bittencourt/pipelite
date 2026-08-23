@@ -3,6 +3,7 @@ import type { DealStageChangedPayload } from "@/lib/events/types"
 import { db } from "@/db"
 import { dealStageHistory } from "@/db/schema"
 import { recordTick, registerSubscriber } from "@/lib/observability/heartbeat"
+import { log } from "@/lib/log"
 
 // PER-INSTANCE AND UNREADABLE FROM ANYWHERE ELSE. Module-scoped, and this module is duplicated once
 // per Turbopack module graph, so `/api/health` would read its own always-`false` copy. It exists only
@@ -41,7 +42,9 @@ export function registerStageHistorySubscriber(): void {
         toStageId: payload.newStageId,
         changedBy: payload.userId ?? null,
       })
-      .catch((err) => console.error("[stage-history]", err))
+      // The arrow is required. Handing `log.error` to `.catch` as a bare method reference would pass
+      // the `Error` into its `scope` parameter — that compiles, and it is wrong.
+      .catch((err) => log.error("stage-history", "insert failed", { err }))
   })
 
   registered = true

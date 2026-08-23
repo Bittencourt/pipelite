@@ -2,6 +2,7 @@ import { crmBus } from "@/lib/events"
 import type { CrmEventName, CrmEventPayload } from "@/lib/events/types"
 import { matchAndFireTriggers } from "@/lib/triggers/matcher"
 import { recordTick, registerSubscriber } from "@/lib/observability/heartbeat"
+import { log } from "@/lib/log"
 
 const ALL_EVENTS: CrmEventName[] = [
   "deal.created", "deal.updated", "deal.deleted", "deal.stage_changed",
@@ -33,8 +34,11 @@ export function registerWorkflowTriggerSubscriber(): void {
       // from it. `recordTick` never throws, so it cannot break matching below.
       recordTick("workflow-trigger-subscriber")
 
+      // Stays swallowing: a trigger that failed to match must not take down the CRM write that
+      // emitted the event. The arrow is required — handing `log.error` to `.catch` as a bare method
+      // reference would pass the `Error` into its `scope` parameter, which compiles and is wrong.
       matchAndFireTriggers(event, payload).catch((err) =>
-        console.error("[workflow-trigger]", err)
+        log.error("workflow-trigger", "handler failed", { err })
       )
     })
   }
