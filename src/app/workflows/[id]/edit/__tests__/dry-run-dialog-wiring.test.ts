@@ -478,8 +478,22 @@ describe("F-41-1 — nothing here asserts the run mutated nothing", () => {
       "underline",
     ])
 
-    const suspect = [...dialog.matchAll(/"([^"\n]*\s[^"\n]*)"/g)]
+    /*
+     * ONE LITERAL AT A TIME, ALTERNATING. A bare /"([^"]*\s[^"]*)"/ matches the GAP between two
+     * adjacent literals — given `["completed", "failed"]` it happily reports `, ` as a string — and
+     * on this file it reported 35 offenders of which every single one was a gap, an import
+     * punctuation run, or the `"use client"` directive. Consuming single-quoted and template
+     * literals in the same alternation is what stops their contents being re-read as gaps.
+     */
+    const STRING_LITERAL = /"((?:[^"\\\n]|\\.)*)"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g
+
+    const suspect = [...dialog.matchAll(STRING_LITERAL)]
       .map((m) => m[1])
+      .filter((literal): literal is string => literal !== undefined)
+      // A module directive, not copy.
+      .filter((literal) => literal !== "use client")
+      // Single-word literals are prop values and catalog keys; the heuristic only reads sentences.
+      .filter((literal) => /\s/.test(literal))
       .filter((literal) =>
         literal
           .split(/\s+/)
