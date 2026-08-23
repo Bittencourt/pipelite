@@ -21,8 +21,22 @@ RUN npm run build
 
 # Copy instrumentation files into standalone output
 # (Next.js standalone tracing omits instrumentation.js and its chunks)
-RUN cp .next/server/instrumentation.js .next/standalone/.next/server/instrumentation.js 2>/dev/null || true && \
-    cp .next/server/instrumentation.js.map .next/standalone/.next/server/instrumentation.js.map 2>/dev/null || true && \
+#
+# Copy if missing, then ASSERT THE POSTCONDITION. The old form's `|| true` made a
+# failed copy indistinguishable from a successful one: shell precedence let the
+# whole RUN succeed unconditionally, which is the exact mechanism that killed all
+# four processors in production on 2026-08-08 while every test passed. Asserting
+# the file's presence rather than the copy's exit status also stays correct if a
+# future Next version fixes standalone tracing and emits the file itself.
+# The brace group (not a subshell) is load-bearing: `exit 1` must terminate this
+# RUN's shell immediately, because more commands follow it.
+# This is a build-time guard; it complements rather than replaces the runtime
+# detection /api/health provides.
+RUN test -f .next/standalone/.next/server/instrumentation.js \
+      || cp .next/server/instrumentation.js .next/standalone/.next/server/instrumentation.js; \
+    test -f .next/standalone/.next/server/instrumentation.js \
+      || { echo "FATAL: instrumentation.js missing from standalone output" >&2; exit 1; }; \
+    cp .next/server/instrumentation.js.map .next/standalone/.next/server/instrumentation.js.map 2>/dev/null || true; \
     if [ -f .next/server/instrumentation.js.nft.json ]; then \
       node -e " \
         const nft = require('./.next/server/instrumentation.js.nft.json'); \
