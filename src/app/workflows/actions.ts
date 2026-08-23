@@ -6,7 +6,7 @@ import { db } from "@/db"
 import { eq, and } from "drizzle-orm"
 import { workflows, workflowRuns } from "@/db/schema/workflows"
 import { computeNextRun, getScheduleTrigger } from "@/lib/triggers/schedule-utils"
-import type { TriggerConfig } from "@/lib/triggers/types"
+import type { TriggerConfig, TriggerEnvelope } from "@/lib/triggers/types"
 import {
   createWorkflow as createWorkflowMutation,
   updateWorkflow as updateWorkflowMutation,
@@ -280,6 +280,10 @@ export type WorkflowRunStatusResult =
   | { success: true; status: WorkflowStatus | null; dryRun: boolean | null }
   | { success: false; error: string }
 
+export type StartDryRunResult =
+  | { success: true; runId: string }
+  | { success: false; error: string }
+
 /**
  * Re-run a FAILED run from the beginning, carrying its original trigger data verbatim.
  *
@@ -382,4 +386,94 @@ export async function getWorkflowRunStatus(
   }
 
   return { success: true, status: rows[0].status, dryRun: rows[0].dryRun }
+}
+
+/**
+ * WFOPS-02 — start a TEST RUN of the saved workflow against caller-supplied trigger data.
+ *
+ * `triggerDataJson` IS ATTACKER-CONTROLLED INPUT (T-41-62). It arrives as a raw string, is parsed
+ * here, becomes the run's `trigger_data`, and is then interpolated by handler templates and injected
+ * into the QuickJS transform sandbox. The dialog validates it too, and that is NOT duplication: the
+ * client's parse is feedback for a person mistyping a comma, while a server action is reachable by
+ * anything that can make an HTTP request. Only this parse is a boundary.
+ *
+ * THE DRY-RUN FLAG IS DECIDED HERE, AS A LITERAL, AND IS NOT A PARAMETER OF THIS ACTION (T-41-63).
+ * Dry-run-ness is not an access-control claim a client may assert — a client-settable flag would let
+ * a caller mark a REAL run as a test (hiding it from the runs list and suppressing its failure
+ * alert) or a test as real. The engine additionally re-derives the flag from the column on every
+ * entry, so there are two independent controls and neither is a client assertion.
+ *
+ * RESIDUAL, RECORDED RATHER THAN CLOSED (T-41-66): an authenticated user can enqueue unlimited dry
+ * runs. Serial enforcement caps concurrency at one run per workflow, and no rate limit exists
+ * anywhere in this application, so a per-action limit here would be the only one and would not be
+ * the right place for it. Out of scope for this phase.
+ */
+export async function startDryRun(
+  workflowId: string,
+  triggerDataJson: string
+): Promise<StartDryRunResult> {
+  // Session-only, per D-A4 above, and before any database read.
+  const session = await auth()
+
+  if (!session?.user?.id) {
+    return { success: false, error: "Not authenticated" }
+  }
+
+  const found = await db
+    .select({ nodes: workflows.nodes })
+    .from(workflows)
+    .where(eq(workflows.id, workflowId))
+    .limit(1)
+
+  if (found.length === 0) {
+    return { success: false, error: "Workflow not found" }
+  }
+
+  // engine.ts:143-149 marks a run with zero nodes `completed` immediately, so an empty workflow
+  // produces a green dry run that looks like a pass and proves nothing.
+  const nodes = found[0].nodes ?? []
+
+  if (nodes.length === 0) {
+    return { success: false, error: "Workflow has no steps to test" }
+  }
+
+  // PITFALL 8, AND THE CHECK THAT DELIBERATELY IS NOT HERE: there is no `active` test.
+  // `triggerManualRun` rejects an inactive workflow (manual-trigger.ts:38-44) and every other
+  // trigger path does the equivalent, correctly. Copying it here would make an unactivated draft
+  // impossible to test — and the phase goal is literally "a failed or UNPROVEN workflow", so the
+  // never-activated draft is the primary population this feature exists for. Do not add it.
+
+  let parsed: unknown
+
+  try {
+    parsed = JSON.parse(triggerDataJson)
+  } catch {
+    // The dialog maps this code to `workflows.dryRun.invalidJson`.
+    return { success: false, error: "invalidJson" }
+  }
+
+  // A plain object, and nothing that merely passes `typeof x === "object"` — that test admits BOTH
+  // `null` and every array, and the parsed value reaches the transform sandbox. `null`, `[1,2]`,
+  // `"text"`, `42` and `true` are all legal JSON and all refused here.
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    // The dialog maps this code to `workflows.dryRun.notAnObject`.
+    return { success: false, error: "notAnObject" }
+  }
+
+  // manual-trigger.ts:46-54's shape. `trigger_type` stays inside `TriggerEnvelope`'s four-member
+  // union — widening it would change a type every trigger path shares — so the run is identified as
+  // a test by its `trigger_id` and, authoritatively, by the `dry_run` column.
+  const envelope: TriggerEnvelope = {
+    trigger_type: "manual",
+    trigger_id: "dry_run",
+    timestamp: new Date().toISOString(),
+    data: parsed as Record<string, unknown>,
+  }
+
+  // `0` is explicit rather than left to AsyncLocalStorage: a test run is a human pressing a button
+  // and gets a manual trigger's full recursion budget. `dryRun: true` is the literal discussed above.
+  const run = await createWorkflowRun(workflowId, envelope, 0, { dryRun: true })
+
+  revalidatePath(`/workflows/${workflowId}/runs`)
+  return { success: true, runId: run.id }
 }
