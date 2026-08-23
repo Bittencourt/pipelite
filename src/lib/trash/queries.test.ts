@@ -300,7 +300,7 @@ describe("resolveDeletedBy", () => {
 
     // `/trash` has no `error.tsx` above it: a throw here takes the whole page down (T-37-20).
     expect(result.size).toBe(0)
-    expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
+    expect(errorLines().some((line) => line.includes('"scope":"trash-queries"'))).toBe(true)
   })
 })
 
@@ -337,7 +337,7 @@ describe("findTrashedRecord", () => {
     queueSelects(new Error("connection reset"))
 
     expect(await findTrashedRecord("deal", "d1")).toBeNull()
-    expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
+    expect(errorLines().some((line) => line.includes('"scope":"trash-queries"'))).toBe(true)
   })
 
   it("reads the display name from the title column for an activity", async () => {
@@ -503,7 +503,7 @@ describe("findTrashedParents", () => {
     queueSelects(new Error("connection reset"))
 
     expect(await findTrashedParents("deal", "d1")).toEqual([])
-    expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
+    expect(errorLines().some((line) => line.includes('"scope":"trash-queries"'))).toBe(true)
   })
 })
 
@@ -556,7 +556,7 @@ describe("countTrashed", () => {
 
     // Zeros would be a WRONG number rendered confidently; null lets the tabs omit the count.
     expect(await countTrashed(MEMBER)).toBeNull()
-    expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
+    expect(errorLines().some((line) => line.includes('"scope":"trash-queries"'))).toBe(true)
   })
 })
 
@@ -611,7 +611,7 @@ describe("countPurgeImpact", () => {
 
     // `0` would render as "nothing else will change" on an irreversible confirmation.
     expect(await countPurgeImpact("deal", "d1")).toBeNull()
-    expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
+    expect(errorLines().some((line) => line.includes('"scope":"trash-queries"'))).toBe(true)
   })
 })
 
@@ -883,7 +883,7 @@ describe("listTrashed", () => {
 
     // An empty success would render "Trash is empty" over a broken query, which is a lie.
     expect(result.ok).toBe(false)
-    expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
+    expect(errorLines().some((line) => line.includes('"scope":"trash-queries"'))).toBe(true)
   })
 
   /*
@@ -953,6 +953,6 @@ describe("listTrashedWindow", () => {
     const result = await listTrashedWindow("deals", 50, 0, MEMBER)
 
     expect(result.ok).toBe(false)
-    expect(errorLines().some((line) => line.includes("[trash-queries]"))).toBe(true)
+    expect(errorLines().some((line) => line.includes('"scope":"trash-queries"'))).toBe(true)
   })
 })

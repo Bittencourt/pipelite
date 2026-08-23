@@ -15,6 +15,7 @@ import { count, eq, min } from "drizzle-orm"
 import { db } from "@/db"
 import { appSettings } from "@/db/schema/app-settings"
 import { auditLog } from "@/db/schema/audit-log"
+import { log } from "@/lib/log"
 
 /** The single settings key this phase owns. Seeded by migration 0014 (36-03). */
 export const AUDIT_RETENTION_KEY = "audit.retention_days"
@@ -72,15 +73,19 @@ export async function readRetentionDays(): Promise<number | null> {
     const parsed = retentionSchema.safeParse(row.value)
 
     if (!parsed.success) {
-      console.warn(
-        `[audit-settings] ${AUDIT_RETENTION_KEY} is not an integer in [${RETENTION_MIN}, ${RETENTION_MAX}] — retention is disabled until it is corrected`
+      // The KEY and the bounds only, never the stored value: `parsed.error` quotes what it
+      // received, so putting it in this `ctx` would echo a tampered setting into the log.
+      log.warn(
+        "audit-settings",
+        "Retention setting is not an integer in range — retention is disabled until it is corrected",
+        { key: AUDIT_RETENTION_KEY, min: RETENTION_MIN, max: RETENTION_MAX }
       )
       return null
     }
 
     return parsed.data
   } catch (error) {
-    console.error("[audit-settings] Failed to read the retention setting:", error)
+    log.error("audit-settings", "Failed to read the retention setting", { err: error })
     return null
   }
 }
@@ -120,7 +125,7 @@ export async function writeRetentionDays(days: number): Promise<WriteRetentionRe
 
     return { success: true }
   } catch (error) {
-    console.error("[audit-settings] Failed to write the retention setting:", error)
+    log.error("audit-settings", "Failed to write the retention setting", { err: error })
     return { success: false, error: "Failed to save the retention setting." }
   }
 }
@@ -161,7 +166,7 @@ export async function readAuditStats(): Promise<AuditStats> {
       oldestEntryAt: row.oldestEntryAt ?? null,
     }
   } catch (error) {
-    console.error("[audit-settings] Failed to read audit log stats:", error)
+    log.error("audit-settings", "Failed to read audit log stats", { err: error })
     return { entryCount: 0, oldestEntryAt: null }
   }
 }
