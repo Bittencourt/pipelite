@@ -31,7 +31,30 @@ import { safeSend } from "@/lib/email/send"
 export const FAILURE_ALERT_WINDOW_MINUTES = 60
 
 /**
- * Claim this workflow's failure-alert window. Returns true if THIS caller may send, false if
+ * `to_char` mask for an EXACT `timestamp` round trip, to the microsecond.
+ *
+ * The claim and the release compare the same column value across a process boundary, and a
+ * JavaScript `Date` cannot carry it: postgres-js parses `timestamp` into a `Date`, which truncates
+ * postgres's microseconds to milliseconds, so a `WHERE failure_alert_sent_at = $claimedAt` guard
+ * built from a `Date` would match NOTHING and the release below would silently never fire. The value
+ * therefore crosses as TEXT in both directions and is cast back with `::timestamp`. Verified against
+ * the live database on a temp table: the claim returns `…:12.590347`, and the guarded release using
+ * that exact string restores the previous value while a mismatched guard matches zero rows.
+ */
+const CLAIM_TIMESTAMP_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS.US'
+
+/** What one claim attempt learned. `previous`/`claimedAt` are exact `timestamp` literals. */
+export interface FailureAlertClaim {
+  /** True when THIS caller owns the window and may send. */
+  claimed: boolean
+  /** The value the column held BEFORE this claim — what the release restores. */
+  previous: string | null
+  /** The value this claim WROTE, which is what makes the release safe to guard on. */
+  claimedAt: string | null
+}
+
+/**
+ * Claim this workflow's failure-alert window. `claimed` is true if THIS caller may send, false if
  * an alert for this workflow was already sent inside the window.
  *
  * **The guard is IN the UPDATE, not in a preceding SELECT, and that is the whole point.** Two
@@ -51,22 +74,78 @@ export const FAILURE_ALERT_WINDOW_MINUTES = 60
  *
  * The window is passed through `make_interval(mins => $n)` as a bound parameter rather than
  * concatenated into an `INTERVAL '60 minutes'` literal, matching `reclaimStaleRuns`.
+ *
+ * WHY IT RETURNS THE PREVIOUS VALUE (WR-06). The claim is committed before the mail reaches the
+ * transport — it has to be, or two ticks both send — so a relay that refuses one connection used to
+ * cost the operator a full hour of silence on a workflow failing every 5 seconds, which is exactly
+ * the "fails silently forever" outcome WFOPS-03 exists to prevent. `releaseFailureAlert` gives the
+ * window back when the send never happened, and it needs both the value to restore and the value
+ * this claim wrote (to guard against clobbering a newer claim). `FROM workflows AS prev` is a
+ * self-join against the pre-update snapshot, which is how the OLD value comes back from an UPDATE
+ * without a preceding SELECT — the property this whole function exists to preserve. STILL ONE
+ * STATEMENT, still no read-then-write.
  */
-export async function claimFailureAlert(workflowId: string): Promise<boolean> {
+export async function claimFailureAlert(workflowId: string): Promise<FailureAlertClaim> {
   const claimed = await db.execute(sql`
-    UPDATE workflows
+    UPDATE workflows AS w
     SET failure_alert_sent_at = NOW()
-    WHERE id = ${workflowId}
+    FROM workflows AS prev
+    WHERE w.id = ${workflowId}
+      AND prev.id = w.id
       AND (
-        failure_alert_sent_at IS NULL
-        OR failure_alert_sent_at < NOW() - make_interval(mins => ${FAILURE_ALERT_WINDOW_MINUTES})
+        w.failure_alert_sent_at IS NULL
+        OR w.failure_alert_sent_at < NOW() - make_interval(mins => ${FAILURE_ALERT_WINDOW_MINUTES})
       )
-    RETURNING id
+    RETURNING
+      to_char(w.failure_alert_sent_at, ${CLAIM_TIMESTAMP_FORMAT}) AS claimed_at,
+      to_char(prev.failure_alert_sent_at, ${CLAIM_TIMESTAMP_FORMAT}) AS previous
   `)
 
   // postgres-js does not always hand back a plain array; same defensive read as
   // reclaimStaleRuns (`execution-processor.ts:97`).
-  return ((claimed as unknown as unknown[])?.length ?? 0) > 0
+  const rows = claimed as unknown as Record<string, unknown>[] | null | undefined
+  const row = (rows?.length ?? 0) > 0 ? rows![0] : undefined
+
+  if (!row) return { claimed: false, previous: null, claimedAt: null }
+
+  return {
+    claimed: true,
+    previous: typeof row.previous === "string" ? row.previous : null,
+    claimedAt: typeof row.claimed_at === "string" ? row.claimed_at : null,
+  }
+}
+
+/**
+ * GIVE BACK A WINDOW THAT WAS CLAIMED AND THEN NOT USED (WR-06).
+ *
+ * Called only when the send did not happen — a `safeSend` rethrow or a template that threw. Without
+ * it, `failure_alert_sent_at` says an alert was sent when the operator received nothing, and a
+ * workflow failing every 5 seconds produces NO alert at all for the next hour with no signal that
+ * anything went wrong. A lost mail now costs one window rather than sixty minutes.
+ *
+ * THE GUARD IS WHAT MAKES THIS SAFE, and it is not decorative: `failure_alert_sent_at = $claimedAt`
+ * matches only while the value is still the one THIS caller wrote. A newer claim (possible only once
+ * the window has elapsed, e.g. if a hung send rejects an hour late) has a different timestamp, so it
+ * is left alone rather than silently released. Restoring `previous` rather than `NULL` keeps the
+ * last time an alert genuinely went out; both are equally claimable, since a successful claim
+ * already proved `previous` was NULL or older than the window.
+ *
+ * It is a single UPDATE with no preceding SELECT, for the same reason the claim is.
+ */
+export async function releaseFailureAlert(
+  workflowId: string,
+  claim: FailureAlertClaim
+): Promise<void> {
+  // Nothing was claimed, or the claim could not tell us what it wrote — in which case a guarded
+  // release is impossible and an unguarded one could clobber a live claim. Do nothing.
+  if (!claim.claimed || claim.claimedAt === null) return
+
+  await db.execute(sql`
+    UPDATE workflows
+    SET failure_alert_sent_at = ${claim.previous}::timestamp
+    WHERE id = ${workflowId}
+      AND failure_alert_sent_at = ${claim.claimedAt}::timestamp
+  `)
 }
 
 /**
@@ -141,23 +220,53 @@ export async function maybeAlertOnRunFailure(runId: string): Promise<void> {
     if (prefs && !prefs.emailWorkflowFailed) return
 
     // Last gate, so nobody above burns the window: opted-out users and dry runs never reach it.
-    if (!(await claimFailureAlert(run.workflowId))) return
+    // Everything BELOW it can still fail, though, which is why the window can be given back —
+    // the claim has to precede the send (or two ticks both send), so the compensation is the only
+    // place the "claimed but never sent" case can be repaired (WR-06).
+    const claim = await claimFailureAlert(run.workflowId)
+    if (!claim.claimed) return
+
+    /** Hand the window back, and never let the attempt itself become the failure. */
+    const release = async () => {
+      try {
+        await releaseFailureAlert(run.workflowId, claim)
+      } catch (error) {
+        console.error(
+          `[failure-alert] Failed to release the throttle window for run ${runId}:`,
+          error
+        )
+      }
+    }
 
     const appUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
     const runUrl = `${appUrl}/workflows/${run.workflowId}/runs/${runId}`
-    const template = await getWorkflowFailedTemplate(
-      workflow.name,
-      runUrl,
-      run.error ?? "",
-      author.locale
-    )
+
+    let template: Awaited<ReturnType<typeof getWorkflowFailedTemplate>>
+
+    try {
+      // Inside the claim's compensation scope: `getEmailTranslator` throws on a missing message
+      // key, and letting the outer catch swallow that would burn the window on a send that never
+      // even reached the transport.
+      template = await getWorkflowFailedTemplate(
+        workflow.name,
+        runUrl,
+        run.error ?? "",
+        author.locale
+      )
+    } catch (error) {
+      console.error(`[failure-alert] Failed to build the alert for run ${runId}:`, error)
+      await release()
+      return
+    }
 
     // NOT awaited. `safeSend` RETHROWS on transport failure (`src/lib/email/send.ts:34-37`),
     // and it also skips silently when SMTP_HOST is unset (`send.ts:20-23`). Awaiting it here
     // would put relay latency, and its exceptions, inside the processor's drain loop
     // (T-41-45).
-    safeSend(author.email, template).catch((error) => {
+    safeSend(author.email, template).catch(async (error) => {
       console.error(`[failure-alert] Failed to send failure alert for run ${runId}:`, error)
+      // The mail never reached the transport, so the hour of silence this claim bought is a lie.
+      await release()
     })
   } catch (error) {
     console.error(`[failure-alert] Alert check failed for run ${runId}:`, error)

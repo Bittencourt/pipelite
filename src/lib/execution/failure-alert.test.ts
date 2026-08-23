@@ -84,40 +84,75 @@ describe("FAILURE_ALERT_WINDOW_MINUTES", () => {
   })
 })
 
+/**
+ * One claim row exactly as the UPDATE returns it: the value written, and the value displaced.
+ *
+ * Both are TEXT, to the microsecond. A `Date` cannot carry this value — postgres-js truncates
+ * postgres's microseconds to milliseconds — so a release guarded on a round-tripped `Date` would
+ * match nothing and silently never fire.
+ */
+const CLAIMED_ROW = {
+  claimed_at: "2026-08-22T10:00:00.000001",
+  previous: "2026-08-22T08:00:00.000002",
+}
+
 describe("claimFailureAlert", () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it("returns true when the guarded UPDATE returns a row", async () => {
+  it("claims when the guarded UPDATE returns a row, and reports what it wrote and displaced", async () => {
     const { claimFailureAlert } = await import("./failure-alert")
-    mockExecute.mockResolvedValue([{ id: "wf-1" }])
-    await expect(claimFailureAlert("wf-1")).resolves.toBe(true)
+    mockExecute.mockResolvedValue([CLAIMED_ROW])
+
+    // The claim used to answer a bare boolean. It now also carries the value it WROTE and the value
+    // it DISPLACED, because those are exactly what a compensating release needs (WR-06): without
+    // them the window can only be given back unguarded, which would clobber a newer claim.
+    await expect(claimFailureAlert("wf-1")).resolves.toEqual({
+      claimed: true,
+      claimedAt: "2026-08-22T10:00:00.000001",
+      previous: "2026-08-22T08:00:00.000002",
+    })
   })
 
-  it("returns false when the UPDATE matches nothing (already alerted inside the window)", async () => {
+  it("reports a first-ever claim with a null previous, not with a missing field", async () => {
+    const { claimFailureAlert } = await import("./failure-alert")
+    mockExecute.mockResolvedValue([{ claimed_at: "2026-08-22T10:00:00.000001", previous: null }])
+
+    await expect(claimFailureAlert("wf-1")).resolves.toEqual({
+      claimed: true,
+      claimedAt: "2026-08-22T10:00:00.000001",
+      previous: null,
+    })
+  })
+
+  it("does not claim when the UPDATE matches nothing (already alerted inside the window)", async () => {
     const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue([])
-    await expect(claimFailureAlert("wf-1")).resolves.toBe(false)
+    await expect(claimFailureAlert("wf-1")).resolves.toEqual({
+      claimed: false,
+      claimedAt: null,
+      previous: null,
+    })
   })
 
-  it("returns false rather than throwing for an undefined result", async () => {
+  it("does not claim rather than throwing for an undefined result", async () => {
     // postgres-js does not always hand back an array; the
     // `(x as unknown as unknown[])?.length ?? 0` idiom in reclaimStaleRuns exists for this.
     const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue(undefined)
-    await expect(claimFailureAlert("wf-1")).resolves.toBe(false)
+    await expect(claimFailureAlert("wf-1")).resolves.toMatchObject({ claimed: false })
   })
 
-  it("returns false rather than throwing for a null result", async () => {
+  it("does not claim rather than throwing for a null result", async () => {
     const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue(null)
-    await expect(claimFailureAlert("wf-1")).resolves.toBe(false)
+    await expect(claimFailureAlert("wf-1")).resolves.toMatchObject({ claimed: false })
   })
 
   it("builds a guarded UPDATE ... RETURNING against workflows.failure_alert_sent_at", async () => {
     const { claimFailureAlert } = await import("./failure-alert")
-    mockExecute.mockResolvedValue([{ id: "wf-1" }])
+    mockExecute.mockResolvedValue([CLAIMED_ROW])
     await claimFailureAlert("wf-1")
 
     const text = capturedSqlText()
@@ -140,7 +175,7 @@ describe("claimFailureAlert", () => {
 
   it("passes the workflow id and the window as parameterised VALUES, never as literals", async () => {
     const { claimFailureAlert, FAILURE_ALERT_WINDOW_MINUTES } = await import("./failure-alert")
-    mockExecute.mockResolvedValue([{ id: "wf-1" }])
+    mockExecute.mockResolvedValue([CLAIMED_ROW])
     await claimFailureAlert("wf-1")
 
     const { values } = capturedSql()
@@ -157,7 +192,7 @@ describe("claimFailureAlert", () => {
 
   it("contains NO SELECT — the guard is IN the UPDATE, not in a preceding read", async () => {
     const { claimFailureAlert } = await import("./failure-alert")
-    mockExecute.mockResolvedValue([{ id: "wf-1" }])
+    mockExecute.mockResolvedValue([CLAIMED_ROW])
     await claimFailureAlert("wf-1")
 
     const text = capturedSqlText()
@@ -177,7 +212,7 @@ describe("claimFailureAlert", () => {
 
   it("does NOT touch workflows.updated_at", async () => {
     const { claimFailureAlert } = await import("./failure-alert")
-    mockExecute.mockResolvedValue([{ id: "wf-1" }])
+    mockExecute.mockResolvedValue([CLAIMED_ROW])
     await claimFailureAlert("wf-1")
 
     expect(
@@ -185,6 +220,98 @@ describe("claimFailureAlert", () => {
       "failure_alert_sent_at is runtime state, not a definition change. Moving updated_at " +
         "would make the workflow editor's 'last modified' reading jump every time a run failed."
     ).not.toContain("updated_at")
+  })
+
+  it("returns the DISPLACED value from a pre-update snapshot, still in ONE statement", async () => {
+    const { claimFailureAlert } = await import("./failure-alert")
+    mockExecute.mockResolvedValue([CLAIMED_ROW])
+    await claimFailureAlert("wf-1")
+
+    const text = capturedSqlText()
+    const why =
+      "The release (WR-06) needs the value this claim displaced, and reading it with a SELECT " +
+      "first would reintroduce exactly the read-then-write race this function exists to avoid. " +
+      "`FROM workflows AS prev` joins the pre-update snapshot, which is how an UPDATE hands back " +
+      "an OLD value in one statement."
+    expect(text, why).toMatch(/FROM\s+workflows\s+AS\s+prev/)
+    expect(text, why).toMatch(/prev\.failure_alert_sent_at/)
+    expect(mockExecute, why).toHaveBeenCalledTimes(1)
+  })
+
+  it("round-trips both timestamps as TEXT, not as a Date", async () => {
+    const { claimFailureAlert } = await import("./failure-alert")
+    mockExecute.mockResolvedValue([CLAIMED_ROW])
+    await claimFailureAlert("wf-1")
+
+    expect(
+      capturedSqlText(),
+      "postgres-js parses `timestamp` into a Date, which truncates postgres's MICROseconds to " +
+        "milliseconds. A release guarded on `failure_alert_sent_at = $claimedAt` built from that " +
+        "Date matches NOTHING, so the window would never actually be given back — a silent no-op " +
+        "that looks like a working fix. to_char keeps the value exact in both directions."
+    ).toContain("to_char")
+  })
+})
+
+// -------------------------------------------------------------------------------------------------
+// releaseFailureAlert (WR-06) — the compensation for a window that was claimed and never used.
+//
+// The claim is committed BEFORE the mail reaches the transport, and it has to be: two processor
+// ticks must not both send. So one refused relay connection used to buy 60 minutes of silence on a
+// workflow failing every 5 seconds — precisely the "fails silently forever" outcome WFOPS-03 exists
+// to prevent, with no signal to the operator that it happened.
+// -------------------------------------------------------------------------------------------------
+
+describe("releaseFailureAlert", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockExecute.mockResolvedValue([])
+  })
+
+  const CLAIM = {
+    claimed: true,
+    claimedAt: "2026-08-22T10:00:00.000001",
+    previous: "2026-08-22T08:00:00.000002",
+  }
+
+  it("restores the displaced value, guarded on the value this caller wrote", async () => {
+    const { releaseFailureAlert } = await import("./failure-alert")
+    await releaseFailureAlert("wf-1", CLAIM)
+
+    const { values } = capturedSql()
+    const text = capturedSqlText()
+
+    expect(text).toMatch(/UPDATE/)
+    expect(text).toContain("failure_alert_sent_at")
+    expect(values).toContain("wf-1")
+    expect(values, "the value to restore must be a bound parameter").toContain(CLAIM.previous)
+    expect(
+      values,
+      "the guard is what stops this clobbering a NEWER claim — possible when a hung send rejects " +
+        "after the window has already elapsed. Without `= $claimedAt` the release would silently " +
+        "hand away someone else's window."
+    ).toContain(CLAIM.claimedAt)
+    expect(
+      /\bSELECT\b/i.test(text),
+      "single guarded UPDATE, for the same reason the claim is one."
+    ).toBe(false)
+  })
+
+  it("does nothing when nothing was claimed", async () => {
+    const { releaseFailureAlert } = await import("./failure-alert")
+    await releaseFailureAlert("wf-1", { claimed: false, claimedAt: null, previous: null })
+
+    expect(mockExecute).not.toHaveBeenCalled()
+  })
+
+  it("does nothing when the claim cannot say what it wrote", async () => {
+    const { releaseFailureAlert } = await import("./failure-alert")
+    await releaseFailureAlert("wf-1", { claimed: true, claimedAt: null, previous: null })
+
+    expect(
+      mockExecute,
+      "an unguarded release could clobber a live claim, so an unidentifiable claim is left alone."
+    ).not.toHaveBeenCalled()
   })
 })
 
@@ -217,7 +344,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 describe("maybeAlertOnRunFailure", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockExecute.mockResolvedValue([{ id: "wf-1" }])
+    mockExecute.mockResolvedValue([CLAIMED_ROW])
     mockSafeSend.mockResolvedValue(undefined)
     mockGetTemplate.mockResolvedValue(TEMPLATE)
     queueSelects()
@@ -396,6 +523,88 @@ describe("maybeAlertOnRunFailure", () => {
     // ANTI-VACUITY: a function that never sends would satisfy "does not reject" trivially.
     expect(mockSafeSend).toHaveBeenCalledTimes(1)
     expect(consoleError.mock.calls.flat().join(" ")).toContain("[failure-alert]")
+    consoleError.mockRestore()
+  })
+
+  // --- WR-06: a send that never happened gives the window back.
+
+  it("releases the window when safeSend rejects, guarded on the claim it made", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
+    mockSafeSend.mockRejectedValue(new Error("SMTP 421 service not available"))
+
+    await maybeAlertOnRunFailure("run-1")
+    await flush()
+
+    expect(
+      mockExecute,
+      "two statements: the claim, then the compensating release. With only the claim, one refused " +
+        "relay connection silences a workflow failing every 5 seconds for a FULL HOUR, and " +
+        "failure_alert_sent_at asserts an alert was sent that the operator never received."
+    ).toHaveBeenCalledTimes(2)
+
+    const release = mockExecute.mock.calls[1]![0] as CapturedSql
+    const text = Array.from(release.strings).join(" ")
+    expect(text).toMatch(/UPDATE/)
+    expect(release.values).toContain("wf-1")
+    expect(release.values, "restores the displaced value").toContain(CLAIMED_ROW.previous)
+    expect(release.values, "guarded on what the claim wrote").toContain(CLAIMED_ROW.claimed_at)
+
+    consoleError.mockRestore()
+  })
+
+  it("releases the window when the TEMPLATE throws, before the transport is ever reached", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
+    // getEmailTranslator throws on a missing message key. Letting the outer catch swallow that
+    // would burn the window on a send that never happened at all.
+    mockGetTemplate.mockRejectedValue(new Error("MISSING_MESSAGE: emails.workflowFailed.subject"))
+
+    await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
+    await flush()
+
+    expect(mockSafeSend).not.toHaveBeenCalled()
+    expect(mockExecute, "claim + release").toHaveBeenCalledTimes(2)
+    expect(consoleError.mock.calls.flat().join(" ")).toContain("[failure-alert]")
+
+    consoleError.mockRestore()
+  })
+
+  it("does NOT release the window when the send succeeded", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
+
+    await maybeAlertOnRunFailure("run-1")
+    await flush()
+
+    expect(mockSafeSend).toHaveBeenCalledTimes(1)
+    expect(
+      mockExecute,
+      "the throttle still throttles. A release on the happy path would make the window " +
+        "meaningless and reinstate the 17,000-emails-a-day failure mode."
+    ).toHaveBeenCalledTimes(1)
+  })
+
+  it("survives a release that itself fails, without rejecting", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
+    mockSafeSend.mockRejectedValue(new Error("SMTP 421"))
+    mockExecute
+      .mockResolvedValueOnce([CLAIMED_ROW])
+      .mockRejectedValueOnce(new Error("connection terminated unexpectedly"))
+
+    await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
+    await flush()
+
+    expect(
+      consoleError.mock.calls.flat().join(" "),
+      "the compensation must never become the failure: this runs inside a fire-and-forget .catch, " +
+        "so an escaping rejection there is an unhandled rejection in the processor."
+    ).toContain("[failure-alert]")
+
     consoleError.mockRestore()
   })
 
