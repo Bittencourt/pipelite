@@ -3,6 +3,7 @@ import { notes, deals, organizations, people, activities } from "@/db/schema"
 import type { EntityType, Note } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
 import { z } from "zod"
+import { log } from "@/lib/log"
 
 // ---- Constants ----
 
@@ -97,7 +98,7 @@ export async function findNoteById(noteId: string): Promise<Note | null> {
     })
     return note ?? null
   } catch (error) {
-    console.error("Failed to read note:", error)
+    log.error("mutations/notes", "Failed to read note", { err: error })
     return null
   }
 }
@@ -147,13 +148,13 @@ export async function createNoteMutation(
     // realistically always returns its row; if it ever does not, `note.id` below would
     // throw inside the try and surface as an opaque 500 instead of a handled failure.
     if (!note) {
-      console.error("Failed to create note: INSERT ... RETURNING produced no row")
+      log.error("mutations/notes", "Failed to create note: INSERT ... RETURNING produced no row")
       return { success: false, error: "Failed to create note" }
     }
 
     return { success: true, id: note.id, note }
   } catch (error) {
-    console.error("Failed to create note:", error)
+    log.error("mutations/notes", "Failed to create note", { err: error })
     return { success: false, error: "Failed to create note" }
   }
 }
@@ -200,7 +201,7 @@ export async function updateNoteMutation(
 
     return { success: true, note }
   } catch (error) {
-    console.error("Failed to update note:", error)
+    log.error("mutations/notes", "Failed to update note", { err: error })
     return { success: false, error: "Failed to update note" }
   }
 }
@@ -235,7 +236,7 @@ export async function softDeleteNoteMutation(
     // would make a double-click look like an error.
     return { success: true }
   } catch (error) {
-    console.error("Failed to delete note:", error)
+    log.error("mutations/notes", "Failed to delete note", { err: error })
     return { success: false, error: "Failed to delete note" }
   }
 }

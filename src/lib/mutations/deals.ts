@@ -24,6 +24,7 @@ import {
   CHANGED_FIELDS_CUSTOM_SENTINEL,
   type RecalculateFormulasInput,
 } from "@/lib/formula-recalc"
+import { log } from "@/lib/log"
 
 // ---- Zod Schemas ----
 
@@ -118,7 +119,7 @@ async function recalcCustomFields(
     // row supplied), NOT that the entity has no custom fields. Fall back to the blob we wrote.
     return customFields ?? fallback
   } catch (error) {
-    console.error("[formula-recalc] deal recalculation failed:", error)
+    log.error("formula-recalc", "deal recalculation failed", { err: error })
     return fallback
   }
 }
@@ -263,7 +264,7 @@ export async function createDealMutation(
 
     return { success: true, id: deal.id, deal }
   } catch (error) {
-    console.error("Failed to create deal:", error)
+    log.error("mutations/deals", "Failed to create deal", { err: error })
     return { success: false, error: "Failed to create deal" }
   }
 }
@@ -465,7 +466,7 @@ export async function updateDealMutation(
       dealTitle: deal.title,
     }
   } catch (error) {
-    console.error("Failed to update deal:", error)
+    log.error("mutations/deals", "Failed to update deal", { err: error })
     return { success: false, error: "Failed to update deal" }
   }
 }
@@ -504,7 +505,7 @@ export async function deleteDealMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to delete deal:", error)
+    log.error("mutations/deals", "Failed to delete deal", { err: error })
     return { success: false, error: "Failed to delete deal" }
   }
 }
@@ -577,10 +578,10 @@ export async function restoreDealMutation(
     } catch (error) {
       // D-05: a broken admin-authored formula must never block a user's write. Reporting
       // "Failed to restore deal" here would be a lie — the row is already live.
-      console.error("[formula-recalc] deal restore recalculation failed:", error)
+      log.error("formula-recalc", "deal restore recalculation failed", { err: error })
     }
   } catch (error) {
-    console.error("Failed to restore deal:", error)
+    log.error("mutations/deals", "Failed to restore deal", { err: error })
     return { success: false, error: "Failed to restore deal" }
   }
 
@@ -602,7 +603,7 @@ export async function restoreDealMutation(
       importSessionId: actor?.importSessionId ?? null,
     })
   } catch (error) {
-    console.error("[audit] failed to record deal restore:", error)
+    log.error("audit", "failed to record deal restore", { err: error })
   }
 
   return { success: true }
@@ -752,7 +753,7 @@ export async function purgeDealMutation(
 
     return { success: true, detached }
   } catch (error) {
-    console.error("Failed to purge deal:", error)
+    log.error("mutations/deals", "Failed to purge deal", { err: error })
     return { success: false, error: "Failed to purge deal" }
   }
 }
@@ -824,7 +825,7 @@ export async function updateDealOwnerMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to reassign deal owner:", error)
+    log.error("mutations/deals", "Failed to reassign deal owner", { err: error })
     return { success: false, error: "Failed to reassign deal owner" }
   }
 }
@@ -921,7 +922,7 @@ export async function updateDealStageMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to update deal stage:", error)
+    log.error("mutations/deals", "Failed to update deal stage", { err: error })
     return { success: false, error: "Failed to update deal stage" }
   }
 }
@@ -1049,7 +1050,7 @@ export async function reorderDealsMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to reorder deals:", error)
+    log.error("mutations/deals", "Failed to reorder deals", { err: error })
     return { success: false, error: "Failed to reorder deals" }
   }
 }
