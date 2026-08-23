@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-22T23:55:00.000Z"
-last_activity: 2026-08-22
+last_updated: "2026-08-23T02:30:00.000Z"
+last_activity: 2026-08-23
 progress:
   total_phases: 14
   completed_phases: 12
-  total_plans: 167
-  completed_plans: 167
-  percent: 86
+  total_plans: 185
+  completed_plans: 170
+  percent: 87
 ---
 
 # Session State
@@ -20,17 +20,44 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 41 COMPLETE 2026-08-22 (15/15 plans, 4 waves, verified `passed`). Phases 42
-and 43 remain in v1.3, both still `Plans: TBD`, so the next step is planning.
+**Current focus:** Phase 42 (Observability) is MID-EXECUTION — planned (18 plans, 4 waves) with
+wave 1 of 4 merged. Phase 43 is still `Plans: TBD`.
 
 ## Position
 
-Phase: 41 - Workflow Operator Affordances
-Plan: 15 of 15 complete
-Status: Phase 41 COMPLETE — verified `passed`; UI witnessed in a real browser
-Last activity: 2026-08-22
+Phase: 42 - Observability
+Plan: 3 of 18 complete (wave 1 of 4 merged)
+Status: Phase 42 MID-EXECUTION — plans verified, wave 1 merged, wave 2 (13 plans) not started
+Last activity: 2026-08-23
 
-Progress: [██████████] 100%
+Progress: [██░░░░░░░░] 17% of phase 42
+
+## ► RESUME HERE — Phase 42, wave 2
+
+**Command:** `/gsd:execute-phase 42` — it filters on `has_summary`, so it will skip 42-01/02/03 and
+pick up wave 2 correctly. Do NOT re-plan; the plans exist and were verified by gsd-plan-checker.
+
+**Wave map** (from plan frontmatter, authoritative): wave 1 = 42-01,02,03 (DONE) · wave 2 =
+42-04..42-16 (13 plans) · wave 3 = 42-17 · wave 4 = 42-18. **42-18 is `autonomous: no`** — a deliberate
+Sentry-DSN checkpoint.
+
+**Baseline at this point:** 4455 passed / 32 skipped + RSC 8/8 · typecheck 0 · lint 0 errors / 124
+warnings. `@sentry/nextjs` 10.70.0 is installed and the lockfile is committed.
+
+**Read before dispatching anyone:** `.planning/phases/42-observability/42-WAVE1-HANDOFF.md`, and
+`42-CONTEXT.md` § Amendments (A1-A9 — A1 and A2 are load-bearing and override the decisions above them).
+
+**Three things the GSD workflow's own executor prompt does NOT supply, and which every worktree
+executor in this project needs — inject them yourself:**
+
+1. **The three bootstrap symlinks** (`node_modules`, `.env`, and `admin.json` inside a REAL `e2e/.auth`
+   directory). A worktree contains only tracked files, so without these every verification fails. See
+   the `worktree-bootstrap` memory.
+2. **The base-correction check.** Worktrees in this project branch from a stale commit
+   *systematically* — 15 for 15 across phases 41 and 42. The workflow includes this one; make sure it
+   survives.
+3. **`npm install` / `npm ci` / `slopcheck install` are forbidden** during a wave — `node_modules` is a
+   shared symlink and an install would corrupt sibling executors mid-run.
 
 ## Performance Metrics
 
