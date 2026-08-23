@@ -224,6 +224,51 @@ async function resolveTargetId(
   )
 }
 
+// ---- Dry-run simulation (WFOPS-02) ----
+
+/**
+ * Simulated `create` output. Mirrors the real mutation's shape:
+ * `{ success, id, <entity> }`, plus `simulated: true`.
+ */
+function simulateCreate(
+  entity: string,
+  interpolatedFields: Record<string, unknown>
+): Record<string, unknown> {
+  const id = `dryrun-${crypto.randomUUID()}`
+  return {
+    success: true,
+    id,
+    [entity]: { id, ...interpolatedFields },
+    simulated: true,
+  }
+}
+
+/**
+ * Simulated `update` output. `updateDealMutation` returns
+ * `{ success, newAssigneeUserIds, dealTitle }`; every other entity's update returns
+ * `{ success }`. The simulation reproduces whichever shape applies.
+ */
+function simulateUpdate(
+  entity: string,
+  interpolatedFields: Record<string, unknown>
+): Record<string, unknown> {
+  if (entity === "deal") {
+    const title = interpolatedFields.title
+    return {
+      success: true,
+      newAssigneeUserIds: [] as string[],
+      dealTitle: title == null ? "" : String(title),
+      simulated: true,
+    }
+  }
+  return { success: true, simulated: true }
+}
+
+/** Simulated `delete` output. The real mutations return `{ success }`. */
+function simulateDelete(): Record<string, unknown> {
+  return { success: true, simulated: true }
+}
+
 // ---- Handler ----
 
 async function handleCrmAction(
@@ -257,6 +302,34 @@ async function handleCrmAction(
 
   switch (operation) {
     case "create": {
+      // ---- DRY-RUN GATE 1 of 3 (WFOPS-02). Three rules govern all three gates. ----
+      //
+      // 1. SIMULATE THE SIDE EFFECT, NEVER THE RESOLUTION. The gate sits here, immediately
+      //    before the mutation call, and NOT at the top of the handler. Everything above it has
+      //    already run for real — the entity/operation validation, the userId check,
+      //    interpolateDeep, coerceFieldMapping, and (for update/delete) resolveTargetId's `ilike`
+      //    lookup. So a dry run fails for the reasons a real run would fail: a missing target
+      //    record, an unknown entity, an absent workflow user. An early return at the top of the
+      //    handler is a two-line diff that makes every dry run "pass", including the ones whose
+      //    real counterpart would blow up — a decorative dry run is worse than none.
+      //
+      // 2. THE ENTITY OBJECT CARRIES THE INTERPOLATED FIELDS ON PURPOSE, so a downstream
+      //    transform or condition reading a field this node was configured to write gets a value
+      //    rather than `undefined`. Note the honest limit: SHAPE fidelity is achievable, VALUE
+      //    fidelity is not. A transform reading a field the node never wrote still gets
+      //    `undefined`, and `simulated: true` is what makes that diagnosable in json-viewer.tsx.
+      //    That limitation is documented HERE and must not become user-facing copy (UI-SPEC
+      //    F-41-1).
+      //
+      // 3. DO NOT "IMPROVE" THIS INTO A ROLLED-BACK TRANSACTION. Skipping the mutation *call* is
+      //    also what stops the `crmBus` event, hence instrumentation.ts's workflow-trigger
+      //    subscriber, hence any downstream workflow — and hence any `audit_log` row. That empty
+      //    changed-records panel is the affirmative proof that a dry run changed nothing. A
+      //    rolled-back transaction would emit the event and lose all of it.
+      if (context._dryRun) {
+        return { output: simulateCreate(entity, interpolatedFields) }
+      }
+
       const result = await runWithExecutionDepth(depth + 1, () =>
         mutations.create({ ...interpolatedFields, userId })
       )
@@ -268,7 +341,15 @@ async function handleCrmAction(
     }
 
     case "update": {
+      // resolveTargetId runs BEFORE the gate, deliberately: an update aimed at a record that does
+      // not exist must still fail the dry run. See rule 1 at gate 1.
       const targetId = await resolveTargetId(entity, config, context)
+
+      // ---- DRY-RUN GATE 2 of 3. Rules at gate 1. ----
+      if (context._dryRun) {
+        return { output: simulateUpdate(entity, interpolatedFields) }
+      }
+
       const result = await runWithExecutionDepth(depth + 1, () =>
         mutations.update(targetId, interpolatedFields, userId)
       )
@@ -280,7 +361,14 @@ async function handleCrmAction(
     }
 
     case "delete": {
+      // As with update: the target is resolved for real before the gate.
       const targetId = await resolveTargetId(entity, config, context)
+
+      // ---- DRY-RUN GATE 3 of 3. Rules at gate 1. ----
+      if (context._dryRun) {
+        return { output: simulateDelete() }
+      }
+
       const result = await runWithExecutionDepth(depth + 1, () =>
         mutations.delete(targetId, userId)
       )

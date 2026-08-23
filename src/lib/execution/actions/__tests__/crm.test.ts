@@ -489,4 +489,489 @@ describe("CRM action handler", () => {
       )
     ).rejects.toThrow(/userId/i)
   })
+
+  // ---- Dry run (WFOPS-02) ----
+  //
+  // The governing rule is "simulate the side effect, never the resolution": under `_dryRun` the
+  // three `mutations.*` calls are skipped, and EVERY line above them still runs for real —
+  // entity/operation validation, the userId check, interpolateDeep, coerceFieldMapping and
+  // resolveTargetId's `ilike` lookup. Each test below therefore asserts two things: that the
+  // mutation was not called, and that the resolution still happened.
+  describe("dry run", () => {
+    const dryContext = (overrides?: Partial<ExecutionContext>) =>
+      makeContext({ _dryRun: true, ...overrides })
+
+    /**
+     * Assert the simulated output carries the SAME keys as its real counterpart plus exactly
+     * `simulated`. Computed from the real output rather than listed twice, so a real output that
+     * grows a key makes the simulated one fail until it grows the same key. Shape fidelity is the
+     * point: a downstream transform reading a field off this node's output must not get
+     * `undefined` in a dry run when it would get a value in a real one.
+     */
+    function expectSimulatedKeyParity(
+      realOutput: Record<string, unknown>,
+      dryOutput: Record<string, unknown>
+    ) {
+      const realKeys = new Set(Object.keys(realOutput))
+      expect(realKeys.has("simulated")).toBe(false)
+      expect(new Set(Object.keys(dryOutput))).toEqual(
+        new Set([...realKeys, "simulated"])
+      )
+    }
+
+    const allMutationMocks = [
+      mockCreateDeal,
+      mockUpdateDeal,
+      mockDeleteDeal,
+      mockCreatePerson,
+      mockUpdatePerson,
+      mockDeletePerson,
+      mockCreateOrganization,
+      mockUpdateOrganization,
+      mockDeleteOrganization,
+      mockCreateActivity,
+      mockUpdateActivity,
+      mockDeleteActivity,
+    ]
+
+    describe("create", () => {
+      const createConfig = {
+        actionType: "crm_action",
+        entity: "deal",
+        operation: "create",
+        fieldMapping: {
+          title: "{{trigger.data.title}}",
+          stageId: "stage-1",
+          value: "9999",
+        },
+      }
+
+      it("does not call mutations.create and returns a simulated output", async () => {
+        const result = await executeAction(
+          "crm_action",
+          createConfig,
+          dryContext(),
+          "run-dry"
+        )
+
+        expect(mockCreateDeal).not.toHaveBeenCalled()
+        expect(result.output.success).toBe(true)
+        expect(result.output.simulated).toBe(true)
+        expect(typeof result.output.id).toBe("string")
+        expect(result.output.id as string).toMatch(/^dryrun-/)
+      })
+
+      it("carries the INTERPOLATED and coerced field values, not the raw templates", async () => {
+        const result = await executeAction(
+          "crm_action",
+          createConfig,
+          dryContext(),
+          "run-dry"
+        )
+
+        const deal = result.output.deal as Record<string, unknown>
+        // interpolateDeep ran: the template resolved against trigger data.
+        expect(deal.title).toBe("New Deal")
+        expect(deal.title).not.toBe("{{trigger.data.title}}")
+        // coerceFieldMapping ran: the numeric string became a number.
+        expect(deal.value).toBe(9999)
+        expect(deal.stageId).toBe("stage-1")
+        expect(deal.id).toBe(result.output.id)
+      })
+
+      it("matches the real create output's key set plus `simulated`", async () => {
+        mockCreateDeal.mockResolvedValue({
+          success: true,
+          id: "deal-new",
+          deal: { id: "deal-new", title: "New Deal" },
+        })
+
+        const real = await executeAction(
+          "crm_action",
+          createConfig,
+          makeContext(),
+          "run-real"
+        )
+        const dry = await executeAction(
+          "crm_action",
+          createConfig,
+          dryContext(),
+          "run-dry"
+        )
+
+        expectSimulatedKeyParity(real.output, dry.output)
+      })
+
+      it("still throws on an unknown entity type", async () => {
+        await expect(
+          executeAction(
+            "crm_action",
+            {
+              actionType: "crm_action",
+              entity: "invoice",
+              operation: "create",
+              fieldMapping: {},
+            },
+            dryContext(),
+            "run-dry"
+          )
+        ).rejects.toThrow(/unknown.*entity.*invoice/i)
+      })
+
+      it("still throws when no userId is in context", async () => {
+        await expect(
+          executeAction(
+            "crm_action",
+            createConfig,
+            dryContext({ _workflowUserId: undefined }),
+            "run-dry"
+          )
+        ).rejects.toThrow(/userId/i)
+      })
+
+      it("does not enter runWithExecutionDepth for a skipped mutation", async () => {
+        const { runWithExecutionDepth } = await import("../../recursion")
+
+        await executeAction("crm_action", createConfig, dryContext(), "run-dry")
+
+        // Entering the depth wrapper without mutating would bump the ambient depth for
+        // nothing and could spuriously trip the recursion guard for a sibling node.
+        expect(runWithExecutionDepth).not.toHaveBeenCalled()
+      })
+    })
+
+    describe("update", () => {
+      it("does not call mutations.update but still runs the ilike target lookup", async () => {
+        mockLimit.mockResolvedValue([{ id: "person-found" }])
+        const { ilike } = await import("drizzle-orm")
+
+        const result = await executeAction(
+          "crm_action",
+          {
+            actionType: "crm_action",
+            entity: "person",
+            operation: "update",
+            fieldMapping: { phone: "555-1234" },
+            lookupField: "email",
+            lookupValue: "{{trigger.data.email}}",
+          },
+          dryContext(),
+          "run-dry"
+        )
+
+        expect(mockUpdatePerson).not.toHaveBeenCalled()
+        // resolveTargetId still ran, against the INTERPOLATED lookup value.
+        expect(ilike).toHaveBeenCalledWith("people.email", "john@example.com")
+        expect(mockLimit).toHaveBeenCalled()
+        expect(result.output).toEqual({ success: true, simulated: true })
+      })
+
+      it("still THROWS when the target record does not exist", async () => {
+        // The single most valuable thing a dry run tells an operator: this update is aimed at
+        // nothing. An early return above resolveTargetId would make it pass.
+        mockLimit.mockResolvedValue([])
+
+        await expect(
+          executeAction(
+            "crm_action",
+            {
+              actionType: "crm_action",
+              entity: "person",
+              operation: "update",
+              fieldMapping: { phone: "555-1234" },
+              lookupField: "email",
+              lookupValue: "{{trigger.data.email}}",
+            },
+            dryContext(),
+            "run-dry"
+          )
+        ).rejects.toThrow(/no person found/i)
+
+        expect(mockUpdatePerson).not.toHaveBeenCalled()
+      })
+
+      it("still throws when neither targetId nor lookupField is configured", async () => {
+        await expect(
+          executeAction(
+            "crm_action",
+            {
+              actionType: "crm_action",
+              entity: "person",
+              operation: "update",
+              fieldMapping: { phone: "555-1234" },
+            },
+            dryContext(),
+            "run-dry"
+          )
+        ).rejects.toThrow(/requires targetId or lookupField/i)
+      })
+
+      it("simulates a deal update with the real output's keys plus `simulated`", async () => {
+        const config = {
+          actionType: "crm_action",
+          entity: "deal",
+          operation: "update",
+          fieldMapping: { title: "{{trigger.data.title}}" },
+          targetId: "deal-1",
+        }
+        mockUpdateDeal.mockResolvedValue({
+          success: true,
+          newAssigneeUserIds: ["user-1"],
+          dealTitle: "Old Title",
+        })
+
+        const real = await executeAction(
+          "crm_action",
+          config,
+          makeContext(),
+          "run-real"
+        )
+        const dry = await executeAction(
+          "crm_action",
+          config,
+          dryContext(),
+          "run-dry"
+        )
+
+        expect(mockUpdateDeal).toHaveBeenCalledTimes(1) // the real run only
+        expectSimulatedKeyParity(real.output, dry.output)
+        expect(dry.output.newAssigneeUserIds).toEqual([])
+        // dealTitle comes from the interpolated fields, so a downstream transform reading
+        // `input.nodes.crm1.dealTitle` gets a string rather than undefined.
+        expect(dry.output.dealTitle).toBe("New Deal")
+        expect(dry.output.simulated).toBe(true)
+      })
+
+      it("falls back to an empty dealTitle when the mapping sets no title", async () => {
+        const result = await executeAction(
+          "crm_action",
+          {
+            actionType: "crm_action",
+            entity: "deal",
+            operation: "update",
+            fieldMapping: { value: "500" },
+            targetId: "deal-1",
+          },
+          dryContext(),
+          "run-dry"
+        )
+
+        expect(mockUpdateDeal).not.toHaveBeenCalled()
+        expect(result.output.dealTitle).toBe("")
+        expect(result.output.newAssigneeUserIds).toEqual([])
+      })
+
+      it("simulates a non-deal update with the real output's keys plus `simulated`", async () => {
+        const config = {
+          actionType: "crm_action",
+          entity: "person",
+          operation: "update",
+          fieldMapping: { email: "updated@example.com" },
+          targetId: "{{trigger.data.personId}}",
+        }
+        mockUpdatePerson.mockResolvedValue({ success: true })
+
+        const real = await executeAction(
+          "crm_action",
+          config,
+          makeContext(),
+          "run-real"
+        )
+        const dry = await executeAction(
+          "crm_action",
+          config,
+          dryContext(),
+          "run-dry"
+        )
+
+        expect(mockUpdatePerson).toHaveBeenCalledTimes(1) // the real run only
+        expectSimulatedKeyParity(real.output, dry.output)
+        expect(dry.output).toEqual({ success: true, simulated: true })
+      })
+    })
+
+    describe("delete", () => {
+      it("does not call mutations.delete but still resolves the target", async () => {
+        mockLimit.mockResolvedValue([{ id: "org-found" }])
+        const { ilike } = await import("drizzle-orm")
+
+        const result = await executeAction(
+          "crm_action",
+          {
+            actionType: "crm_action",
+            entity: "organization",
+            operation: "delete",
+            fieldMapping: {},
+            lookupField: "name",
+            lookupValue: "{{trigger.data.title}}",
+          },
+          dryContext(),
+          "run-dry"
+        )
+
+        expect(mockDeleteOrganization).not.toHaveBeenCalled()
+        expect(ilike).toHaveBeenCalledWith("organizations.name", "New Deal")
+        expect(mockLimit).toHaveBeenCalled()
+        expect(result.output).toEqual({ success: true, simulated: true })
+      })
+
+      it("matches the real delete output's key set plus `simulated`", async () => {
+        const config = {
+          actionType: "crm_action",
+          entity: "organization",
+          operation: "delete",
+          fieldMapping: {},
+          targetId: "org-123",
+        }
+        mockDeleteOrganization.mockResolvedValue({ success: true })
+
+        const real = await executeAction(
+          "crm_action",
+          config,
+          makeContext(),
+          "run-real"
+        )
+        const dry = await executeAction(
+          "crm_action",
+          config,
+          dryContext(),
+          "run-dry"
+        )
+
+        expect(mockDeleteOrganization).toHaveBeenCalledTimes(1) // the real run only
+        expectSimulatedKeyParity(real.output, dry.output)
+      })
+    })
+
+    // ANTI-VACUITY: a collective zero-call assertion, so a fourth operation added to the switch
+    // later without its own gate fails here rather than mutating during a dry run.
+    it("calls NO crm mutation at all across dry runs of every operation", async () => {
+      mockLimit.mockResolvedValue([{ id: "person-found" }])
+
+      await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "deal",
+          operation: "create",
+          fieldMapping: { title: "T", stageId: "s1" },
+        },
+        dryContext(),
+        "run-dry"
+      )
+      await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "person",
+          operation: "update",
+          fieldMapping: { phone: "1" },
+          targetId: "person-1",
+        },
+        dryContext(),
+        "run-dry"
+      )
+      await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "activity",
+          operation: "delete",
+          fieldMapping: {},
+          targetId: "act-1",
+        },
+        dryContext(),
+        "run-dry"
+      )
+
+      const totalCalls = allMutationMocks.reduce(
+        (n, mock) => n + mock.mock.calls.length,
+        0
+      )
+      expect(totalCalls).toBe(0)
+    })
+
+    // ---- The regression half: a real run is byte-identical to before this phase ----
+
+    it("performs the real create with unchanged arguments when _dryRun is false", async () => {
+      mockCreateDeal.mockResolvedValue({
+        success: true,
+        id: "deal-new",
+        deal: { id: "deal-new" },
+      })
+
+      const result = await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "deal",
+          operation: "create",
+          fieldMapping: { title: "{{trigger.data.title}}", stageId: "stage-1" },
+        },
+        makeContext({ _dryRun: false }),
+        "run-real"
+      )
+
+      expect(mockCreateDeal).toHaveBeenCalledTimes(1)
+      expect(mockCreateDeal).toHaveBeenCalledWith({
+        title: "New Deal",
+        stageId: "stage-1",
+        userId: "user-abc",
+      })
+      expect(result.output).toEqual({
+        success: true,
+        id: "deal-new",
+        deal: { id: "deal-new" },
+      })
+    })
+
+    it("performs the real update with unchanged arguments when _dryRun is false", async () => {
+      mockUpdatePerson.mockResolvedValue({ success: true })
+
+      const result = await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "person",
+          operation: "update",
+          fieldMapping: { email: "updated@example.com" },
+          targetId: "{{trigger.data.personId}}",
+        },
+        makeContext({ _dryRun: false }),
+        "run-real"
+      )
+
+      expect(mockUpdatePerson).toHaveBeenCalledTimes(1)
+      expect(mockUpdatePerson).toHaveBeenCalledWith(
+        "person-123",
+        { email: "updated@example.com" },
+        "user-abc"
+      )
+      expect(result.output).toEqual({ success: true })
+    })
+
+    it("performs the real delete with unchanged arguments when _dryRun is false", async () => {
+      mockDeleteOrganization.mockResolvedValue({ success: true })
+
+      const result = await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "organization",
+          operation: "delete",
+          fieldMapping: {},
+          targetId: "org-123",
+        },
+        makeContext({ _dryRun: false }),
+        "run-real"
+      )
+
+      expect(mockDeleteOrganization).toHaveBeenCalledTimes(1)
+      expect(mockDeleteOrganization).toHaveBeenCalledWith(
+        "org-123",
+        "user-abc"
+      )
+      expect(result.output).toEqual({ success: true })
+    })
+  })
 })
