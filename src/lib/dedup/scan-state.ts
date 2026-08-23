@@ -31,10 +31,9 @@
 
 import { db } from "@/db"
 import { dedupScans, type DedupScanStatus } from "@/db/schema"
+import { log } from "@/lib/log"
 import { and, desc, eq } from "drizzle-orm"
 import type { MergeableEntityType } from "./types"
-
-const LOG = "[dedup-scan-state]"
 
 /** The sentinel `createScanState` throws on a concurrent scan of the same entity type. */
 export const SCAN_ALREADY_RUNNING = "A scan is already running for this entity type"
@@ -165,7 +164,7 @@ export async function createScanState(
     updatedAt: now,
   })
 
-  console.log(`${LOG} started scan ${scanId} (${entityType})`)
+  log.info("dedup-scan-state", "started scan", { scanId, entityType })
 
   return {
     scanId,
@@ -211,7 +210,7 @@ export async function updateScanState(scanId: string, updates: DedupScanUpdate):
       })
       .where(eq(dedupScans.id, scanId))
   } catch (error) {
-    console.error(`${LOG} failed to update scan ${scanId}:`, error)
+    log.error("dedup-scan-state", "failed to update scan", { scanId, err: error })
   }
 }
 
@@ -232,9 +231,9 @@ export async function cancelScan(scanId: string): Promise<void> {
       .update(dedupScans)
       .set({ cancelled: true, updatedAt: new Date() })
       .where(eq(dedupScans.id, scanId))
-    console.log(`${LOG} cancellation requested for scan ${scanId}`)
+    log.info("dedup-scan-state", "cancellation requested", { scanId })
   } catch (error) {
-    console.error(`${LOG} failed to cancel scan ${scanId}:`, error)
+    log.error("dedup-scan-state", "failed to cancel scan", { scanId, err: error })
   }
 }
 
@@ -250,7 +249,7 @@ export async function getScanState(scanId: string): Promise<DedupScanState | nul
     })
     return row ? toScanState(row) : null
   } catch (error) {
-    console.error(`${LOG} failed to read scan ${scanId}:`, error)
+    log.error("dedup-scan-state", "failed to read scan", { scanId, err: error })
     return null
   }
 }
@@ -272,7 +271,7 @@ export async function getLatestScan(
     })
     return row ? toScanState(row) : null
   } catch (error) {
-    console.error(`${LOG} failed to read the latest ${entityType} scan:`, error)
+    log.error("dedup-scan-state", "failed to read the latest scan", { entityType, err: error })
     return null
   }
 }
@@ -292,7 +291,7 @@ export async function isScanCancelled(scanId: string): Promise<boolean> {
     })
     return row?.cancelled ?? false
   } catch (error) {
-    console.error(`${LOG} failed to read the cancel flag for scan ${scanId}:`, error)
+    log.error("dedup-scan-state", "failed to read the cancel flag", { scanId, err: error })
     return false
   }
 }
