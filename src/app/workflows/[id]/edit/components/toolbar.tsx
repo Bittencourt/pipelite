@@ -11,9 +11,20 @@ import { toast } from "sonner"
 import { useEditorStore } from "../lib/editor-store"
 import { updateWorkflow, importWorkflow, toggleWorkflow, deleteWorkflow } from "@/app/workflows/actions"
 import { DeleteWorkflowDialog } from "@/app/workflows/delete-workflow-dialog"
+import { DryRunDialog } from "./dry-run-dialog"
 import { serializeWorkflowForExport, validateWorkflowImport, slugify } from "@/lib/workflows/export-import"
 
-export function Toolbar() {
+export interface ToolbarProps {
+  /**
+   * The `data` payload of this workflow's most recent NON-test run, or `null` when it has never
+   * run. Threaded from the editor page rather than read from the editor store: the store carries
+   * the workflow DEFINITION and nothing about its run history, and fetching it from a client
+   * component would be a second round trip for a textarea's initial value.
+   */
+  latestTriggerData: Record<string, unknown> | null
+}
+
+export function Toolbar({ latestTriggerData }: ToolbarProps) {
   const workflowId = useEditorStore((s) => s.workflowId)
   const workflowName = useEditorStore((s) => s.workflowName)
   const active = useEditorStore((s) => s.active)
@@ -148,11 +159,11 @@ export function Toolbar() {
   }
 
   return (
-    <div className="flex items-center gap-4 border-b px-4 py-2">
+    <div className="flex flex-wrap items-center gap-4 border-b px-4 py-2">
       <Input
         value={workflowName}
         onChange={(e) => setWorkflowName(e.target.value)}
-        className="max-w-[300px] font-medium"
+        className="min-w-0 max-w-[300px] font-medium"
         placeholder="Workflow name"
       />
       <div className="flex items-center gap-2">
@@ -165,7 +176,7 @@ export function Toolbar() {
           Active
         </Label>
       </div>
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -196,6 +207,24 @@ export function Toolbar() {
           aria-hidden="true"
           onChange={handleImportFile}
         />
+
+        {/*
+          WFOPS-02. Sits with the other outline controls and to the LEFT of Save, which stays the
+          visually dominant commit in this row (V-41-1) — when the row wraps at 320px, source order
+          is reading order. It renders its own disabled-while-dirty hint immediately after the
+          trigger, so no second dirty indicator is added here: the existing "Unsaved changes" marker
+          below is untouched.
+
+          Rendered only once the store has a workflow id. Before that there is no persisted
+          definition to test, and the id is what the engine loads by.
+        */}
+        {workflowId !== null && (
+          <DryRunDialog
+            workflowId={workflowId}
+            dirty={dirty}
+            latestTriggerData={latestTriggerData}
+          />
+        )}
 
         {dirty && (
           <span className="text-xs text-muted-foreground">Unsaved changes</span>

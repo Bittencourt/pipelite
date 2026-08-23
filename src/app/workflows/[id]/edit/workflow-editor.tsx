@@ -18,9 +18,17 @@ interface WorkflowEditorProps {
     triggers: TriggerConfig[]
     nodes: WorkflowNode[]
   }
+  /**
+   * The `data` payload of this workflow's most recent NON-test run, or `null` when it has never
+   * run — the prefill for the test-run dialog's trigger-data editor (WFOPS-02).
+   *
+   * A sibling of `workflow` rather than a field of it: the editor store is initialised from
+   * `workflow` and holds the DEFINITION, and run history is not part of that.
+   */
+  latestTriggerData: Record<string, unknown> | null
 }
 
-export function WorkflowEditor({ workflow }: WorkflowEditorProps) {
+export function WorkflowEditor({ workflow, latestTriggerData }: WorkflowEditorProps) {
   const panelOpen = useEditorStore((s) => s.panelOpen)
 
   useEffect(() => {
@@ -29,7 +37,7 @@ export function WorkflowEditor({ workflow }: WorkflowEditorProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <Toolbar />
+      <Toolbar latestTriggerData={latestTriggerData} />
       <div className="flex flex-1 overflow-hidden">
         <ReactFlowProvider>
           <div className={panelOpen ? "flex-1" : "w-full"}>
