@@ -31,6 +31,7 @@ import {
   SHOW_DRY_RUNS_PARAM,
   SHOW_DRY_RUNS_VALUE,
   VALID_RUN_STATUSES,
+  buildRunsListHref,
   parseRunsSearchParams,
 } from "../runs-filter"
 
@@ -304,6 +305,69 @@ describe("parseRunsSearchParams is TOTAL — every input yields a valid filter, 
     const result = parseRunsSearchParams(new URLSearchParams("status=failed&page=2&dryRun=1"))
 
     expect(result).toEqual({ page: 2, status: "failed", showDryRuns: true })
+  })
+})
+
+// -------------------------------------------------------------------------------------------------
+// buildRunsListHref — the WRITING end of the same vocabulary (WR-05).
+//
+// The pagination links were `?page=${page ± 1}` and nothing else, so every page change silently
+// reverted `?status=` and `?dryRun=`. An operator who ticked *Show test runs* on a workflow with 25
+// runs of which 8 are tests saw "Page 1 of 2", clicked Next, and landed on a filtered set of 17 rows
+// — one page — so the table rendered EMPTY with no pagination row and nothing to say the toggle had
+// been dropped.
+//
+// The property that makes this correct is a ROUND TRIP through the parser above, which is why the
+// builder lives in this module rather than in the component.
+// -------------------------------------------------------------------------------------------------
+
+describe("buildRunsListHref — every link carries the whole filter", () => {
+  const roundTrip = (href: string) =>
+    parseRunsSearchParams(new URLSearchParams(new URL(href, "http://localhost").search))
+
+  it("carries status and the dry-run reveal onto the next page", () => {
+    const href = buildRunsListHref("wf-1", { page: 2, status: "failed", showDryRuns: true })
+
+    expect(href).toContain("status=failed")
+    expect(href).toContain(`${SHOW_DRY_RUNS_PARAM}=${SHOW_DRY_RUNS_VALUE}`)
+    expect(href).toContain("page=2")
+    expect(href.startsWith("/workflows/wf-1/runs?")).toBe(true)
+  })
+
+  it.each([
+    [{ page: 1, status: null, showDryRuns: false }],
+    [{ page: 1, status: "failed" as const, showDryRuns: false }],
+    [{ page: 1, status: null, showDryRuns: true }],
+    [{ page: 7, status: "waiting" as const, showDryRuns: true }],
+    [{ page: 999999999, status: "pending" as const, showDryRuns: false }],
+  ])("round-trips %j back through the parser unchanged", (filter) => {
+    expect(
+      roundTrip(buildRunsListHref("wf-1", filter)),
+      "The builder is the inverse of the parser. Anything it drops is a filter the operator set " +
+        "and the next page silently ignored — WR-05's defect exactly.",
+    ).toEqual(filter)
+  })
+
+  it("omits page 1, because an absent ?page= already parses back to 1", () => {
+    const href = buildRunsListHref("wf-1", { page: MIN_RUNS_PAGE, status: null, showDryRuns: false })
+
+    expect(href).toBe("/workflows/wf-1/runs")
+    expect(roundTrip(href)).toEqual({ page: 1, status: null, showDryRuns: false })
+  })
+
+  it("emits nothing for a filter that is entirely default", () => {
+    expect(
+      buildRunsListHref("wf-1", { page: 1, status: null, showDryRuns: false }),
+      "A default view is a clean URL. Emitting status= and dryRun= for their off states would make " +
+        "every link carry noise the parser then throws away.",
+    ).not.toContain("?")
+  })
+
+  it("does not leak a `false` showDryRuns as a truthy param", () => {
+    const href = buildRunsListHref("wf-1", { page: 3, status: null, showDryRuns: false })
+
+    expect(href).not.toContain(SHOW_DRY_RUNS_PARAM)
+    expect(roundTrip(href).showDryRuns).toBe(false)
   })
 })
 

@@ -448,6 +448,39 @@ describe("runs-table.tsx — the badge beside the status badge (T-41-59)", () =>
     ).toContain("dryRun")
   })
 
+  it("13b. WR-05: the pagination links carry the filter instead of reverting it", () => {
+    const source = read(TABLE)
+
+    expect(
+      source,
+      `${TABLE}: both page links were written \`?page=\${page ± 1}\`, which DISCARDS ?status= and ` +
+        `?dryRun=. An operator who ticks "Show test runs" on a workflow with 25 runs of which 8 ` +
+        `are tests sees "Page 1 of 2", clicks Next, and lands on ?page=2 with test runs hidden ` +
+        `again — where the filtered set has 17 rows and one page, so the table renders EMPTY with ` +
+        `no pagination row at all and nothing to say the toggle was dropped.`
+    ).not.toMatch(/runs\?page=/)
+
+    expect(
+      source,
+      `${TABLE}: build the query string with buildRunsListHref from @/lib/workflows/runs-filter. ` +
+        `That module exists because the two ends of this vocabulary must agree byte for byte; a ` +
+        `third end that WRITES it must not restate the literals.`
+    ).toContain("buildRunsListHref")
+
+    for (const literal of ['"status"', '"dryRun"', '"page"']) {
+      expect(
+        source,
+        `${TABLE}: no param literal of its own — ${literal} belongs to runs-filter.ts.`
+      ).not.toContain(literal)
+    }
+
+    expect(
+      source,
+      `${TABLE}: the filter must arrive as props. This is a server component with no ` +
+        `useSearchParams, and page.tsx has already parsed all three values.`
+    ).toContain("showDryRuns")
+  })
+
   it("14. it stacks inside the existing Status cell, AFTER the status badge", () => {
     const source = read(TABLE)
 

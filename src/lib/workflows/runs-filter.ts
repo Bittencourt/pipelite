@@ -201,3 +201,37 @@ export function parseRunsSearchParams(source: RunsSearchParamSource): RunsFilter
     showDryRuns: parseShowDryRuns(source),
   }
 }
+
+/**
+ * THE INVERSE OF `parseRunsSearchParams` — a runs-list URL that carries the WHOLE filter (WR-05).
+ *
+ * WHY THIS LIVES HERE AND NOT IN `runs-table.tsx`. The pagination links were written
+ * `` `/workflows/${workflowId}/runs?page=${page ± 1}` ``, which silently discarded `?status=` and
+ * `?dryRun=`: an operator who ticked *Show test runs* on a workflow with 25 runs of which 8 are
+ * tests saw "Page 1 of 2", clicked Next, and landed on `?page=2` with test runs hidden again — where
+ * the filtered set has 17 rows and ONE page, so the table rendered EMPTY with no pagination row at
+ * all and nothing to say the toggle had been dropped. This module already exists because two ends
+ * have to agree on this vocabulary byte for byte; a third end that WRITES it belongs here rather
+ * than in a component that would restate the literals.
+ *
+ * ROUND-TRIP, BY CONSTRUCTION: `parseRunsSearchParams(new URLSearchParams(new URL(href, base).search))`
+ * returns the filter that was handed in. That property is what the unit gate asserts, and it is the
+ * reason `page` is OMITTED at `MIN_RUNS_PAGE` — an absent `?page=` parses back to 1, so emitting it
+ * would be noise in the URL rather than information. `status-filter.tsx` deletes the param for the
+ * same reason on a filter change.
+ *
+ * Only the two truthy filters are emitted, so a default view is a clean `/workflows/{id}/runs`.
+ * `workflowId` is interpolated as-is: it is a route param this page was already reached through, and
+ * every other href in the tree treats it the same way.
+ */
+export function buildRunsListHref(workflowId: string, filter: RunsFilter): string {
+  const params = new URLSearchParams()
+
+  if (filter.status !== null) params.set("status", filter.status)
+  if (filter.showDryRuns) params.set(SHOW_DRY_RUNS_PARAM, SHOW_DRY_RUNS_VALUE)
+  if (filter.page > MIN_RUNS_PAGE) params.set("page", String(filter.page))
+
+  const query = params.toString()
+
+  return `/workflows/${workflowId}/runs${query ? `?${query}` : ""}`
+}

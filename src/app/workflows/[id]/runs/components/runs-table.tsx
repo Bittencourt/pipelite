@@ -10,7 +10,8 @@ import {
 import { DryRunBadge } from "./dry-run-badge"
 import { RunStatusBadge } from "./run-status-badge"
 import { formatDuration } from "@/lib/workflows/format"
-import type { WorkflowRun } from "@/db/schema/workflows"
+import { buildRunsListHref } from "@/lib/workflows/runs-filter"
+import type { WorkflowRun, WorkflowStatus } from "@/db/schema/workflows"
 
 interface RunsTableProps {
   runs: WorkflowRun[]
@@ -18,6 +19,13 @@ interface RunsTableProps {
   page: number
   limit: number
   workflowId: string
+  /**
+   * The rest of the filter the current page was reached with, so the pagination links can CARRY it
+   * (WR-05). Passed in rather than read here: this is a server component with no `useSearchParams`,
+   * and `page.tsx` has already parsed all three values through `parseRunsSearchParams`.
+   */
+  status: WorkflowStatus | null
+  showDryRuns: boolean
 }
 
 function formatDate(date: Date | null): string {
@@ -30,8 +38,25 @@ function formatDate(date: Date | null): string {
   })
 }
 
-export function RunsTable({ runs, total, page, limit, workflowId }: RunsTableProps) {
+export function RunsTable({
+  runs,
+  total,
+  page,
+  limit,
+  workflowId,
+  status,
+  showDryRuns,
+}: RunsTableProps) {
   const totalPages = Math.ceil(total / limit)
+
+  /**
+   * A page link that KEEPS the filter. `?page=N` alone reverted `?status=` and `?dryRun=` on every
+   * page change, which on a filtered set that is one page shorter renders an EMPTY table with no
+   * pagination row and no explanation. The query string is built by the module that defines the
+   * vocabulary, so this file states no param literal of its own.
+   */
+  const hrefFor = (targetPage: number) =>
+    buildRunsListHref(workflowId, { page: targetPage, status, showDryRuns })
 
   if (runs.length === 0) {
     return (
@@ -112,7 +137,7 @@ export function RunsTable({ runs, total, page, limit, workflowId }: RunsTablePro
         <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-sm">
           {page > 1 ? (
             <Link
-              href={`/workflows/${workflowId}/runs?page=${page - 1}`}
+              href={hrefFor(page - 1)}
               className="text-muted-foreground hover:underline"
             >
               &larr; Previous
@@ -125,7 +150,7 @@ export function RunsTable({ runs, total, page, limit, workflowId }: RunsTablePro
           </span>
           {page < totalPages ? (
             <Link
-              href={`/workflows/${workflowId}/runs?page=${page + 1}`}
+              href={hrefFor(page + 1)}
               className="text-muted-foreground hover:underline"
             >
               Next &rarr;

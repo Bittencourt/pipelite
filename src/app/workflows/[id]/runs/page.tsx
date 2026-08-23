@@ -2,7 +2,7 @@ import { Suspense } from "react"
 import { auth } from "@/auth"
 import { db } from "@/db"
 import { workflows, workflowRuns } from "@/db/schema/workflows"
-import { eq, desc, count, and, sql } from "drizzle-orm"
+import { eq, desc, count, and } from "drizzle-orm"
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { parseRunsSearchParams } from "@/lib/workflows/runs-filter"
@@ -90,12 +90,16 @@ export default async function WorkflowRunsPage({
         </Suspense>
       </div>
 
+      {/* `status` and `showDryRuns` go through so the pagination links can carry them (WR-05):
+          `?page=N` alone reverted both on every page change. */}
       <RunsTable
         runs={runs}
         total={total}
         page={page}
         limit={LIMIT}
         workflowId={id}
+        status={status}
+        showDryRuns={showDryRuns}
       />
     </div>
   )
