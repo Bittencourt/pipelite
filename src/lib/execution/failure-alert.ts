@@ -1,5 +1,10 @@
-import { sql } from "drizzle-orm"
+import { sql, eq } from "drizzle-orm"
 import { db } from "@/db"
+import { workflows, workflowRuns } from "@/db/schema/workflows"
+import { users } from "@/db/schema/users"
+import { notificationPreferences } from "@/db/schema/notification-preferences"
+import { getWorkflowFailedTemplate } from "@/lib/email/templates/workflow-failed"
+import { safeSend } from "@/lib/email/send"
 
 /**
  * WFOPS-03 — alert a workflow's author when one of its runs fails.
@@ -62,4 +67,99 @@ export async function claimFailureAlert(workflowId: string): Promise<boolean> {
   // postgres-js does not always hand back a plain array; same defensive read as
   // reclaimStaleRuns (`execution-processor.ts:97`).
   return ((claimed as unknown as unknown[])?.length ?? 0) > 0
+}
+
+/**
+ * Alert a workflow's author that one of its runs failed — at most once per
+ * `FAILURE_ALERT_WINDOW_MINUTES`, never for a dry run, and never by throwing.
+ *
+ * **This function must never reject.** Its callers are the execution processor's drain loops
+ * (wired by plan 41-12, not here). An escaping rejection would abort a tick and leave pending
+ * runs unclaimed, so the whole body is wrapped and every failure is logged instead.
+ *
+ * It DETECTS rather than hooks: `executeRun` does not throw on a failed run, it calls `failRun`
+ * internally (`src/lib/execution/engine.ts:551-562`) and returns normally, so re-reading the
+ * run's terminal status is the only way the processor can know (CONTEXT amendment A4).
+ *
+ * Deliberately NOT called from the run-creation helper (`create-run.ts`) or the inbound
+ * webhook route.
+ * Recursion-limit failures are inserted already-`failed` so the processor never claims them,
+ * and synchronous webhook-response runs never reach the processor. Both are real coverage gaps
+ * (T-41-48), documented in plan 41-04's deployment section rather than closed, because closing
+ * them means putting email latency inside a live webhook request.
+ */
+export async function maybeAlertOnRunFailure(runId: string): Promise<void> {
+  try {
+    const [run] = await db
+      .select({
+        status: workflowRuns.status,
+        dryRun: workflowRuns.dryRun,
+        error: workflowRuns.error,
+        workflowId: workflowRuns.workflowId,
+      })
+      .from(workflowRuns)
+      .where(eq(workflowRuns.id, runId))
+      .limit(1)
+
+    // No row means the run was pruned between the caller reading it and this read. Nothing to
+    // report, and nothing is wrong.
+    if (!run || run.status !== "failed") return
+
+    // A failing TEST run is expected, not an incident: the operator is watching the dialog
+    // that started it. This return is BEFORE the claim on purpose — claiming and then not
+    // sending would burn the workflow's one-per-window budget on a test run and suppress the
+    // next REAL failure's alert, which would also let anyone silence a workflow's alerts by
+    // clicking Test run in a loop (T-41-44).
+    if (run.dryRun) return
+
+    const [workflow] = await db
+      .select({ name: workflows.name, createdBy: workflows.createdBy })
+      .from(workflows)
+      .where(eq(workflows.id, run.workflowId))
+      .limit(1)
+    if (!workflow?.createdBy) return
+
+    // Exactly one recipient, the person who authored the automation. Deliberately NOT widened
+    // to all admins: the body carries run internals, and a user who cannot see the run must
+    // not be told about it (T-41-46).
+    const [author] = await db
+      .select({ email: users.email, locale: users.locale })
+      .from(users)
+      .where(eq(users.id, workflow.createdBy))
+      .limit(1)
+    if (!author?.email) return
+
+    // An ABSENT row means SEND. `getNotificationPreferences` returns all-true defaults when the
+    // row is missing (`src/app/settings/notifications/actions.ts:38-40`) and that table is only
+    // ever written by the settings form, so reading absence as "do not send" would silently
+    // disable failure alerting for every user who has never opened that page.
+    const [prefs] = await db
+      .select({ emailWorkflowFailed: notificationPreferences.emailWorkflowFailed })
+      .from(notificationPreferences)
+      .where(eq(notificationPreferences.userId, workflow.createdBy))
+      .limit(1)
+    if (prefs && !prefs.emailWorkflowFailed) return
+
+    // Last gate, so nobody above burns the window: opted-out users and dry runs never reach it.
+    if (!(await claimFailureAlert(run.workflowId))) return
+
+    const appUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
+    const runUrl = `${appUrl}/workflows/${run.workflowId}/runs/${runId}`
+    const template = await getWorkflowFailedTemplate(
+      workflow.name,
+      runUrl,
+      run.error ?? "",
+      author.locale
+    )
+
+    // NOT awaited. `safeSend` RETHROWS on transport failure (`src/lib/email/send.ts:34-37`),
+    // and it also skips silently when SMTP_HOST is unset (`send.ts:20-23`). Awaiting it here
+    // would put relay latency, and its exceptions, inside the processor's drain loop
+    // (T-41-45).
+    safeSend(author.email, template).catch((error) => {
+      console.error(`[failure-alert] Failed to send failure alert for run ${runId}:`, error)
+    })
+  } catch (error) {
+    console.error(`[failure-alert] Alert check failed for run ${runId}:`, error)
+  }
 }

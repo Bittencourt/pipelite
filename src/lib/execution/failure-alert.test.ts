@@ -187,3 +187,237 @@ describe("claimFailureAlert", () => {
     ).not.toContain("updated_at")
   })
 })
+
+/**
+ * Queue the results of the module's sequential `db.select(...).from(...).where(...).limit(1)`
+ * reads, in call order: the run row, the workflow row, the author row, the preference row.
+ * An exhausted queue yields `[]`, which every read treats as "missing".
+ */
+function queueSelects(...results: unknown[][]) {
+  let call = 0
+  mockSelect.mockImplementation(() => {
+    const result = results[call] ?? []
+    call += 1
+    return {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue(result),
+    }
+  })
+}
+
+const RUN = { status: "failed", dryRun: false, error: "HTTP 500: upstream exploded", workflowId: "wf-1" }
+const WORKFLOW = { name: "Nightly sync", createdBy: "user-1" }
+const AUTHOR = { email: "author@app.test", locale: "pt-BR" }
+const TEMPLATE = { subject: "s", html: "h", text: "t" }
+
+/** Let the fire-and-forget `.catch` callback run. */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+describe("maybeAlertOnRunFailure", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockExecute.mockResolvedValue([{ id: "wf-1" }])
+    mockSafeSend.mockResolvedValue(undefined)
+    mockGetTemplate.mockResolvedValue(TEMPLATE)
+    queueSelects()
+  })
+
+  // --- Detection. `executeRun` signals failure by WRITING a row, not by throwing
+  // (`engine.ts:551-562`), so re-reading the terminal status is the only way to know.
+
+  it.each(["completed", "running", "pending", "waiting"])(
+    "does nothing for a run in status %s",
+    async (status) => {
+      const { maybeAlertOnRunFailure } = await import("./failure-alert")
+      queueSelects([{ ...RUN, status }], [WORKFLOW], [AUTHOR], [])
+
+      await maybeAlertOnRunFailure("run-1")
+
+      expect(mockGetTemplate).not.toHaveBeenCalled()
+      expect(mockSafeSend).not.toHaveBeenCalled()
+      expect(mockExecute, "the claim must not be burned on a run that did not fail").not.toHaveBeenCalled()
+    }
+  )
+
+  it("returns quietly when the run row is gone (pruned between executeRun and this read)", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([])
+
+    await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
+    expect(mockSafeSend).not.toHaveBeenCalled()
+    expect(mockExecute).not.toHaveBeenCalled()
+  })
+
+  it("alerts on a failed non-dry run", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
+
+    await maybeAlertOnRunFailure("run-1")
+
+    expect(mockSafeSend).toHaveBeenCalledTimes(1)
+  })
+
+  // --- Dry-run exclusion (T-41-44).
+
+  it("does not alert on a failed DRY run, and does not burn the claim window", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([{ ...RUN, dryRun: true }], [WORKFLOW], [AUTHOR], [])
+
+    await maybeAlertOnRunFailure("run-1")
+
+    expect(mockSafeSend, "a test run failing is expected and is not an incident").not.toHaveBeenCalled()
+    expect(
+      mockExecute,
+      "the dryRun return must come BEFORE claimFailureAlert. Claiming and then not sending " +
+        "would suppress the next REAL failure's alert for an hour, and would let anyone " +
+        "silence a workflow's alerts by clicking Test run in a loop."
+    ).not.toHaveBeenCalled()
+  })
+
+  // --- Preference, whose default is the one that silently disables the feature if inverted.
+
+  it("sends when the author has NO preference row", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
+
+    await maybeAlertOnRunFailure("run-1")
+
+    expect(
+      mockSafeSend,
+      "getNotificationPreferences returns all-true when the row is absent " +
+        "(src/app/settings/notifications/actions.ts:38-40), and notification_preferences is " +
+        "only ever written by the settings form. Reading an absent row as 'do not send' " +
+        "silently disables failure alerting for every user who never opened that page."
+    ).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not send when emailWorkflowFailed is false, and does not burn the claim", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([RUN], [WORKFLOW], [AUTHOR], [{ emailWorkflowFailed: false }])
+
+    await maybeAlertOnRunFailure("run-1")
+
+    expect(mockSafeSend).not.toHaveBeenCalled()
+    expect(
+      mockExecute,
+      "the preference check must precede the claim, so a user who opted out never burns the window"
+    ).not.toHaveBeenCalled()
+  })
+
+  it("sends when emailWorkflowFailed is true", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([RUN], [WORKFLOW], [AUTHOR], [{ emailWorkflowFailed: true }])
+
+    await maybeAlertOnRunFailure("run-1")
+
+    expect(mockSafeSend).toHaveBeenCalledTimes(1)
+  })
+
+  // --- Recipient (T-41-46). Exactly one address, the workflow's author.
+
+  it("sends to exactly one address — the workflow's createdBy — in that user's locale", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
+
+    await maybeAlertOnRunFailure("run-1")
+
+    expect(mockSafeSend).toHaveBeenCalledTimes(1)
+    expect(mockSafeSend.mock.calls[0]![0]).toBe("author@app.test")
+    expect(mockSafeSend.mock.calls[0]![1]).toBe(TEMPLATE)
+
+    expect(mockGetTemplate).toHaveBeenCalledTimes(1)
+    const [name, runUrl, errorMessage, locale] = mockGetTemplate.mock.calls[0]!
+    expect(name).toBe("Nightly sync")
+    expect(runUrl).toContain("/workflows/wf-1/runs/run-1")
+    expect(errorMessage).toBe("HTTP 500: upstream exploded")
+    expect(locale).toBe("pt-BR")
+  })
+
+  it("does not send when the workflow row is gone", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([RUN], [])
+
+    await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
+    expect(mockSafeSend).not.toHaveBeenCalled()
+  })
+
+  it("does not send when the author was deleted", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([RUN], [WORKFLOW], [])
+
+    await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
+    expect(mockSafeSend).not.toHaveBeenCalled()
+  })
+
+  it("does not send when the author has no email address", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([RUN], [WORKFLOW], [{ email: null, locale: "en-US" }], [])
+
+    await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
+    expect(mockSafeSend).not.toHaveBeenCalled()
+  })
+
+  it("passes an empty error string through when the run recorded none", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([{ ...RUN, error: null }], [WORKFLOW], [AUTHOR], [])
+
+    await maybeAlertOnRunFailure("run-1")
+
+    expect(mockGetTemplate.mock.calls[0]![2]).toBe("")
+  })
+
+  // --- Throttle integration.
+
+  it("does not send when the claim is lost (already alerted inside the window)", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
+    mockExecute.mockResolvedValue([])
+
+    await maybeAlertOnRunFailure("run-1")
+
+    expect(mockExecute).toHaveBeenCalledTimes(1)
+    expect(mockSafeSend).not.toHaveBeenCalled()
+  })
+
+  // --- Fire-and-forget (T-41-45). safeSend RETHROWS on transport failure
+  // (`src/lib/email/send.ts:34-37`); awaiting it inside the processor's drain loop would
+  // abort a tick and leave pending runs unclaimed.
+
+  it("resolves even when safeSend rejects, and logs the rejection with the [failure-alert] prefix", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
+    mockSafeSend.mockRejectedValue(new Error("SMTP 421"))
+
+    await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
+    await flush()
+
+    // ANTI-VACUITY: a function that never sends would satisfy "does not reject" trivially.
+    expect(mockSafeSend).toHaveBeenCalledTimes(1)
+    expect(consoleError.mock.calls.flat().join(" ")).toContain("[failure-alert]")
+    consoleError.mockRestore()
+  })
+
+  it("does not await safeSend", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
+    // A send that never settles must not hold the processor tick open.
+    mockSafeSend.mockReturnValue(new Promise(() => {}))
+
+    await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
+    expect(mockSafeSend).toHaveBeenCalledTimes(1)
+  })
+
+  it("swallows and logs a throw from the database read rather than propagating it", async () => {
+    const { maybeAlertOnRunFailure } = await import("./failure-alert")
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    mockSelect.mockImplementation(() => {
+      throw new Error("connection terminated unexpectedly")
+    })
+
+    await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
+    expect(consoleError.mock.calls.flat().join(" ")).toContain("[failure-alert]")
+    consoleError.mockRestore()
+  })
+})
