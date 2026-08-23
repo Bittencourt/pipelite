@@ -9,6 +9,7 @@ vi.mock("@/lib/api/webhooks/deliver", () => ({
 
 import { registerWebhookSubscriber, _resetForTesting } from "./webhook"
 import { triggerWebhook } from "@/lib/api/webhooks/deliver"
+import { snapshot, _resetForTesting as _resetHeartbeat } from "@/lib/observability/heartbeat"
 
 const mockedTriggerWebhook = vi.mocked(triggerWebhook)
 
@@ -86,5 +87,52 @@ describe("registerWebhookSubscriber", () => {
 
     // Should still be called only once, not twice
     expect(mockedTriggerWebhook).toHaveBeenCalledOnce()
+  })
+})
+
+// ── OBS-03 heartbeat wiring ──────────────────────────────────────────────────────────────────
+//
+// `alive` derives from REGISTRATION, never from `lastTickAt`: a deployment with no webhooks
+// configured still has a healthy subscriber, and an idle CRM emits nothing at all. `lastTickAt` is
+// a diagnostic — see `audit.test.ts` for the full argument and for the single-module-registry
+// caveat that makes these assertions a PROXY rather than a proof.
+describe("registerWebhookSubscriber heartbeat wiring", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    _resetForTesting()
+    _resetHeartbeat()
+  })
+
+  it("registers webhook-subscriber in the heartbeat registry", () => {
+    expect(snapshot()["webhook-subscriber"]).toEqual({ alive: false, lastTickAt: null })
+
+    registerWebhookSubscriber()
+
+    expect(snapshot()["webhook-subscriber"]).toEqual({ alive: true, lastTickAt: null })
+  })
+
+  it("is still alive a year later with lastTickAt null, because registration is the claim", () => {
+    registerWebhookSubscriber()
+
+    const inAYear = Date.now() + 365 * 24 * 60 * 60 * 1000
+    expect(snapshot(inAYear)["webhook-subscriber"]).toEqual({ alive: true, lastTickAt: null })
+  })
+
+  it("advances lastTickAt to an ISO string when the handler runs", () => {
+    registerWebhookSubscriber()
+
+    crmBus.emit("deal.created", {
+      entity: "deal",
+      entityId: "d-1",
+      action: "created",
+      data: {},
+      changedFields: null,
+      userId: "u-1",
+      timestamp: "2026-03-26T12:00:00Z",
+    })
+
+    const report = snapshot()["webhook-subscriber"]
+    expect(report.lastTickAt).not.toBeNull()
+    expect(new Date(report.lastTickAt!).toISOString()).toBe(report.lastTickAt)
   })
 })

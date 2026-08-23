@@ -4,6 +4,7 @@ import { db } from "@/db"
 import { auditLog } from "@/db/schema"
 import { getCurrentActor } from "@/lib/audit/actor-context"
 import { buildChanges } from "@/lib/audit/diff"
+import { recordTick, registerSubscriber } from "@/lib/observability/heartbeat"
 
 /**
  * The twelve create/update/delete events across the four CRM entities.
@@ -31,6 +32,11 @@ export const AUDITED_EVENTS: CrmEventName[] = [
   "activity.deleted",
 ]
 
+// PER-INSTANCE AND UNREADABLE FROM ANYWHERE ELSE. This flag is module-scoped, and this module is
+// duplicated once per Turbopack module graph, so `/api/health` — which lives in a different graph —
+// would read its own always-`false` copy. It exists only to keep a second `registerAuditSubscriber()`
+// call from attaching twelve more listeners. The health route reads the `globalThis` heartbeat
+// registry instead; do not "simplify" it to consult this.
 let registered = false
 
 /**
@@ -43,8 +49,21 @@ let registered = false
 export function registerAuditSubscriber(): void {
   if (registered) return
 
+  // OBS-03. Inside the guard so a repeat call is a no-op here too, and BEFORE the listeners attach
+  // so the registry records the attempt even if `crmBus.on` were to throw. Registration is the
+  // whole liveness claim for a subscriber: it says this function executed IN THIS PROCESS, which is
+  // the 2026-08-08 failure class. It deliberately says nothing about whether an event ever arrives.
+  registerSubscriber("audit-subscriber")
+
   for (const event of AUDITED_EVENTS) {
     crmBus.on(event, (payload: CrmEventPayload) => {
+      // HANDLER ENTRY, above every early return. A save that changed nothing returns at line 82
+      // without writing a row, but the handler still FIRED — the bus reached it. Recording the tick
+      // after that return would make a quiet-but-attached subscriber indistinguishable from one
+      // attached to a different `crmBus` instance, and telling those two apart is the entire point
+      // of this field (the 2026-08-16 `actor_kind = system` defect). `recordTick` never throws.
+      recordTick("audit-subscriber")
+
       // READ THE STORE SYNCHRONOUSLY, HERE, AT HANDLER ENTRY.
       //
       // `EventEmitter.emit` runs handlers inline in the emitter's own stack, so the ALS

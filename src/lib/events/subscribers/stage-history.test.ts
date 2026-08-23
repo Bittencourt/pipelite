@@ -20,6 +20,7 @@ vi.mock("@/db", () => ({
 import { registerStageHistorySubscriber, _resetForTesting } from "./stage-history"
 import { db } from "@/db"
 import { dealStageHistory } from "@/db/schema"
+import { snapshot, _resetForTesting as _resetHeartbeat } from "@/lib/observability/heartbeat"
 
 const mockDb = db as unknown as { insert: ReturnType<typeof vi.fn> }
 
@@ -153,5 +154,48 @@ describe("registerStageHistorySubscriber", () => {
       process.off("unhandledRejection", onUnhandled)
       errorSpy.mockRestore()
     }
+  })
+})
+
+// ── OBS-03 heartbeat wiring ──────────────────────────────────────────────────────────────────
+//
+// `alive` derives from REGISTRATION, never from `lastTickAt`: a CRM where no card moves between
+// columns for a week emits no `deal.stage_changed` at all, and that subscriber is healthy, not
+// dead. `lastTickAt` is a diagnostic — see `audit.test.ts` for the full argument and for the
+// single-module-registry caveat that makes these assertions a PROXY rather than a proof.
+describe("registerStageHistorySubscriber heartbeat wiring", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    _resetForTesting()
+    _resetHeartbeat()
+  })
+
+  it("registers stage-history-subscriber in the heartbeat registry", () => {
+    expect(snapshot()["stage-history-subscriber"]).toEqual({ alive: false, lastTickAt: null })
+
+    registerStageHistorySubscriber()
+
+    expect(snapshot()["stage-history-subscriber"]).toEqual({ alive: true, lastTickAt: null })
+  })
+
+  it("is still alive a year later with lastTickAt null, because registration is the claim", () => {
+    registerStageHistorySubscriber()
+
+    const inAYear = Date.now() + 365 * 24 * 60 * 60 * 1000
+    expect(snapshot(inAYear)["stage-history-subscriber"]).toEqual({
+      alive: true,
+      lastTickAt: null,
+    })
+  })
+
+  it("advances lastTickAt to an ISO string when the handler runs", () => {
+    stubInsert()
+    registerStageHistorySubscriber()
+
+    crmBus.emit("deal.stage_changed", stagePayload())
+
+    const report = snapshot()["stage-history-subscriber"]
+    expect(report.lastTickAt).not.toBeNull()
+    expect(new Date(report.lastTickAt!).toISOString()).toBe(report.lastTickAt)
   })
 })
