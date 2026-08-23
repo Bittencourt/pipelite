@@ -40,7 +40,7 @@
  */
 import { describe, expect, it } from "vitest"
 
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 
 import {
   openingTagAt,
@@ -557,5 +557,308 @@ describe("every flex row either wraps, shrinks, or is a named exemption", () => 
         `  Exempt because: ${e.reason}\n\n` +
         `An exemption whose className changed must be re-examined against R-1..R-4, not re-counted.`
     ).toBe(e.count)
+  })
+})
+
+/* ------------------------------------------ 5. G-4 / C-41-1 — zero new palette utilities */
+
+/**
+ * Every Tailwind palette family, not just the ones this phase might plausibly have reached for.
+ *
+ * The narrower `/-(red|green|emerald|blue|amber|violet|rose)-[0-9]/` in
+ * `runs-list-wiring.test.ts:98` is 41-10's per-plan rule over three files; this is the phase-wide
+ * sweep, and a rule that forbids `emerald` while permitting `teal` is a rule about vocabulary rather
+ * than about theming.
+ */
+const PALETTE_FAMILIES = [
+  "red",
+  "orange",
+  "amber",
+  "yellow",
+  "lime",
+  "green",
+  "emerald",
+  "teal",
+  "cyan",
+  "sky",
+  "blue",
+  "indigo",
+  "violet",
+  "purple",
+  "fuchsia",
+  "pink",
+  "rose",
+  "slate",
+  "gray",
+  "zinc",
+  "neutral",
+  "stone",
+] as const
+
+const PALETTE = new RegExp(`-(${PALETTE_FAMILIES.join("|")})-[0-9]`)
+
+const hasPalette = (text: string) => PALETTE.test(text)
+
+/**
+ * THE RULE, STATED AS NARROWLY AS UI-SPEC STATES IT.
+ *
+ * This is NOT a general repo claim. `run-status-badge.tsx:13,21,25` already ships three
+ * `bg-emerald-100 … dark:bg-emerald-950`-style pairs and Phase 45 declared the repo-wide token sweep
+ * out of scope. The rule is enforceable precisely because it is narrow: **the new code adds none.**
+ *
+ * WHY IT MATTERS, rather than being a style preference. Every colour this phase uses is a semantic
+ * token, so every one works in BOTH themes with no `dark:` sibling. A hardcoded palette utility
+ * without its `dark:` pair is invisible or unreadable in dark mode — and dark mode is live
+ * (`layout.tsx:73-74`, `attribute="class"`). That is why Phase 45 replaced `text-red-600` with
+ * `text-destructive`: `--destructive` carries a lightened `.dark` value.
+ */
+const PALETTE_RULE =
+  "C-41-1: the code this phase adds contains zero hardcoded Tailwind palette utilities. Every " +
+  "colour it uses is a semantic token, so every one is correct in both themes with no dark: " +
+  'sibling — and dark mode is LIVE (layout.tsx:73-74, attribute="class"), so a palette utility ' +
+  "without its dark: pair is invisible or unreadable rather than merely off-brand. Replace it with " +
+  "the token that carries the same meaning: text-destructive for an error, text-muted-foreground " +
+  'for a hint, variant="outline" for a neutral surface. Do NOT add a dark: pair to make it pass — ' +
+  "the rule is that this phase's new code uses TOKENS, not that its palette utilities are " +
+  "theme-complete. And do not widen the scanned set to include run-status-badge.tsx: its three " +
+  "pre-existing pairs are the documented exemption and Phase 45 put the repo-wide sweep out of scope."
+
+describe("the palette matcher works", () => {
+  /**
+   * ANTI-VACUITY, and this is the assertion that matters most in this section. A typo in a regex
+   * assembled from a 22-element array would make the whole rule pass silently on every input — which
+   * is exactly how this class of gate fails. A rule nobody has seen fire is not a rule.
+   */
+  it("matches a real palette utility and not a semantic token", () => {
+    expect(hasPalette("bg-emerald-100"), "the matcher does not fire on bg-emerald-100").toBe(true)
+    expect(
+      hasPalette("bg-destructive/10"),
+      "the matcher fires on bg-destructive/10, a SEMANTIC TOKEN this phase is required to use. A " +
+        "regex broad enough to forbid the tokens the phase must use would be deleted rather than " +
+        "satisfied, and the rule would go with it."
+    ).toBe(false)
+  })
+
+  it.each(PALETTE_FAMILIES)("covers the %s family", (family) => {
+    expect(hasPalette(`bg-${family}-500`), `the matcher does not fire on bg-${family}-500`).toBe(true)
+  })
+
+  /**
+   * The matcher fires on REAL CODE IN THIS REPO, not only on literals written in this file.
+   *
+   * `run-status-badge.tsx` is the documented C-41-1 exemption and is deliberately NOT in the scanned
+   * set. Reading it here is what makes the exclusion visible as a decision, and it proves the rule
+   * would catch this shape if it appeared in one of the nine.
+   */
+  it("fires on the documented exemption's real content", () => {
+    const exempt = "src/app/workflows/[id]/runs/components/run-status-badge.tsx"
+    const source = readStrippedSource(exempt)
+
+    expect(
+      hasPalette(source),
+      `${exempt} no longer contains a palette utility. That file is C-41-1's documented exemption ` +
+        `and this assertion is what proves the matcher fires on real code rather than only on the ` +
+        `literals in the test above. If the file was genuinely cleaned up, delete this test and say ` +
+        `so — do not weaken the matcher.`
+    ).toBe(true)
+  })
+})
+
+describe("G-4 / C-41-1 — no new palette utility in the nine touched files", () => {
+  it("declares none on any extracted className", () => {
+    const offenders = ALL_USES.filter((use) =>
+      tokensOf(use.className).some((token) => hasPalette(token))
+    )
+
+    expect(
+      offenders,
+      `${offenders.length} palette utility/utilities on extracted element(s):\n${show(offenders)}\n\n` +
+        PALETTE_RULE
+    ).toEqual([])
+  })
+
+  /**
+   * The same rule over the WHOLE stripped source, which is a strict superset of the check above.
+   *
+   * NOT redundant, and the file the plan sent me to read is the proof. `run-status-badge.tsx` parks
+   * its palette utilities in a `statusConfig` object literal and applies them as
+   * `className={config.className}` — so they appear in NO opening tag, and the className-token check
+   * above would report that file clean. Any of the nine could acquire a palette utility the same way:
+   * a `const TONE = { ok: "text-green-600" }` map is invisible to an opening-tag scan.
+   *
+   * Safe to run over the whole source because comments are stripped first — `dry-run-badge.tsx`'s
+   * header discusses `violet` and `bg-emerald-100 … dark:bg-emerald-950` at length while explaining
+   * why it uses neither, and a raw-source version of this assertion would fail on that prose.
+   */
+  it.each(TOUCHED_FILES)("%s declares none anywhere in its source", (file) => {
+    const source = readStrippedSource(file)
+    const hits = source.match(new RegExp(PALETTE.source, "g")) ?? []
+
+    expect(
+      hits,
+      `${file}: ${hits.length} palette match(es) in the stripped source — ${hits.join(", ")}.\n\n` +
+        `This check is a superset of the className-token one: a palette utility parked in a const ` +
+        `map and applied as className={x} appears in no opening tag at all. That is exactly the ` +
+        `shape run-status-badge.tsx uses.\n\n${PALETTE_RULE}`
+    ).toEqual([])
+  })
+})
+
+/**
+ * The anti-false-positive half. Without it the palette rule could be "satisfied" by a regex so broad
+ * it forbids the very tokens this phase is required to use, and the next person to hit that would
+ * loosen the rule rather than the regex.
+ */
+describe("the semantic tokens this phase requires are present and do not trip the rule", () => {
+  /** Matches a token exactly, or under a variant prefix (`hover:text-foreground`). */
+  const declares = (token: string) =>
+    ALL_USES.filter((use) =>
+      tokensOf(use.className).some((t) => t === token || t.endsWith(`:${token}`))
+    )
+
+  /**
+   * Tokens asserted to be PRESENT in the scanned set. Each is load-bearing somewhere in this phase,
+   * so its absence means a colour decision was changed, not that a class was tidied.
+   *
+   * UI-SPEC's Theme Contract also lists `bg-muted`, `bg-background`, `border-border`, `bg-primary`,
+   * `text-primary-foreground` and `bg-input/30` as dark-safe. Those are asserted only NOT to trip the
+   * rule (below), not to be present: they live inside `buttonVariants` and the Badge/Textarea
+   * primitives, which this phase reaches through `variant="outline"` / `variant="default"` rather
+   * than by writing the class at the call site. Asserting their presence here would be asserting
+   * something about `src/components/ui/`, which G-7 says this phase must not touch.
+   */
+  const REQUIRED_PRESENT = [
+    "bg-destructive/10",
+    "text-destructive",
+    "text-muted-foreground",
+    "border-dashed",
+  ]
+
+  it.each(REQUIRED_PRESENT)("%s is declared somewhere in the scanned set", (token) => {
+    expect(
+      declares(token).length,
+      `no element in the nine touched files declares "${token}". It is one of the semantic tokens ` +
+        `UI-SPEC's Theme Contract names for this phase, so its disappearance is a colour decision ` +
+        `reversed rather than a tidy-up.`
+    ).toBeGreaterThan(0)
+  })
+
+  /**
+   * Every token UI-SPEC's Theme Contract blesses, asserted not to trip the matcher.
+   *
+   * `border-dashed` is in here for a reason worth stating: it is a border STYLE, not a colour, and it
+   * is the whole point of C-41-2. The dry-run badge is distinguished from `skipped` (also `outline`)
+   * by border style rather than by hue, which is why it survives a monochrome or high-contrast
+   * display where a colour pair would not.
+   */
+  const ALLOWED_TOKENS = [
+    "bg-destructive/10",
+    "text-destructive",
+    "bg-muted",
+    "text-muted-foreground",
+    "bg-background",
+    "border-border",
+    "text-foreground",
+    "bg-primary",
+    "text-primary-foreground",
+    "bg-input/30",
+    "border-dashed",
+    "bg-black/50",
+  ]
+
+  it.each(ALLOWED_TOKENS)("%s does not trip the palette rule", (token) => {
+    expect(
+      hasPalette(token),
+      `the palette matcher fires on "${token}", which UI-SPEC's Theme Contract requires this phase ` +
+        `to use. Fix the MATCHER, never the token — a rule that forbids the vocabulary the phase is ` +
+        `built on gets deleted, and C-41-1 goes with it.`
+    ).toBe(false)
+  })
+})
+
+/* ------------------------------------------------- 6. no per-component focus styling */
+
+/**
+ * `globals.css:148-156` already gives every `button`, `a` and `[role="button"]` a
+ * `2px solid var(--primary)` `:focus-visible` outline, and `*:focus-visible` covers everything else
+ * with `var(--ring)`. A per-component `focus:ring-*` would double it, and UI-SPEC forbids
+ * per-component focus styling in this phase.
+ *
+ * This assertion is only honest over a comment-stripped source: `replay-run-button.tsx:41-42` says
+ * "NO `focus:ring-*` CLASS" in its header, so a raw grep finds the token in the very file that
+ * documents its own absence. `stripper-is-load-bearing` above asserts exactly that.
+ */
+describe("no per-component focus styling", () => {
+  it.each(TOUCHED_FILES)("%s declares no focus:ring-*", (file) => {
+    const source = readStrippedSource(file)
+    const hits = source.match(/focus:ring[\w-]*/g) ?? []
+
+    expect(
+      hits,
+      `${file}: ${hits.length} focus:ring utility/utilities — ${hits.join(", ")}.\n\n` +
+        `globals.css:148-156 already outlines every button and link at 2px solid var(--primary) on ` +
+        `:focus-visible. A second ring here doubles it, and UI-SPEC forbids per-component focus ` +
+        `styling in this phase.`
+    ).toEqual([])
+  })
+})
+
+/* --------------------------------------------------- 7. G-7 — no new shadcn primitive */
+
+/**
+ * THE AUTHORITATIVE FORM OF G-7 IS `git diff --name-only src/components/ui/` BEING EMPTY.
+ *
+ * This is the in-suite approximation: every `@/components/ui/x` a scanned file imports must resolve
+ * to a module that ALREADY EXISTS and must already export the names taken from it. It cannot see a
+ * primitive edited in place without a new export, which is why the git form stays authoritative and
+ * is named here rather than left implicit.
+ *
+ * Copied in shape from `responsive-classes.test.ts:485-516`. The git half of that test is deliberately
+ * not copied: it pins a phase-40 base commit, and re-pinning it to a phase-41 commit would make this
+ * file's history a dependency of its own assertions.
+ */
+describe("G-7 — src/components/ui/ gained nothing", () => {
+  it("imports only primitives and exports that already exist", () => {
+    const missing: string[] = []
+    let resolved = 0
+
+    for (const file of TOUCHED_FILES) {
+      const source = readStrippedSource(file)
+
+      for (const match of source.matchAll(
+        /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["'](@\/components\/ui\/[^"']+)["']/g
+      )) {
+        const modulePath = `src/components/ui/${match[2].split("/").pop()}.tsx`
+
+        if (!existsSync(modulePath)) {
+          missing.push(`${file}: ${match[2]} does not exist`)
+          continue
+        }
+
+        const primitive = readFileSync(modulePath, "utf8")
+        for (const part of match[1].split(",")) {
+          const name = part.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0]?.trim()
+          if (!name) continue
+          resolved += 1
+          if (!new RegExp(`\\b${name}\\b`).test(primitive)) {
+            missing.push(`${file}: ${match[2]} does not provide ${name}`)
+          }
+        }
+      }
+    }
+
+    expect(
+      missing,
+      `these imports would require a primitive to be edited or created:\n    ${missing.join("\n    ")}`
+    ).toEqual([])
+
+    // ANTI-VACUITY: a regex that stopped matching the import syntax would report zero problems over
+    // zero imports. The floor is well below the real count so a legitimate refactor does not trip it.
+    expect(
+      resolved,
+      `only ${resolved} @/components/ui/ named import(s) were resolved across the nine files, which ` +
+        `is too few to be true — the import regex has stopped matching and this check is passing ` +
+        `over an empty set.`
+    ).toBeGreaterThan(20)
   })
 })
