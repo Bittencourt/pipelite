@@ -13,6 +13,7 @@ import { BULK_MAX_IDS } from "@/lib/bulk/limits"
 import type { BulkFailure, BulkWriteResult } from "@/lib/bulk/types"
 import { fetchFilteredData } from "@/lib/export/formatters"
 import type { ExportResult } from "@/lib/export/types"
+import { log } from "@/lib/log"
 import {
   createDealMutation,
   updateDealMutation,
@@ -126,7 +127,7 @@ export async function updateDeal(
         assignerName,
         assigneeUser.locale
       ).catch((error) => {
-        console.error("Failed to send deal-assigned email:", error)
+        log.error("deals/actions", "Failed to send deal-assigned email", { err: error })
       })
     }
   }

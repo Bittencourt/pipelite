@@ -13,6 +13,7 @@ import type { BulkFailure, BulkWriteResult } from "@/lib/bulk/types"
 import { fetchFilteredData } from "@/lib/export/formatters"
 import { endOfDayExclusive, startOfDayInclusive } from "@/lib/filters/date-range"
 import type { ExportResult } from "@/lib/export/types"
+import { log } from "@/lib/log"
 import {
   createActivityMutation,
   updateActivityMutation,
@@ -651,7 +652,7 @@ export async function getActivities(filters?: {
     // Nothing is filtered after the fetch. Every filter above is a `where` condition.
     return { success: true, data: result }
   } catch (error) {
-    console.error("Failed to get activities:", error)
+    log.error("activities/actions", "Failed to get activities", { err: error })
     return { success: false, error: "Failed to get activities" }
   }
 }
@@ -686,7 +687,7 @@ export async function getActivityById(
 
     return { success: true, data: activity }
   } catch (error) {
-    console.error("Failed to get activity:", error)
+    log.error("activities/actions", "Failed to get activity", { err: error })
     return { success: false, error: "Failed to get activity" }
   }
 }
@@ -713,7 +714,7 @@ export async function getActivityTypes(): Promise<
 
     return { success: true, data: types }
   } catch (error) {
-    console.error("Failed to get activity types:", error)
+    log.error("activities/actions", "Failed to get activity types", { err: error })
     return { success: false, error: "Failed to get activity types" }
   }
 }

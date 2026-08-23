@@ -29,6 +29,7 @@ import { revalidatePath } from "next/cache"
 
 import { auth } from "@/auth"
 import type { EntityType, Note } from "@/db/schema"
+import { log } from "@/lib/log"
 import {
   createNoteMutation,
   findNoteById,
@@ -148,7 +149,7 @@ export async function addNote(
 
     return { success: true, note: await toTimelineEntry(result.note) }
   } catch (error) {
-    console.error("addNote failed:", error)
+    log.error("notes/actions", "addNote failed", { err: error })
     return { success: false, error: NOTE_ERROR.failed }
   }
 }
@@ -183,7 +184,7 @@ export async function editNote(noteId: string, content: string): Promise<NoteRes
 
     return { success: true, note: await toTimelineEntry(result.note) }
   } catch (error) {
-    console.error("editNote failed:", error)
+    log.error("notes/actions", "editNote failed", { err: error })
     return { success: false, error: NOTE_ERROR.failed }
   }
 }
@@ -217,7 +218,7 @@ export async function deleteNote(noteId: string): Promise<VoidResult> {
 
     return { success: true }
   } catch (error) {
-    console.error("deleteNote failed:", error)
+    log.error("notes/actions", "deleteNote failed", { err: error })
     return { success: false, error: NOTE_ERROR.failed }
   }
 }
@@ -263,7 +264,7 @@ export async function loadMoreTimeline(
 
     return { success: true, page }
   } catch (error) {
-    console.error("loadMoreTimeline failed:", error)
+    log.error("notes/actions", "loadMoreTimeline failed", { err: error })
     return { success: false, error: NOTE_ERROR.failed }
   }
 }
