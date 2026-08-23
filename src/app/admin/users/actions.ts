@@ -7,6 +7,7 @@ import { eq, and, isNull, isNotNull, gt } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { sendApprovalEmail, sendInviteEmail } from "@/lib/email/send"
 import { z } from "zod"
+import { log } from "@/lib/log"
 
 const updateUserSchema = z.object({
   role: z.enum(["admin", "member"]).optional(),
@@ -51,7 +52,7 @@ export async function approveUser(userId: string): Promise<void> {
 
   // Send approval email (async, don't await to avoid blocking)
   sendApprovalEmail(user.email).catch((error) => {
-    console.error("Failed to send approval email:", error)
+    log.error("admin/users/actions", "Failed to send approval email", { err: error })
   })
 
   // Revalidate the page to show updated data
@@ -291,7 +292,7 @@ export async function inviteUser(
   // Fire-and-forget email send
   sendInviteEmail(normalizedEmail, token, session.user.name || "Admin").catch(
     (error) => {
-      console.error("Failed to send invite email:", error)
+      log.error("admin/users/actions", "Failed to send invite email", { err: error })
     }
   )
 

@@ -7,6 +7,7 @@ import { eq, and, isNull, sql, desc, isNotNull } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { STAGE_COLORS, getNextColor, type StageColor } from "@/lib/stage-colors"
+import { log } from "@/lib/log"
 
 // Default stages for new pipelines
 const DEFAULT_STAGES = [
@@ -96,7 +97,7 @@ export async function createPipeline(
 
     return { success: true, id: result.id }
   } catch (error) {
-    console.error("Failed to create pipeline:", error)
+    log.error("admin/pipelines/actions", "Failed to create pipeline", { err: error })
     return { success: false, error: "Failed to create pipeline" }
   }
 }
@@ -150,7 +151,7 @@ export async function updatePipeline(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to update pipeline:", error)
+    log.error("admin/pipelines/actions", "Failed to update pipeline", { err: error })
     return { success: false, error: "Failed to update pipeline" }
   }
 }
@@ -197,7 +198,7 @@ export async function deletePipeline(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to delete pipeline:", error)
+    log.error("admin/pipelines/actions", "Failed to delete pipeline", { err: error })
     return { success: false, error: "Failed to delete pipeline" }
   }
 }
@@ -250,7 +251,7 @@ export async function setDefaultPipeline(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to set default pipeline:", error)
+    log.error("admin/pipelines/actions", "Failed to set default pipeline", { err: error })
     return { success: false, error: "Failed to set default pipeline" }
   }
 }
@@ -351,7 +352,7 @@ export async function createStage(
 
     return { success: true, id: stage.id }
   } catch (error) {
-    console.error("Failed to create stage:", error)
+    log.error("admin/pipelines/actions", "Failed to create stage", { err: error })
     return { success: false, error: "Failed to create stage" }
   }
 }
@@ -447,7 +448,7 @@ export async function updateStage(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to update stage:", error)
+    log.error("admin/pipelines/actions", "Failed to update stage", { err: error })
     return { success: false, error: "Failed to update stage" }
   }
 }
@@ -499,7 +500,7 @@ export async function deleteStage(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to delete stage:", error)
+    log.error("admin/pipelines/actions", "Failed to delete stage", { err: error })
     return { success: false, error: "Failed to delete stage" }
   }
 }
@@ -579,7 +580,7 @@ export async function reorderStages(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to reorder stages:", error)
+    log.error("admin/pipelines/actions", "Failed to reorder stages", { err: error })
     return { success: false, error: "Failed to reorder stages" }
   }
 }

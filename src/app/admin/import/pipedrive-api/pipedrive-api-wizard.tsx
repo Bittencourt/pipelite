@@ -14,6 +14,8 @@ import {
 } from "@/lib/import/pipedrive-api-import-actions"
 import type { ImportProgressState } from "@/lib/import/pipedrive-import-state"
 import type { PipedriveImportConfig } from "@/lib/import/pipedrive-api-types"
+// Valid in a "use client" file only because `@/lib/log` imports nothing at all.
+import { log } from "@/lib/log"
 
 const STEPS = [
   { id: "api-key", label: "API Key", icon: Key },
@@ -73,7 +75,7 @@ export function PipedriveApiWizard() {
       setStep("preview")
     } else {
       // Error handling is done in the step component
-      console.error("Failed to fetch counts:", result.error)
+      log.error("admin/import/pipedrive-api/pipedrive-api-wizard", "Failed to fetch counts", { err: result.error })
     }
   }, [apiKey])
 
