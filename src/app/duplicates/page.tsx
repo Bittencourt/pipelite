@@ -59,6 +59,7 @@ import { readOrgIdentityFields } from "@/lib/dedup/identity-settings"
 import { countPairs, listPairs, MAX_PAIR_PAGE, type PairSideSummary } from "@/lib/dedup/queries"
 import { calculateScanProgress, getLatestScan } from "@/lib/dedup/scan-state"
 import type { DedupReason } from "@/lib/dedup/types"
+import { log } from "@/lib/log"
 
 import type { ScanProgressPayload } from "./actions"
 import { DuplicatesTabs } from "./duplicates-tabs"
@@ -106,7 +107,9 @@ async function readOrgFieldNames(): Promise<string[]> {
 
     return collectableIdentityFieldNames(definitions)
   } catch (error) {
-    console.error("[duplicates-page] could not read the organization field definitions:", error)
+    log.error("duplicates-page", "could not read the organization field definitions", {
+      err: error,
+    })
     return []
   }
 }
@@ -139,7 +142,7 @@ async function readStarterName(userId: string | null): Promise<string | null> {
 
     return row?.name ?? row?.email ?? null
   } catch (error) {
-    console.error("[duplicates-page] could not resolve the scan starter's name:", error)
+    log.error("duplicates-page", "could not resolve the scan starter's name", { err: error })
     return null
   }
 }

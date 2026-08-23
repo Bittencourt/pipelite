@@ -41,13 +41,12 @@ import { duplicatePairs } from "@/db/schema"
 import { runWithActor } from "@/lib/audit/actor-context"
 import type { MergeChoiceMap } from "@/lib/dedup/merge-defaults"
 import type { MergeableEntityType } from "@/lib/dedup/types"
+import { log } from "@/lib/log"
 import { mergeRecordsMutation } from "@/lib/mutations/dedup"
 
 // The failure vocabulary and the result envelope are the parent module's. Re-declaring them here
 // would be a second definition of the same union, and the UI switches on ONE set of codes.
 import type { DedupActionResult } from "../actions"
-
-const LOG_PREFIX = "[merge-action]"
 
 /** What the merge screen submits. Every field of it arrives from a browser. */
 export interface MergeRecordsRequest {
@@ -207,7 +206,7 @@ export async function mergeRecords(
 
     pair = row
   } catch (error) {
-    console.error(`${LOG_PREFIX} could not read pair ${pairId}:`, error)
+    log.error("merge-action", "could not read pair", { pairId, err: error })
     return { success: false, code: "FAILED" }
   }
 
@@ -228,9 +227,11 @@ export async function mergeRecords(
 
   if (!membersMatch) {
     // Identifiers only (T-37-09), and answered with the same code a stale screen gets.
-    console.error(
-      `${LOG_PREFIX} pair ${pairId} does not hold both of ${survivorId} and ${loserId}`
-    )
+    log.error("merge-action", "pair does not hold both members", {
+      pairId,
+      survivorId,
+      loserId,
+    })
     return { success: false, code: "PAIR_GONE" }
   }
 
@@ -266,9 +267,9 @@ export async function mergeRecords(
      */
     const code = result.error === "FAILED" ? "FAILED" : "PAIR_GONE"
 
-    // The mutation has already logged the real error under its own prefix; this line records the
-    // refusal at the boundary, in identifiers and its own code only.
-    console.error(`${LOG_PREFIX} merge of pair ${pairId} refused: ${result.error}`)
+    // The mutation has already logged the real error under its own scope (`dedup-merge`); this line
+    // records the refusal at the boundary, in identifiers and its own code only.
+    log.error("merge-action", "merge refused", { pairId, reason: result.error })
 
     return { success: false, code }
   }
