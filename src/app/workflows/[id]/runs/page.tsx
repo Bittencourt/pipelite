@@ -2,14 +2,13 @@ import { Suspense } from "react"
 import { auth } from "@/auth"
 import { db } from "@/db"
 import { workflows, workflowRuns } from "@/db/schema/workflows"
-import type { WorkflowStatus } from "@/db/schema/workflows"
 import { eq, desc, count, and, sql } from "drizzle-orm"
 import { redirect } from "next/navigation"
 import Link from "next/link"
+import { parseRunsSearchParams } from "@/lib/workflows/runs-filter"
 import { StatusFilter } from "./components/status-filter"
 import { RunsTable } from "./components/runs-table"
 
-const VALID_STATUSES = new Set<WorkflowStatus>(["pending", "running", "completed", "failed", "waiting"])
 const LIMIT = 20
 
 export default async function WorkflowRunsPage({
@@ -17,7 +16,7 @@ export default async function WorkflowRunsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ status?: string; page?: string }>
+  searchParams: Promise<{ status?: string; page?: string; dryRun?: string }>
 }) {
   const session = await auth()
   if (!session?.user) redirect("/login")
@@ -34,17 +33,23 @@ export default async function WorkflowRunsPage({
 
   if (!workflow) redirect("/workflows")
 
-  const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1)
+  // The URL vocabulary lives in @/lib/workflows/runs-filter, which status-filter.tsx also writes.
+  // One definition, because two copies of the whitelist is a chip that writes a status this page
+  // drops. Every parser there is total: a crafted ?page= or ?status= renders a page, never throws.
+  const { page, status, showDryRuns } = parseRunsSearchParams(sp)
   const offset = (page - 1) * LIMIT
 
-  // Build where clause
-  const statusFilter = sp.status && VALID_STATUSES.has(sp.status as WorkflowStatus)
-    ? sp.status as WorkflowStatus
-    : null
-
-  const whereClause = statusFilter
-    ? and(eq(workflowRuns.workflowId, id), eq(workflowRuns.status, statusFilter))
-    : eq(workflowRuns.workflowId, id)
+  // Build where clause as an accumulator: the filters are independent dimensions, and a two-branch
+  // ternary cannot express three of them.
+  const conditions = [eq(workflowRuns.workflowId, id)]
+  if (status) conditions.push(eq(workflowRuns.status, status))
+  // Test runs are hidden by DEFAULT — the ABSENCE of ?dryRun=1 means real runs only, which is what
+  // 41-CONTEXT locks in. Filtered in SQL, not in the client: a client-side filter would still ship
+  // dry-run rows to the browser and would disagree with the count() below.
+  // `dry_run` is NOT NULL DEFAULT false (migration 0019), so `= false` matches every pre-migration
+  // row. It would match NONE if the column were ever relaxed to nullable — `NULL = false` is `NULL`.
+  if (!showDryRuns) conditions.push(eq(workflowRuns.dryRun, false))
+  const whereClause = and(...conditions)
 
   // Query runs and total count in parallel
   const [runs, [{ total }]] = await Promise.all([
@@ -77,7 +82,9 @@ export default async function WorkflowRunsPage({
         </p>
       </div>
 
-      <div className="mb-4">
+      {/* R-4: the Select is w-[180px] and fits the 241px content budget at 320px; the checkbox and
+          its label wrap to the line BELOW it, which is where V-41-1 puts a subordinate modifier. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <Suspense fallback={null}>
           <StatusFilter workflowId={id} />
         </Suspense>

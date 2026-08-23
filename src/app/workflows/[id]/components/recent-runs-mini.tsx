@@ -1,6 +1,6 @@
 import { db } from "@/db"
 import { workflowRuns } from "@/db/schema/workflows"
-import { eq, desc } from "drizzle-orm"
+import { and, eq, desc } from "drizzle-orm"
 import Link from "next/link"
 import {
   Table,
@@ -31,7 +31,15 @@ export async function RecentRunsMini({ workflowId }: RecentRunsMiniProps) {
   const runs = await db
     .select()
     .from(workflowRuns)
-    .where(eq(workflowRuns.workflowId, workflowId))
+    // D-A7 — A QUERY-ONLY EDIT, and deliberately so. This file is absent from 41-UI-SPEC's Surface
+    // Inventory, whose completeness rule makes an addition a scope violation rather than an
+    // improvement. Nothing new is rendered here: no element, no class string, no copy — only this
+    // second `where` condition. It IMPLEMENTS 41-CONTEXT's "filtered out of the runs list by
+    // default" in the SECOND place runs are listed. Without it a dry run shows up in the overview's
+    // Recent Runs, unbadged and indistinguishable from a real run, and pushes a real run out of the
+    // top 5. `dry_run` is NOT NULL DEFAULT false (migration 0019), so `= false` matches every
+    // pre-migration row; it would match none over a nullable column, since `NULL = false` is `NULL`.
+    .where(and(eq(workflowRuns.workflowId, workflowId), eq(workflowRuns.dryRun, false)))
     .orderBy(desc(workflowRuns.createdAt))
     .limit(5)
 

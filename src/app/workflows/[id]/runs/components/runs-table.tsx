@@ -7,6 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { DryRunBadge } from "./dry-run-badge"
 import { RunStatusBadge } from "./run-status-badge"
 import { formatDuration } from "@/lib/workflows/format"
 import type { WorkflowRun } from "@/db/schema/workflows"
@@ -66,6 +67,13 @@ export function RunsTable({ runs, total, page, limit, workflowId }: RunsTablePro
                     className="flex flex-col gap-1"
                   >
                     <RunStatusBadge status={run.status} />
+                    {/* An ORTHOGONAL second dimension, stacked under the status inside this cell's
+                        existing flex-col: it adds no width, and Table already ships its own
+                        overflow-x-auto. Without it a shown test run is indistinguishable from a
+                        real run whose changed-records panel is inexplicably empty. */}
+                    {run.dryRun && (
+                      <DryRunBadge />
+                    )}
                     {run.status === "failed" && run.currentNodeId && (
                       <span className="text-xs text-muted-foreground">
                         Failed at node {run.currentNodeId.slice(0, 8)}
