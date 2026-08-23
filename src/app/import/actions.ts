@@ -27,6 +27,7 @@ import {
   type ImportedRow,
 } from "@/lib/import/formula-recalc-batch"
 import type { CustomFieldDefinition, EntityType } from "@/db/schema/custom-fields"
+import { log } from "@/lib/log"
 
 const BATCH_SIZE = 100
 
@@ -313,7 +314,7 @@ export async function importOrganizations(
         // Awaited — unlike the subscriber's fire-and-forget — but swallowed. The rows are already
         // in the database; turning a successful import into a reported failure because its audit
         // row failed would tell the user something untrue about their own data.
-        console.error("[audit-import] failed to write organizations import summary:", auditError)
+        log.error("audit-import", "failed to write organizations import summary", { err: auditError })
       }
 
       // AFTER the write, never before it, and it cannot fail the import: the ids come from
@@ -333,7 +334,7 @@ export async function importOrganizations(
         flaggedDuplicates,
       }
     } catch (error) {
-      console.error("Failed to import organizations:", error)
+      log.error("import/actions", "Failed to import organizations", { err: error })
       return { success: false, error: "Failed to import organizations" }
     }
   })
@@ -458,7 +459,7 @@ export async function importPeople(
           importSessionId: null,
         })
       } catch (auditError) {
-        console.error("[audit-import] failed to write people import summary:", auditError)
+        log.error("audit-import", "failed to write people import summary", { err: auditError })
       }
 
       // See the same call in importOrganizations: after the write, cannot fail the import, and the
@@ -481,7 +482,7 @@ export async function importPeople(
         flaggedDuplicates,
       }
     } catch (error) {
-      console.error("Failed to import people:", error)
+      log.error("import/actions", "Failed to import people", { err: error })
       return { success: false, error: "Failed to import people" }
     }
   })
@@ -694,7 +695,7 @@ export async function importDeals(
           importSessionId: null,
         })
       } catch (auditError) {
-        console.error("[audit-import] failed to write deals import summary:", auditError)
+        log.error("audit-import", "failed to write deals import summary", { err: auditError })
       }
 
       return {
@@ -707,7 +708,7 @@ export async function importDeals(
         },
       }
     } catch (error) {
-      console.error("Failed to import deals:", error)
+      log.error("import/actions", "Failed to import deals", { err: error })
       return { success: false, error: "Failed to import deals" }
     }
   })
@@ -843,7 +844,7 @@ export async function importActivities(
           importSessionId: null,
         })
       } catch (auditError) {
-        console.error("[audit-import] failed to write activities import summary:", auditError)
+        log.error("audit-import", "failed to write activities import summary", { err: auditError })
       }
 
       return {
@@ -853,7 +854,7 @@ export async function importActivities(
         autoCreated: { orgs: [], people: [] },
       }
     } catch (error) {
-      console.error("Failed to import activities:", error)
+      log.error("import/actions", "Failed to import activities", { err: error })
       return { success: false, error: "Failed to import activities" }
     }
   })
