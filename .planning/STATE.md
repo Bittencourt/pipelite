@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-23T02:30:00.000Z"
+last_updated: "2026-08-23T20:00:22.739Z"
 last_activity: 2026-08-23
 progress:
   total_phases: 14
   completed_phases: 12
-  total_plans: 185
-  completed_plans: 170
-  percent: 87
+  total_plans: 184
+  completed_plans: 172
+  percent: 86
 ---
 
 # Session State
@@ -20,44 +20,95 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 42 (Observability) is MID-EXECUTION — planned (18 plans, 4 waves) with
+**Current focus:** Phase 42 — observability
 wave 1 of 4 merged. Phase 43 is still `Plans: TBD`.
 
 ## Position
 
 Phase: 42 - Observability
-Plan: 3 of 18 complete (wave 1 of 4 merged)
-Status: Phase 42 MID-EXECUTION — plans verified, wave 1 merged, wave 2 (13 plans) not started
+Plan: 6 of 18 complete (wave 1 merged; wave 2 batch A of 4 merged)
+Status: Executing Phase 42 — wave 2 in progress, 10 plans remain
 Last activity: 2026-08-23
 
-Progress: [██░░░░░░░░] 17% of phase 42
+Progress: [█████████░] 93%
 
-## ► RESUME HERE — Phase 42, wave 2
+## ► RESUME HERE — Phase 42, wave 2 batch B
 
-**Command:** `/gsd:execute-phase 42` — it filters on `has_summary`, so it will skip 42-01/02/03 and
-pick up wave 2 correctly. Do NOT re-plan; the plans exist and were verified by gsd-plan-checker.
+**Command:** `/gsd:execute-phase 42` — it filters on `has_summary`, so 42-01..42-06 are skipped
+automatically. Do NOT re-plan; all 18 plans exist and were verified by gsd-plan-checker.
 
-**Wave map** (from plan frontmatter, authoritative): wave 1 = 42-01,02,03 (DONE) · wave 2 =
-42-04..42-16 (13 plans) · wave 3 = 42-17 · wave 4 = 42-18. **42-18 is `autonomous: no`** — a deliberate
-Sentry-DSN checkpoint.
+**Wave map** (plan frontmatter is authoritative): wave 1 = 42-01,02,03 (DONE) · wave 2 =
+42-04..42-16, of which **42-04/05/06 are DONE** and 42-07..42-16 remain (10 plans) · wave 3 = 42-17 ·
+wave 4 = 42-18. **42-18 is `autonomous: no`** — a deliberate Sentry-DSN checkpoint.
 
-**Baseline at this point:** 4455 passed / 32 skipped + RSC 8/8 · typecheck 0 · lint 0 errors / 124
-warnings. `@sentry/nextjs` 10.70.0 is installed and the lockfile is committed.
+**Wave 2 is being run in batches of 3-4, not all 13 at once.** This box has 4 CPUs / ~9GB free and
+13 concurrent executors each running a 4455+ test suite thrashes it. All wave-2 plans depend only on
+wave 1 and own disjoint file sets (verified: 137 distinct files, zero collisions), so batching costs
+nothing semantically. Batch A = 04,05,06 (done). Batch B = 07,08,09. Batch C = 10,11,12.
+Batch D = 13,14,15,16.
 
-**Read before dispatching anyone:** `.planning/phases/42-observability/42-WAVE1-HANDOFF.md`, and
-`42-CONTEXT.md` § Amendments (A1-A9 — A1 and A2 are load-bearing and override the decisions above them).
+**Baseline at this point:** 4514 passed / 32 skipped + RSC 8/8 · typecheck 0 · lint 0 errors /
+**124** warnings. `@sentry/nextjs` 10.70.0 installed, lockfile committed.
 
-**Three things the GSD workflow's own executor prompt does NOT supply, and which every worktree
-executor in this project needs — inject them yourself:**
+**`console.*` census, measured on merged master:** 244 remaining in non-test source across 91 files.
+That is exactly the 240 sites claimed by plans 42-07..42-16 plus `log.ts`'s own 4 internal
+delegations — it reconciles, so no call sites are orphaned or double-counted.
 
-1. **The three bootstrap symlinks** (`node_modules`, `.env`, and `admin.json` inside a REAL `e2e/.auth`
-   directory). A worktree contains only tracked files, so without these every verification fails. See
-   the `worktree-bootstrap` memory.
-2. **The base-correction check.** Worktrees in this project branch from a stale commit
-   *systematically* — 15 for 15 across phases 41 and 42. The workflow includes this one; make sure it
-   survives.
-3. **`npm install` / `npm ci` / `slopcheck install` are forbidden** during a wave — `node_modules` is a
-   shared symlink and an install would corrupt sibling executors mid-run.
+**Read before dispatching anyone:** `42-WAVE1-HANDOFF.md`, and `42-CONTEXT.md` § Amendments
+(A1-A9 — A1 and A2 are load-bearing and override the decisions above them).
+
+### Three things the GSD executor prompt does NOT supply — inject them yourself
+
+1. **The three bootstrap symlinks** (`node_modules`, `.env`, and `admin.json` inside a REAL
+   `e2e/.auth` directory). A worktree holds only tracked files; without these every verification
+   fails. See the `worktree-bootstrap` memory.
+
+2. **The base-correction check.** Worktrees branch from a stale commit *systematically* — now
+   **17 for 17** across phases 41 and 42 (all three batch-A worktrees were created at `286c470`).
+   Use `git merge --ff-only <base>`, never `git reset --hard`, so concurrent commits survive.
+
+3. **`npm install` / `npm ci` / `slopcheck install` are forbidden** during a wave — `node_modules`
+   is a shared symlink and an install corrupts sibling executors mid-run. Also forbid `git stash`
+   (`refs/stash` is shared across worktrees).
+
+### Carry-forward findings from wave 2 batch A
+
+**For 42-17 (`instrumentation.ts`) — two items, both blocking-ish:**
+
+- `instrumentation.ts:40` documents a verification that **can no longer pass**. Its comment names
+  the gate `docker compose logs app | grep -F '[trash-prune] Starting'`; that string left the log
+  stream in 42-06. 42-06 correctly did not edit a file it does not own. 42-17 owns it — fix it.
+
+- The sentry guard shape is `export function isNodeRuntime(): boolean` (unset `NEXT_RUNTIME`
+  counts as node), and **both exported sentry functions short-circuit on it internally**, so 42-17
+  needs no runtime logic of its own. `reportRequestError`'s `context` gained an optional
+  `routerKind` because Sentry's `ErrorContext` requires it — forward `onRequestError`'s third
+  argument untouched.
+
+**For every remaining migration plan (42-07..42-16):**
+
+- `ctx` keys land **FLAT** at the top level of the log line. A ctx key named `level`, `scope`, `msg`
+  or `ts` silently overwrites a base field. Never use those four.
+
+- Redaction is not enforceable from inside `log.ts`. The rule lives at the call site: never add a
+  value to a log line that was not already in the string you replaced.
+
+**Correction to a plan premise (affects anything building on 42-06's brief):** the claim that no
+owned suite calls a `start*` function is **false** — `src/lib/triggers/schedule-processor.test.ts:481-488`
+calls `startScheduleProcessor()`. Benign today (passes unchanged, registers into the real registry,
+emits one JSON boot line) but do not build on that premise.
+
+**A real defect batch A caught in the phase's own RESEARCH, worth knowing about:** RESEARCH Pattern 5's
+`cookies: { deny: ["*"] }` is a **silent no-op** — Sentry's filter substring-matches deny terms with no
+glob support, so `authjs.session-token` would have shipped to sentry.io behind a deny list that read
+correctly. Now `cookies: false`. Treat other RESEARCH config snippets in this phase as unverified until
+a test pins them.
+
+**OBS-03 remains unproven in production** regardless of unit-test counts. Vitest has one module
+registry and structurally cannot reproduce the four-instance Turbopack split; 42-05's globalThis test
+is labelled a proxy in three places. 42-18's container check is the only real proof. If the container
+reports all ten workers `alive:false` while processors are visibly logging, that is the split-graph
+fingerprint, not dead workers.
 
 ## Performance Metrics
 
@@ -341,9 +392,9 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 
 ## Current Position
 
-Phase: 40 — COMPLETE
+Phase: 42 (observability) — EXECUTING
 Plan: 1 of 18
-Status: Phase 40 complete
-Last activity: 2026-08-22 -- Phase 40 marked complete
+Status: Executing Phase 42
+Last activity: 2026-08-23 -- Phase 42 execution started
 
 - 2026-08-17: Phase 37 COMPLETE (15 plans, 6 waves) — Trash & Restore. `/trash` with four scoped tabs, `/admin/trash` retention (1..365, default 30, seeded as data, fail-closed with NO `?? 30`), restore + ordered transactional purge for all four CRM entities, three REST endpoints, and a daily pruner PROVEN running in the container (`[trash-prune] Starting with initial delay of 60s, ticking daily`, all six processors announcing from the merged-master build). Suite 1549 -> 1703 passing, typecheck 0, lint 0 errors throughout. Verified 4/4 success criteria plus a live browser walkthrough (8/10 UAT steps, both "deleted by" strings, manual tab activation, restore with children intact, purge detaching a live child with both audit rows). Code review: 1 critical + 9 warnings, all in-scope findings fixed; CR-01 deliberately scoped to correcting a false comment. The 320px check found and fixed a real tablist overflow defect. Autonomous run STOPPED here by user — phases 38-43 remain.

@@ -538,9 +538,9 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 42-04-PLAN.md — `sentry.ts`: opt-in error tracking with three independent negative proofs (OBS-02)
-- [ ] 42-05-PLAN.md — `GET /api/health`: bounded DB probe + the empty-registry ⇒ 503 proof (OBS-03)
-- [ ] 42-06-PLAN.md — six processors: heartbeat wiring + 33 migrations (OBS-01, OBS-03)
+- [x] 42-04-PLAN.md — `sentry.ts`: opt-in error tracking with three independent negative proofs (OBS-02)
+- [x] 42-05-PLAN.md — `GET /api/health`: bounded DB probe + the empty-registry ⇒ 503 proof (OBS-03)
+- [x] 42-06-PLAN.md — six processors: heartbeat wiring + 33 migrations (OBS-01, OBS-03)
 - [ ] 42-07-PLAN.md — four subscribers: heartbeat wiring + 3 migrations (OBS-01, OBS-03)
 - [ ] 42-08-PLAN.md — migration: mutations deals/people/notes, 26 sites (OBS-01)
 - [ ] 42-09-PLAN.md — migration: mutations organizations/activities/dedup, 24 sites (OBS-01)
@@ -627,7 +627,7 @@ Plans:
 | 39. Duplicate Detection & Merge | 21/21 | Complete   | 2026-08-21 |
 | 40. Saved Views & Shared Filters | 18/18 | Complete   | 2026-08-22 |
 | 41. Workflow Operator Affordances | 0/? | Not started | - |
-| 42. Observability | 0/? | Not started | - |
+| 42. Observability | 6/18 | In Progress|  |
 | 43. Type Safety & Deployment Docs | 0/? | Not started | - |
 | 44. Custom Field UI Repair | 9/9 | Complete   | 2026-08-15 |
 
