@@ -7,6 +7,7 @@ import { isDomainAllowed } from "@/lib/domain-whitelist"
 import { eq, and, isNull, gt } from "drizzle-orm"
 import { z } from "zod"
 import { createHash } from "crypto"
+import { log } from "@/lib/log"
 
 const signupSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -117,7 +118,7 @@ export async function POST(request: NextRequest) {
       message: "If this email is available, check your inbox for verification",
     })
   } catch (error) {
-    console.error("Signup error:", error)
+    log.error("api/signup", "Signup error", { err: error })
     return NextResponse.json(
       { error: "An unexpected error occurred" },
       { status: 500 }

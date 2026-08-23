@@ -5,6 +5,7 @@ import { eq, and, isNull, gte, lt, lte, or, sql } from "drizzle-orm"
 import { sendActivityReminderEmail, sendWeeklyDigestEmail } from "@/lib/email/send"
 import { isMondayMorning, getWeekBoundaries } from "@/lib/email-processor"
 import type { WeeklyDigestData } from "@/lib/email/templates"
+import { log } from "@/lib/log"
 
 export async function POST(request: NextRequest) {
   // Verify internal secret
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ reminders, digests })
   } catch (error) {
-    console.error("[email-process] Error:", error)
+    log.error("email-process", "Error", { err: error })
     return NextResponse.json({ error: "Internal error" }, { status: 500 })
   }
 }
@@ -85,7 +86,7 @@ async function processActivityReminders(): Promise<number> {
       activity.dueDate,
       user.locale
     ).catch((error) => {
-      console.error("[email-process] Failed to send activity reminder:", error)
+      log.error("email-process", "Failed to send activity reminder", { err: error })
     })
 
     sentCount++
@@ -199,7 +200,7 @@ async function processWeeklyDigest(): Promise<number> {
     }
 
     sendWeeklyDigestEmail(user.email, digestData, user.locale).catch((error) => {
-      console.error("[email-process] Failed to send weekly digest:", error)
+      log.error("email-process", "Failed to send weekly digest", { err: error })
     })
 
     sentCount++

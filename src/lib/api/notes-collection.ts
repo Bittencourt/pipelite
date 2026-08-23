@@ -14,6 +14,7 @@ import { createNoteMutation, updateNoteSchema as noteBodySchema } from "@/lib/mu
 import { db } from "@/db"
 import { notes } from "@/db/schema/notes"
 import type { EntityType } from "@/db/schema"
+import { log } from "@/lib/log"
 
 /**
  * The ONE implementation of `/api/v1/{entity}/{id}/notes`.
@@ -45,7 +46,11 @@ export interface NoteCollectionOptions {
   entityLabel: string
   /** The parent record's table, used only for the existence lookup. */
   parentTable: ParentTable
-  /** Prefix for server-side error logs, e.g. "/api/v1/deals/[id]/notes". */
+  /**
+   * Which of the four mounts this instance serves, e.g. "/api/v1/deals/[id]/notes". Emitted as
+   * the `route` field on this module's error log lines — it was a message PREFIX until the
+   * structured-logging migration moved it into a named field.
+   */
   routeLabel: string
 }
 
@@ -108,7 +113,7 @@ export function noteCollectionHandlers(options: NoteCollectionOptions) {
 
         return paginatedResponse(rows.map(serializeNote), total, offset, limit)
       } catch (error) {
-        console.error(`GET ${routeLabel} failed:`, error)
+        log.error("lib/api/notes-collection", "GET failed", { route: routeLabel, err: error })
         return Problems.internalError()
       }
     })
@@ -162,13 +167,20 @@ export function noteCollectionHandlers(options: NoteCollectionOptions) {
           if (result.error === "Record not found") {
             return Problems.notFound(entityLabel)
           }
-          console.error(`POST ${routeLabel} failed:`, result.error)
+          // `result.error` is the mutation layer's error STRING, not a caught `Error`, so it goes
+          // under `reason` rather than `err` — `err` means "a serialised Error" everywhere else
+          // in this phase and mixing the two types under one key makes the field unqueryable.
+          // The whole `result` is deliberately not logged: it can carry note content.
+          log.error("lib/api/notes-collection", "POST failed", {
+            route: routeLabel,
+            reason: result.error,
+          })
           return Problems.internalError()
         }
 
         return createdResponse(serializeNote(result.note))
       } catch (error) {
-        console.error(`POST ${routeLabel} failed:`, error)
+        log.error("lib/api/notes-collection", "POST failed", { route: routeLabel, err: error })
         return Problems.internalError()
       }
     })

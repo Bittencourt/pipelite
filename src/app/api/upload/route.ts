@@ -4,6 +4,7 @@ import { writeFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
 import type { S3Client } from '@aws-sdk/client-s3'
+import { log } from '@/lib/log'
 
 // Storage configuration from environment
 const STORAGE_TYPE = process.env.FILE_STORAGE || 'local' // 'local' | 's3'
@@ -113,7 +114,7 @@ export async function POST(request: NextRequest) {
       }
     })
   } catch (error) {
-    console.error('Upload error:', error)
+    log.error('api/upload', 'Upload error', { err: error })
     const errorMessage = error instanceof Error ? error.message : 'Upload failed'
     return NextResponse.json({ 
       error: errorMessage,

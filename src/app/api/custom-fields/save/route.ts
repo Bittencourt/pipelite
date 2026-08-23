@@ -3,6 +3,7 @@ import { auth } from '@/auth'
 import { saveFieldValues } from '@/lib/custom-fields'
 import { runWithActor } from '@/lib/audit/actor-context'
 import type { EntityType } from '@/db/schema'
+import { log } from '@/lib/log'
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     )
     return NextResponse.json(result)
   } catch (error) {
-    console.error('Failed to save custom fields:', error)
+    log.error('api/custom-fields/save', 'Failed to save custom fields', { err: error })
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }

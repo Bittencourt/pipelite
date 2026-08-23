@@ -3,6 +3,7 @@ import { db } from "@/db"
 import { users, verificationTokens } from "@/db/schema"
 import { eq, and, gt } from "drizzle-orm"
 import { createHash } from "crypto"
+import { log } from "@/lib/log"
 
 export async function GET(request: NextRequest) {
   try {
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ message })
   } catch (error) {
-    console.error("Email verification error:", error)
+    log.error("api/verify-email", "Email verification error", { err: error })
     return NextResponse.json(
       { error: "An unexpected error occurred" },
       { status: 500 }

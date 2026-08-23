@@ -4,6 +4,7 @@ import { users, verificationTokens } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { sendPasswordResetEmail } from "@/lib/email/send"
 import { createHash } from "crypto"
+import { log } from "@/lib/log"
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
       message: "If an account exists, a reset link has been sent",
     })
   } catch (error) {
-    console.error("Forgot password error:", error)
+    log.error("api/forgot-password", "Forgot password error", { err: error })
     // Still return success to prevent enumeration
     return NextResponse.json({
       message: "If an account exists, a reset link has been sent",

@@ -2,6 +2,7 @@ import { randomBytes, createHash } from "crypto"
 import { db } from "@/db"
 import { apiKeys } from "@/db/schema/api-keys"
 import { eq } from "drizzle-orm"
+import { log } from "@/lib/log"
 
 const KEY_PREFIX = "pk_live_" // Identifiable prefix for Pipelite keys
 
@@ -74,7 +75,18 @@ export async function validateApiKey(
     .set({ lastUsedAt: new Date() })
     .where(eq(apiKeys.id, apiKey.id))
     .execute()
-    .catch(console.error)
+    // An ARROW, never a bare `log.error` reference. A bare reference would pass the rejection value
+    // as the `scope` argument and leave `msg` undefined. What stops that here is not review but
+    // `log.error`'s signature: both `scope` and `msg` are REQUIRED, so a 3-parameter function is
+    // not assignable to `.catch`'s 1-argument callback and `tsc` rejects it with TS2345
+    // ("Target signature provides too few arguments. Expected 2 or more, but got 1" — measured
+    // 2026-08-23). Making `msg` optional in `src/lib/log.ts` would delete that protection and
+    // let this exact mistake compile, here and at the other two expression-position sites.
+    //
+    // The `.catch` itself is mandatory, per the fire-and-forget comment above: dropping it turns
+    // a failed timestamp update into an unhandled rejection on the API-key validation path,
+    // i.e. on every authenticated /api/v1 request.
+    .catch((err) => log.error("api-keys", "lastUsedAt update failed", { err }))
 
   return {
     userId: apiKey.userId,

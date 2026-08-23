@@ -4,6 +4,7 @@ import { users, verificationTokens } from "@/db/schema"
 import { eq, and, gt } from "drizzle-orm"
 import { hashPassword } from "@/lib/password"
 import { createHash } from "crypto"
+import { log } from "@/lib/log"
 
 export async function POST(request: NextRequest) {
   try {
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
       message: "Password reset successfully",
     })
   } catch (error) {
-    console.error("Reset password error:", error)
+    log.error("api/reset-password", "Reset password error", { err: error })
     return NextResponse.json(
       { error: "An unexpected error occurred" },
       { status: 500 }

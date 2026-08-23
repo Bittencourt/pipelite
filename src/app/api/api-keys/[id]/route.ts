@@ -4,6 +4,7 @@ import { db } from "@/db"
 import { apiKeys } from "@/db/schema/api-keys"
 import { eq, and, isNull } from "drizzle-orm"
 import { regenerateApiKey, maskFromPrefix } from "@/lib/api-keys"
+import { log } from "@/lib/log"
 
 // POST /api/api-keys/[id] - Regenerate API key
 export async function POST(
@@ -55,7 +56,7 @@ export async function POST(
       createdAt: new Date(),
     })
   } catch (error) {
-    console.error("Regenerate API key error:", error)
+    log.error("api/api-keys/[id]", "Regenerate API key error", { err: error })
     return NextResponse.json(
       { error: "Failed to regenerate API key" },
       { status: 500 }
