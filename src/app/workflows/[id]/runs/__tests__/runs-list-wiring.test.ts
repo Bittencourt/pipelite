@@ -32,13 +32,19 @@
  */
 import { describe, expect, it } from "vitest"
 
-import { readStrippedSource } from "@/components/custom-fields/__tests__/source-scan"
+import {
+  enclosingConditional,
+  readStrippedSource,
+  tagIndexes,
+} from "@/components/custom-fields/__tests__/source-scan"
 import { readFileSync } from "node:fs"
 
 const BADGE = "src/app/workflows/[id]/runs/components/dry-run-badge.tsx"
 const STATUS_BADGE = "src/app/workflows/[id]/runs/components/run-status-badge.tsx"
 const PAGE = "src/app/workflows/[id]/runs/page.tsx"
 const FILTER = "src/app/workflows/[id]/runs/components/status-filter.tsx"
+const TABLE = "src/app/workflows/[id]/runs/components/runs-table.tsx"
+const MINI = "src/app/workflows/[id]/components/recent-runs-mini.tsx"
 
 /** The SQL predicate that hides test runs. Both the page and the overview must carry it. */
 const HIDE_PREDICATE = "eq(workflowRuns.dryRun, false)"
@@ -61,6 +67,29 @@ const R4_ROW = 'className="mb-4 flex flex-wrap items-center gap-2"'
  * file happens to say.
  */
 const SELECT_OPTIONS_BEFORE = 6
+
+/** The Status cell's stacking container in `runs-table.tsx` — the badge goes INSIDE this. */
+const STATUS_CELL_STACK = 'className="flex flex-col gap-1"'
+
+/**
+ * `runs-table.tsx`'s column shape TODAY, read from the file before this plan's edit: Status,
+ * Duration, Started At, Completed At — four heads, four cells.
+ *
+ * Named constants for the same anti-vacuity reason as `SELECT_OPTIONS_BEFORE`. Counted with
+ * `tagIndexes`, which matches whole tag names, so `<TableHeader` is not five `<TableHead`s.
+ */
+const TABLE_HEADS_BEFORE = 4
+const TABLE_CELLS_BEFORE = 4
+
+/**
+ * The number of `className=` occurrences in `recent-runs-mini.tsx` BEFORE this plan's edit, read
+ * from the file: five.
+ *
+ * This is the number that makes D-A7 checkable. The claim is "query-only": the file gains a `where`
+ * condition and renders NOTHING new. An unchanged class-attribute count is the cheapest evidence of
+ * that, and it is only evidence if the before-number was written down rather than re-read.
+ */
+const MINI_CLASSNAMES_BEFORE = 5
 
 /** The first non-comment token of a client module — `bulk-dialogs-wiring.test.ts:61`, inverted here. */
 const CLIENT_DIRECTIVE = /^\s*(['"])use client\1/
@@ -377,5 +406,171 @@ describe("status-filter.tsx — the reveal checkbox (V-41-1)", () => {
         `"Show test runs" sits beside an English "All statuses". That is the trade, not a bug, and ` +
         `translating the rest of the /workflows tree is unrelated scope.`
     ).toContain("All statuses")
+  })
+})
+
+describe("runs-table.tsx — the badge beside the status badge (T-41-59)", () => {
+  it("13. the badge is rendered ONCE, and only for a dry run", () => {
+    const source = read(TABLE)
+
+    expect(source, `${TABLE}: DryRunBadge must be imported.`).toContain("DryRunBadge")
+    expect(
+      occurrences(source, "<DryRunBadge"),
+      `${TABLE}: exactly one render site. Two would double-badge every test run.`
+    ).toBe(1)
+
+    /*
+     * `enclosingConditional` matches the `{… && ( … )}` JSX form, which is the shape this file
+     * already uses twice. It THROWS when the marker is not inside one, and a throw here means the
+     * badge is unconditional — so the throw is caught and re-reported as that finding rather than
+     * as a broken test.
+     */
+    let enclosing: { test: string; body: string } | null = null
+    try {
+      enclosing = enclosingConditional(source, "<DryRunBadge", TABLE)
+    } catch {
+      enclosing = null
+    }
+
+    expect(
+      enclosing,
+      `${TABLE}: <DryRunBadge is not inside a {… && ( … )} conditional, so it renders ` +
+        `UNCONDITIONALLY — every real run would carry a "Test run" badge, which is worse than no ` +
+        `badge at all. Write it as {run.dryRun && (<DryRunBadge />)}; a ternary, an extracted const ` +
+        `or an internal early return all defeat this gate.`
+    ).not.toBeNull()
+
+    expect(
+      enclosing?.test ?? "",
+      `${TABLE}: the badge's conditional must test the run's dryRun flag and nothing else. Its ` +
+        `test is: ${enclosing?.test?.trim() ?? "(none)"}.`
+    ).toContain("dryRun")
+  })
+
+  it("14. it stacks inside the existing Status cell, AFTER the status badge", () => {
+    const source = read(TABLE)
+
+    const stackAt = source.indexOf(STATUS_CELL_STACK)
+    const statusAt = source.indexOf("<RunStatusBadge")
+    const dryAt = source.indexOf("<DryRunBadge")
+
+    expect(stackAt, `${TABLE}: the Status cell's flex flex-col gap-1 stack is gone.`).toBeGreaterThan(-1)
+    expect(statusAt, `${TABLE}: <RunStatusBadge is gone.`).toBeGreaterThan(-1)
+    expect(dryAt, `${TABLE}: <DryRunBadge is not rendered.`).toBeGreaterThan(-1)
+
+    expect(
+      stackAt,
+      `${TABLE}: the badge must sit INSIDE the existing flex flex-col gap-1 stack, which adds no ` +
+        `width to the table (UI-SPEC: Table already ships its own overflow-x-auto, so no new scroll ` +
+        `container is needed or wanted).`
+    ).toBeLessThan(dryAt)
+
+    expect(
+      statusAt,
+      `${TABLE}: the STATUS is the primary reading — an operator opens this page to see whether a ` +
+        `run failed. The dashed badge is an orthogonal second dimension and renders BESIDE it, ` +
+        `after it, never instead of it.`
+    ).toBeLessThan(dryAt)
+
+    const cellEnd = source.indexOf("</TableCell", dryAt)
+    expect(cellEnd, `${TABLE}: the badge is not inside any TableCell.`).toBeGreaterThan(-1)
+    expect(
+      dryAt,
+      `${TABLE}: the badge must close before the Status cell does — it belongs in that cell, not in ` +
+        `Duration or a new column of its own.`
+    ).toBeLessThan(cellEnd)
+  })
+
+  it("15. no new column, no new palette utility, and the failed-node hint is untouched", () => {
+    const source = read(TABLE)
+
+    expect(
+      tagIndexes(source, "TableHead").length,
+      `${TABLE}: the column count must stay ${TABLE_HEADS_BEFORE}. The badge stacks inside the ` +
+        `Status cell; a fifth column would widen a table that is already at the 320px limit.`
+    ).toBe(TABLE_HEADS_BEFORE)
+
+    expect(
+      tagIndexes(source, "TableCell").length,
+      `${TABLE}: the cell count must stay ${TABLE_CELLS_BEFORE} for the same reason.`
+    ).toBe(TABLE_CELLS_BEFORE)
+
+    expect(
+      source,
+      `${TABLE}: the existing failed-at-node hint must survive verbatim — it shares the cell the ` +
+        `badge was added to, and it is the one thing on the row that says WHERE a failure happened.`
+    ).toContain("{run.status === \"failed\" && run.currentNodeId && (")
+
+    /*
+     * ANTI-VACUITY: the region is only a region once the marker exists. Asserted first, so a missing
+     * badge cannot make "no palette near the badge" pass by having nothing to look at.
+     */
+    const dryAt = source.indexOf("<DryRunBadge")
+    expect(dryAt, `${TABLE}: <DryRunBadge is not rendered.`).toBeGreaterThan(-1)
+
+    expect(
+      PALETTE.test(source.slice(Math.max(0, dryAt - 200), dryAt + 200)),
+      `${TABLE}: no palette utility around the new render site (C-41-1). The badge carries its own ` +
+        `token-only styling; the call site adds none.`
+    ).toBe(false)
+  })
+})
+
+describe("recent-runs-mini.tsx — D-A7, a query-only edit (T-41-59)", () => {
+  it("16. the overview's Recent Runs filters test runs out too", () => {
+    const source = read(MINI)
+
+    expect(
+      source,
+      `${MINI}: without eq(workflowRuns.dryRun, false) here, a dry run appears in the workflow ` +
+        `overview's Recent Runs — unbadged, indistinguishable from a real run, and it pushes a real ` +
+        `run out of the top 5. This is the SECOND place runs are listed, and 41-CONTEXT's "filtered ` +
+        `out of the runs list by default" has to hold in both.`
+    ).toContain("dryRun")
+
+    expect(
+      source,
+      `${MINI}: the single-condition where must become a two-condition and(...) — import and from ` +
+        `drizzle-orm rather than chaining a second .where(), which drizzle would OVERWRITE.`
+    ).toContain("and(")
+  })
+
+  it("17. D-A7: it renders NOTHING new — no element, no class, no copy", () => {
+    const source = read(MINI)
+
+    expect(
+      occurrences(source, "className="),
+      `${MINI}: the class-attribute count must stay at ${MINI_CLASSNAMES_BEFORE}. D-A7: this file ` +
+        `is deliberately ABSENT from UI-SPEC's Surface Inventory, whose completeness rule makes an ` +
+        `addition a scope violation rather than an improvement. This edit is a DATA FILTER, not a ` +
+        `UI addition — it renders no new element, changes no class string and adds no copy — so it ` +
+        `IMPLEMENTS the dry-run decision in the second place runs are listed rather than violating ` +
+        `the inventory. If this count moved, the edit stopped being query-only and the exemption ` +
+        `no longer applies.`
+    ).toBe(MINI_CLASSNAMES_BEFORE)
+
+    expect(
+      source,
+      `${MINI}: no badge here. Test runs are ABSENT from this list, so there is nothing to badge — ` +
+        `and rendering one would be the out-of-inventory surface D-A7 promises this is not.`
+    ).not.toContain("DryRunBadge")
+  })
+
+  it("18. the top-5 shape is unchanged", () => {
+    const source = read(MINI)
+
+    expect(source, `${MINI}: limit(5) must be unchanged — this is a mini list, not a page.`).toContain(
+      "limit(5)"
+    )
+    expect(
+      source,
+      `${MINI}: the newest-first ordering must be unchanged.`
+    ).toContain("orderBy(desc(workflowRuns.createdAt))")
+
+    expect(
+      PALETTE.test(source),
+      `${MINI}: no palette utility added (C-41-1) — and none can be, since nothing here is rendered ` +
+        `that was not rendered before.`
+    ).toBe(false)
   })
 })
