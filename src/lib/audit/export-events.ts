@@ -46,6 +46,7 @@
 import { db } from "@/db"
 import { auditLog } from "@/db/schema"
 import type { ExportFilters } from "@/lib/export/types"
+import { log } from "@/lib/log"
 import type { ViewEntityType } from "@/lib/views/types"
 
 /**
@@ -110,6 +111,6 @@ export async function recordExport(input: {
     // fails is an UNLOGGED export, which is precisely the invisibility this module exists to
     // remove. Loud in the log rather than silent, and recorded in BACKLOG.md. Making the export
     // FAIL instead would be a prevention behaviour, which is not the posture that was chosen.
-    console.error("[audit-export] failed to record export event:", auditError)
+    log.error("audit-export", "failed to record export event", { err: auditError })
   }
 }

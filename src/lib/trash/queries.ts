@@ -25,11 +25,10 @@ import { activities, auditLog, deals, organizations, people, users } from "@/db/
 import { workflowRuns, workflows } from "@/db/schema/workflows"
 import type { EntityType } from "@/db/schema/custom-fields"
 import type { AuditActorKind } from "@/lib/audit/actor-context"
+import { log } from "@/lib/log"
 
 import { TRASH_PARENTS, TRASH_TAB_TO_ENTITY, type TrashTab } from "./entity-types"
 import { presentDeletedBy, type DeletedByPresentation, type DeletedByRow } from "./present"
-
-const LOG_PREFIX = "[trash-queries]"
 
 /** Matches the four existing list tables (37-UI-SPEC § Route and tab mechanics). */
 export const TRASH_PAGE_SIZE = 50
@@ -201,10 +200,11 @@ export async function resolveDeletedBy(
     }
   } catch (error) {
     // Identifiers and counts only. The page degrades to "Not recorded", which is honest.
-    console.error(
-      `${LOG_PREFIX} resolveDeletedBy failed for ${entityType} (${entityIds.length} id(s)):`,
-      error
-    )
+    log.error("trash-queries", "resolveDeletedBy failed", {
+      entityType,
+      idCount: entityIds.length,
+      err: error,
+    })
     return new Map()
   }
 
@@ -289,7 +289,7 @@ export async function findTrashedRecord(
       }
     }
   } catch (error) {
-    console.error(`${LOG_PREFIX} findTrashedRecord failed for ${entityType} ${id}:`, error)
+    log.error("trash-queries", "findTrashedRecord failed", { entityType, id, err: error })
     return null
   }
 }
@@ -367,7 +367,7 @@ export async function countPurgeImpact(
       }
     }
   } catch (error) {
-    console.error(`${LOG_PREFIX} countPurgeImpact failed for ${entityType} ${id}:`, error)
+    log.error("trash-queries", "countPurgeImpact failed", { entityType, id, err: error })
     return null
   }
 }
@@ -492,7 +492,7 @@ export async function findTrashedParents(
     // ran while the parent was still trashed.
     return resolved.filter((parent): parent is TrashedParentRef => parent !== null)
   } catch (error) {
-    console.error(`${LOG_PREFIX} findTrashedParents failed for ${entityType} ${id}:`, error)
+    log.error("trash-queries", "findTrashedParents failed", { entityType, id, err: error })
     return []
   }
 }
@@ -535,7 +535,7 @@ export async function countTrashed(viewer: TrashViewer): Promise<Record<TrashTab
       activities: activityRows[0]?.value ?? 0,
     }
   } catch (error) {
-    console.error(`${LOG_PREFIX} countTrashed failed for viewer ${viewer.userId}:`, error)
+    log.error("trash-queries", "countTrashed failed", { viewerUserId: viewer.userId, err: error })
     return null
   }
 }
@@ -820,7 +820,7 @@ export async function listTrashed(
 
     return { ok: true, rows: await attribute(tab, kept), hasMore }
   } catch (error) {
-    console.error(`${LOG_PREFIX} listTrashed failed for ${tab} page ${page}:`, error)
+    log.error("trash-queries", "listTrashed failed", { tab, page, err: error })
     return { ok: false }
   }
 }
@@ -857,10 +857,7 @@ export async function listTrashedWindow(
 
     return { ok: true, rows: await attribute(tab, fetched) }
   } catch (error) {
-    console.error(
-      `${LOG_PREFIX} listTrashedWindow failed for ${tab} limit ${limit} offset ${offset}:`,
-      error
-    )
+    log.error("trash-queries", "listTrashedWindow failed", { tab, limit, offset, err: error })
     return { ok: false }
   }
 }

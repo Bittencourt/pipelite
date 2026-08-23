@@ -16,6 +16,7 @@ import { count, eq, isNotNull, min } from "drizzle-orm"
 import { db } from "@/db"
 import { appSettings } from "@/db/schema/app-settings"
 import { activities, deals, organizations, people } from "@/db/schema"
+import { log } from "@/lib/log"
 
 /** The settings key this phase owns. Seeded by migration 0015 (37-01). */
 export const TRASH_RETENTION_KEY = "trash.retention_days"
@@ -81,16 +82,21 @@ export async function readTrashRetentionDays(): Promise<number | null> {
     const parsed = retentionSchema.safeParse(row.value)
 
     if (!parsed.success) {
-      // Identifiers and bounds only — never the stored value itself (T-37-09).
-      console.warn(
-        `[trash-settings] ${TRASH_RETENTION_KEY} is not an integer in [${RETENTION_MIN}, ${RETENTION_MAX}] — trash purging is disabled until it is corrected`
+      // Identifiers and bounds only — never the stored value itself (T-37-09). `parsed.error`
+      // and `row.value` are both deliberately absent from this `ctx`: the zod issue quotes the
+      // received value, so carrying either would put the stored string into the log line and
+      // defeat the assertion in `settings.test.ts` that proves it never appears.
+      log.warn(
+        "trash-settings",
+        "Retention setting is not an integer in range — trash purging is disabled until it is corrected",
+        { key: TRASH_RETENTION_KEY, min: RETENTION_MIN, max: RETENTION_MAX }
       )
       return null
     }
 
     return parsed.data
   } catch (error) {
-    console.error("[trash-settings] Failed to read the retention setting:", error)
+    log.error("trash-settings", "Failed to read the retention setting", { err: error })
     return null
   }
 }
@@ -131,7 +137,7 @@ export async function writeTrashRetentionDays(days: number): Promise<WriteTrashR
 
     return { success: true }
   } catch (error) {
-    console.error("[trash-settings] Failed to write the retention setting:", error)
+    log.error("trash-settings", "Failed to write the retention setting", { err: error })
     return { success: false, error: "Failed to save the retention setting." }
   }
 }
@@ -206,7 +212,7 @@ export async function readTrashStats(): Promise<TrashStats> {
 
     return { trashedCount, oldestDeletedAt }
   } catch (error) {
-    console.error("[trash-settings] Failed to read trash stats:", error)
+    log.error("trash-settings", "Failed to read trash stats", { err: error })
     return { trashedCount: 0, oldestDeletedAt: null }
   }
 }

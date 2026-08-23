@@ -6,6 +6,7 @@ import { resolveDelay } from "./delay-resolver"
 import { executeAction } from "./actions"
 import { runWithExecutionDepth } from "./recursion"
 import { runWithActor } from "@/lib/audit/actor-context"
+import { log } from "@/lib/log"
 import type {
   WorkflowNode,
   ActionNode,
@@ -97,7 +98,7 @@ export async function executeRun(runId: string): Promise<void> {
     .limit(1)
 
   if (result.length === 0) {
-    console.error(`[execution-engine] Run ${runId} not found`)
+    log.error("execution-engine", "Run not found", { runId })
     return
   }
 
@@ -597,7 +598,12 @@ async function failRun(
   error: string,
   failedNodeId?: string
 ): Promise<void> {
-  console.error(`[execution-engine] Run ${runId} failed: ${error}`)
+  // `err` is a STRING here, not an `Error`: every one of `failRun`'s eight call sites passes a
+  // message it also persists to `workflow_runs.error`. So `log.ts`'s `Error` branch does not fire
+  // and no stack is recovered by this migration — the gain is that the message becomes fixed and
+  // `runId` and the reason become separately queryable fields. Do not "improve" this by
+  // constructing an `Error` here: the stack would be `failRun`'s own, not the failure's.
+  log.error("execution-engine", "Run failed", { runId, err: error })
   // Persist the failing node so the run-detail "Failed at: <node>" banner can
   // resolve it to a human-readable label.
   const updates: Record<string, unknown> = { status: "failed", error }

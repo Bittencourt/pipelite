@@ -6,6 +6,7 @@ import type { CrmEventTriggerConfig } from "./types"
 import { createWorkflowRun } from "./create-run"
 import type { TriggerEnvelope } from "./types"
 import { unwrapFormulaValue } from "@/lib/formula-helpers"
+import { log } from "@/lib/log"
 
 /** Both key spellings a CRM event payload can carry its custom fields under. */
 const CUSTOM_FIELD_KEYS = ["customFields", "custom_fields"] as const
@@ -160,14 +161,15 @@ export async function matchAndFireTriggers(
 
       try {
         await createWorkflowRun(workflow.id, envelope)
-        console.log(
-          `[workflow-trigger] Workflow ${workflow.id} triggered by ${eventName}`
-        )
+        log.info("workflow-trigger", "Workflow triggered", {
+          workflowId: workflow.id,
+          eventName,
+        })
       } catch (err) {
-        console.error(
-          `[workflow-trigger] Failed to create run for workflow ${workflow.id}:`,
-          err
-        )
+        log.error("workflow-trigger", "Failed to create run", {
+          workflowId: workflow.id,
+          err,
+        })
       }
     }
   }

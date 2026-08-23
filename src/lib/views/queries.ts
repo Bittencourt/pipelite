@@ -60,12 +60,11 @@ import { and, asc, eq, or } from "drizzle-orm"
 
 import { db } from "@/db"
 import { savedViewDefaults, savedViews } from "@/db/schema/saved-views"
+import { log } from "@/lib/log"
 
 import { countFilters } from "./url-params"
 
 import type { SavedViewSummary, ViewEntityType, ViewFilters } from "./types"
-
-const LOG_PREFIX = "[views/queries]"
 
 /**
  * Who is asking.
@@ -209,7 +208,7 @@ export async function listVisibleViews(
       }
     })
   } catch (error) {
-    console.error(`${LOG_PREFIX} could not list views for ${entityType}:`, error)
+    log.error("views/queries", "could not list views", { entityType, err: error })
     return []
   }
 }
@@ -269,7 +268,7 @@ export async function readDefaultViewForUser(
       filters: asFilterMap(row.filters),
     }
   } catch (error) {
-    console.error(`${LOG_PREFIX} could not read the default view for ${entityType}:`, error)
+    log.error("views/queries", "could not read the default view", { entityType, err: error })
     return null
   }
 }

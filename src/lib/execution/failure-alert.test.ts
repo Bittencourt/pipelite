@@ -522,7 +522,7 @@ describe("maybeAlertOnRunFailure", () => {
 
     // ANTI-VACUITY: a function that never sends would satisfy "does not reject" trivially.
     expect(mockSafeSend).toHaveBeenCalledTimes(1)
-    expect(consoleError.mock.calls.flat().join(" ")).toContain("[failure-alert]")
+    expect(consoleError.mock.calls.flat().join(" ")).toContain('"scope":"failure-alert"')
     consoleError.mockRestore()
   })
 
@@ -567,7 +567,7 @@ describe("maybeAlertOnRunFailure", () => {
 
     expect(mockSafeSend).not.toHaveBeenCalled()
     expect(mockExecute, "claim + release").toHaveBeenCalledTimes(2)
-    expect(consoleError.mock.calls.flat().join(" ")).toContain("[failure-alert]")
+    expect(consoleError.mock.calls.flat().join(" ")).toContain('"scope":"failure-alert"')
 
     consoleError.mockRestore()
   })
@@ -603,7 +603,7 @@ describe("maybeAlertOnRunFailure", () => {
       consoleError.mock.calls.flat().join(" "),
       "the compensation must never become the failure: this runs inside a fire-and-forget .catch, " +
         "so an escaping rejection there is an unhandled rejection in the processor."
-    ).toContain("[failure-alert]")
+    ).toContain('"scope":"failure-alert"')
 
     consoleError.mockRestore()
   })
@@ -626,7 +626,7 @@ describe("maybeAlertOnRunFailure", () => {
     })
 
     await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
-    expect(consoleError.mock.calls.flat().join(" ")).toContain("[failure-alert]")
+    expect(consoleError.mock.calls.flat().join(" ")).toContain('"scope":"failure-alert"')
     consoleError.mockRestore()
   })
 })
