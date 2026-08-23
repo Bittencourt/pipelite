@@ -45,6 +45,7 @@ const PAGE = "src/app/workflows/[id]/runs/page.tsx"
 const FILTER = "src/app/workflows/[id]/runs/components/status-filter.tsx"
 const TABLE = "src/app/workflows/[id]/runs/components/runs-table.tsx"
 const MINI = "src/app/workflows/[id]/components/recent-runs-mini.tsx"
+const STATS = "src/app/workflows/[id]/components/run-stats-card.tsx"
 
 /** The SQL predicate that hides test runs. Both the page and the overview must carry it. */
 const HIDE_PREDICATE = "eq(workflowRuns.dryRun, false)"
@@ -532,6 +533,26 @@ describe("recent-runs-mini.tsx — D-A7, a query-only edit (T-41-59)", () => {
       source,
       `${MINI}: the single-condition where must become a two-condition and(...) — import and from ` +
         `drizzle-orm rather than chaining a second .where(), which drizzle would OVERWRITE.`
+    ).toContain("and(")
+  })
+
+  it("16b. WR-03: the stats card directly above it excludes test runs as well", () => {
+    const source = read(STATS)
+
+    expect(
+      source,
+      `${STATS}: this card renders at page.tsx:59, IMMEDIATELY ABOVE RecentRunsMini at :60, and ` +
+        `its query had no dryRun predicate while its neighbour filtered them out. One successful ` +
+        `production run and four failed test runs render "Total Runs 5 · Success Rate 20% · Last ` +
+        `Run 2m ago" above a Recent Runs list showing one row from three days ago — the operator's ` +
+        `headline health metric for the workflow becomes a readout of their own testing, and the ` +
+        `disagreement between two adjacent panels reads as a bug in the page.`
+    ).toContain(HIDE_PREDICATE)
+
+    expect(
+      source,
+      `${STATS}: the single-condition where must become a two-condition and(...) — chaining a ` +
+        `second .where() does not conjoin in drizzle, it OVERWRITES.`
     ).toContain("and(")
   })
 

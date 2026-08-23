@@ -1,6 +1,6 @@
 import { db } from "@/db"
 import { workflowRuns } from "@/db/schema/workflows"
-import { eq, count, sql } from "drizzle-orm"
+import { and, eq, count, sql } from "drizzle-orm"
 import {
   Card,
   CardContent,
@@ -35,6 +35,14 @@ function formatRelativeTime(date: Date | null): string {
 }
 
 export async function RunStatsCard({ workflowId }: RunStatsCardProps) {
+  // TEST RUNS ARE EXCLUDED (WR-03). This card sits immediately above `RecentRunsMini`, which now
+  // filters them out, so counting them here made the two adjacent panels disagree: one successful
+  // production run and four failed test runs rendered "Total Runs 5 · Success Rate 20% · Last Run
+  // 2m ago" above a Recent Runs list showing a single row from three days ago. The operator's
+  // headline health metric for the workflow would be driven by their own testing.
+  //
+  // `and(...)`, not a second `.where(...)`: drizzle OVERWRITES a chained where rather than
+  // conjoining it.
   const [stats] = await db
     .select({
       total: count(),
@@ -42,7 +50,7 @@ export async function RunStatsCard({ workflowId }: RunStatsCardProps) {
       lastRunAt: sql<Date | null>`max(${workflowRuns.startedAt})`,
     })
     .from(workflowRuns)
-    .where(eq(workflowRuns.workflowId, workflowId))
+    .where(and(eq(workflowRuns.workflowId, workflowId), eq(workflowRuns.dryRun, false)))
 
   const successRate = stats.total > 0
     ? Math.round((stats.completed / stats.total) * 100)
