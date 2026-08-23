@@ -1,4 +1,5 @@
 import { getRedisClient } from "@/lib/redis"
+import { log } from "@/lib/log"
 
 const RATE_LIMIT = 500 // requests per window
 const WINDOW_SECONDS = 60 // 1 minute window
@@ -24,7 +25,12 @@ export async function checkRateLimit(keyId: string): Promise<RateLimitResult> {
 
   if (!redis) {
     // No Redis configured - fail open for availability
-    console.warn(
+    // Stays a WARN. Promoting it to error would drown the error stream under normal traffic
+    // (it fires on every request when Redis is unset); demoting it to info would hide it under
+    // the default LOG_LEVEL. No `keyId` in the ctx: `keyId` is in scope here but the original
+    // string never carried it, and widening what a log line reports is not a migration.
+    log.warn(
+      "lib/api/rate-limit",
       "Rate limiting skipped: Redis not configured. All requests allowed."
     )
     return { allowed: true, remaining: RATE_LIMIT, resetIn: WINDOW_SECONDS }
@@ -49,7 +55,7 @@ export async function checkRateLimit(keyId: string): Promise<RateLimitResult> {
     }
   } catch (error) {
     // Redis error - fail open
-    console.error("Rate limiting error:", error)
+    log.error("lib/api/rate-limit", "Rate limiting error", { err: error })
     return { allowed: true, remaining: RATE_LIMIT, resetIn: WINDOW_SECONDS }
   }
 }

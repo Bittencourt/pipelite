@@ -2,6 +2,7 @@ import { db } from "@/db"
 import { webhooks } from "@/db/schema/webhooks"
 import { webhookDeliveries } from "@/db/schema/webhook-deliveries"
 import { eq, and } from "drizzle-orm"
+import { log } from "@/lib/log"
 
 export interface WebhookPayload {
   event: string
@@ -36,7 +37,7 @@ export function triggerWebhook(
     data,
     timestamp: new Date().toISOString(),
   }).catch((error) => {
-    console.error("Webhook enqueue failed:", error)
+    log.error("lib/api/webhooks/deliver", "Webhook enqueue failed", { err: error })
   })
 }
 
