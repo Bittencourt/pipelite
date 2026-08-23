@@ -13,11 +13,19 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
+/**
+ * Opt back IN to test runs: `?dry_run=true`. Snake_case because that is this API's parameter
+ * convention (`stage_id`, `entity_type`, `workflow_run_id`), not the UI list's camelCase `dryRun=1`.
+ */
+const DRY_RUN_PARAM = "dry_run"
+const DRY_RUN_PARAM_VALUE = "true"
+
 export async function GET(request: NextRequest, { params }: RouteParams) {
   return withApiAuth(request, async (req) => {
     const { id } = await params
     const { offset, limit } = parsePagination(req)
     const status = req.nextUrl.searchParams.get("status")
+    const showDryRuns = req.nextUrl.searchParams.get(DRY_RUN_PARAM) === DRY_RUN_PARAM_VALUE
 
     // Verify workflow exists
     const workflow = await db
@@ -30,10 +38,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return Problems.notFound("Workflow")
     }
 
-    // Build where clause with optional status filter
-    const where = status
-      ? and(eq(workflowRuns.workflowId, id), eq(workflowRuns.status, status as WorkflowStatus))
-      : eq(workflowRuns.workflowId, id)
+    // Build where clause with optional status filter.
+    //
+    // TEST RUNS ARE HIDDEN BY DEFAULT (WR-02), the same posture as the UI list and
+    // `recent-runs-mini.tsx`. A machine consumer cannot be asked to know that a new kind of run
+    // exists: a monitoring integration polling `?status=failed` would count every failed test run
+    // as a production failure. This is back-compatible for every run that predates the column,
+    // because `dry_run` is `NOT NULL DEFAULT false` — the pre-phase corpus is entirely real runs.
+    const conditions = [eq(workflowRuns.workflowId, id)]
+    if (status) conditions.push(eq(workflowRuns.status, status as WorkflowStatus))
+    if (!showDryRuns) conditions.push(eq(workflowRuns.dryRun, false))
+    const where = and(...conditions)
 
     // Query runs and count in parallel
     const [runs, [{ total }]] = await Promise.all([

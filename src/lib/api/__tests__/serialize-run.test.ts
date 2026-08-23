@@ -12,9 +12,10 @@ describe("serializeRun", () => {
       depth: 0,
       context: {},
       currentNodeId: null,
-      // Present because `serializeRun` takes the full `workflowRuns.$inferSelect` row.
-      // The serializer deliberately does NOT emit them — it is an explicit field-by-field
-      // mapping, so the exact-object expectation below stays correct.
+      // `dry_run` IS emitted (WR-02): without it a test run is indistinguishable from a production
+      // run to a machine consumer, which cannot even filter it out client-side.
+      // `replayedFromRunId` is still deliberately NOT emitted — a diagnostic link with no API
+      // consumer — which is why the exact-object expectation below is still exact.
       dryRun: false,
       replayedFromRunId: null,
       startedAt: new Date("2026-03-28T10:00:00Z"),
@@ -31,11 +32,60 @@ describe("serializeRun", () => {
       trigger_data: { event: "deal.created" },
       error: null,
       depth: 0,
+      dry_run: false,
       current_node_id: null,
       started_at: "2026-03-28T10:00:00.000Z",
       completed_at: "2026-03-28T10:00:02.000Z",
       created_at: "2026-03-28T10:00:00.000Z",
     })
+  })
+
+  it("marks a test run, so an integration can tell one from a production run", () => {
+    const run = {
+      id: "run-dry",
+      workflowId: "wf-1",
+      status: "failed" as const,
+      triggerData: { trigger_type: "manual", trigger_id: "dry_run" },
+      error: "HTTP 500",
+      depth: 0,
+      context: {},
+      currentNodeId: null,
+      dryRun: true,
+      replayedFromRunId: null,
+      startedAt: new Date("2026-03-28T10:00:00Z"),
+      completedAt: new Date("2026-03-28T10:00:02Z"),
+      createdAt: new Date("2026-03-28T10:00:00Z"),
+    }
+
+    expect(
+      serializeRun(run).dry_run,
+      "A monitoring integration polling `?status=failed` counts an unmarked failed test run as a " +
+        "production failure and pages someone. The flag is the only way it can tell."
+    ).toBe(true)
+  })
+
+  it("does not expose replayed_from_run_id", () => {
+    const run = {
+      id: "run-replay",
+      workflowId: "wf-1",
+      status: "completed" as const,
+      triggerData: null,
+      error: null,
+      depth: 0,
+      context: {},
+      currentNodeId: null,
+      dryRun: false,
+      replayedFromRunId: "run-origin",
+      startedAt: null,
+      completedAt: null,
+      createdAt: new Date("2026-03-28T10:00:00Z"),
+    }
+
+    expect(
+      serializeRun(run),
+      "The replay link is diagnostic and has no API consumer. WR-02 is about test runs being " +
+        "indistinguishable from real ones; widening the public contract further is not part of it."
+    ).not.toHaveProperty("replayed_from_run_id")
   })
 
   it("returns null for null timestamps", () => {

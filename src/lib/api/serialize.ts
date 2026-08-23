@@ -194,6 +194,15 @@ export function serializeWorkflow(workflow: Workflow) {
 
 /**
  * Serialize workflow run to snake_case API format
+ *
+ * `dry_run` IS EMITTED, unlike the other columns this explicit mapping omits (WR-02). A test run is
+ * otherwise indistinguishable from a production run to a machine consumer: a monitoring integration
+ * polling `?status=failed` counts every failed test run as a production failure and pages someone,
+ * and a job computing a success rate mixes test runs into its denominator. The list endpoint hides
+ * them by default; this flag is what lets a consumer that opts back in tell them apart.
+ *
+ * `replayed_from_run_id` stays unexposed, deliberately: it is a diagnostic link with no API
+ * consumer, and adding it would widen the public contract past the defect being fixed.
  */
 export function serializeRun(run: WorkflowRun) {
   return {
@@ -203,6 +212,7 @@ export function serializeRun(run: WorkflowRun) {
     trigger_data: run.triggerData,
     error: run.error,
     depth: run.depth,
+    dry_run: run.dryRun,
     current_node_id: run.currentNodeId,
     started_at: toIsoString(run.startedAt),
     completed_at: toIsoString(run.completedAt),
