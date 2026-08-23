@@ -4,6 +4,7 @@ import { readFile, unlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
 import type { S3Client } from '@aws-sdk/client-s3'
+import { log } from '@/lib/log'
 
 const STORAGE_TYPE = process.env.FILE_STORAGE || 'local'
 const UPLOAD_DIR = process.env.UPLOAD_DIR || '/tmp/uploads'
@@ -86,7 +87,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       })
     }
   } catch (error) {
-    console.error('Download error:', error)
+    log.error(
+      'api/files/[entityId]/[fieldName]/[filename]',
+      'Download error',
+      { err: error }
+    )
     return NextResponse.json({ error: 'Download failed' }, { status: 500 })
   }
 }
@@ -124,7 +129,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Delete error:', error)
+    log.error(
+      'api/files/[entityId]/[fieldName]/[filename]',
+      'Delete error',
+      { err: error }
+    )
     return NextResponse.json({ error: 'Delete failed' }, { status: 500 })
   }
 }

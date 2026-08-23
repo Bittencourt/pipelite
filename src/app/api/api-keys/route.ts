@@ -5,6 +5,7 @@ import { apiKeys } from "@/db/schema/api-keys"
 import { eq, and, isNull, desc } from "drizzle-orm"
 import { generateApiKey, maskFromPrefix } from "@/lib/api-keys"
 import { z } from "zod"
+import { log } from "@/lib/log"
 
 const createKeySchema = z.object({
   name: z.string().min(1).max(100),
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(),
     })
   } catch (error) {
-    console.error("Create API key error:", error)
+    log.error("api/api-keys", "Create API key error", { err: error })
     return NextResponse.json(
       { error: "Failed to create API key" },
       { status: 500 }

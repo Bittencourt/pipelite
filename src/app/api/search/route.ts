@@ -3,6 +3,7 @@ import { auth } from "@/auth"
 import { db } from "@/db"
 import { organizations, people, deals, stages } from "@/db/schema"
 import { ilike, or, and, isNull, eq } from "drizzle-orm"
+import { log } from "@/lib/log"
 
 // GET /api/search - Search organizations, people, and deals
 export async function GET(request: NextRequest) {
@@ -97,7 +98,7 @@ export async function GET(request: NextRequest) {
       deals: dealResults,
     })
   } catch (error) {
-    console.error("Search error:", error)
+    log.error("api/search", "Search error", { err: error })
     return NextResponse.json(
       { error: "Search failed" },
       { status: 500 }
