@@ -1,6 +1,8 @@
 import { db } from "@/db"
 import { sql, and, eq } from "drizzle-orm"
 import { workflowRuns, workflowRunSteps } from "@/db/schema/workflows"
+import { log } from "@/lib/log"
+import { recordTick, registerProcessor } from "@/lib/observability/heartbeat"
 import { executeRun } from "./engine"
 import { maybeAlertOnRunFailure } from "./failure-alert"
 
@@ -33,10 +35,10 @@ async function alertOnRunFailure(runId: string): Promise<void> {
   try {
     await maybeAlertOnRunFailure(runId)
   } catch (error) {
-    console.error(
-      `[execution-processor] Failure alert for run ${runId} threw; continuing the tick:`,
-      error
-    )
+    log.error("execution-processor", "Failure alert threw; continuing the tick", {
+      runId,
+      err: error,
+    })
   }
 }
 
@@ -61,10 +63,21 @@ const STALE_RUN_TIMEOUT_MINUTES = 5
  * Also resumes waiting runs whose delay has elapsed.
  *
  * Uses setTimeout chaining (not setInterval) to prevent overlap.
- * Started once on server boot via instrumentation.ts.
+ * Started once on server boot via instrumentation.ts. Whether that actually happened is now
+ * reportable rather than only greppable: `registerProcessor` below puts this worker in the
+ * heartbeat registry that `GET /api/health` reads off a hard-coded roster, so a processor that
+ * never started reads `alive: false` instead of reading as nothing at all.
  */
 export function startExecutionProcessor(): void {
-  console.log("[execution-processor] Starting with initial delay of 5s")
+  // The delay is a FIELD, not prose: "initial delay of 5s" could not stay true through an edit of
+  // INITIAL_DELAY, and this can.
+  log.info("execution-processor", "Starting", { initialDelayMs: INITIAL_DELAY })
+  // This module's own constants are passed IN rather than imported OUT by the health route — the
+  // registry is dependency-free so that reading it does not drag `db`, `drizzle` and the whole
+  // execution engine into the route bundle. Passing them also makes this the TIGHTEST staleness
+  // bound of the ten workers (5 s, versus 24 h for the two pruners): a global threshold would have
+  // to be loose enough for the pruners and would therefore never notice this one dying.
+  registerProcessor("execution-processor", POLL_INTERVAL, INITIAL_DELAY)
   scheduleTick(INITIAL_DELAY)
 }
 
@@ -78,13 +91,19 @@ function scheduleTick(delay: number): void {
       const pendingCount = await processPendingRuns()
       const waitingCount = await processWaitingRuns()
       if (pendingCount > 0 || waitingCount > 0) {
-        console.log(
-          `[execution-processor] Processed ${pendingCount} pending, ${waitingCount} waiting run(s)`
-        )
+        log.info("execution-processor", "Processed runs", {
+          pending: pendingCount,
+          waiting: waitingCount,
+        })
       }
     } catch (error) {
-      console.error("[execution-processor] Tick error:", error)
+      log.error("execution-processor", "Tick error", { err: error })
     }
+
+    // OUTSIDE the try, for the same reason as the reschedule below: a tick that ERRORED still ran.
+    // Inside it, a processor failing every tick would read as DEAD at /api/health, so a real
+    // outage and a real bug would produce the same signal.
+    recordTick("execution-processor")
 
     // Always schedule the next tick
     scheduleTick(POLL_INTERVAL)
@@ -133,7 +152,7 @@ export async function reclaimStaleRuns(): Promise<number> {
   const reclaimedRows = reclaimed as unknown as Record<string, unknown>[] | undefined
   const count = reclaimedRows?.length ?? 0
   if (count > 0) {
-    console.log(`[execution-processor] Reclaimed ${count} stale running run(s)`)
+    log.info("execution-processor", "Reclaimed stale running runs", { reclaimed: count })
   }
 
   // ALERT SITE 3. A run killed by the execution lease never passes through executeRun at all --
@@ -189,10 +208,7 @@ export async function processPendingRuns(): Promise<number> {
     try {
       await executeRun(run.id as string)
     } catch (error) {
-      console.error(
-        `[execution-processor] Error executing run ${run.id}:`,
-        error
-      )
+      log.error("execution-processor", "Error executing run", { runId: run.id, err: error })
     }
 
     // ALERT SITE 1, and note where it sits: AFTER the try/catch, not inside either half.
@@ -295,9 +311,10 @@ export async function processWaitingRuns(): Promise<number> {
       // `continue`, not `break`, for the same reason as the step claim above: this run being
       // unresumable says nothing about the other elapsed delays in this batch.
       if (!resumedRun || resumedRun.length === 0) {
-        console.warn(
-          `[execution-processor] Not resuming run ${runId}: no longer waiting (cancelled or reclaimed).`
-        )
+        log.warn("execution-processor", "Not resuming run: no longer waiting", {
+          runId,
+          reason: "cancelled or reclaimed",
+        })
         continue
       }
 
@@ -314,10 +331,7 @@ export async function processWaitingRuns(): Promise<number> {
       await executeRun(runId)
       count++
     } catch (error) {
-      console.error(
-        `[execution-processor] Error resuming run ${runId}:`,
-        error
-      )
+      log.error("execution-processor", "Error resuming run", { runId, err: error })
     }
 
     // ALERT SITE 2, outside the try/catch for the same reason as site 1. This is the case where

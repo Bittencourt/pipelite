@@ -22,6 +22,15 @@
  *
  * `@/db` is mocked down to a single `execute`: any other query the implementation grows surfaces
  * as a TypeError instead of being absorbed by a permissive mock.
+ *
+ * LIVENESS DETECTION HAS MOVED (OBS-03, phase 42). This suite used to call the boot line "the
+ * container deployment gate", because grepping `docker compose logs app` for the bracketed
+ * trash-prune prefix was the only way a standalone build that dropped `instrumentation.js` was ever
+ * noticed — a detector nobody runs on a good day. It is now
+ * `GET /api/health`, which reports this worker from a hard-coded roster, so a pruner that never
+ * started reads `alive: false` rather than reading as nothing at all. The boot line is still
+ * asserted, but as an OBSERVATION of the start, not as the detector; the `heartbeat wiring` block
+ * at the bottom of this file pins the detector.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { PgDialect } from "drizzle-orm/pg-core"
@@ -38,6 +47,9 @@ import { readTrashRetentionDays } from "@/lib/trash/settings"
 import { purgeRecordByType } from "@/lib/trash/dispatch"
 import { runWithActor } from "@/lib/audit/actor-context"
 import { TRASH_PRUNE_ORDER } from "@/lib/trash/entity-types"
+// NOT mocked, deliberately: the heartbeat registry is the thing under test in the last block, and a
+// mock would let a pruner that never registers pass.
+import { _resetForTesting, snapshot } from "@/lib/observability/heartbeat"
 import {
   startTrashPruner,
   BATCH_SIZE,
@@ -98,6 +110,8 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.spyOn(console, "log").mockImplementation(() => {})
   vi.spyOn(console, "error").mockImplementation(() => {})
+  // The registry lives on `globalThis` and therefore survives between tests in this file.
+  _resetForTesting()
 
   mockReadRetentionDays.mockResolvedValue(30)
   mockExecute.mockResolvedValue(idRows(0, "none"))
@@ -126,13 +140,18 @@ describe("startTrashPruner", () => {
     expect(mockReadRetentionDays).toHaveBeenCalledTimes(1)
   })
 
-  it("announces itself on start — this exact line is the container deployment gate", () => {
+  it("announces itself on start — the boot line is how the start is observed in the log stream", () => {
     startTrashPruner()
 
-    // Not decoration. `Dockerfile:24` ends in a suppressed failure, and a standalone build that
-    // drops `instrumentation.js` kills every processor silently. The absence of this line in
-    // `docker compose logs app` is the only way that is detected.
-    expect(logLines().some((line) => line.includes("[trash-prune] Starting"))).toBe(true)
+    // Still not decoration, but no longer the whole story: a standalone build that drops
+    // `instrumentation.js` kills every processor silently, and until phase 42 the absence of this
+    // line in `docker compose logs app` was the only way that was ever detected. The Dockerfile's
+    // suppressed-failure copy step is gone (phase 42 plan 03) and `/api/health` is now the
+    // detector, so this assertion pins the line's SHAPE — scope and message as separate,
+    // queryable fields — rather than a grep string somebody has to remember to run.
+    const lines = logLines()
+    expect(lines.some((line) => line.includes('"scope":"trash-prune"'))).toBe(true)
+    expect(lines.some((line) => line.includes('"msg":"Starting"'))).toBe(true)
   })
 
   it("schedules the following tick a full TICK_INTERVAL later", async () => {
@@ -170,7 +189,7 @@ describe("the retention window fails closed", () => {
 
     const line = logLines().find((l) => l.includes("retention unset or invalid"))
     expect(line).toBeDefined()
-    expect(line).toContain("[trash-prune]")
+    expect(line).toContain('"scope":"trash-prune"')
   })
 
   it("still schedules the next tick, and that tick reads the window again", async () => {
@@ -375,5 +394,56 @@ describe("the chain always reschedules", () => {
     await vi.advanceTimersByTimeAsync(TICK_INTERVAL)
 
     expect(mockReadRetentionDays).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * OBS-03. The same four assertions as `src/lib/audit/prune.test.ts`, for the same reason: these two
+ * pruners are the only processors with a suite that actually drives their `start*` function, so they
+ * are where the heartbeat wiring can be proven behaviourally rather than read off the source.
+ */
+describe("heartbeat wiring", () => {
+  it("registers itself in the heartbeat registry the moment it starts", () => {
+    startTrashPruner()
+
+    // Registered and not yet ticked. `alive` is true on the strength of having registered inside
+    // its own first-tick budget — the first tick is a whole INITIAL_DELAY away and a worker is not
+    // dead for not having ticked yet.
+    expect(snapshot()["trash-prune"]).toEqual({ alive: true, lastTickAt: null })
+  })
+
+  it("records a tick once the first tick body has completed", async () => {
+    startTrashPruner()
+    await vi.advanceTimersByTimeAsync(INITIAL_DELAY)
+
+    const report = snapshot()["trash-prune"]
+    expect(report.alive).toBe(true)
+    expect(typeof report.lastTickAt).toBe("string")
+    expect(Number.isNaN(Date.parse(report.lastTickAt as string))).toBe(false)
+  })
+
+  it("records a tick even when the tick body threw — liveness is completion, not success", async () => {
+    mockReadRetentionDays.mockRejectedValue(new Error("settings read blew up"))
+
+    startTrashPruner()
+    await vi.advanceTimersByTimeAsync(INITIAL_DELAY)
+
+    // A processor whose every tick throws is ALIVE AND BROKEN. The log stream reports the
+    // breakage; the health check reports the aliveness. `recordTick` therefore sits OUTSIDE the
+    // `try`, in the same place and for the same reason as the tail `scheduleTick` (property 4 in
+    // this file's header) — inside it, a permanently failing pruner would read as dead and a real
+    // outage and a real bug would produce the same signal.
+    expect(console.error).toHaveBeenCalled()
+    expect(snapshot()["trash-prune"].lastTickAt).not.toBeNull()
+  })
+
+  it("stays alive across a full day, because the staleness bound is its own TICK_INTERVAL", async () => {
+    startTrashPruner()
+    await vi.advanceTimersByTimeAsync(INITIAL_DELAY)
+
+    // A single global staleness threshold would report this pruner permanently dead on a
+    // perfectly healthy container. The bound is per-worker, from the constants this file passed in.
+    const justBeforeTheNextTick = Date.now() + TICK_INTERVAL - 1
+    expect(snapshot(justBeforeTheNextTick)["trash-prune"].alive).toBe(true)
   })
 })

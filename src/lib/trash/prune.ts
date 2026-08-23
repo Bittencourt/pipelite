@@ -8,12 +8,17 @@
  * Purging on trash-page load was rejected as the trigger: a page-load hook cannot guarantee a
  * record ever leaves trash, because nobody is obliged to open the page.
  *
- * Started once on server boot via `instrumentation.ts`. The startup log line below is
- * LOAD-BEARING OPERATIONAL EVIDENCE, not decoration: Next.js standalone tracing has already
- * omitted `instrumentation.js` from this repo's production Docker image once (2026-08-08),
- * silently killing every processor while every unit test still passed. `Dockerfile:24` still ends
- * in a suppressed failure, so the absence of a `[trash-prune]` line in `docker compose logs app`
- * remains the only way that class of breakage is detected.
+ * Started once on server boot via `instrumentation.ts`. Next.js standalone tracing has already
+ * omitted `instrumentation.js` from this repo's production Docker image once (2026-08-08), silently
+ * killing every processor while every unit test still passed.
+ *
+ * WHAT DETECTS THAT HAS CHANGED (phase 42). The Dockerfile's `2>/dev/null || true` copy step — the
+ * shell-precedence bug that let the omission succeed unconditionally — is gone, and the absence of a
+ * `[trash-prune]` line in `docker compose logs app` is no longer the only signal. `GET /api/health`
+ * reports this worker from a hard-coded roster, so a pruner that never started reads `alive: false`
+ * rather than reading as nothing at all: an absence you have to notice became a false you can poll.
+ * That is what `registerProcessor` below buys. The boot line is still emitted, and still worth
+ * reading, but it is now an OBSERVATION of the start rather than the detector for its absence.
  */
 
 import { sql } from "drizzle-orm"
@@ -23,6 +28,8 @@ import { db } from "@/db"
 import { activities, deals, organizations, people } from "@/db/schema"
 import type { EntityType } from "@/db/schema/custom-fields"
 import { runWithActor } from "@/lib/audit/actor-context"
+import { log } from "@/lib/log"
+import { recordTick, registerProcessor } from "@/lib/observability/heartbeat"
 import { purgeRecordByType } from "@/lib/trash/dispatch"
 import { TRASH_PRUNE_ORDER } from "@/lib/trash/entity-types"
 import { readTrashRetentionDays } from "@/lib/trash/settings"
@@ -113,7 +120,18 @@ const SYSTEM_ACTOR = Object.freeze({ kind: "system", userId: null } as const)
  * Start the daily trash retention pruner. Called exactly once, from `instrumentation.ts`.
  */
 export function startTrashPruner(): void {
-  console.log("[trash-prune] Starting with initial delay of 60s, ticking daily")
+  // The cadence is emitted as FIELDS rather than as prose ("initial delay of 60s, ticking daily"),
+  // so the line cannot go on claiming 60s after somebody edits the constant.
+  log.info("trash-prune", "Starting", {
+    initialDelayMs: INITIAL_DELAY,
+    tickIntervalMs: TICK_INTERVAL,
+  })
+  // This module's own constants are passed IN rather than imported OUT by the health route: the
+  // registry is dependency-free precisely so that reading it does not drag `db`, `drizzle` and the
+  // whole trash dispatch graph into the route bundle. Passing them also means the health check's
+  // staleness bound cannot drift from the real cadence — a daily pruner judged against a global
+  // threshold would read as permanently dead on a perfectly healthy container.
+  registerProcessor("trash-prune", TICK_INTERVAL, INITIAL_DELAY)
   scheduleTick(INITIAL_DELAY)
 }
 
@@ -135,7 +153,7 @@ function scheduleTick(delay: number): void {
         // There is deliberately no code-level day fallback here and none may ever be added: the
         // 30-day default is a SEEDED `app_settings` row from migration 0015, so a fallback would
         // turn a tampered row back into an unbounded permanent delete (T-37-05).
-        console.log("[trash-prune] retention unset or invalid — nothing purged")
+        log.info("trash-prune", "retention unset or invalid — nothing purged")
       } else {
         let total = 0
 
@@ -151,11 +169,21 @@ function scheduleTick(delay: number): void {
 
         // Logged EVERY tick, even at zero. This line is the only signal that the cap is starving
         // the delete rate, which is the accepted failure mode of bounding the work per tick.
-        console.log(`[trash-prune] purged ${total} record(s) older than ${days}d`)
+        log.info("trash-prune", "purged expired records", {
+          purged: total,
+          retentionDays: days,
+        })
       }
     } catch (error) {
-      console.error("[trash-prune] Tick error:", error)
+      log.error("trash-prune", "Tick error", { err: error })
     }
+
+    // OUTSIDE the try, for the same reason as the reschedule below: a tick that ERRORED still ran.
+    // Liveness is "the body completed", not "the body succeeded" — inside the try, a pruner failing
+    // every single tick would read as DEAD at /api/health, so a real outage and a real bug would
+    // produce the same signal. Alive-and-broken is the honest report, and the log line above is
+    // what says which.
+    recordTick("trash-prune")
 
     // OUTSIDE the try. A pruner that stops rescheduling after one bad tick is a silently
     // disabled retention policy — precisely the failure mode of the setting it implements.
@@ -181,10 +209,16 @@ async function pruneEntityType(entityType: EntityType, days: number): Promise<nu
         if (result.success) {
           purgedInBatch++
         } else {
-          console.error(`[trash-prune] Refused to purge ${entityType} ${id}: ${result.error}`)
+          // Identifier and refusal reason only — exactly what the old string carried, and nothing
+          // more. No record content ever enters a log line from this module (T-37-30).
+          log.error("trash-prune", "Refused to purge record", {
+            entityType,
+            id,
+            reason: result.error,
+          })
         }
       } catch (error) {
-        console.error(`[trash-prune] Failed to purge ${entityType} ${id}:`, error)
+        log.error("trash-prune", "Failed to purge record", { entityType, id, err: error })
       }
     }
 
@@ -198,8 +232,10 @@ async function pruneEntityType(entityType: EntityType, days: number): Promise<nu
       // No progress. The next batch query is the same `LIMIT` over the same rows, so a
       // permanently undeletable record at the head would otherwise spin the full cap here and
       // starve every entity type after this one. Stop and let tomorrow's tick try again.
-      console.error(
-        `[trash-prune] a full batch of ${entityType} purged nothing — stopping this table for this tick`
+      log.error(
+        "trash-prune",
+        "a full batch purged nothing — stopping this table for this tick",
+        { entityType }
       )
       break
     }
@@ -255,9 +291,13 @@ function toIds(result: unknown): string[] {
 
   if (rows === null) {
     // Shape only — never the value, which could carry record content into the log.
-    console.error(
-      "[trash-prune] unrecognised expiry-query result shape — purging nothing this batch; " +
-        `expected an array or { rows: [] }, got ${result === null ? "null" : typeof result}`
+    log.error(
+      "trash-prune",
+      "unrecognised expiry-query result shape — purging nothing this batch",
+      {
+        expected: "an array or { rows: [] }",
+        got: result === null ? "null" : typeof result,
+      }
     )
     return []
   }
