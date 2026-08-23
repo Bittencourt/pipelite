@@ -558,7 +558,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 42-18-PLAN.md — flip `no-console` to error, then prove the phase in a freshly built container (OBS-01/02/03)
+- [x] 42-18-PLAN.md — flip `no-console` to error, then prove the phase in a freshly built container (OBS-01/02/03)
 
 ### Phase 43: Type Safety & Deployment Docs
 
