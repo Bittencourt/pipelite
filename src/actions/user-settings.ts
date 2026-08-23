@@ -7,6 +7,7 @@ import { auth } from "@/auth"
 import { eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { locales, type Locale } from "@/i18n/request"
+import { log } from "@/lib/log"
 
 /**
  * Update the current user's locale preference
@@ -43,7 +44,7 @@ export async function updateUserLocale(locale: Locale): Promise<{ success: boole
     revalidatePath("/", "layout")
     return { success: true }
   } catch (error) {
-    console.error("Failed to update locale:", error)
+    log.error("actions/user-settings", "Failed to update locale", { err: error })
     return { success: false, error: "Failed to update locale" }
   }
 }
@@ -78,7 +79,7 @@ export async function updateUserTimezone(timezone: string): Promise<{ success: b
     revalidatePath("/", "layout")
     return { success: true }
   } catch (error) {
-    console.error("Failed to update timezone:", error)
+    log.error("actions/user-settings", "Failed to update timezone", { err: error })
     return { success: false, error: "Failed to update timezone" }
   }
 }
