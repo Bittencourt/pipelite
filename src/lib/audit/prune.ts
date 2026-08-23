@@ -9,15 +9,21 @@
  * cannot use) and computes its cutoff as a JS `Date` at `:19` (which must not be copied; see
  * `deleteBatch`).
  *
- * Started once on server boot via `instrumentation.ts`. The startup log line below is
- * load-bearing operational evidence: Next.js standalone tracing has already omitted
- * `instrumentation.js` from this repo's production Docker image once, silently killing every
- * processor. No `[audit-prune]` line in `docker compose logs app` is how that is detected.
+ * Started once on server boot via `instrumentation.ts`. Next.js standalone tracing has already
+ * omitted `instrumentation.js` from this repo's production Docker image once (2026-08-08), silently
+ * killing every processor while every unit test passed. Until phase 42 the absence of an
+ * `[audit-prune]` line in `docker compose logs app` was the only way that was ever detected — a
+ * grep somebody had to remember to run. It is now `GET /api/health`, which reports this worker from
+ * a hard-coded roster, so a pruner that never started reads `alive: false` rather than reading as
+ * nothing at all. That is what `registerProcessor` below buys; the boot line is now an observation
+ * of the start rather than the detector for its absence.
  */
 
 import { sql } from "drizzle-orm"
 import { db } from "@/db"
 import { readRetentionDays } from "@/lib/audit/settings"
+import { log } from "@/lib/log"
+import { recordTick, registerProcessor } from "@/lib/observability/heartbeat"
 
 /** Let the server finish booting before the first tick — nothing here is time-critical. */
 export const INITIAL_DELAY = 60_000
@@ -43,7 +49,17 @@ export const MAX_BATCHES_PER_TICK = 20
  * exactly once, from `instrumentation.ts`.
  */
 export function startAuditPruner(): void {
-  console.log("[audit-prune] Starting with initial delay of 60s, ticking daily")
+  // The cadence is emitted as FIELDS rather than as prose ("initial delay of 60s, ticking daily"),
+  // so the line cannot go on claiming 60s after somebody edits the constant.
+  log.info("audit-prune", "Starting", {
+    initialDelayMs: INITIAL_DELAY,
+    tickIntervalMs: TICK_INTERVAL,
+  })
+  // This module's own constants are passed IN rather than imported OUT by the health route: the
+  // registry is dependency-free precisely so that reading it does not drag `db` and `drizzle` into
+  // the route bundle. Passing them also means the health check's staleness bound cannot drift from
+  // the real cadence — there is one source of truth for "daily" and it is TICK_INTERVAL.
+  registerProcessor("audit-prune", TICK_INTERVAL, INITIAL_DELAY)
   scheduleTick(INITIAL_DELAY)
 }
 
@@ -66,7 +82,7 @@ function scheduleTick(delay: number): void {
         // The privacy trade-off is real and points the other way: the retention window is the
         // only expiry mechanism for the former values stored in `changes`. It is accepted,
         // because the setting is repairable from /admin and an over-broad delete is not.
-        console.log("[audit-prune] retention unset or invalid — no rows deleted")
+        log.info("audit-prune", "retention unset or invalid — no rows deleted")
       } else {
         let total = 0
 
@@ -81,11 +97,20 @@ function scheduleTick(delay: number): void {
 
         // Logged every tick, even at zero: this line is the only signal that the pruner is
         // falling behind the write rate, which is the starvation failure mode of the cap.
-        console.log(`[audit-prune] deleted ${total} row(s) older than ${days}d`)
+        log.info("audit-prune", "deleted expired rows", {
+          deleted: total,
+          retentionDays: days,
+        })
       }
     } catch (error) {
-      console.error("[audit-prune] Tick error:", error)
+      log.error("audit-prune", "Tick error", { err: error })
     }
+
+    // OUTSIDE the try, exactly like the reschedule below and for the same reason: a tick that
+    // ERRORED still ran. Liveness is "the body completed", not "the body succeeded" — inside the
+    // try, a pruner failing every single tick would read as DEAD, and a real outage and a real bug
+    // would produce the same signal at /api/health.
+    recordTick("audit-prune")
 
     // Always schedule the next tick
     scheduleTick(TICK_INTERVAL)

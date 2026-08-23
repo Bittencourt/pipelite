@@ -27,6 +27,15 @@
  *
  * `@/db` is mocked down to a single `execute`: any other query the implementation grows
  * surfaces as a TypeError instead of being absorbed by a permissive mock.
+ *
+ * LIVENESS DETECTION HAS MOVED (OBS-03, phase 42). It used to be "grep the container log for the
+ * bracketed audit-prune prefix" — a human reading `docker compose logs app` and noticing an
+ * absence, which is a detector nobody runs on a good day. It is now
+ * `GET /api/health`, which reports this worker from a hard-coded roster, so a pruner that never
+ * started reads `alive: false` instead of reading as nothing at all. The boot line below is still
+ * asserted, but its job is narrower now: it is how the START is OBSERVED in the log stream, not how
+ * a dead instrumentation module is DETECTED. The `heartbeat wiring` block at the bottom of this file
+ * is what pins the detector.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { PgDialect } from "drizzle-orm/pg-core"
@@ -37,6 +46,9 @@ vi.mock("@/lib/audit/settings", () => ({ readRetentionDays: vi.fn() }))
 
 import { db } from "@/db"
 import { readRetentionDays } from "@/lib/audit/settings"
+// NOT mocked, deliberately: the heartbeat registry is the thing under test in the last block, and a
+// mock would let a pruner that never registers pass.
+import { _resetForTesting, snapshot } from "@/lib/observability/heartbeat"
 import {
   startAuditPruner,
   BATCH_SIZE,
@@ -77,6 +89,8 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.spyOn(console, "log").mockImplementation(() => {})
   vi.spyOn(console, "error").mockImplementation(() => {})
+  // The registry lives on `globalThis` and therefore survives between tests in this file.
+  _resetForTesting()
 
   mockReadRetentionDays.mockResolvedValue(90)
   mockExecute.mockResolvedValue(deleteResult(0))
@@ -101,10 +115,13 @@ describe("startAuditPruner", () => {
     expect(mockReadRetentionDays).toHaveBeenCalledTimes(1)
   })
 
-  it("announces itself on start — the container log line is how a dead instrumentation module is detected", () => {
+  it("announces itself on start — the boot line is how the start is observed in the log stream", () => {
     startAuditPruner()
 
-    expect(logLines().some((line) => line.includes("[audit-prune]"))).toBe(true)
+    // The scope, not a bracket prefix: the line is structured JSON now, and `scope` is the field
+    // a log query filters on. Detection of a pruner that never started is `/api/health`'s job
+    // (see the `heartbeat wiring` block below); this line's job is being readable when it did.
+    expect(logLines().some((line) => line.includes('"scope":"audit-prune"'))).toBe(true)
   })
 
   it("schedules the following tick a full TICK_INTERVAL later", async () => {
@@ -141,7 +158,7 @@ describe("retention window", () => {
 
     const line = logLines().find((l) => l.includes("retention"))
     expect(line).toBeDefined()
-    expect(line).toContain("[audit-prune]")
+    expect(line).toContain('"scope":"audit-prune"')
   })
 
   it("stops after one batch once it is caught up", async () => {
@@ -247,5 +264,58 @@ describe("the chain always reschedules", () => {
     await vi.advanceTimersByTimeAsync(TICK_INTERVAL)
 
     expect(mockReadRetentionDays).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * OBS-03. This block is why the wiring is PROVEN rather than merely written.
+ *
+ * The other five processors have no suite that drives their `start*` function, so their wiring is a
+ * source gate. This one does, so it gets a behavioural assertion — and the property being asserted
+ * (a tick that threw still counts) is the one a reader is most likely to get backwards.
+ */
+describe("heartbeat wiring", () => {
+  it("registers itself in the heartbeat registry the moment it starts", () => {
+    startAuditPruner()
+
+    // Registered and not yet ticked. `alive` is true on the strength of having registered inside
+    // its own first-tick budget — the first tick is a whole INITIAL_DELAY away and a worker is not
+    // dead for not having ticked yet.
+    expect(snapshot()["audit-prune"]).toEqual({ alive: true, lastTickAt: null })
+  })
+
+  it("records a tick once the first tick body has completed", async () => {
+    startAuditPruner()
+    await vi.advanceTimersByTimeAsync(INITIAL_DELAY)
+
+    const report = snapshot()["audit-prune"]
+    expect(report.alive).toBe(true)
+    expect(typeof report.lastTickAt).toBe("string")
+    expect(Number.isNaN(Date.parse(report.lastTickAt as string))).toBe(false)
+  })
+
+  it("records a tick even when the tick body threw — liveness is completion, not success", async () => {
+    mockReadRetentionDays.mockRejectedValue(new Error("settings read blew up"))
+
+    startAuditPruner()
+    await vi.advanceTimersByTimeAsync(INITIAL_DELAY)
+
+    // A processor whose every tick throws is ALIVE AND BROKEN. The log stream reports the
+    // breakage; the health check reports the aliveness. Conflating the two would let a real
+    // outage hide behind an accurate-looking 503, or a broken processor hide behind a 200 —
+    // which is why `recordTick` sits outside the `try`, in the same place and for the same
+    // reason as the tail `scheduleTick` (property 4 in this file's header).
+    expect(console.error).toHaveBeenCalled()
+    expect(snapshot()["audit-prune"].lastTickAt).not.toBeNull()
+  })
+
+  it("stays alive across a full day, because the staleness bound is its own TICK_INTERVAL", async () => {
+    startAuditPruner()
+    await vi.advanceTimersByTimeAsync(INITIAL_DELAY)
+
+    // A global staleness threshold would report this pruner permanently dead on a perfectly
+    // healthy container. The bound is per-worker, from the constants this file passed in.
+    const justBeforeTheNextTick = Date.now() + TICK_INTERVAL - 1
+    expect(snapshot(justBeforeTheNextTick)["audit-prune"].alive).toBe(true)
   })
 })
