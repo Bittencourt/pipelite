@@ -37,14 +37,15 @@
  * THIS QUERY MUST CHANGE WITH IT — the two are bound, and this comment is the binding.
  * ---
  * NOTHING HERE THROWS (S-5). A duplicate check must never be the reason a create fails: a rejected
- * query logs `[dedup-matching]` with identifiers only and returns `[]`, which renders as "no
- * warning" — the same outcome as a clean draft.
+ * query logs under scope `dedup-matching` with identifiers only and returns `[]`, which renders as
+ * "no warning" — the same outcome as a clean draft.
  */
 
 import { and, eq, isNull, ne, sql, type SQL } from "drizzle-orm"
 
 import { db } from "@/db"
 import { organizations, people } from "@/db/schema"
+import { log } from "@/lib/log"
 
 import { CREATE_TIME_MATCH_LIMIT } from "./constants"
 import { readOrgIdentityFields } from "./identity-settings"
@@ -56,8 +57,6 @@ import {
   type OrganizationMatchSide,
 } from "./scoring"
 import type { DedupReason, MergeableEntityType } from "./types"
-
-const LOG_PREFIX = "[dedup-matching]"
 
 /**
  * The draft the user just submitted, as far as duplicate detection is concerned.
@@ -256,7 +255,7 @@ async function findCertainOrganizationMatches(
     return matches
   } catch (error) {
     // Identifiers only — never a record's contents (T-39-10).
-    console.error(`${LOG_PREFIX} organization certain-match lookup failed:`, error)
+    log.error("dedup-matching", "organization certain-match lookup failed", { err: error })
     return []
   }
 }
@@ -338,7 +337,7 @@ async function findCertainPersonMatches(input: CertainMatchInput): Promise<Certa
 
     return matches
   } catch (error) {
-    console.error(`${LOG_PREFIX} person certain-match lookup failed:`, error)
+    log.error("dedup-matching", "person certain-match lookup failed", { err: error })
     return []
   }
 }

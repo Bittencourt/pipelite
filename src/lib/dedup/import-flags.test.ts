@@ -120,12 +120,19 @@ beforeEach(() => {
   selectCalls.length = 0
   selectOutcomes = []
   installSelectMock()
+  // FROZEN CLOCK, for Test 5c below. The log line is JSON since phase 42 and carries a `ts`, whose
+  // milliseconds are the only run-varying digits in it: a real `…:07.111Z` contains "111", so
+  // `expect(logged).not.toContain("111")` would fail once in a thousand runs with nothing wrong.
+  // Pinning the clock keeps that T-39-10 detector deterministic without weakening it.
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date("2026-08-19T12:00:00.000Z"))
   errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
   // The default for every organization case that is not ABOUT the setting.
   mockReadIdentityFields.mockResolvedValue([FIELD_A, FIELD_B])
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
 })
 
@@ -314,7 +321,7 @@ describe("countFlaggedImportedRecords — fail closed (S-5)", () => {
     expect(count).toBe(0)
     expect(errorSpy).toHaveBeenCalled()
     const logged = (errorSpy.mock.calls as unknown[][]).map((args) => String(args[0])).join(" ")
-    expect(logged).toContain("[dedup-import-flags]")
+    expect(logged).toContain('"scope":"dedup-import-flags"')
   })
 
   it("Test 5b — a rejecting audit resolution returns 0 and logs", async () => {
@@ -327,7 +334,7 @@ describe("countFlaggedImportedRecords — fail closed (S-5)", () => {
 
     expect(count).toBe(0)
     const logged = (errorSpy.mock.calls as unknown[][]).map((args) => String(args[0])).join(" ")
-    expect(logged).toContain("[dedup-import-flags]")
+    expect(logged).toContain('"scope":"dedup-import-flags"')
   })
 
   it("Test 5c — the log line carries identifiers only, never a record's contents (T-39-10)", async () => {

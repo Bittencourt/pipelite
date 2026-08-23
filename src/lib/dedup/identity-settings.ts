@@ -33,9 +33,8 @@ import { z } from "zod"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { appSettings } from "@/db/schema/app-settings"
+import { log } from "@/lib/log"
 import { DEFAULT_SIMILARITY_THRESHOLD } from "./constants"
-
-const LOG_PREFIX = "[dedup-settings]"
 
 /**
  * The ordered list of organization custom-field LABELS that act as identity keys.
@@ -118,8 +117,10 @@ export async function readOrgIdentityFields(): Promise<string[] | null> {
     if (!parsed.success) {
       // Key name and bounds only — never the stored value, which is admin-supplied content
       // (T-39-10).
-      console.warn(
-        `${LOG_PREFIX} ${ORG_IDENTITY_FIELDS_KEY} is not an array of 0-${ORG_IDENTITY_FIELDS_MAX} non-empty strings — organizations have no certain tier and no create-time warning until it is corrected`
+      log.warn(
+        "dedup-settings",
+        "the identity-fields setting is not an array of non-empty strings within the entry cap — organizations have no certain tier and no create-time warning until it is corrected",
+        { key: ORG_IDENTITY_FIELDS_KEY, maxEntries: ORG_IDENTITY_FIELDS_MAX }
       )
       return null
     }
@@ -133,7 +134,10 @@ export async function readOrgIdentityFields(): Promise<string[] | null> {
 
     return parsed.data
   } catch (error) {
-    console.error(`${LOG_PREFIX} Failed to read ${ORG_IDENTITY_FIELDS_KEY}:`, error)
+    log.error("dedup-settings", "Failed to read the setting", {
+      key: ORG_IDENTITY_FIELDS_KEY,
+      err: error,
+    })
     return null
   }
 }
@@ -184,7 +188,10 @@ export async function writeOrgIdentityFields(
 
     return { success: true }
   } catch (error) {
-    console.error(`${LOG_PREFIX} Failed to write ${ORG_IDENTITY_FIELDS_KEY}:`, error)
+    log.error("dedup-settings", "Failed to write the setting", {
+      key: ORG_IDENTITY_FIELDS_KEY,
+      err: error,
+    })
     return { success: false, error: "Failed to save the identity fields." }
   }
 }
@@ -221,15 +228,25 @@ export async function readSimilarityThreshold(): Promise<number> {
     if (!parsed.success) {
       // Key name and bounds only (T-39-10). The bounds are the product's own numbers and are safe
       // to print; the stored value is not.
-      console.warn(
-        `${LOG_PREFIX} ${DEDUP_SIMILARITY_KEY} is not a number in [${SIMILARITY_MIN}, ${SIMILARITY_MAX}] — falling back to the default floor of ${DEFAULT_SIMILARITY_THRESHOLD}`
+      log.warn(
+        "dedup-settings",
+        "the similarity setting is not a number within bounds — falling back to the default floor",
+        {
+          key: DEDUP_SIMILARITY_KEY,
+          min: SIMILARITY_MIN,
+          max: SIMILARITY_MAX,
+          fallback: DEFAULT_SIMILARITY_THRESHOLD,
+        }
       )
       return DEFAULT_SIMILARITY_THRESHOLD
     }
 
     return parsed.data
   } catch (error) {
-    console.error(`${LOG_PREFIX} Failed to read ${DEDUP_SIMILARITY_KEY}:`, error)
+    log.error("dedup-settings", "Failed to read the setting", {
+      key: DEDUP_SIMILARITY_KEY,
+      err: error,
+    })
     return DEFAULT_SIMILARITY_THRESHOLD
   }
 }

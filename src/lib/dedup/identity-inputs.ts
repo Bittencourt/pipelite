@@ -46,9 +46,8 @@
  */
 
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import { log } from "@/lib/log"
 import { ORG_IDENTITY_FIELDS_MAX, readOrgIdentityFields } from "./identity-settings"
-
-const LOG_PREFIX = "[dedup-identity-inputs]"
 
 /**
  * The ONE custom field type a create-time identity input may collect.
@@ -196,7 +195,9 @@ export async function readOrgIdentityInputFields(): Promise<string[]> {
 
     return selectIdentityInputFields(configured, definitions)
   } catch (error) {
-    console.error(`${LOG_PREFIX} could not resolve the create-time identity inputs:`, error)
+    log.error("dedup-identity-inputs", "could not resolve the create-time identity inputs", {
+      err: error,
+    })
     return []
   }
 }

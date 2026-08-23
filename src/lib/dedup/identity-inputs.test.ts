@@ -182,7 +182,7 @@ describe("readOrgIdentityInputFields", () => {
 
     await expect(readOrgIdentityInputFields()).resolves.toEqual([])
     expect(errorSpy).toHaveBeenCalled()
-    expect(String(errorSpy.mock.calls[0]?.[0])).toContain("[dedup-identity-inputs]")
+    expect(String(errorSpy.mock.calls[0]?.[0])).toContain('"scope":"dedup-identity-inputs"')
   })
 
   it("RESOLVES [] rather than rejecting when the settings read throws", async () => {

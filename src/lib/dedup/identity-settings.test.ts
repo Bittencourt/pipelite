@@ -107,11 +107,21 @@ function warnLines(): string[] {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // FROZEN CLOCK, AND NOT FOR CONVENIENCE — it is what keeps the T-39-10 absence assertions below
+  // from flaking. Since phase 42 these warns are JSON lines carrying a `ts` field, and a real ISO
+  // timestamp holds the only run-varying digits in the line: `…:51.512Z` contains the substring
+  // "1.5", so `expect(line).not.toContain("1.5")` would fail on roughly one run in a hundred with
+  // nothing wrong. A security regression detector that flakes gets deleted by whoever it annoys,
+  // so the clock is pinned to a value containing none of the asserted substrings instead of the
+  // assertions being loosened.
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date("2026-08-19T12:00:00.000Z"))
   warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
   errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
 })
 
