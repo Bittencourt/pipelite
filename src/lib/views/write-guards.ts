@@ -318,9 +318,9 @@ export function isDuplicateViewName(error: unknown): boolean {
 }
 
 /**
- * What is safe to `console.error` about a driver failure.
+ * What is safe to `log.error` about a driver failure.
  *
- * The SQLSTATE and the constraint, and nothing else. The obvious `console.error(error)` would put
+ * The SQLSTATE and the constraint, and nothing else. The obvious `log.error(error)` would put
  * the full statement and every bound parameter — including a view name the user typed — into the
  * server log, which is the same class of leak T-39-03 already paid for on the merge path. This is
  * not about hiding the failure: the two fields kept here are the two that identify it.

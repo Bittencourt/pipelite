@@ -36,6 +36,7 @@ import type { Session } from "next-auth"
 import { auth } from "@/auth"
 import { db } from "@/db"
 import { savedViewDefaults, savedViews } from "@/db/schema"
+import { log } from "@/lib/log"
 
 import type { ViewEntityType, ViewFilters } from "./types"
 import {
@@ -246,7 +247,14 @@ export async function createView(input: {
   } catch (error) {
     if (isDuplicateViewName(error)) return { success: false, error: "name_taken" }
 
-    console.error("createView failed", redactDbError(error))
+    // THE REDACTED PAIR, NEVER THE RAW DRIVER ERROR. All five sites in this file log the
+    // `{ code, constraint }` that `redactDbError` returns and nothing else, and moving to the
+    // structured logger does not relax that — it tightens the reason. `ctx` is serialised
+    // whole, so adding a second key carrying the raw value would put the full SQL statement
+    // and every bound parameter, including a view name the user typed, into the log stream.
+    // That is the leak class T-39-03 paid for; the rationale sits above the helper itself in
+    // `write-guards.ts`.
+    log.error("lib/views/actions", "createView failed", { err: redactDbError(error) })
 
     return { success: false, error: "failed" }
   }
@@ -353,7 +361,7 @@ export async function updateView(input: {
   } catch (error) {
     if (isDuplicateViewName(error)) return { success: false, error: "name_taken" }
 
-    console.error("updateView failed", redactDbError(error))
+    log.error("lib/views/actions", "updateView failed", { err: redactDbError(error) })
 
     return { success: false, error: "failed" }
   }
@@ -419,7 +427,7 @@ export async function setViewShared(input: {
 
     return { success: true }
   } catch (error) {
-    console.error("setViewShared failed", redactDbError(error))
+    log.error("lib/views/actions", "setViewShared failed", { err: redactDbError(error) })
 
     return { success: false, error: "failed" }
   }
@@ -497,7 +505,7 @@ export async function setViewDefault(input: {
 
     return { success: true }
   } catch (error) {
-    console.error("setViewDefault failed", redactDbError(error))
+    log.error("lib/views/actions", "setViewDefault failed", { err: redactDbError(error) })
 
     return { success: false, error: "failed" }
   }
@@ -547,7 +555,7 @@ export async function deleteView(input: { id: string }): Promise<DeleteViewResul
 
     return { success: true, name: row.name }
   } catch (error) {
-    console.error("deleteView failed", redactDbError(error))
+    log.error("lib/views/actions", "deleteView failed", { err: redactDbError(error) })
 
     return { success: false, error: "failed" }
   }

@@ -51,6 +51,7 @@ import {
   pickFilterParams,
   withViewSelection,
 } from "./url-params"
+import { log } from "@/lib/log"
 import { validateStoredFilters } from "./validate"
 
 import type { ViewViewer } from "./queries"
@@ -71,8 +72,6 @@ import type {
   ViewEntityType,
   ViewFilters,
 } from "./types"
-
-const LOG_PREFIX = "[views/resolve]"
 
 /**
  * One view after the read-side validator has run over it.
@@ -387,7 +386,7 @@ async function loadFilterCatalog(entityType: ViewEntityType): Promise<ViewFilter
       activityTypeIds: new Set(typeRows.map((row) => row.id)),
     }
   } catch (error) {
-    console.error(`${LOG_PREFIX} could not load the filter catalog for ${entityType}:`, error)
+    log.error("views/resolve", "could not load the filter catalog", { entityType, err: error })
     return EMPTY_CATALOG
   }
 }
@@ -485,7 +484,7 @@ export async function resolveSavedViewsBarProps({
       canUpdateSelected: selected?.summary.canEdit ?? false,
     }
   } catch (error) {
-    console.error(`${LOG_PREFIX} could not resolve the bar props for ${entityType}:`, error)
+    log.error("views/resolve", "could not resolve the bar props", { entityType, err: error })
     return fallback
   }
 }
@@ -520,7 +519,10 @@ export async function resolveDefaultViewRedirect(
     // in hand — `readDefaultViewForUser` returns it — and `redirectTargetFor` re-narrows it.
     return redirectTargetFor(entityType, filters, defaultView.id)
   } catch (error) {
-    console.error(`${LOG_PREFIX} could not resolve the default redirect for ${entityType}:`, error)
+    log.error("views/resolve", "could not resolve the default redirect", {
+      entityType,
+      err: error,
+    })
     return null
   }
 }
