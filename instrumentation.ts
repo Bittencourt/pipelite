@@ -60,11 +60,21 @@ export async function register() {
     const { startAuditPruner } = await import("@/lib/audit/prune")
     startAuditPruner()
 
-    // REGISTRATION HERE IS NOT EVIDENCE OF EXECUTION. `Dockerfile:24` copies the built
-    // `instrumentation.js` into `.next/standalone/` with a step that ends in `2>/dev/null || true`,
-    // so a build whose chunk layout changes fails silently and this whole function never runs. That
-    // exact breakage killed all four processors in production on 2026-08-08 while every test passed.
-    // The gate is behavioural: `docker compose logs app | grep -F '[trash-prune] Starting'`.
+    // REGISTRATION HERE IS NOT EVIDENCE OF EXECUTION. `Dockerfile:35-38` copies the built
+    // `instrumentation.js` into `.next/standalone/`. Until phase 42 that step lived at
+    // `Dockerfile:24` and ended in `2>/dev/null || true`, so a build whose chunk layout changed
+    // failed silently and this whole function never ran. That exact breakage killed all four
+    // processors in production on 2026-08-08 while every test passed. Phase 42 replaced the
+    // suppression with a postcondition that exits 1 — which closes that mechanism at BUILD time
+    // and says nothing about whether `register()` ever executed.
+    // The RUNTIME gate is `curl -s localhost:3001/api/health`: all ten workers — these six
+    // processors plus the four subscribers — are reported from a HARD-CODED roster, so a
+    // `register()` that never ran comes back 503 listing ten dead workers instead of as a log line
+    // that is merely absent. Two detectors now, one per phase of the lifecycle. The old
+    // `docker compose logs` grep for this pruner's bracketed startup prefix is retired twice over:
+    // plan 06 turned that prefix into a structured `scope` field, and a boot-line grep was always
+    // vacuous anyway — every build emits it, including a stale image a `docker restart` brought
+    // back up.
     const { startTrashPruner } = await import("@/lib/trash/prune")
     startTrashPruner()
   }
