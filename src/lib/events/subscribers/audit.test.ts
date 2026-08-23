@@ -24,6 +24,7 @@ import { registerAuditSubscriber, _resetForTesting, AUDITED_EVENTS } from "./aud
 import { db } from "@/db"
 import { auditLog } from "@/db/schema"
 import { runWithActor } from "@/lib/audit/actor-context"
+import { snapshot, _resetForTesting as _resetHeartbeat } from "@/lib/observability/heartbeat"
 
 const mockDb = db as unknown as { insert: ReturnType<typeof vi.fn> }
 
@@ -281,11 +282,95 @@ describe("registerAuditSubscriber", () => {
 
       await flush()
 
-      expect(errorSpy).toHaveBeenCalledWith("[audit]", boom)
+      // ONE argument now, not two: the structured logger emits a single JSON line. Asserting on
+      // the SERIALIZED message rather than on object identity is the point — `JSON.stringify(new
+      // Error())` is `"{}"` because `name`/`message`/`stack` are non-enumerable, so this assertion
+      // is also the proof that `log.ts`'s explicit `Error` branch survived the round trip. Without
+      // it the migration would silently annihilate the stack trace while every test stayed green.
+      expect(errorSpy).toHaveBeenCalledOnce()
+      const line = errorSpy.mock.calls[0][0] as string
+      expect(errorSpy.mock.calls[0]).toHaveLength(1)
+      expect(line).toContain('"scope":"audit"')
+      const parsed = JSON.parse(line) as { scope: string; err: { message: string; stack: string } }
+      expect(parsed.scope).toBe("audit")
+      expect(parsed.err.message).toBe(boom.message)
+      expect(parsed.err.stack).toBeTruthy()
+
       expect(unhandled).toHaveLength(0)
     } finally {
       process.off("unhandledRejection", onUnhandled)
       errorSpy.mockRestore()
     }
+  })
+})
+
+// ── OBS-03 heartbeat wiring ──────────────────────────────────────────────────────────────────
+//
+// A subscriber's `alive` derives from REGISTRATION, never from `lastTickAt`. An event-driven
+// subscriber on a quiet CRM legitimately never fires, so reporting idle as dead would make
+// `/api/health` noise that gets ignored — which is worse than not having it.
+//
+// `lastTickAt` is a DIAGNOSTIC only, and a sharp one: registered with `lastTickAt` still null
+// AFTER known CRM writes is the fingerprint of a module-graph split — the subscriber attached to a
+// different `crmBus` instance than the emitters use. That is exactly the 2026-08-16 defect where
+// every audit row was written with `actor_kind = system`.
+//
+// CAVEAT — these assertions are a PROXY. Vitest has a single module registry and structurally
+// cannot reproduce the four-instance Turbopack split, so they prove the registry works within ONE
+// module graph and nothing about the bridge between graphs. The container check against
+// `/api/health` is the only real verification, exactly as `heartbeat.test.ts` says of its own
+// `globalThis` assertions.
+describe("registerAuditSubscriber heartbeat wiring", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    _resetForTesting()
+    _resetHeartbeat()
+  })
+
+  it("registers audit-subscriber in the heartbeat registry", () => {
+    // Present-and-false before registration, never absent — that is `EXPECTED_WORKERS` doing its
+    // job, and it is what makes a dead `register()` visible instead of vacuously healthy.
+    expect(snapshot()["audit-subscriber"]).toEqual({ alive: false, lastTickAt: null })
+
+    registerAuditSubscriber()
+
+    expect(snapshot()["audit-subscriber"]).toEqual({ alive: true, lastTickAt: null })
+  })
+
+  it("is still alive a year later with lastTickAt null, because registration is the claim", () => {
+    registerAuditSubscriber()
+
+    const inAYear = Date.now() + 365 * 24 * 60 * 60 * 1000
+    expect(snapshot(inAYear)["audit-subscriber"]).toEqual({ alive: true, lastTickAt: null })
+  })
+
+  it("advances lastTickAt to an ISO string when the handler runs", () => {
+    stubInsert()
+    registerAuditSubscriber()
+
+    crmBus.emit("deal.updated", dealPayload())
+
+    const report = snapshot()["audit-subscriber"]
+    expect(report.alive).toBe(true)
+    expect(report.lastTickAt).not.toBeNull()
+    expect(new Date(report.lastTickAt!).toISOString()).toBe(report.lastTickAt)
+  })
+
+  it("advances lastTickAt on a no-op update that writes no row at all", () => {
+    stubInsert()
+    registerAuditSubscriber()
+
+    const identical = { title: "Same title", value: "100" }
+    crmBus.emit(
+      "deal.updated",
+      dealPayload({ previous: { ...identical }, data: { ...identical }, changedFields: [] })
+    )
+
+    // `recordTick` belongs at handler ENTRY, above the empty-change-set early return. A save that
+    // changed nothing is a handler that FIRED — the bus reached it — so it must count as a tick.
+    // Placing the call after the return would make a quiet-but-attached subscriber indistinguishable
+    // from a detached one, which is the whole diagnostic this field exists for.
+    expect(mockDb.insert).not.toHaveBeenCalled()
+    expect(snapshot()["audit-subscriber"].lastTickAt).not.toBeNull()
   })
 })
