@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-23T20:31:35.730Z"
+last_updated: "2026-08-23T21:12:25.157Z"
 last_activity: 2026-08-23
 progress:
   total_phases: 14
   completed_phases: 12
   total_plans: 184
-  completed_plans: 175
+  completed_plans: 178
   percent: 86
 ---
 
@@ -26,26 +26,26 @@ wave 1 of 4 merged. Phase 43 is still `Plans: TBD`.
 ## Position
 
 Phase: 42 - Observability
-Plan: 9 of 18 complete (wave 1 merged; wave 2 batches A and B of 4 merged)
-Status: Executing Phase 42 — wave 2 in progress, 7 plans remain
+Plan: 12 of 18 complete (wave 1 merged; wave 2 batches A, B, C of 4 merged)
+Status: Executing Phase 42 — wave 2 in progress, 4 plans remain (batch D)
 Last activity: 2026-08-23
 
-Progress: [██████████] 95%
+Progress: [██████████] 97%
 
-## ► RESUME HERE — Phase 42, wave 2 batch C
+## ► RESUME HERE — Phase 42, wave 2 batch D
 
 **Command:** `/gsd:execute-phase 42` — it filters on `has_summary`, so 42-01..42-06 are skipped
 automatically. Do NOT re-plan; all 18 plans exist and were verified by gsd-plan-checker.
 
 **Wave map** (plan frontmatter is authoritative): wave 1 = 42-01,02,03 (DONE) · wave 2 =
-42-04..42-16, of which **42-04..42-09 are DONE** and 42-10..42-16 remain (7 plans) · wave 3 = 42-17 ·
+42-04..42-16, of which **42-04..42-12 are DONE** and 42-13..42-16 remain (4 plans) · wave 3 = 42-17 ·
 wave 4 = 42-18. **42-18 is `autonomous: no`** — a deliberate Sentry-DSN checkpoint.
 
 **Wave 2 is being run in batches of 3-4, not all 13 at once.** This box has 4 CPUs / ~9GB free and
 13 concurrent executors each running a 4455+ test suite thrashes it. All wave-2 plans depend only on
 wave 1 and own disjoint file sets (verified: 137 distinct files, zero collisions), so batching costs
-nothing semantically. Batch A = 04,05,06 (done). Batch B = 07,08,09 (done). Batch C = 10,11,12.
-Batch D = 13,14,15,16.
+nothing semantically. Batch A = 04,05,06 (done). Batch B = 07,08,09 (done). Batch C = 10,11,12 (done).
+Batch D = 13,14,15,16 — the last of wave 2.
 
 **Baseline at this point:** 4524 passed / 32 skipped + RSC 8/8 · typecheck 0 · lint 0 errors /
 **124** warnings. `@sentry/nextjs` 10.70.0 installed, lockfile committed.
@@ -55,9 +55,10 @@ Four separate executors measured 122 and each proved it was not their doing. Cau
 (`next-env.d.ts` is eslint-ignored, so it is not that). Consequence: **gate on errors = 0, never on
 a warning total** — an assertion on "124 warnings" fails spuriously inside a worktree.
 
-**`console.*` census, measured on merged master with eslint `no-console`:** **191** remaining in
-non-test source across 82 files. Reconciles exactly: 244 − 3 (42-07) − 26 (42-08) − 24 (42-09) = 191.
-The 191 is the 187 sites still claimed by 42-10..42-16 plus `log.ts`'s own 4 internal delegations.
+**`console.*` census, measured on merged master with eslint `no-console`:** **113** remaining in
+non-test source across 44 files. Reconciles exactly at every step:
+244 −3 (42-07) −26 (42-08) −24 (42-09) = 191; 191 −29 (42-10) −21 (42-11) −28 (42-12) = 113.
+The 113 is the 109 sites still claimed by 42-13..42-16 plus `log.ts`'s own 4 internal delegations.
 
 **Use eslint, not grep, to census.** `grep` and eslint disagree on the absolute count (grep reads
 higher); the deltas agree. Batch A/B executors reported grep-based absolutes that will not match
