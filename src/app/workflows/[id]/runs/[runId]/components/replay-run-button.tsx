@@ -85,7 +85,22 @@ export function ReplayRunButton({ workflowId, runId }: ReplayRunButtonProps) {
 
   const handleConfirm = () => {
     startTransition(async () => {
-      const result = await replayWorkflowRun(workflowId, runId)
+      let result: Awaited<ReturnType<typeof replayWorkflowRun>>
+
+      try {
+        result = await replayWorkflowRun(workflowId, runId)
+      } catch {
+        /*
+          A SERVER ACTION REJECTS, it does not always return `{ success: false }` (WR-04): a
+          container restart, a DB outage, a proxy hiccup, a deploy. Without this the transition
+          ended and re-enabled the buttons — so the dialog was not wedged — but NOTHING was said,
+          leaving the operator looking at a dialog that visibly did nothing and no way to tell
+          whether a run started. The same message as a returned failure, for the same reason: their
+          next action is identical either way, and the dialog stays open to retry from.
+        */
+        toast.error(t("replay.error"))
+        return
+      }
 
       if (!result.success) {
         // Deliberately no `setOpen(false)`: see the header note on retry context. The server's

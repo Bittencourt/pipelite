@@ -339,6 +339,77 @@ describe("the poll is bounded and stops for every reason it can stop", () => {
     }
   })
 
+  // -----------------------------------------------------------------------------------------------
+  // WR-04 — a REJECTED server action must neither wedge the dialog nor outlive the deadline.
+  //
+  // A Next.js server action rejects rather than returning `{ success: false }` on a transport-level
+  // failure (container restart, DB outage inside the 30 s window, proxy hiccup, deploy), and a
+  // hanging request never resolves at all. Both are invisible to a `{ success }` check.
+  // -----------------------------------------------------------------------------------------------
+
+  it("evaluates the deadline BEFORE awaiting the status, not after it", () => {
+    const effects = callArguments(dialog, "useEffect")
+    expect(effects, `${DIALOG}: expected exactly one useEffect — the poll.`).toHaveLength(1)
+
+    const body = effects[0]
+    const deadlineAt = body.indexOf("pollDeadline")
+    const awaitAt = body.indexOf("await getWorkflowRunStatus")
+
+    // ANTI-VACUITY: both markers must exist, or `-1 < n` would pass for a poll that reads no
+    // deadline at all.
+    expect(deadlineAt, `${DIALOG}: the poll must read pollDeadline.`).toBeGreaterThan(-1)
+    expect(awaitAt, `${DIALOG}: the poll must await getWorkflowRunStatus.`).toBeGreaterThan(-1)
+
+    expect(
+      deadlineAt,
+      `${DIALOG}: the wall-clock deadline must be checked BEFORE the request. After it, a request ` +
+        `that rejects or never resolves never reaches the check: clearInterval is never called, ` +
+        `the budget is never evaluated, and the dialog issues one request per second forever from ` +
+        `every open editor tab, with an unhandled rejection each time.`
+    ).toBeLessThan(awaitAt)
+  })
+
+  it("catches a rejected status request instead of letting it escape the interval callback", () => {
+    const effects = callArguments(dialog, "useEffect")
+    const body = effects[0]
+    const awaitAt = body.indexOf("await getWorkflowRunStatus")
+    const tryAt = body.lastIndexOf("try {", awaitAt)
+
+    expect(
+      tryAt,
+      `${DIALOG}: the status request must sit inside a try/catch. A rejection escaping the async ` +
+        `callback setInterval invoked skips every clearInterval below it.`
+    ).toBeGreaterThan(-1)
+
+    const after = body.slice(awaitAt)
+    expect(
+      after.indexOf("} catch"),
+      `${DIALOG}: no catch follows the status request.`
+    ).toBeGreaterThan(-1)
+  })
+
+  it("catches a rejected startDryRun rather than freezing the dialog at phase 'starting'", () => {
+    const startAt = dialog.indexOf("await startDryRun")
+    expect(startAt, `${DIALOG}: the dialog must call startDryRun.`).toBeGreaterThan(-1)
+
+    const tryAt = dialog.lastIndexOf("try {", startAt)
+    expect(
+      tryAt,
+      `${DIALOG}: an unhandled rejection here leaves wait at { phase: "starting" } FOREVER, so ` +
+        `running stays true: Confirm and Cancel both disabled, the Textarea readOnly, the spinner ` +
+        `never stopping, and no way out but a page reload — with the operator's typed trigger data ` +
+        `trapped behind a disabled control.`
+    ).toBeGreaterThan(-1)
+
+    // The recovery must re-enable the dialog. `{ phase: "idle" }` is what `running` reads.
+    const recovery = dialog.slice(dialog.indexOf("} catch", startAt), startAt + 600)
+    expect(
+      recovery,
+      `${DIALOG}: the catch must set the wait back to idle, or the dialog stays wedged for a ` +
+        `different reason.`
+    ).toContain('phase: "idle"')
+  })
+
   it("sets no state in the effect body outside the poll callback", () => {
     const effects = callArguments(dialog, "useEffect")
 

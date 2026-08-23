@@ -205,7 +205,36 @@ export function DryRunDialog({ workflowId, dirty, latestTriggerData }: DryRunDia
     let mounted = true
 
     const poll = async () => {
-      const result = await getWorkflowRunStatus(workflowId, pollRunId)
+      /*
+        THE DEADLINE IS CHECKED BEFORE THE REQUEST, NOT AFTER IT (WR-04). A Next.js server action
+        REJECTS rather than returning `{ success: false }` on a transport-level failure — a
+        container restart or a DB outage inside this 30-second window, a proxy hiccup, a deploy —
+        and a request that hangs never resolves at all. With the check after the await, neither
+        outcome ever reaches it: `clearInterval` is never called, the budget is never evaluated, and
+        the dialog issues one request per second forever, from every open editor tab, with an
+        unhandled rejection each time. Evaluated first, the budget holds whatever the request does.
+      */
+      if (Date.now() >= pollDeadline) {
+        clearInterval(interval)
+        setWait({ phase: "idle" })
+        setOpen(false)
+        toast.info(timeoutMessage)
+        return
+      }
+
+      let result: Awaited<ReturnType<typeof getWorkflowRunStatus>>
+
+      try {
+        result = await getWorkflowRunStatus(workflowId, pollRunId)
+      } catch {
+        /*
+          A TRANSPORT FAILURE SAYS NOTHING ABOUT THE RUN. The run may well have finished; only this
+          request did not arrive. So this is not `dryRun.error` and not a stop — keep polling, and
+          let the deadline above end the wait. A rejection that escaped this async callback would
+          also skip the `clearInterval` below and leave the interval running past every stop.
+        */
+        return
+      }
 
       if (!mounted) return
 
@@ -238,13 +267,6 @@ export function DryRunDialog({ workflowId, dirty, latestTriggerData }: DryRunDia
         setOpen(false)
         router.push(`/workflows/${workflowId}/runs/${pollRunId}`)
         return
-      }
-
-      if (Date.now() >= pollDeadline) {
-        clearInterval(interval)
-        setWait({ phase: "idle" })
-        setOpen(false)
-        toast.info(timeoutMessage)
       }
     }
 
@@ -282,7 +304,25 @@ export function DryRunDialog({ workflowId, dirty, latestTriggerData }: DryRunDia
     setFailure(null)
     setWait({ phase: "starting" })
 
-    const result = await startDryRun(workflowId, triggerJson)
+    let result: Awaited<ReturnType<typeof startDryRun>>
+
+    try {
+      result = await startDryRun(workflowId, triggerJson)
+    } catch {
+      /*
+        A REJECTED SERVER ACTION USED TO WEDGE THIS DIALOG PERMANENTLY (WR-04). The rejection
+        propagated out of the floating promise the onClick created, `wait` stayed `{ phase:
+        "starting" }` forever, and `running` stayed true — Confirm and Cancel both disabled, the
+        Textarea readOnly, the spinner never stopping, and no way out but a page reload, with the
+        operator's typed trigger data trapped behind a disabled control.
+
+        Same outcome as a returned failure: nothing ran, so the dialog stays OPEN with the trigger
+        data still on screen, and `dryRun.error` says exactly that.
+      */
+      setWait({ phase: "idle" })
+      toast.error(startFailedMessage)
+      return
+    }
 
     if (result.success) {
       setWait({
