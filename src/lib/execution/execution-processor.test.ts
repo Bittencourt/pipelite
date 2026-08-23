@@ -109,6 +109,12 @@ interface UpdateChain {
   setArgs: Record<string, unknown>[]
   /** Every condition handed to `.where(...)`, in call order. */
   whereArgs: unknown[]
+  /** `.returning()` calls that belong to a STEP claim (`set({ status: "completed" })`). */
+  stepClaimCount: number
+  /** `.returning()` calls that belong to a RUN transition (`set({ status: "running" })`). */
+  runClaimCount: number
+  /** Conditions handed to `.where(...)` by a RUN transition, in call order. */
+  runWhereArgs: unknown[]
   set: ReturnType<typeof vi.fn>
   where: ReturnType<typeof vi.fn>
   returning: ReturnType<typeof vi.fn>
@@ -121,32 +127,65 @@ interface UpdateChain {
 /**
  * A drizzle update-builder stand-in.
  *
- * `set` and `where` return the chain, `returning` resolves the next queued result, and `then`
- * makes a bare `await db.update(...).set(...).where(...)` (the run transition, which takes no
- * `.returning()`) resolve like the real thenable builder does.
+ * `set` and `where` return the chain, `returning` resolves the next queued result for the KIND of
+ * update it belongs to, and `then` makes a bare `await db.update(...).set(...).where(...)` resolve
+ * like the real thenable builder does.
  *
- * `returningResults` is consumed one entry per `.returning()` call, so a two-step claim can have
- * the first win and the second lose.
+ * TWO QUEUES, DISCRIMINATED BY THE `set` PAYLOAD, because `processWaitingRuns` now makes two guarded
+ * claims per ready step and the tests have to be able to make either one lose independently:
+ *
+ *   - `stepReturningResults` feeds the STEP claim, `set({ status: "completed", completedAt })`;
+ *   - `runReturningResults` feeds the RUN transition, `set({ status: "running", startedAt })`.
+ *
+ * A single positional queue cannot express "the step claim won and the run was cancelled meanwhile",
+ * and worse, it silently mis-attributed results the moment the second claim landed (WR-01) — the
+ * run's result would be consumed by the NEXT step's claim. `mockDb.update` is stubbed with
+ * `mockReturnValue(chain)` throughout this file, so the chain cannot discriminate on the table
+ * argument; the payload it is handed is the discriminator that is actually available.
+ *
+ * The run queue DEFAULTS TO A WIN, so a single-instance happy path needs no second argument.
  */
-function makeUpdateChain(returningResults: unknown[][] = [[{ id: "step-1" }]]): UpdateChain {
+function makeUpdateChain(
+  stepReturningResults: unknown[][] = [[{ id: "step-1" }]],
+  runReturningResults: unknown[][] = []
+): UpdateChain {
   const setArgs: Record<string, unknown>[] = []
   const whereArgs: unknown[] = []
+  const runWhereArgs: unknown[] = []
 
-  const returning = vi.fn()
-  for (const result of returningResults) returning.mockResolvedValueOnce(result)
-  returning.mockResolvedValue([])
+  const stepQueue = [...stepReturningResults]
+  const runQueue = [...runReturningResults]
 
   const set = vi.fn()
   const where = vi.fn()
+  const returning = vi.fn()
 
   const chain: UpdateChain = {
     setArgs,
     whereArgs,
+    stepClaimCount: 0,
+    runClaimCount: 0,
+    runWhereArgs,
     set,
     where,
     returning,
     then: (onFulfilled, onRejected) => Promise.resolve(undefined).then(onFulfilled, onRejected),
   }
+
+  /** Which claim the chain is currently building, read off the last `.set(...)` payload. */
+  const isRunTransition = () => setArgs[setArgs.length - 1]?.status === "running"
+
+  returning.mockImplementation(async () => {
+    if (isRunTransition()) {
+      chain.runClaimCount += 1
+      // Default: the run was still `waiting`, i.e. nobody cancelled it. Only a test that queues an
+      // empty result is asking for the cancelled/reclaimed case.
+      return runQueue.length > 0 ? runQueue.shift() : [{ id: "run-resumed" }]
+    }
+
+    chain.stepClaimCount += 1
+    return stepQueue.length > 0 ? stepQueue.shift() : []
+  })
 
   set.mockImplementation((vals: Record<string, unknown>) => {
     setArgs.push(vals)
@@ -154,6 +193,7 @@ function makeUpdateChain(returningResults: unknown[][] = [[{ id: "step-1" }]]): 
   })
   where.mockImplementation((cond: unknown) => {
     whereArgs.push(cond)
+    if (isRunTransition()) runWhereArgs.push(cond)
     return chain
   })
 
@@ -384,13 +424,115 @@ describe("execution-processor", () => {
       const { processWaitingRuns } = await import("./execution-processor")
       const count = await processWaitingRuns()
 
+      // Counted as STEP claims specifically: `processWaitingRuns` now also makes a guarded RUN
+      // claim per won step (WR-01), so a bare `returning` call count no longer means "steps
+      // attempted". The claim being asserted is unchanged.
       expect(
-        chain.returning,
+        chain.stepClaimCount,
         "Both ready steps must be attempted. A `continue` that became a `break` would stop the " +
           "drain at the first lost claim and strand every later elapsed delay until the next tick."
-      ).toHaveBeenCalledTimes(2)
+      ).toBe(2)
       expect(mockExecuteRun).toHaveBeenCalledTimes(1)
       expect(mockExecuteRun).toHaveBeenCalledWith("run-1")
+      expect(count).toBe(1)
+    })
+
+    // ---------------------------------------------------------------------------------------------
+    // WR-01 — the RUN transition is a guarded claim too, so an elapsed delay cannot resurrect a run
+    // that was already cancelled.
+    //
+    // `toggleWorkflowActive(id, false)` marks every `waiting` RUN of that workflow `failed` with
+    // "Workflow disabled while waiting" — and never touches its `workflow_run_steps` row, which
+    // keeps `status = 'waiting'` and its original `resume_at`. So the step guard passes on the next
+    // tick after the delay elapses, and an unguarded run `UPDATE` flips a failed run back to
+    // `running` and executes every node after the delay on a workflow that is switched off.
+    // ---------------------------------------------------------------------------------------------
+
+    it("guards the run transition on `status = 'waiting'`, not on the run id alone", async () => {
+      mockDb.execute.mockResolvedValueOnce([readyStep("step-1", "run-1")])
+      const chain = makeUpdateChain([[{ id: "step-1" }]])
+      mockDb.update.mockReturnValue(chain)
+
+      const { processWaitingRuns } = await import("./execution-processor")
+      await processWaitingRuns()
+
+      // ANTI-VACUITY: no run transition at all would leave this empty and every toContain below
+      // would be inspecting `undefined`.
+      expect(
+        chain.runWhereArgs.length,
+        "No `UPDATE workflow_runs ... WHERE` was issued, so the guard cannot be inspected."
+      ).toBeGreaterThan(0)
+
+      const guard = JSON.stringify(chain.runWhereArgs[0] ?? null)
+      const why =
+        "The step claim being guarded is not enough: `toggleWorkflowActive` cancels the RUN and " +
+        "leaves the step `waiting`, so the only thing standing between an elapsed delay and a " +
+        "cancelled run being resurrected is a `status = 'waiting'` predicate on the run UPDATE."
+      expect(guard).not.toBe("null")
+      expect(guard, why).toContain("workflowRuns.id")
+      expect(guard, why).toContain("run-1")
+      expect(guard, why).toContain("workflowRuns.status")
+      expect(guard, why).toContain("waiting")
+    })
+
+    it("does NOT resume a run that was cancelled while its step slept", async () => {
+      mockDb.execute.mockResolvedValueOnce([readyStep("step-1", "run-1")])
+      // The step claim wins -- nothing else is competing for it -- but the run is no longer
+      // `waiting`, because it was failed by `toggleWorkflowActive` hours ago.
+      const chain = makeUpdateChain([[{ id: "step-1" }]], [[]])
+      mockDb.update.mockReturnValue(chain)
+
+      const { processWaitingRuns } = await import("./execution-processor")
+      const count = await processWaitingRuns()
+
+      expect(
+        mockExecuteRun,
+        "The operator disabled the workflow, saw the run marked failed, and believes it is dead. " +
+          "Resuming it 24 hours later fires every node after the delay on a workflow that is " +
+          "switched off."
+      ).not.toHaveBeenCalled()
+      expect(count).toBe(0)
+      expect(
+        mockAlert,
+        "A run the operator cancelled must not also produce a failure-alert email."
+      ).not.toHaveBeenCalled()
+    })
+
+    it("still marks the orphaned step completed, so it is not re-picked on every later tick", async () => {
+      mockDb.execute.mockResolvedValueOnce([readyStep("step-1", "run-1")])
+      const chain = makeUpdateChain([[{ id: "step-1" }]], [[]])
+      mockDb.update.mockReturnValue(chain)
+
+      const { processWaitingRuns } = await import("./execution-processor")
+      await processWaitingRuns()
+
+      expect(
+        chain.setArgs.some(vals => vals.status === "completed"),
+        "The step claim precedes the run claim and is not rolled back on refusal, which is the " +
+          "desirable half: the orphaned `waiting` step is retired instead of being re-selected by " +
+          "every subsequent tick forever."
+      ).toBe(true)
+    })
+
+    it("continues the drain when one run claim is lost, resuming the other ready run", async () => {
+      mockDb.execute.mockResolvedValueOnce([
+        readyStep("step-1", "run-1"),
+        readyStep("step-2", "run-2"),
+      ])
+      // Both step claims win; the FIRST run is already cancelled, the second is genuinely waiting.
+      const chain = makeUpdateChain([[{ id: "step-1" }], [{ id: "step-2" }]], [[], [{ id: "run-2" }]])
+      mockDb.update.mockReturnValue(chain)
+
+      const { processWaitingRuns } = await import("./execution-processor")
+      const count = await processWaitingRuns()
+
+      expect(
+        chain.runClaimCount,
+        "A refused run claim is a `continue`, never a `break`: it says nothing about the other " +
+          "elapsed delays in the same batch."
+      ).toBe(2)
+      expect(mockExecuteRun).toHaveBeenCalledTimes(1)
+      expect(mockExecuteRun).toHaveBeenCalledWith("run-2")
       expect(count).toBe(1)
     })
 

@@ -274,10 +274,32 @@ export async function processWaitingRuns(): Promise<number> {
       // original claim time (pre-delay, possibly hours ago), and the stale-run
       // reclaim measures the execution lease against started_at -- without the
       // reset a legitimately resumed run would be reclaimed immediately.
-      await tx
+      //
+      // THE `status = 'waiting'` PREDICATE IS A SECOND CLAIM, not a repeat of the step's (WR-01).
+      // Winning the step says only that no other instance is resuming it; it says nothing about
+      // whether the run is still resumable. `toggleWorkflowActive(id, false)`
+      // (src/app/workflows/actions.ts) marks every `waiting` RUN of a workflow `failed` with
+      // "Workflow disabled while waiting" and leaves its step row `waiting` with the original
+      // resume_at -- so without this predicate, an operator who disables a workflow parked on a
+      // 24-hour delay watches the run get marked failed, and 24 hours later every node after the
+      // delay fires anyway, on a workflow that is switched off, and alerts them about it.
+      // The engine always writes run and step to `waiting` together (engine.ts:377-397, 511-531),
+      // so this cannot refuse a legitimate resume. The step stays `completed`, deliberately: the
+      // orphan is retired rather than re-selected by every later tick.
+      const resumedRun = await tx
         .update(workflowRuns)
         .set({ status: "running" as const, startedAt: new Date() })
-        .where(eq(workflowRuns.id, runId))
+        .where(and(eq(workflowRuns.id, runId), eq(workflowRuns.status, "waiting")))
+        .returning({ id: workflowRuns.id })
+
+      // `continue`, not `break`, for the same reason as the step claim above: this run being
+      // unresumable says nothing about the other elapsed delays in this batch.
+      if (!resumedRun || resumedRun.length === 0) {
+        console.warn(
+          `[execution-processor] Not resuming run ${runId}: no longer waiting (cancelled or reclaimed).`
+        )
+        continue
+      }
 
       runIds.push(runId)
     }
