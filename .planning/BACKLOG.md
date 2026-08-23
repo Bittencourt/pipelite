@@ -623,3 +623,57 @@ literal `{` or `}` in the value — next-intl reads `{` as a placeholder delimit
 **Why it is not urgent:** the run detail page is already badged "Test run", and copy that over-states
 consequence makes an operator more cautious than necessary rather than less. The dangerous direction
 would have been the reverse, and that is what CR-01 fixed.
+
+---
+
+## Found by browser witnessing, 2026-08-22 (Phase 40 debt cleared during the Phase 41 run)
+
+### The `/activities` stats row asserts counts it cannot know, and they are wrong
+
+**Where:** `src/app/activities/activities-client.tsx:270-277`, fed by `src/app/activities/page.tsx`
+**Severity: a user-facing false statement**, not merely a cosmetic gap.
+**Status:** OPEN. Found by driving a real browser — the check existed *because* nobody had looked at
+this screen, and looking found this.
+
+The three stats are computed CLIENT-SIDE by filtering the `activities` array, which `page.tsx` has
+already capped at `PAGE_SIZE * pageNum` (50). So they are page statistics rendered as if they were
+totals, with no qualifier:
+
+| filter | stats row shows | SQL truth |
+|---|---|---|
+| none | `Completed:50` `Pending:0` `Overdue:0` | 74,857 / 14 / 4,151 |
+| Pending | `Completed:0` `Pending:14` `Overdue:0` | 14 pending — correct, but only because 14 < 50 |
+| Overdue | `Completed:0` `Pending:0` `Overdue:50` | 4,151 |
+
+Unfiltered, the row **asserts there are zero pending and zero overdue activities** when there are 14
+and 4,151. `Completed: 50` and `Overdue: 50` are the page cap, not counts. No total is displayed
+anywhere on the page, so a user has nothing to sanity-check against and the three numbers never sum
+to 79,022.
+
+**This is the same defect shape already recorded above** for `/activities` date filtering running in
+JavaScript after the pagination slice — that entry predicted "any surface applying a JS filter after a
+limit has the same defect shape. Worth a sweep." This is that sweep finding its second instance, in
+the same file.
+
+**What is NOT wrong:** Phase 40's WR-05 filter fix is correct and visible. Selecting Pending yields 14
+rows rather than the old ~4,165, and the three buckets really are exclusive at the query level
+(74,857 + 14 + 4,151 = 79,022, verified). The filter means what it now claims to mean. Only the stats
+row lies.
+
+**Fix shape:** three `count(*)` queries (or one grouped aggregate) computed server-side alongside the
+page query, passed down as props. Do not compute a total by summing what is on the page.
+
+### `run-changed-records.tsx` can render a `merged` action with no translation
+
+**Where:** `src/app/workflows/[id]/runs/[runId]/components/run-changed-records.tsx`
+**Status:** OPEN, currently unreachable, flagged rather than fixed.
+
+`ACTION_BADGE_VARIANT` is an exhaustive `Record<AuditAction, …>` and therefore maps `merged` — but
+`audit.run.action` in the message catalogs carries only `created`, `updated` and `deleted`. A `merged`
+audit row surfacing on a run page would hit a missing translation key. No workflow action currently
+produces a `merged` audit row, so it is not reachable today; the exhaustive map is what makes it a
+latent trap rather than a compile error.
+
+Note the interaction with the phase-41 locale contract: adding `audit.run.action.merged` requires
+adding it to the relevant `REQUIRED_*_KEYS` array in the same commit, or the exact-contract `toEqual`
+fails.
