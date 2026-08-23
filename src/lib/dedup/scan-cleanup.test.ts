@@ -14,9 +14,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
  *
  * The gate for execution is behavioural and lives outside this file:
  *   docker compose up -d --build app
- *   rtk proxy docker compose logs app --tail 300 | grep -F '[dedup-scan-cleanup] Starting'
+ *   rtk proxy docker compose logs app --tail 300 | grep -F '"scope":"dedup-scan-cleanup"'
  * (plain `docker compose logs` is intercepted by the RTK hook, which digests the output and hides
  * startup lines — `rtk proxy` is required for raw output).
+ *
+ * The line is structured JSON since phase 42, so the gate greps the `scope` FIELD rather than the
+ * bracketed prefix it used to grep — that prefix no longer exists in the source. `log.ts` emits
+ * `level`, `scope`, `msg`, `ts` in that fixed order, so pinning the startup line specifically is
+ * the one contiguous `grep -F '"scope":"dedup-scan-cleanup","msg":"Starting"'`.
  */
 
 vi.mock("@/db", () => ({
@@ -165,7 +170,15 @@ describe("cleanupStaleDedupScans", () => {
     await cleanupStaleDedupScans()
 
     const lines = log.mock.calls.map((call) => String(call[0]))
-    expect(lines.some((line) => line.includes("[dedup-scan-cleanup] Starting"))).toBe(true)
+    // One string used to pin both facts (the scope and the message). Split, not weakened: the
+    // scope and the message must still appear on the SAME line, which is what rules out the
+    // result line — it carries the same scope with a different `msg`.
+    expect(
+      lines.some(
+        (line) =>
+          line.includes('"scope":"dedup-scan-cleanup"') && line.includes('"msg":"Starting"')
+      )
+    ).toBe(true)
     // And a result line after the work, also unconditional.
     expect(lines.length).toBeGreaterThanOrEqual(2)
     log.mockRestore()
@@ -181,7 +194,7 @@ describe("cleanupStaleDedupScans", () => {
 
     await expect(cleanupStaleDedupScans()).resolves.toBeUndefined()
 
-    expect(String(error.mock.calls[0]?.[0])).toContain("[dedup-scan-cleanup]")
+    expect(String(error.mock.calls[0]?.[0])).toContain('"scope":"dedup-scan-cleanup"')
     error.mockRestore()
   })
 
@@ -196,7 +209,14 @@ describe("cleanupStaleDedupScans", () => {
 
     // The behavioural gate greps for `Starting`. If that line moved inside the try/catch after the
     // first query, a DB hiccup at boot would make the gate report "the reaper never ran".
-    expect(log.mock.calls.map((call) => String(call[0])).some((line) => line.includes("[dedup-scan-cleanup] Starting"))).toBe(true)
+    expect(
+      log.mock.calls
+        .map((call) => String(call[0]))
+        .some(
+          (line) =>
+            line.includes('"scope":"dedup-scan-cleanup"') && line.includes('"msg":"Starting"')
+        )
+    ).toBe(true)
     vi.restoreAllMocks()
   })
 })
