@@ -11,6 +11,7 @@ import { and, eq, isNull } from "drizzle-orm"
 import { z } from "zod"
 import { crmBus } from "@/lib/events"
 import type { CustomFieldDefinition, EntityType } from "@/db/schema"
+import { log } from "@/lib/log"
 import {
   recalculateFormulas,
   ENTITY_NATIVE_ATTRIBUTES,
@@ -38,7 +39,7 @@ async function recalcBatchRow(
   try {
     return await recalculateFormulas(input)
   } catch (error) {
-    console.error("[formula-recalc] deal batch recalculation failed:", error)
+    log.error("formula-recalc", "deal batch recalculation failed", { err: error })
     return { customFields: fallback, evaluations: 0 }
   }
 }

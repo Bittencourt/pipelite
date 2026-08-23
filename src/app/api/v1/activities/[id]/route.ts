@@ -12,6 +12,7 @@ import type { CustomFieldDefinition, EntityType } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
 import { z } from "zod"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import { log } from "@/lib/log"
 import { recalculateFormulas, stripFormulaKeys } from "@/lib/formula-recalc"
 
 const updateActivitySchema = z.object({
@@ -241,7 +242,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       // `null` = recalculation could not describe the entity, not "no custom fields".
       recalculatedCustomFields = recalced.customFields ?? recalculatedCustomFields
     } catch (error) {
-      console.error("[formula-recalc] activity recalculation failed:", error)
+      log.error("formula-recalc", "activity recalculation failed", { err: error })
     }
 
     const recalculatedActivity = { ...updatedActivity, customFields: recalculatedCustomFields }

@@ -10,6 +10,7 @@ import {
   updateNoteSchema as noteBodySchema,
 } from "@/lib/mutations/notes"
 import { isAuthorOrAdmin, resolveActorRole } from "@/lib/notes/authorize"
+import { log } from "@/lib/log"
 import type { Note } from "@/db/schema"
 
 interface RouteParams {
@@ -106,13 +107,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         if (result.error === NOT_FOUND) {
           return Problems.notFound("Note")
         }
-        console.error("PATCH /api/v1/notes/[noteId] failed:", result.error)
+        log.error("api/v1/notes/[noteId]", "PATCH failed", { err: result.error })
         return Problems.internalError()
       }
 
       return singleResponse(serializeNote(result.note))
     } catch (error) {
-      console.error("PATCH /api/v1/notes/[noteId] failed:", error)
+      log.error("api/v1/notes/[noteId]", "PATCH failed", { err: error })
       return Problems.internalError()
     }
   })
@@ -142,13 +143,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         if (result.error === NOT_FOUND) {
           return Problems.notFound("Note")
         }
-        console.error("DELETE /api/v1/notes/[noteId] failed:", result.error)
+        log.error("api/v1/notes/[noteId]", "DELETE failed", { err: result.error })
         return Problems.internalError()
       }
 
       return noContentResponse()
     } catch (error) {
-      console.error("DELETE /api/v1/notes/[noteId] failed:", error)
+      log.error("api/v1/notes/[noteId]", "DELETE failed", { err: error })
       return Problems.internalError()
     }
   })

@@ -15,6 +15,7 @@ import { crmBus } from "@/lib/events"
 import type { DealStageChangedPayload } from "@/lib/events"
 import type { CustomFieldDefinition, EntityType } from "@/db/schema"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import { log } from "@/lib/log"
 import {
   recalculateFormulas,
   stripFormulaKeys,
@@ -49,7 +50,7 @@ async function stripCallerFormulaKeys(
     definitionsCache.set("deal", definitions)
     return stripFormulaKeys(values, definitions)
   } catch (error) {
-    console.error("[formula-recalc] deal definition load failed, custom fields not stripped:", error)
+    log.error("formula-recalc", "deal definition load failed, custom fields not stripped", { err: error })
     return values
   }
 }
@@ -59,7 +60,7 @@ async function stripCallerFormulaKeys(
  *
  * Must be awaited before `crmBus.emit`: both the webhook body and the workflow-trigger envelope
  * are emit-time snapshots of the row object, never a re-read. Resolves rather than rejects on
- * failure (D-05), logging with the `[formula-recalc]` prefix (T-34-17).
+ * failure (D-05), logging under the `formula-recalc` scope (T-34-17).
  */
 async function recalcCustomFields(
   input: RecalculateFormulasInput,
@@ -71,7 +72,7 @@ async function recalcCustomFields(
     // row supplied), NOT that the entity has no custom fields. Fall back to the blob we wrote.
     return customFields ?? fallback
   } catch (error) {
-    console.error("[formula-recalc] deal recalculation failed:", error)
+    log.error("formula-recalc", "deal recalculation failed", { err: error })
     return fallback
   }
 }
@@ -156,7 +157,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
       return singleResponse(data)
     } catch (error) {
-      console.error("GET /api/v1/deals/[id] failed:", error)
+      log.error("api/v1/deals/[id]", "GET failed", { err: error })
       return Problems.internalError()
     }
   })
@@ -375,7 +376,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
       return singleResponse(serializedDeal)
     } catch (error) {
-      console.error("PUT /api/v1/deals/[id] failed:", error)
+      log.error("api/v1/deals/[id]", "PUT failed", { err: error })
       return Problems.internalError()
     }
   })
@@ -425,7 +426,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
       return noContentResponse()
     } catch (error) {
-      console.error("DELETE /api/v1/deals/[id] failed:", error)
+      log.error("api/v1/deals/[id]", "DELETE failed", { err: error })
       return Problems.internalError()
     }
   })

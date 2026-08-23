@@ -7,6 +7,7 @@ import { parsePagination } from "@/lib/api/pagination"
 import { paginatedResponse } from "@/lib/api/response"
 import { Problems } from "@/lib/api/errors"
 import { resolveActorRole } from "@/lib/notes/authorize"
+import { log } from "@/lib/log"
 import { db } from "@/db"
 import {
   auditLog,
@@ -206,7 +207,7 @@ export async function GET(request: NextRequest) {
 
       return paginatedResponse(rows.map(serializeAuditEntry), total, offset, limit)
     } catch (error) {
-      console.error("GET /api/v1/audit failed:", error)
+      log.error("api/v1/audit", "GET failed", { err: error })
       return Problems.internalError()
     }
   })

@@ -354,7 +354,7 @@ describe("POST /api/v1/deals — recalculates before emitting", () => {
     // The pre-recalc blob is emitted so the payload still describes the row as it stands.
     expect(emittedPayload().data.custom_fields).toEqual(STORED_CUSTOM_FIELDS)
     expect(errorSpy).toHaveBeenCalled()
-    expect(String(errorSpy.mock.calls[0][0])).toContain("[formula-recalc]")
+    expect(String(errorSpy.mock.calls[0][0])).toContain('"scope":"formula-recalc"')
   })
 
   it("leaves the 201 body pre-recalc — backlog 999.23, deferred for all four entities", async () => {
@@ -461,7 +461,7 @@ describe("PUT /api/v1/deals/:id — recalculates before emitting", () => {
     expect(mockEmit).toHaveBeenCalledTimes(1)
     expect(emittedPayload().data.customFields).toEqual(STORED_CUSTOM_FIELDS)
     expect(errorSpy).toHaveBeenCalled()
-    expect(String(errorSpy.mock.calls[0][0])).toContain("[formula-recalc]")
+    expect(String(errorSpy.mock.calls[0][0])).toContain('"scope":"formula-recalc"')
   })
 })
 
@@ -542,6 +542,6 @@ describe("POST /api/v1/deals/batch — one shared budget across the whole reques
     expect(emittedPayload(0).data.custom_fields).toEqual(STORED_CUSTOM_FIELDS)
     expect(emittedPayload(1).data.custom_fields).toEqual(RECALC_RESULT)
     expect(errorSpy).toHaveBeenCalled()
-    expect(String(errorSpy.mock.calls[0][0])).toContain("[formula-recalc]")
+    expect(String(errorSpy.mock.calls[0][0])).toContain('"scope":"formula-recalc"')
   })
 })

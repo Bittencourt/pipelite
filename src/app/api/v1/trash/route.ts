@@ -6,6 +6,7 @@ import { parsePagination } from "@/lib/api/pagination"
 import { paginatedResponse } from "@/lib/api/response"
 import { Problems } from "@/lib/api/errors"
 import { resolveActorRole } from "@/lib/notes/authorize"
+import { log } from "@/lib/log"
 import type { EntityType } from "@/db/schema/custom-fields"
 import {
   TRASH_TABS,
@@ -263,7 +264,7 @@ export async function GET(request: NextRequest) {
       // not be handed an empty page that looks like an empty trash, so the degraded values are
       // turned back into a 500 here.
       if (!listed.ok || counts === null) {
-        console.error("GET /api/v1/trash failed: trash read degraded", {
+        log.error("api/v1/trash", "GET failed: trash read degraded", {
           tab,
           listed: listed.ok,
           counted: counts !== null,
@@ -283,7 +284,7 @@ export async function GET(request: NextRequest) {
         limit
       )
     } catch (error) {
-      console.error("GET /api/v1/trash failed:", error)
+      log.error("api/v1/trash", "GET failed", { err: error })
       return Problems.internalError()
     }
   })
