@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-23T20:00:22.739Z"
+last_updated: "2026-08-23T20:31:35.730Z"
 last_activity: 2026-08-23
 progress:
   total_phases: 14
   completed_phases: 12
   total_plans: 184
-  completed_plans: 172
+  completed_plans: 175
   percent: 86
 ---
 
@@ -26,33 +26,42 @@ wave 1 of 4 merged. Phase 43 is still `Plans: TBD`.
 ## Position
 
 Phase: 42 - Observability
-Plan: 6 of 18 complete (wave 1 merged; wave 2 batch A of 4 merged)
-Status: Executing Phase 42 — wave 2 in progress, 10 plans remain
+Plan: 9 of 18 complete (wave 1 merged; wave 2 batches A and B of 4 merged)
+Status: Executing Phase 42 — wave 2 in progress, 7 plans remain
 Last activity: 2026-08-23
 
-Progress: [█████████░] 93%
+Progress: [██████████] 95%
 
-## ► RESUME HERE — Phase 42, wave 2 batch B
+## ► RESUME HERE — Phase 42, wave 2 batch C
 
 **Command:** `/gsd:execute-phase 42` — it filters on `has_summary`, so 42-01..42-06 are skipped
 automatically. Do NOT re-plan; all 18 plans exist and were verified by gsd-plan-checker.
 
 **Wave map** (plan frontmatter is authoritative): wave 1 = 42-01,02,03 (DONE) · wave 2 =
-42-04..42-16, of which **42-04/05/06 are DONE** and 42-07..42-16 remain (10 plans) · wave 3 = 42-17 ·
+42-04..42-16, of which **42-04..42-09 are DONE** and 42-10..42-16 remain (7 plans) · wave 3 = 42-17 ·
 wave 4 = 42-18. **42-18 is `autonomous: no`** — a deliberate Sentry-DSN checkpoint.
 
 **Wave 2 is being run in batches of 3-4, not all 13 at once.** This box has 4 CPUs / ~9GB free and
 13 concurrent executors each running a 4455+ test suite thrashes it. All wave-2 plans depend only on
 wave 1 and own disjoint file sets (verified: 137 distinct files, zero collisions), so batching costs
-nothing semantically. Batch A = 04,05,06 (done). Batch B = 07,08,09. Batch C = 10,11,12.
+nothing semantically. Batch A = 04,05,06 (done). Batch B = 07,08,09 (done). Batch C = 10,11,12.
 Batch D = 13,14,15,16.
 
-**Baseline at this point:** 4514 passed / 32 skipped + RSC 8/8 · typecheck 0 · lint 0 errors /
+**Baseline at this point:** 4524 passed / 32 skipped + RSC 8/8 · typecheck 0 · lint 0 errors /
 **124** warnings. `@sentry/nextjs` 10.70.0 installed, lockfile committed.
 
-**`console.*` census, measured on merged master:** 244 remaining in non-test source across 91 files.
-That is exactly the 240 sites claimed by plans 42-07..42-16 plus `log.ts`'s own 4 internal
-delegations — it reconciles, so no call sites are orphaned or double-counted.
+**Lint warning counts are ENVIRONMENT-DEPENDENT: 124 on the main checkout, 122 inside a worktree.**
+Four separate executors measured 122 and each proved it was not their doing. Cause not pinned
+(`next-env.d.ts` is eslint-ignored, so it is not that). Consequence: **gate on errors = 0, never on
+a warning total** — an assertion on "124 warnings" fails spuriously inside a worktree.
+
+**`console.*` census, measured on merged master with eslint `no-console`:** **191** remaining in
+non-test source across 82 files. Reconciles exactly: 244 − 3 (42-07) − 26 (42-08) − 24 (42-09) = 191.
+The 191 is the 187 sites still claimed by 42-10..42-16 plus `log.ts`'s own 4 internal delegations.
+
+**Use eslint, not grep, to census.** `grep` and eslint disagree on the absolute count (grep reads
+higher); the deltas agree. Batch A/B executors reported grep-based absolutes that will not match
+this number — their deltas are what reconcile.
 
 **Read before dispatching anyone:** `42-WAVE1-HANDOFF.md`, and `42-CONTEXT.md` § Amendments
 (A1-A9 — A1 and A2 are load-bearing and override the decisions above them).
@@ -389,12 +398,5 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - 2026-08-18: 45-09 complete -- the admin shell collapses below md and speaks the user's language. All eleven English literals (Admin Panel, Dashboard, User Management, Pipelines, Custom Fields, Webhooks, Audit Log, Trash, Export Data, Pipedrive Import, Back to App) moved into admin.nav.*; the array's title field became labelKey so a reader cannot mistake a key for copy, and the stale 'half-migrating a single entry' justification is gone. admin-sidebar.tsx now exports adminNavItems, AdminNavItems (with an optional onNavigate) and AdminBackToApp, and the new 'use client' admin-mobile-bar.tsx consumes all three: an h-12 md:hidden bar with a ghost size="icon-lg" Menu trigger named from admin.nav.openMenu, opening a SheetContent side="left" className="w-64 gap-0 p-0" aria-describedby={undefined} whose SheetTitle renders admin.nav.title VISIBLY with no leading-none. app/admin/layout.tsx became a hidden md:flex w-64 aside beside a min-w-0 flex-1 content column, the mobile bar above <main> and outside its p-6. The auth block, both redirects and middleware.ts have zero changed lines -- the drawer is presentation, the server gate stays authoritative. New src/components/__tests__/admin-shell-wiring.test.ts checks each literal in THREE forms (quoted value, >between tags<, alone on its own JSX line) because the file carried two of those shapes already, and proves the shared array by counting pipedriveImport to ZERO in the drawer. RED 18 failed/7 passed -> GREEN 25/25; typecheck 0, lint 0 errors (127 warnings, unchanged), 102 files + RSC project green (2224 passed). No Docker rebuild (V-7 -- 45-11 pays it).
 - 2026-08-18: 45-11 task 1 complete -- the phase's Docker rebuild landed and the e2e suite went 23/23. All 18 viewport pairs now measure scrollWidth 305 == clientWidth 305 (baseline 508 pt-BR / 526 es-ES on /admin/audit; 45-08 measured 518/537 RED; both now 305). Rebuild 1 turned 12 of 18 green including all three /admin/audit locales and the theme spec, and left 6 red on /deals and /activities. Three real layout defects were then found by measurement and fixed: non-wrapping page toolbars (412 and 356/425/430), a Radix Checkbox position:absolute bubble input whose offsetParent is <body> and so escaped the kanban board's overflow-x-auto (351, self-healing after ~2s once dnd-kit's transforms create a containing block), and -- beyond the spec's coverage -- the won/lost summary row with no scroll container at all (608 vs 305, permanent, on the one pipeline defining both stages). Four rebuilds paid against a budget of one. No assertion weakened, ignoreDefaultArgs still at 2 occurrences, ci.yml still at 0 occurrences of playwright, e2e/.auth clean, 0 fixture deals and 0 orphan stage-history rows left behind. SC-1/3/4/5 closed; SC-2's automated half closed and its human half PENDING.
 - 2026-08-18: 45-11 COMPLETE, and with it Phase 45 -- the visual checkpoint was APPROVED. Verified by an AGENT driving a real Chromium against the rebuilt image (not by the user personally, and not self-certified from source), reusing the plan's own storageState so no password was handled; the capture spec was temporary and e2e/ is back to exactly the three specs 45-08 created. Observed: the three theme rows exist and only after the menu opens, documentElement.className='dark' with body background lab(2.75381 0 0) on /organizations, /deals and /admin/audit, no light-mode island on any of the four required surfaces including an open Delete dialog, C-1's logout red readable on the dark popover, the admin drawer translated in all three locales (Close / Cerrar / Fechar -- which is the runtime proof that 45-04's common.close default reaches the Sheet, something no source gate could establish), the drawer navigating to /admin/users AND closing, and /admin/audit measuring 305/305 at all three locales through an independent path. Two NEW UAT debt items raised, both outside SC-1 and neither a Phase 45 regression: D-45-02/F-1 the fixed ShortcutsHint bar occluding 'Back to App' at 1280px and 'Guardar periodo de retencion' at 320px es-ES (vertical occlusion; Phase 38's h-40 sm:h-20 spacer is the likely remedy), and D-45-03/F-2 an UNCONFIRMED empty pipeline-select label on dark /deals, recorded for someone to confirm rather than asserted as broken.
-
-## Current Position
-
-Phase: 42 (observability) — EXECUTING
-Plan: 1 of 18
-Status: Executing Phase 42
-Last activity: 2026-08-23 -- Phase 42 execution started
 
 - 2026-08-17: Phase 37 COMPLETE (15 plans, 6 waves) — Trash & Restore. `/trash` with four scoped tabs, `/admin/trash` retention (1..365, default 30, seeded as data, fail-closed with NO `?? 30`), restore + ordered transactional purge for all four CRM entities, three REST endpoints, and a daily pruner PROVEN running in the container (`[trash-prune] Starting with initial delay of 60s, ticking daily`, all six processors announcing from the merged-master build). Suite 1549 -> 1703 passing, typecheck 0, lint 0 errors throughout. Verified 4/4 success criteria plus a live browser walkthrough (8/10 UAT steps, both "deleted by" strings, manual tab activation, restore with children intact, purge detaching a live child with both audit rows). Code review: 1 critical + 9 warnings, all in-scope findings fixed; CR-01 deliberately scoped to correcting a false comment. The 320px check found and fixed a real tablist overflow defect. Autonomous run STOPPED here by user — phases 38-43 remain.
