@@ -163,6 +163,21 @@ async function executeRunGraph(
   // Set workflow creator userId for CRM action mutations
   context._workflowUserId = workflow.createdBy
 
+  // Whether this is a dry run comes from the COLUMN, never from the restored context JSON.
+  // `run.context` is restored a dozen lines above and is a mutable jsonb blob the engine
+  // rewrites after every node; if the flag were read from there, a hand-edited context row
+  // could turn a dry run into a real one mid-execution -- the one thing this flag exists to
+  // prevent. `workflow_runs.dry_run` is written once at insert and never updated.
+  //
+  // The placement (below the restore, above the resume read) buys a second property: a run
+  // that yielded on a delay and comes back minutes later re-derives the flag from the
+  // authoritative row, so a resumed dry run cannot silently become a real one.
+  //
+  // `=== true`, not `!!` and not a coercion: a row predating the dry_run migration reads
+  // `undefined`, and the side-effecting handlers plus the failure-alert path all compare
+  // against `false`, where a falsy-but-not-false value would slip through.
+  context._dryRun = run.dryRun === true
+
   // Pull the resume frame (if any) out of the context. Only the delay yield
   // paths write it back; every other persist stores the context without it,
   // so a completed/failed run never carries a stale frame.
@@ -324,9 +339,32 @@ async function executeRunGraph(
         case "delay": {
           const resumeAt = resolveDelay(node.config, context)
 
-          if (resumeAt === null) {
-            // Past time -- skip the delay
-            const output = { delayed: false, skipped: true }
+          // A dry run takes the skip path no matter what the delay resolves to.
+          //
+          // Yielding parks the run as "waiting", and the processor will not claim a "pending"
+          // run while ANY run of the same workflow is "running" or "waiting"
+          // (execution-processor.ts:122-127). So a single parked dry run blocks every real run
+          // of that workflow until the delay resolves -- up to the 30-day cap. A testing
+          // feature that can stall a production workflow for a month is a self-inflicted
+          // outage, and exempting dry runs from serial enforcement instead would defeat the
+          // clause that stops two concurrent runs of one workflow.
+          //
+          // ACCEPTED COST, recorded so the next reader does not file this as a bug and "fix"
+          // it: a dry run does not exercise delay resolution, so a misconfigured delay is not
+          // caught by dry-running. (resolveDelay is still CALLED above, so a malformed config
+          // still throws and fails the node -- what a dry run skips is the WAIT, not the
+          // parse.) The two alternatives were worse: refusing to dry-run any workflow
+          // containing a delay denies the feature to a large share of real CRM workflows, and
+          // letting it park is the outage.
+          //
+          // Reusing the existing resumeAt === null path rather than adding a third branch
+          // keeps one skip semantic; `simulated: true` is the only difference, and it makes
+          // the reason visible in the existing json-viewer with no new UI and no new copy.
+          if (resumeAt === null || context._dryRun) {
+            // Past time (or a dry run) -- skip the delay
+            const output = context._dryRun
+              ? { delayed: false, skipped: true, simulated: true }
+              : { delayed: false, skipped: true }
             context.nodes[node.id] = { output, status: "completed" }
             await completeStep(step.id, output)
             await persistContext(runId, context)
@@ -459,8 +497,14 @@ async function executeBranch(
       if (node.type === "delay") {
         const resumeAt = resolveDelay(node.config, context)
 
-        if (resumeAt === null) {
-          const output = { delayed: false, skipped: true }
+        // SECOND delay site. Same A2 guard as the main loop's delay case above -- see the long
+        // comment there for why a dry run must not park, and for the accepted cost. Gating only
+        // one of the two sites would leave a delay inside a condition/split branch parking the
+        // run, which is the same outage reached by a slightly less obvious route.
+        if (resumeAt === null || context._dryRun) {
+          const output = context._dryRun
+            ? { delayed: false, skipped: true, simulated: true }
+            : { delayed: false, skipped: true }
           context.nodes[node.id] = { output, status: "completed" }
           await completeStep(step.id, output)
           await persistContext(runId, context)

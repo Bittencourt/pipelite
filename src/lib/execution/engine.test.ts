@@ -4,6 +4,11 @@ import type { ExecutionContext, WorkflowNode, ConditionNode, DelayNode, SplitNod
 // file assert that a real store survives the engine's real awaits, which a stub could not show.
 import { getCurrentActor, type AuditActor } from "@/lib/audit/actor-context"
 import { getCurrentExecutionDepth } from "./recursion"
+// Comment-blind source reader, shared with the CFUI/audit gates. The WFOPS-02 structural
+// assertions below hinge on real code, and the engine edits they cover carry long rationale
+// comments that mention the very identifiers being scanned -- an unstripped read would be
+// satisfied by the prose it exists to make redundant.
+import { readStrippedSource } from "@/components/custom-fields/__tests__/source-scan"
 
 // Mock the DB module
 const mockDb = {
@@ -129,7 +134,7 @@ let updatedSteps: Array<Record<string, unknown>> = []
 
 function setupDbMocks(
   workflow: { id: string; nodes: WorkflowNode[]; createdBy?: string },
-  run: { id: string; workflowId: string; status: string; context: ExecutionContext | null; currentNodeId: string | null; triggerData: Record<string, unknown> | null; depth?: number }
+  run: { id: string; workflowId: string; status: string; context: ExecutionContext | null; currentNodeId: string | null; triggerData: Record<string, unknown> | null; depth?: number; dryRun?: boolean }
 ) {
   insertedSteps = []
   updatedRuns = []
@@ -865,5 +870,499 @@ describe("executeRun actor scope", () => {
 
     expect(getCurrentActor()).toBeUndefined()
     expect(getCurrentExecutionDepth()).toBe(0)
+  })
+})
+
+/**
+ * WFOPS-02 -- where `_dryRun` comes from.
+ *
+ * `context._dryRun` is what the five side-effecting handlers gate on, so the SOURCE the engine
+ * reads it from is the entire security property, not an implementation detail. `executeRunGraph`
+ * restores `context` from `run.context` -- a mutable `jsonb` blob -- a dozen lines above the
+ * assignment site. If the flag came from there, a hand-edited context row would turn a dry run
+ * into a real one mid-execution, which is the one thing the flag exists to prevent.
+ *
+ * Observed from inside `executeAction`, the boundary every real CRM handler sits behind: asserting
+ * the engine assigns a field would prove nothing about what a mutation four awaits deep actually
+ * sees, and that consumer is the only one that matters.
+ *
+ * Every name here contains "dry-run" so `-t "dry-run"` selects the set.
+ */
+describe("executeRun dry-run flag", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    insertedSteps = []
+    updatedRuns = []
+    updatedSteps = []
+  })
+
+  type TestRun = {
+    id: string
+    workflowId: string
+    status: string
+    context: ExecutionContext | null
+    currentNodeId: string | null
+    triggerData: Record<string, unknown> | null
+    depth?: number
+    dryRun?: boolean
+  }
+
+  /**
+   * Run a workflow and return `_dryRun` exactly as the action handler saw it.
+   *
+   * The sentinel distinguishes "the handler observed `undefined`" from "the handler never ran" --
+   * without it a workflow that failed before reaching an action would report `undefined` and pass
+   * an `expect(seen).toBe(undefined)` while proving nothing.
+   */
+  async function observeDryRun(
+    workflow: { id: string; nodes: WorkflowNode[]; createdBy?: string },
+    run: TestRun
+  ): Promise<{ seen: unknown; seenType: string }> {
+    setupDbMocks(workflow, run)
+
+    let seen: unknown = "HANDLER_NEVER_RAN"
+
+    const { executeAction } = await import("./actions")
+    vi.mocked(executeAction).mockImplementationOnce(async (_type, _config, context) => {
+      // Await first: a synchronous read at action entry cannot show that the value survives
+      // the engine's own awaits, and a real CRM mutation reads it after several.
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      seen = context._dryRun
+      return { output: { type: "crm", status: "executed" } }
+    })
+
+    const { executeRun } = await import("./engine")
+    await executeRun(run.id)
+
+    return { seen, seenType: typeof seen }
+  }
+
+  function singleAction(id: string) {
+    return { id, createdBy: "author-1", nodes: [makeActionNode("n1", null)] }
+  }
+
+  function baseRun(id: string, workflowId: string, extra: Partial<TestRun> = {}): TestRun {
+    return {
+      id,
+      workflowId,
+      status: "running",
+      context: null,
+      currentNodeId: null,
+      triggerData: { trigger_type: "manual", data: {} },
+      ...extra,
+    }
+  }
+
+  it("hands the action a dry-run context when the run's dryRun COLUMN is true", async () => {
+    const { seen, seenType } = await observeDryRun(
+      singleAction("wf-dry-1"),
+      baseRun("run-dry-1", "wf-dry-1", { dryRun: true })
+    )
+
+    expect(seen).toBe(true)
+    expect(seenType).toBe("boolean")
+  })
+
+  it("hands the action a real-run context when the dryRun COLUMN is false", async () => {
+    const { seen, seenType } = await observeDryRun(
+      singleAction("wf-dry-2"),
+      baseRun("run-dry-2", "wf-dry-2", { dryRun: false })
+    )
+
+    expect(seen).toBe(false)
+    expect(seenType).toBe("boolean")
+  })
+
+  it("normalises a pre-migration row with no dryRun column to false, not undefined, for a dry-run gate", async () => {
+    // A row read back through an older code path (or any shape predating migration 0019) has
+    // no `dryRun` key at all. `undefined` is falsy but NOT `=== false`, and both the five
+    // handler gates and 41-08's alert path compare against `false` -- so the normalisation is
+    // load-bearing, not cosmetic.
+    const { seen, seenType } = await observeDryRun(
+      singleAction("wf-dry-3"),
+      baseRun("run-dry-3", "wf-dry-3")
+    )
+
+    expect(seen).toBe(false)
+    expect(seenType).toBe("boolean")
+  })
+
+  it("lets the dryRun COLUMN beat a persisted context that claims a dry-run", async () => {
+    const persisted = {
+      trigger: { type: "manual", data: {} },
+      nodes: {},
+      // A hand-edited (or stale) context blob asserting the run is dry.
+      _dryRun: true,
+    } as unknown as ExecutionContext
+
+    // ANTI-VACUITY: snapshot the blob BEFORE the call. The engine restores the very same object
+    // and overwrites the field in place, so reading `persisted._dryRun` afterwards would show
+    // the engine's own value and this test would pass with an empty context proving nothing.
+    const before = JSON.parse(JSON.stringify(persisted)) as { _dryRun?: boolean }
+    expect(before._dryRun).toBe(true)
+
+    const { seen } = await observeDryRun(
+      singleAction("wf-dry-4"),
+      baseRun("run-dry-4", "wf-dry-4", { dryRun: false, context: persisted })
+    )
+
+    expect(seen).toBe(false)
+  })
+
+  it("lets the dryRun COLUMN beat a persisted context that claims a real run, keeping the dry-run gate on", async () => {
+    const persisted = {
+      trigger: { type: "manual", data: {} },
+      nodes: {},
+      _dryRun: false,
+    } as unknown as ExecutionContext
+
+    const before = JSON.parse(JSON.stringify(persisted)) as { _dryRun?: boolean }
+    expect(before._dryRun).toBe(false)
+
+    const { seen } = await observeDryRun(
+      singleAction("wf-dry-5"),
+      baseRun("run-dry-5", "wf-dry-5", { dryRun: true, context: persisted })
+    )
+
+    expect(seen).toBe(true)
+  })
+
+  it("keeps a resumed dry-run dry by re-deriving the flag from the column", async () => {
+    // The case the assignment's PLACEMENT buys. A run that yielded and came back minutes later
+    // arrives with nothing but its row and its context blob; if the flag were merged into the
+    // fresh-context literal instead of written below the restore, this resume would silently
+    // become a real run and start mutating the CRM.
+    const persisted = {
+      trigger: { type: "manual", data: {} },
+      nodes: { n1: { output: { type: "unknown", status: "stub" }, status: "completed" } },
+      _dryRun: false,
+      _resume: { nodeId: "n2" },
+    } as unknown as ExecutionContext
+
+    const before = JSON.parse(JSON.stringify(persisted)) as { _dryRun?: boolean }
+    expect(before._dryRun).toBe(false)
+
+    const { seen, seenType } = await observeDryRun(
+      {
+        id: "wf-dry-6",
+        createdBy: "author-1",
+        nodes: [makeActionNode("n1", "n2"), makeActionNode("n2", null)],
+      },
+      baseRun("run-dry-6", "wf-dry-6", {
+        dryRun: true,
+        context: persisted,
+        currentNodeId: "n2",
+      })
+    )
+
+    // Only the resumed node ran, and it ran dry.
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["n2"])
+    expect(seen).toBe(true)
+    expect(seenType).toBe("boolean")
+  })
+
+  it("assigns the dry-run flag BELOW the context restore and ABOVE the resume read", async () => {
+    const source = readStrippedSource("src/lib/execution/engine.ts")
+
+    const restore = source.indexOf("context._workflowUserId = workflow.createdBy")
+    const assign = source.indexOf("context._dryRun = run.dryRun === true")
+    const resumeRead = source.indexOf("const resume = context._resume")
+
+    // Assert presence FIRST: three `-1`s are trivially "increasing" only in the sense that
+    // they are equal, but a single missing marker would otherwise let a `<` chain pass on
+    // accident rather than on order.
+    expect(restore).toBeGreaterThan(-1)
+    expect(assign).toBeGreaterThan(-1)
+    expect(resumeRead).toBeGreaterThan(-1)
+
+    expect(assign).toBeGreaterThan(restore)
+    expect(resumeRead).toBeGreaterThan(assign)
+  })
+
+  it("never exposes the dry-run flag to user JS inside the QuickJS sandbox", async () => {
+    // `./actions` is mocked for this whole file, so the real transform handler is reached
+    // through the registry directly. The observation point is user JS itself: if a workflow
+    // author could branch on `_dryRun`, a workflow could behave one way under test and
+    // another in production, and "transform runs FOR REAL" would be a lie.
+    const { getHandler } = await import("./actions/registry")
+    await import("./actions/transform")
+
+    const handler = getHandler("javascript_transform")
+    expect(handler).toBeDefined()
+
+    const context: ExecutionContext = {
+      trigger: { type: "manual", data: { a: 1 } },
+      nodes: { n1: { output: { value: 10 }, status: "completed" } },
+      _workflowUserId: "author-1",
+      _dryRun: true,
+    }
+
+    const result = await handler!(
+      {
+        code:
+          "return { keys: Object.keys(input).sort(), dry: typeof input._dryRun, " +
+          "author: typeof input._workflowUserId }",
+      },
+      context,
+      "run-dry-quickjs"
+    )
+
+    // EXACT key set, not a containment check: a future widening of the injection must fail here.
+    expect(result.output.keys).toEqual(["nodes", "trigger"])
+    expect(result.output.dry).toBe("undefined")
+    expect(result.output.author).toBe("undefined")
+  })
+})
+
+/**
+ * WFOPS-02 / CONTEXT amendment A2 -- a delay node is a no-op under dry run.
+ *
+ * A delay parks its run as `waiting`, and the processor's claim query refuses to start a
+ * `pending` run while any run of the same workflow is `running` or `waiting`
+ * (`execution-processor.ts:122-127`). So one parked dry run blocks EVERY real run of that
+ * workflow until the delay resolves -- up to the 30-day cap. A testing feature that can stall
+ * a production workflow for a month is a self-inflicted outage, which is why A2 skips the wait.
+ *
+ * There are TWO delay sites -- the main loop and `executeBranch` -- and editing one and not the
+ * other is the entire risk in this area, so the branch case below is driven through a real
+ * condition-branch workflow rather than by reaching for an internal helper.
+ *
+ * Every name here contains "delay under dry run" so `-t "delay under dry run"` selects the set.
+ */
+describe("executeRun delay under dry run", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    insertedSteps = []
+    updatedRuns = []
+    updatedSteps = []
+  })
+
+  /** The exact per-node output a skipped dry-run delay must record. Plans 41-13/41-14 render it. */
+  const SIMULATED_DELAY_OUTPUT = { delayed: false, skipped: true, simulated: true }
+
+  /**
+   * Every `status: "waiting"` write of the whole invocation, runs and steps together.
+   *
+   * Counted across both tables rather than asserted site by site so a THIRD delay site added
+   * later is covered by this suite the day it is written, without anybody remembering to.
+   */
+  function waitingWrites(): Array<Record<string, unknown>> {
+    return [...updatedRuns, ...updatedSteps].filter((u) => u.status === "waiting")
+  }
+
+  /** Every write that carries a resumeAt, i.e. every attempt to schedule a wake-up. */
+  function resumeAtWrites(): Array<Record<string, unknown>> {
+    return [...updatedRuns, ...updatedSteps].filter((u) => u.resumeAt !== undefined)
+  }
+
+  /** Persisted resume frames -- the other half of parking a run. */
+  function resumeFrameWrites(): Array<Record<string, unknown>> {
+    return updatedRuns.filter((u) => {
+      const context = u.context as Record<string, unknown> | undefined
+      return context !== undefined && context._resume !== undefined
+    })
+  }
+
+  /** The output recorded for `nodeId` in the last persisted context. */
+  function persistedNodeOutput(nodeId: string): unknown {
+    const withContext = [...updatedRuns].reverse().find((u) => u.context !== undefined)
+    const context = withContext?.context as ExecutionContext | undefined
+    return context?.nodes?.[nodeId]?.output
+  }
+
+  /** The completeStep write whose output belongs to `nodeId`, matched via the persisted context. */
+  function completedStepOutputs(): Array<Record<string, unknown>> {
+    return updatedSteps
+      .filter((u) => u.status === "completed")
+      .map((u) => u.output as Record<string, unknown>)
+  }
+
+  function baseRun(
+    id: string,
+    workflowId: string,
+    dryRun: boolean
+  ): {
+    id: string
+    workflowId: string
+    status: string
+    context: ExecutionContext | null
+    currentNodeId: string | null
+    triggerData: Record<string, unknown> | null
+    dryRun: boolean
+  } {
+    return {
+      id,
+      workflowId,
+      status: "running",
+      context: null,
+      currentNodeId: null,
+      triggerData: { trigger_type: "manual", data: {} },
+      dryRun,
+    }
+  }
+
+  const FUTURE = () => new Date(Date.now() + 60 * 60 * 1000)
+
+  const linearWithDelay = (id: string, delayNext: string | null = "n3") => ({
+    id,
+    createdBy: "author-1",
+    nodes: [
+      makeActionNode("n1", "delay-1"),
+      makeDelayNode("delay-1", delayNext),
+      ...(delayNext === "n3" ? [makeActionNode("n3", null)] : []),
+    ] as WorkflowNode[],
+  })
+
+  /** cond-1 --true--> b1 -> d1 (delay) -> b2, merging at merge-1. The SECOND delay site. */
+  const branchWithDelay = (id: string) => ({
+    id,
+    createdBy: "author-1",
+    nodes: [
+      makeConditionNode("cond-1", "b1", null, "merge-1"),
+      makeActionNode("b1", "d1"),
+      makeDelayNode("d1", "b2"),
+      makeActionNode("b2", null),
+      makeActionNode("merge-1", null),
+    ] as WorkflowNode[],
+  })
+
+  // --- Main loop --------------------------------------------------------------------------
+
+  it("carries a main-loop delay under dry run straight through to the next node", async () => {
+    setupDbMocks(linearWithDelay("wf-a2-1"), baseRun("run-a2-1", "wf-a2-1", true))
+    mockResolveDelay.mockReturnValue(FUTURE())
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-1")
+
+    // The node AFTER the delay ran in the same invocation -- the engine did not return early.
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["n1", "delay-1", "n3"])
+    expect(waitingWrites()).toHaveLength(0)
+    expect(resumeAtWrites()).toHaveLength(0)
+    expect(resumeFrameWrites()).toHaveLength(0)
+    expect(updatedRuns.find((u) => u.status === "completed")).toBeDefined()
+  })
+
+  it("records a main-loop delay under dry run as simulated, exactly", async () => {
+    setupDbMocks(linearWithDelay("wf-a2-2"), baseRun("run-a2-2", "wf-a2-2", true))
+    mockResolveDelay.mockReturnValue(FUTURE())
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-2")
+
+    // `simulated: true` is the whole diagnostic: it surfaces in the existing json-viewer with
+    // no new UI and no new copy, so an operator can see the delay was not exercised.
+    expect(persistedNodeOutput("delay-1")).toEqual(SIMULATED_DELAY_OUTPUT)
+    expect(completedStepOutputs()).toContainEqual(SIMULATED_DELAY_OUTPUT)
+  })
+
+  it("still parks a REAL run on a future main-loop delay, byte-identically to before", async () => {
+    setupDbMocks(linearWithDelay("wf-a2-3"), baseRun("run-a2-3", "wf-a2-3", false))
+    const future = FUTURE()
+    mockResolveDelay.mockReturnValue(future)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-3")
+
+    // The regression half, and the more important one: a real run's delay must be unchanged.
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["n1", "delay-1"])
+    const waitingRun = updatedRuns.find((u) => u.status === "waiting")
+    expect(waitingRun).toBeDefined()
+    expect(waitingRun!.currentNodeId).toBe("n3")
+    expect((waitingRun!.context as Record<string, unknown>)._resume).toEqual({ nodeId: "n3" })
+
+    const waitingStep = updatedSteps.find((u) => u.status === "waiting")
+    expect(waitingStep).toBeDefined()
+    expect(waitingStep!.resumeAt).toBe(future)
+    expect(waitingStep!.output).toEqual({ delayed: true, resumeAt: future.toISOString() })
+  })
+
+  it("keeps the simulated marker on an already-past main-loop delay under dry run", async () => {
+    setupDbMocks(linearWithDelay("wf-a2-4"), baseRun("run-a2-4", "wf-a2-4", true))
+    mockResolveDelay.mockReturnValue(null)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-4")
+
+    // The two dry-run delay paths must be indistinguishable to a reader of the run detail page.
+    expect(persistedNodeOutput("delay-1")).toEqual(SIMULATED_DELAY_OUTPUT)
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["n1", "delay-1", "n3"])
+  })
+
+  it("leaves an already-past REAL delay's output free of the dry-run marker", async () => {
+    setupDbMocks(linearWithDelay("wf-a2-5"), baseRun("run-a2-5", "wf-a2-5", false))
+    mockResolveDelay.mockReturnValue(null)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-5")
+
+    // Exact object: a `simulated` key on a real run would misreport a delay that genuinely
+    // had nothing left to wait for.
+    expect(persistedNodeOutput("delay-1")).toEqual({ delayed: false, skipped: true })
+  })
+
+  it("completes a dry run whose delay is the LAST node instead of parking it", async () => {
+    setupDbMocks(linearWithDelay("wf-a2-6", null), baseRun("run-a2-6", "wf-a2-6", true))
+    mockResolveDelay.mockReturnValue(FUTURE())
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-6")
+
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["n1", "delay-1"])
+    expect(waitingWrites()).toHaveLength(0)
+    expect(updatedRuns.find((u) => u.status === "completed")).toBeDefined()
+    expect(persistedNodeOutput("delay-1")).toEqual(SIMULATED_DELAY_OUTPUT)
+  })
+
+  // --- The branch segment: the SECOND site ------------------------------------------------
+
+  it("carries a delay INSIDE a condition branch under dry run through to the merge node", async () => {
+    setupDbMocks(branchWithDelay("wf-a2-7"), baseRun("run-a2-7", "wf-a2-7", true))
+    mockEvaluateCondition.mockReturnValue(true)
+    mockResolveDelay.mockReturnValue(FUTURE())
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-7")
+
+    // Driven through the real condition walk, so a fix applied to only the main-loop site
+    // fails here rather than passing quietly.
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["cond-1", "b1", "d1", "b2", "merge-1"])
+    expect(waitingWrites()).toHaveLength(0)
+    expect(resumeAtWrites()).toHaveLength(0)
+    expect(resumeFrameWrites()).toHaveLength(0)
+    expect(persistedNodeOutput("d1")).toEqual(SIMULATED_DELAY_OUTPUT)
+    expect(updatedRuns.find((u) => u.status === "completed")).toBeDefined()
+  })
+
+  it("still parks a REAL run on a future delay inside a condition branch", async () => {
+    setupDbMocks(branchWithDelay("wf-a2-8"), baseRun("run-a2-8", "wf-a2-8", false))
+    mockEvaluateCondition.mockReturnValue(true)
+    const future = FUTURE()
+    mockResolveDelay.mockReturnValue(future)
+
+    const { executeRun } = await import("./engine")
+    await executeRun("run-a2-8")
+
+    expect(insertedSteps.map((s) => s.nodeId)).toEqual(["cond-1", "b1", "d1"])
+    const waitingRun = updatedRuns.find((u) => u.status === "waiting")
+    expect(waitingRun).toBeDefined()
+    // The full in-branch frame: losing it is how the merge node used to be skipped on resume.
+    expect((waitingRun!.context as Record<string, unknown>)._resume).toEqual({
+      nodeId: "b2",
+      inBranch: true,
+      pendingBranch: null,
+      mergeNodeId: "merge-1",
+    })
+    expect(updatedSteps.find((u) => u.status === "waiting")?.resumeAt).toBe(future)
+  })
+
+  it("guards BOTH delay sites, not one", async () => {
+    const source = readStrippedSource("src/lib/execution/engine.ts")
+
+    // The engine handles delays in two places -- the main loop's switch and executeBranch --
+    // and the behavioural cases above cover both. This counts them structurally as well,
+    // because a future refactor that collapses or duplicates a site should be deliberate.
+    const guards = source.split("resumeAt === null || context._dryRun").length - 1
+    expect(guards).toBe(2)
   })
 })
