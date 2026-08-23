@@ -595,3 +595,31 @@ exports already funnel through. Cheap, and independent of the WR-04 decision.
 (`src/lib/views/actions.ts`). The WR-01 fix closed an exists-vs-not disclosure by making the
 mutation paths indistinguishable; this one site was missed, so a caller can still tell "this view id
 exists but is not yours" from "no such view". Same class, same fix shape, one call site.
+
+---
+
+## Phase 41 — one copy inaccuracy left open by the review-fix pass
+
+### `replay.confirmBody` promises side effects a test-run replay no longer has
+
+**Where:** `src/messages/{en-US,pt-BR,es-ES}.json` -> `workflows.replay.confirmBody`, consumed by
+`src/app/workflows/[id]/runs/[runId]/components/replay-run-button.tsx`
+**Status:** OPEN, low severity, and mitigated in the safe direction.
+
+The confirm copy tells the operator that replaying re-runs from node 1 and therefore re-sends emails
+and repeats CRM writes for steps that already succeeded. That was true when 41-13 wrote it. Then the
+review-fix pass closed CR-01, so **a replay of a dry run is now itself a dry run** — for that case the
+copy over-states consequence.
+
+**Why it was not fixed in the fix pass:** it needs a new locale key, and the `workflows` contract is
+TOTAL (`REQUIRED_WORKFLOWS_KEYS` is compared with an exact `toEqual`), so a key cannot be added
+without also adding it to that array and to all three locales. The fixer declined to invent one
+silently, which was the right call.
+
+**The fix, fully specified:** add `workflows.replay.confirmBodyDryRun` to `REQUIRED_WORKFLOWS_KEYS`
+and all three locale files in the same commit, and select between the two bodies on `run.dryRun`. No
+literal `{` or `}` in the value — next-intl reads `{` as a placeholder delimiter and throws at render.
+
+**Why it is not urgent:** the run detail page is already badged "Test run", and copy that over-states
+consequence makes an operator more cautious than necessary rather than less. The dangerous direction
+would have been the reverse, and that is what CR-01 fixed.
