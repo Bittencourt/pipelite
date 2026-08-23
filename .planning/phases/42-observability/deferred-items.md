@@ -48,3 +48,67 @@ at `f4c27dc`:
 - The ONLY genuinely open item is `instrumentation.ts`, owned by 42-17 — and it has TWO problems,
   not the one recorded here: the stale `Dockerfile:24` citation at line 36, and an unpassable
   liveness gate at line 40.
+
+---
+
+## Opened by 42-18, 2026-08-23 — carry to phase 43
+
+Verified against merged master at `a4d315f`. Three items, none blocking; every one was found by
+running the container rather than by reading a file.
+
+### 1. Normalize the `[Pipedrive API]` log scope
+
+`src/lib/import/pipedrive-api-client.ts:42` — `log.warn("Pipedrive API", "Rate limited, retrying", …)`.
+**Recommendation: rename the scope to `pipedrive-api`.**
+
+The premise in STATE.md ("every other scope is lowercase-kebab") is not quite right: a full census of
+`log.*` scope literals shows two families — harvested bracket prefixes (lowercase-kebab) and ~200
+path-derived scopes carrying slashes, brackets and camelCase (`api/v1/notes/[noteId]`,
+`workflows/[id]/runs/[runId]`). Capitals are not unique to this scope. **The space is.** It is the
+only scope in the codebase containing one, and every documented liveness gate in phase 42 has the
+form `grep -F '"scope":"<name>"'`, where a space is the one character that forces different quoting.
+
+Blast radius is one line — `grep -rn '"Pipedrive API"' src/` returns exactly 1 hit, no test asserts
+it, no comment gate names it.
+
+42-18 deferred rather than took it: the change is cosmetic, no criterion requires it, and doing it
+would have left the freshly-witnessed container no longer matching HEAD — invalidating that plan's
+central evidence — for zero functional gain.
+
+### 2. Pin `log.error`'s two-required-argument typing with a test
+
+`src/lib/log.ts:146-153` declares `error: (scope: string, msg: string, ctx?: …)`. Both required
+parameters are the ONLY thing stopping `.catch(log.error)` from compiling as a silent bug at three
+expression-position sites. 42-18 re-proved this empirically by temporarily replacing
+`api-keys.ts:89`'s arrow with a bare reference:
+
+```
+error TS2345: … Target signature provides too few arguments. Expected 2 or more, but got 1.
+```
+
+**`42-PATTERNS.md` §5(e)'s claim that TypeScript will not stop you is definitively wrong** — correct
+it if that document is ever reused.
+
+Nothing enforces this against a future edit making `msg` optional. `api-keys.ts:78-88` records the
+hazard in prose; a comment is not a gate. **Recommendation: add a type-level assertion or an
+`@ts-expect-error` test in `src/lib/log.test.ts`.** Out of 42-18's file ownership (`eslint.config.mjs`).
+
+### 3. Next.js emits non-JSON error output into the structured log stream
+
+Not a defect of phase 42 and not fixable from it, but it invalidates a strict reading of the phase's
+own criterion. Every line `src/lib/log.ts` emits is single-line JSON with a `scope` (verified 21/21
+by parsing). But when an unhandled server error occurs, **Next prints its own plain-text output to
+the same stream** — `⨯ Error: …` followed by indented `at …` frames. 42-18 measured 115 such lines
+after deliberately triggering 14 unhandled errors; a clean boot produced none.
+
+Each duplicates information the structured `"scope":"request"` line already carries better.
+**Relevant to anyone configuring a strict JSON log shipper against this container** — it will need to
+tolerate non-JSON lines, or Next's error output needs suppressing, which is a separate decision.
+
+### Note: `.planning` holds 29 untracked files that eslint lints
+
+`git ls-files .planning/phases/38-bulk-operations/38-20-uat-evidence/` returns **0** against 29 files
+on disk. 42-18 exempted `.planning/**` from `no-console` for this reason. The directory still
+contributes 2 non-`no-console` warnings, and **this is the pinned cause of the previously-unexplained
+124-vs-122 lint warning split**: a worktree contains only tracked files, so those two warnings are
+absent there. 124 − 2 = 122. Four executors each proved it was not their doing; this is why.
