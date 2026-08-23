@@ -2,6 +2,43 @@ import { db } from "@/db"
 import { sql, and, eq } from "drizzle-orm"
 import { workflowRuns, workflowRunSteps } from "@/db/schema/workflows"
 import { executeRun } from "./engine"
+import { maybeAlertOnRunFailure } from "./failure-alert"
+
+/**
+ * WFOPS-03's alert is wired from THIS file, and from three places in it, because this is where a
+ * run reaches a terminal failed state without anybody watching. Two failure classes are
+ * deliberately still NOT covered, and both are accepted rather than overlooked:
+ *
+ *   - Recursion-limit failures are inserted already-`failed` by `createWorkflowRun`
+ *     (src/lib/triggers/create-run.ts), so the processor never claims them and never sees them.
+ *   - Synchronous webhook-response runs are claimed and executed inline by the inbound webhook
+ *     route, so they never reach the processor either.
+ *
+ * Closing either one means putting email latency, and email exceptions, inside a live HTTP
+ * request -- which is the whole reason the hook lives in a background processor. Both gaps are
+ * written up in the deployment docs (docs/admin/deployment/) instead of being closed here.
+ */
+
+/**
+ * Alert on a run's failure without ever letting the alert become the outage.
+ *
+ * One wrapper, three call sites, so the resilience lives in exactly one place. `safeSend`
+ * RETHROWS on transport failure, and an escaping rejection inside `processPendingRuns`' drain
+ * loop would abort the tick and leave every remaining pending run unclaimed until the next poll.
+ * `await` inside `try` catches both shapes that matter -- a rejected promise AND a synchronous
+ * throw before a promise is ever returned, which a bare `void maybeAlertOnRunFailure(id)` would
+ * not.
+ */
+async function alertOnRunFailure(runId: string): Promise<void> {
+  try {
+    await maybeAlertOnRunFailure(runId)
+  } catch (error) {
+    console.error(
+      `[execution-processor] Failure alert for run ${runId} threw; continuing the tick:`,
+      error
+    )
+  }
+}
 
 const INITIAL_DELAY = 5_000 // 5 seconds - let server finish booting
 const POLL_INTERVAL = 5_000 // 5 seconds - execution should be responsive
@@ -93,10 +130,21 @@ export async function reclaimStaleRuns(): Promise<number> {
     RETURNING id
   `)
 
-  const count = (reclaimed as unknown as unknown[])?.length ?? 0
+  const reclaimedRows = reclaimed as unknown as Record<string, unknown>[] | undefined
+  const count = reclaimedRows?.length ?? 0
   if (count > 0) {
     console.log(`[execution-processor] Reclaimed ${count} stale running run(s)`)
   }
+
+  // ALERT SITE 3. A run killed by the execution lease never passes through executeRun at all --
+  // its process died mid-run -- so no other call site can see it. That is precisely the "fails
+  // silently forever" case WFOPS-03 is named for, so the ids the RETURNING above already yields
+  // get alerted over here. Same `?? []` tolerance as the count line: postgres-js does not always
+  // hand back a plain array.
+  for (const row of reclaimedRows ?? []) {
+    await alertOnRunFailure(row.id as string)
+  }
+
   return count
 }
 
@@ -146,6 +194,17 @@ export async function processPendingRuns(): Promise<number> {
         error
       )
     }
+
+    // ALERT SITE 1, and note where it sits: AFTER the try/catch, not inside either half.
+    //
+    // executeRun does not throw when a run fails. It calls failRun() internally
+    // (./engine.ts:551-562) and returns normally, so there is no failure path to hook and the
+    // catch above only ever sees an unexpected exception -- a DB outage or a bug. The alert
+    // therefore DETECTS: it is called unconditionally with nothing but an id, and
+    // maybeAlertOnRunFailure re-reads the run's terminal status, its dryRun flag and its error
+    // itself. A call placed inside the catch would never fire for the ordinary failed run, which
+    // is the only case this requirement is actually about.
+    await alertOnRunFailure(run.id as string)
   }
 
   return count
@@ -238,6 +297,11 @@ export async function processWaitingRuns(): Promise<number> {
         error
       )
     }
+
+    // ALERT SITE 2, outside the try/catch for the same reason as site 1. This is the case where
+    // the alert earns the most: a run that fails hours after its delay elapsed, when whoever
+    // triggered it stopped watching long ago.
+    await alertOnRunFailure(runId)
   }
 
   return count
