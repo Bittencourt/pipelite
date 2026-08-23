@@ -1481,7 +1481,18 @@ phase the string does not exist. `/api/health` replaces it.
 
 ---
 
-## Open Questions
+## Open Questions (ALL RESOLVED — see 42-CONTEXT.md amendments)
+
+> All five were resolved after this document was written, by CONTEXT amendments A1/A5/A6/A7/A8 and by
+> plan verification. The reasoning below is preserved as the input to those decisions, **not as live
+> advice.** Two specific corrections to this document, so nobody acts on the superseded text:
+>
+> - **This document's `probeDb()` sketch LEAKS a 2s timer on every fast success.** Pattern mapping
+>   caught it; plan 42-05 composes `Promise.race` with `finally { clearTimeout(timer) }` instead.
+> - **Pitfall 5's "exactly 3" breaking assertions is an UNDERCOUNT.** It grepped only
+>   `toHaveBeenCalledWith` two-arg shapes and missed `.toContain`/`.includes` substring assertions; the
+>   real figure is ~40 across 17 files. Pitfall 7's three log-grep gates are likewise incomplete.
+
 
 1. **Does `@sentry/nextjs` need `withSentryConfig` for server-only capture?** (A1)
    - *Known:* Sentry's docs present it purely as build-time (source maps, tunnel, client wiring); the server SDK is initialised from `instrumentation.ts`.

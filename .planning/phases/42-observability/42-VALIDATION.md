@@ -1,9 +1,9 @@
 ---
 phase: 42
 slug: observability
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: approved
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-08-23
 ---
 
@@ -122,4 +122,4 @@ and test the guard logic in `src/lib/observability/sentry.test.ts`.
 - [ ] `no-console` flip lands with zero errors
 - [ ] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-08-23 — plan checker confirmed every task carries an `<automated>` verify, no watch-mode flags, and the Wave 0 tests are embedded as RED tasks in 42-01/02/04/05 rather than a separate wave.

@@ -201,6 +201,20 @@ updated to the new grep string in the same phase.
 could restart-loop the container — turning the observability feature into an outage. Recommended
 against by research and accepted.
 
+**A9 — `initSentry()` MUST wrap Sentry's `init()` in try/catch, and must never be able to abort
+`register()`.** *(added after plan verification, 2026-08-23)*
+
+The plan checker found that `initSentry()` runs as the **first statement in `register()`**, before any
+processor starts, with no guard around `init()`. So a `SENTRY_DSN` an operator typo'd into something
+that makes `init()` throw synchronously would abort `register()` and **start zero processors** —
+exactly the failure this phase exists to detect, caused by the mitigation for a different requirement.
+An observability feature must not be able to create the outage it was built to reveal.
+
+Required: `init()` inside try/catch; on failure log a warning through the new logger and continue.
+Error tracking is optional by design (OBS-02's whole premise), so a broken DSN must degrade to
+"no error tracking", never to "no application". Plan 42-17's threat model already identifies this as
+T-42-54 and accepts it; this amendment upgrades it from accepted to closed.
+
 **Operational warning for the planner:** `slopcheck install` mutates the repo (it runs `npm install`
 and added both Sentry packages to `package.json`). Research reverted it and re-verified the baseline.
 Prefer `slopcheck scan`, or budget an explicit revert step.
