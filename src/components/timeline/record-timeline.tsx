@@ -40,6 +40,7 @@ import {
   type TimelineCounts,
 } from "@/lib/timeline/assemble"
 import { TIMELINE_PAGE_SIZE, type TimelinePage } from "@/lib/timeline/types"
+import { log } from "@/lib/log"
 
 interface RecordTimelineProps {
   entityType: EntityType
@@ -107,8 +108,9 @@ export async function RecordTimeline({
       countTimeline(entityType, entityId, includeAudit),
     ])
   } catch (error) {
-    // Logged in full server-side; the client is told only that the section failed.
-    console.error("RecordTimeline read failed:", error)
+    // Logged in full server-side; the client is told only that the section failed. `entityType`
+    // and `entityId` are in scope and were not in the original string, so they stay out.
+    log.error("components/timeline/record-timeline", "RecordTimeline read failed", { err: error })
     return (
       <Card className="mt-6">
         <CardHeader>

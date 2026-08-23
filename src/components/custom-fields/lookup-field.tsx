@@ -8,6 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 import { searchEntities, getEntityById } from "@/lib/fetch-entities"
+// Importable from a "use client" file only because `@/lib/log` has zero imports. If the logger
+// ever gains a dependency it enters this component's client bundle; a `node:` import would break
+// the build outright (T-42-52).
+import { log } from "@/lib/log"
 import type { CustomFieldDefinition, LookupConfig, EntityType } from "@/db/schema"
 
 interface LookupFieldProps {
@@ -87,7 +91,11 @@ export function LookupField({ definition, value, onSave, disabled }: LookupField
         const entities = await searchEntities(targetEntity, search)
         setResults(entities)
       } catch (error) {
-        console.error('Search failed:', error)
+        // `search` (the user's typed lookup term) and `results` (other entities' names and ids)
+        // are both in scope here and neither is added — this line renders in the user's own
+        // devtools console, and a ctx key added here would be copied into the identical
+        // server-side pattern by the next reader (T-42-51).
+        log.error('components/custom-fields/lookup-field', 'Search failed', { err: error })
         setResults([])
       } finally {
         setIsSearching(false)
@@ -128,7 +136,9 @@ export function LookupField({ definition, value, onSave, disabled }: LookupField
       setSearch("")
       setResults([])
     } catch (error) {
-      console.error('Failed to save:', error)
+      // The `id` and `name` of the selected record are in scope; neither was in the original
+      // string, so neither is carried.
+      log.error('components/custom-fields/lookup-field', 'Failed to save', { err: error })
     } finally {
       setIsSaving(false)
     }
@@ -140,7 +150,7 @@ export function LookupField({ definition, value, onSave, disabled }: LookupField
       await onSave(null)
       setSelectedName(null)
     } catch (error) {
-      console.error('Failed to clear:', error)
+      log.error('components/custom-fields/lookup-field', 'Failed to clear', { err: error })
     } finally {
       setIsSaving(false)
     }

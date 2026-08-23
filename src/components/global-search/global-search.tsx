@@ -20,6 +20,8 @@ import { SearchResults, type SearchResultsData } from "./search-results"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useHotkeys } from "react-hotkeys-hook"
+// Legal in a "use client" file only because `@/lib/log` has zero imports (T-42-52).
+import { log } from "@/lib/log"
 
 /**
  * Tailwind's `md`. KEEP THIS IN SYNC WITH THE TAILWIND CONFIG — a media-query string cannot read it,
@@ -46,7 +48,9 @@ async function runSearch(term: string): Promise<SearchResultsData | null> {
     if (!res.ok) return null
     return (await res.json()) as SearchResultsData
   } catch (error) {
-    console.error("Search failed:", error)
+    // `term` is the user's typed search text and is deliberately NOT carried: it was not in the
+    // original string, and it is the most sensitive value in this component (T-42-51).
+    log.error("components/global-search/global-search", "Search failed", { err: error })
     return null
   }
 }
