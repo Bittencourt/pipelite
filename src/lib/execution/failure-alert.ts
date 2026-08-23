@@ -5,6 +5,7 @@ import { users } from "@/db/schema/users"
 import { notificationPreferences } from "@/db/schema/notification-preferences"
 import { getWorkflowFailedTemplate } from "@/lib/email/templates/workflow-failed"
 import { safeSend } from "@/lib/email/send"
+import { log } from "@/lib/log"
 
 /**
  * WFOPS-03 — alert a workflow's author when one of its runs fails.
@@ -231,10 +232,10 @@ export async function maybeAlertOnRunFailure(runId: string): Promise<void> {
       try {
         await releaseFailureAlert(run.workflowId, claim)
       } catch (error) {
-        console.error(
-          `[failure-alert] Failed to release the throttle window for run ${runId}:`,
-          error
-        )
+        log.error("failure-alert", "Failed to release the throttle window", {
+          runId,
+          err: error,
+        })
       }
     }
 
@@ -254,7 +255,7 @@ export async function maybeAlertOnRunFailure(runId: string): Promise<void> {
         author.locale
       )
     } catch (error) {
-      console.error(`[failure-alert] Failed to build the alert for run ${runId}:`, error)
+      log.error("failure-alert", "Failed to build the alert", { runId, err: error })
       await release()
       return
     }
@@ -264,11 +265,11 @@ export async function maybeAlertOnRunFailure(runId: string): Promise<void> {
     // would put relay latency, and its exceptions, inside the processor's drain loop
     // (T-41-45).
     safeSend(author.email, template).catch(async (error) => {
-      console.error(`[failure-alert] Failed to send failure alert for run ${runId}:`, error)
+      log.error("failure-alert", "Failed to send failure alert", { runId, err: error })
       // The mail never reached the transport, so the hour of silence this claim bought is a lie.
       await release()
     })
   } catch (error) {
-    console.error(`[failure-alert] Alert check failed for run ${runId}:`, error)
+    log.error("failure-alert", "Alert check failed", { runId, err: error })
   }
 }
