@@ -6,11 +6,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
  * Everything below runs against a mocked `@/db` inside vitest, so it can only show that
  * `cleanupStaleDedupScans` issues the right three statements and swallows a failure. Whether the
  * reaper is actually invoked at container boot is a completely separate question, because
- * `instrumentation.ts` registration is not evidence of execution: `Dockerfile:24` copies the built
- * `instrumentation.js` into `.next/standalone/` with a step ending in `2>/dev/null || true`, so a
- * build whose chunk layout changes fails silently and `register()` never runs. That exact breakage
- * killed all four background processors in production on 2026-08-08 **while every test passed** —
- * conflating "the unit test is green" with "the reaper runs" IS the 2026-08-08 failure mode.
+ * `instrumentation.ts` registration is not evidence of execution: `Dockerfile:35-38` copies the
+ * built `instrumentation.js` into `.next/standalone/`, and until phase 42 that step ended in a
+ * suppressed failure, so a build whose chunk layout changed failed silently and `register()` never
+ * ran. That exact breakage killed all four background processors in production on 2026-08-08
+ * **while every test passed** — conflating "the unit test is green" with "the reaper runs" IS the
+ * 2026-08-08 failure mode. Phase 42 turned that copy into an assertion that exits 1, which closes
+ * the silent-copy mechanism at build time and says nothing about whether this function was called.
  *
  * The gate for execution is behavioural and lives outside this file:
  *   docker compose up -d --build app

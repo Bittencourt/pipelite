@@ -22,11 +22,16 @@
  * copied here, and a grep for that condition in this file returns nothing (the plan's acceptance
  * criteria gate it). That shape makes a behavioural verification IMPOSSIBLE — a silent log is
  * indistinguishable from a function that never ran — and a behavioural verification is the only
- * kind `instrumentation.ts` accepts. Its own closing comment says why: `Dockerfile:24` copies the
- * built `instrumentation.js` into `.next/standalone/` with a step ending in `2>/dev/null || true`,
- * so a build whose chunk layout changes fails silently and `register()` never runs. That is exactly
- * what killed all four background processors in production on 2026-08-08 while every unit test
- * passed. So this reaper logs UNCONDITIONALLY and twice — a fixed-scope startup line before the
+ * kind `instrumentation.ts` accepts. Its own closing comment says why: `Dockerfile:35-38` copies
+ * the built `instrumentation.js` into `.next/standalone/`, and until phase 42 that step ended in a
+ * suppressed failure, so a build whose chunk layout changed failed silently and `register()` never
+ * ran. That is exactly what killed all four background processors in production on 2026-08-08
+ * while every unit test passed. Phase 42 replaced the suppression with a postcondition that exits
+ * 1, which closes that mechanism at BUILD time — it does not show that `register()` executed the
+ * file, and this reaper is deliberately excluded from `/api/health`, so its runtime evidence is
+ * still this log line and nothing else.
+ *
+ * So this reaper logs UNCONDITIONALLY and twice — a fixed-scope startup line before the
  * work and a result line after it — and the gate is
  * `rtk proxy docker compose logs app | grep -F '"scope":"dedup-scan-cleanup"'`, exactly as the
  * trash pruner's own startup line is gated on `"scope":"trash-prune"`. (Phase 42 turned both of
