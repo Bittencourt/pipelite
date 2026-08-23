@@ -103,7 +103,13 @@ export function RunsTable({ runs, total, page, limit, workflowId }: RunsTablePro
       </div>
 
       {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-4 text-sm">
+        // `flex-wrap` added by the G-3 sweep (plan 41-15), which found this row rather than being
+        // told about it. Three items — "Previous", "Page N of M", "Next" — plus 32px of gap-4 in a
+        // 241px budget, and the middle one is NOT a fixed width: `?page=` accepts up to
+        // MAX_PAGE_DIGITS = 9 digits (`runs-filter.ts:50,176`), so "Page 123456789 of 123456789" is
+        // a reachable string. With `justify-center` the wrapped rows stay centred, so the wrap costs
+        // nothing at any width where it does not trigger.
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-sm">
           {page > 1 ? (
             <Link
               href={`/workflows/${workflowId}/runs?page=${page - 1}`}
