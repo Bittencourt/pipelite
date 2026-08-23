@@ -378,7 +378,9 @@ describe("log — throw-safety", () => {
   it("does not throw on a BigInt in ctx", async () => {
     const log = await loadLog()
 
-    expect(() => log.info("s", "big", { size: BigInt(9007199254740993n) })).not.toThrow()
+    // `BigInt("…")` rather than a `9007199254740993n` literal: tsconfig targets ES2017, where
+    // the literal syntax is a compile error (TS2737) even though the global exists at runtime.
+    expect(() => log.info("s", "big", { size: BigInt("9007199254740993") })).not.toThrow()
 
     const record = lastRecord("log")
     expect(record.scope).toBe("s")
