@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
 status: executing
-last_updated: "2026-08-23T21:12:25.157Z"
+last_updated: "2026-08-23T22:07:12.528Z"
 last_activity: 2026-08-23
 progress:
   total_phases: 14
   completed_phases: 12
   total_plans: 184
-  completed_plans: 178
+  completed_plans: 182
   percent: 86
 ---
 
@@ -26,26 +26,26 @@ wave 1 of 4 merged. Phase 43 is still `Plans: TBD`.
 ## Position
 
 Phase: 42 - Observability
-Plan: 12 of 18 complete (wave 1 merged; wave 2 batches A, B, C of 4 merged)
-Status: Executing Phase 42 — wave 2 in progress, 4 plans remain (batch D)
+Plan: 16 of 18 complete (waves 1 and 2 COMPLETE; wave 3 = 42-17 next)
+Status: Executing Phase 42 — WAVE 2 COMPLETE. Remaining: 42-17 (wave 3), 42-18 (wave 4, autonomous: no)
 Last activity: 2026-08-23
 
-Progress: [██████████] 97%
+Progress: [██████████] 99%
 
-## ► RESUME HERE — Phase 42, wave 2 batch D
+## ► RESUME HERE — Phase 42, wave 3 (42-17)
 
 **Command:** `/gsd:execute-phase 42` — it filters on `has_summary`, so 42-01..42-06 are skipped
 automatically. Do NOT re-plan; all 18 plans exist and were verified by gsd-plan-checker.
 
 **Wave map** (plan frontmatter is authoritative): wave 1 = 42-01,02,03 (DONE) · wave 2 =
-42-04..42-16, of which **42-04..42-12 are DONE** and 42-13..42-16 remain (4 plans) · wave 3 = 42-17 ·
+42-04..42-16, **ALL DONE** · wave 3 = 42-17 ·
 wave 4 = 42-18. **42-18 is `autonomous: no`** — a deliberate Sentry-DSN checkpoint.
 
 **Wave 2 is being run in batches of 3-4, not all 13 at once.** This box has 4 CPUs / ~9GB free and
 13 concurrent executors each running a 4455+ test suite thrashes it. All wave-2 plans depend only on
 wave 1 and own disjoint file sets (verified: 137 distinct files, zero collisions), so batching costs
-nothing semantically. Batch A = 04,05,06 (done). Batch B = 07,08,09 (done). Batch C = 10,11,12 (done).
-Batch D = 13,14,15,16 — the last of wave 2.
+nothing semantically. All four batches merged: A = 04,05,06 · B = 07,08,09 · C = 10,11,12 · D = 13,14,15,16.
+13 of 13 plans succeeded, zero failures, zero merge conflicts, zero file collisions.
 
 **Baseline at this point:** 4524 passed / 32 skipped + RSC 8/8 · typecheck 0 · lint 0 errors /
 **124** warnings. `@sentry/nextjs` 10.70.0 installed, lockfile committed.
@@ -55,10 +55,17 @@ Four separate executors measured 122 and each proved it was not their doing. Cau
 (`next-env.d.ts` is eslint-ignored, so it is not that). Consequence: **gate on errors = 0, never on
 a warning total** — an assertion on "124 warnings" fails spuriously inside a worktree.
 
-**`console.*` census, measured on merged master with eslint `no-console`:** **113** remaining in
-non-test source across 44 files. Reconciles exactly at every step:
-244 −3 (42-07) −26 (42-08) −24 (42-09) = 191; 191 −29 (42-10) −21 (42-11) −28 (42-12) = 113.
-The 113 is the 109 sites still claimed by 42-13..42-16 plus `log.ts`'s own 4 internal delegations.
+**`console.*` census — OBS-01's migration is COMPLETE.** eslint `no-console` over
+`src/**/*.{ts,tsx}` excluding tests reports **4 sites, all of them inside `src/lib/log.ts`** — the
+logger's own intentional console delegations. Every one of the phase's ~273 original call sites is
+migrated. The arithmetic reconciled at every step: 277 → 244 (42-06) → 191 (07/08/09) → 113
+(10/11/12) → 4 (13/14/15/16).
+
+**Baseline is stable, not a lucky run.** Three consecutive full runs on an idle box: 4524 passed /
+32 skipped, RSC 8/8, typecheck 0, lint 0 errors / 124 warnings. Two executors each reported one
+transient single-test failure (42-13 saw 1 in 6 runs; 42-16 saw 4522/2 once) — both were four
+concurrent 4500-test suites contending for 4 CPUs, and both reproduced clean in isolation. Do not
+trust a single red run from inside a parallel wave; re-run it.
 
 **Use eslint, not grep, to census.** `grep` and eslint disagree on the absolute count (grep reads
 higher); the deltas agree. Batch A/B executors reported grep-based absolutes that will not match
@@ -81,44 +88,115 @@ this number — their deltas are what reconcile.
    is a shared symlink and an install corrupts sibling executors mid-run. Also forbid `git stash`
    (`refs/stash` is shared across worktrees).
 
-### Carry-forward findings from wave 2 batch A
+### WAVE 2 CARRY-FORWARD — everything 42-17 and 42-18 inherit
 
-**For 42-17 (`instrumentation.ts`) — two items, both blocking-ish:**
+Thirteen executors ran in isolation and could not see each other's findings. This is the merged set.
 
-- `instrumentation.ts:40` documents a verification that **can no longer pass**. Its comment names
-  the gate `docker compose logs app | grep -F '[trash-prune] Starting'`; that string left the log
-  stream in 42-06. 42-06 correctly did not edit a file it does not own. 42-17 owns it — fix it.
+#### For 42-17 (`instrumentation.ts`) — four items
 
-- The sentry guard shape is `export function isNodeRuntime(): boolean` (unset `NEXT_RUNTIME`
-  counts as node), and **both exported sentry functions short-circuit on it internally**, so 42-17
-  needs no runtime logic of its own. `reportRequestError`'s `context` gained an optional
-  `routerKind` because Sentry's `ErrorContext` requires it — forward `onRequestError`'s third
-  argument untouched.
+1. **`instrumentation.ts:40` documents a gate that CANNOT PASS.** Its comment names
+   `docker compose logs app | grep -F '[trash-prune] Starting'`; 42-06 retired that string. You own
+   this file — fix it. New form: `grep -F '"scope":"trash-prune","msg":"Starting"'`.
 
-**For every remaining migration plan (42-07..42-16):**
+2. **`instrumentation.ts:36` cites `Dockerfile:24`**, stale since 42-03 moved the copy block to
+   `Dockerfile:35-38`. This is the LAST open item in `deferred-items.md`; you own it.
 
-- `ctx` keys land **FLAT** at the top level of the log line. A ctx key named `level`, `scope`, `msg`
-  or `ts` silently overwrites a base field. Never use those four.
+3. **Sentry contract from 42-04:** the guard is `export function isNodeRuntime(): boolean` (unset
+   `NEXT_RUNTIME` counts as node) and **both exported sentry functions short-circuit on it
+   internally** — you need no runtime logic of your own. `reportRequestError`'s `context` gained an
+   optional `routerKind` because Sentry's `ErrorContext` requires it; forward `onRequestError`'s
+   third argument untouched.
 
-- Redaction is not enforceable from inside `log.ts`. The rule lives at the call site: never add a
-  value to a log line that was not already in the string you replaced.
+4. **A9 is already satisfied inside `initSentry()`** — 42-04 wrapped `init()` in try/catch, so a
+   typo'd DSN degrades to "no error tracking" rather than "no processors". Do not remove it.
 
-**Correction to a plan premise (affects anything building on 42-06's brief):** the claim that no
-owned suite calls a `start*` function is **false** — `src/lib/triggers/schedule-processor.test.ts:481-488`
-calls `startScheduleProcessor()`. Benign today (passes unchanged, registers into the real registry,
-emits one JSON boot line) but do not build on that premise.
+#### For 42-18 — SIX corrections, every one found by an executor
 
-**A real defect batch A caught in the phase's own RESEARCH, worth knowing about:** RESEARCH Pattern 5's
-`cookies: { deny: ["*"] }` is a **silent no-op** — Sentry's filter substring-matches deny terms with no
-glob support, so `authjs.session-token` would have shipped to sentry.io behind a deny list that read
-correctly. Now `cookies: false`. Treat other RESEARCH config snippets in this phase as unverified until
-a test pins them.
+1. **The scope gate in this phase's acceptance criteria MATCHES NOTHING.** Root-caused by 42-13:
+   in `grep -oE 'log\.[a-z]+\("[a-z0-9/\[\]-]+"'` the `\]` closes the bracket expression early,
+   leaving `-]+` as literal regex. It fails to match even `log.error("a"`. **It cannot fail, so it
+   passes an empty diff** (42-15's phrasing). Every plan that reported this gate green reported a
+   vacuous pass. A *repaired* class still has two residual blind spots: same-line only (misses
+   wrapped calls — 19 of 42-16's 29 sites) and lowercase-only (misses path-derived camelCase
+   scopes). **Use a multi-line matcher with `"[^"]+"`, or `perl -0777`.** 42-14's number: a missing
+   migration and a correct one produce identical empty output under the gate as written.
 
-**OBS-03 remains unproven in production** regardless of unit-test counts. Vitest has one module
-registry and structurally cannot reproduce the four-instance Turbopack split; 42-05's globalThis test
-is labelled a proxy in three places. 42-18's container check is the only real proof. If the container
-reports all ten workers `alive:false` while processors are visibly logging, that is the split-graph
-fingerprint, not dead workers.
+2. **Pin a test that `log.error` requires BOTH `scope` and `msg`.** That typing is the only thing
+   stopping `.catch(log.error)` from compiling silently at three sites — 42-11 proved it is a
+   TS2345, contradicting `42-PATTERNS.md` §5(e), which claims TypeScript will not stop you.
+   Make `msg` optional and the bug becomes silent. Comment recorded at `api-keys.ts:78-88`.
+
+3. **The `ts` flake class, in BOTH directions.** Every migrated line now carries an ISO `ts` — the
+   only run-varying digits in the line. It contains `"1.5"` ~1 run in 100 and `"111"` ~1 in 1000.
+
+   - *Flaky red:* `not.toContain("<short digits>")` against log output. 42-12 hit it and pinned the
+     clock in two suites without changing an assertion.
+
+   - *Silently green:* `toContain("5")` / `toContain("600")` against log output can now NEVER fail.
+     42-16 found two such suites, one sitting under a comment promising the opposite.
+
+   - **Scope of the sweep (42-15 narrowed it):** only bites when the needle is a short digit string
+     AND the subject is log output. Assertions against a `result` object or a source-file slice are
+     unaffected.
+
+4. **Gate on lint ERRORS (0), never on a warning total.** Warnings read **124** on the main checkout
+   and **122** inside a worktree; four executors each proved independently it was not their doing.
+   Cause unpinned (`next-env.d.ts` is eslint-ignored, so it is not that). An assertion on "124
+   warnings" fails spuriously in a worktree.
+
+5. **A7's new gate strings, verbatim from 42-12** — `log.ts:97` fixes key order, so these are
+   contiguous: liveness `grep -F '"scope":"dedup-scan-cleanup"'`; startup line
+   `grep -F '"scope":"dedup-scan-cleanup","msg":"Starting"'`.
+
+6. **Add a ctx-key collision check** for the four reserved names (`level`/`scope`/`msg`/`ts`), and
+   make it multi-line-aware per item 1. Across all 13 wave-2 plans zero collisions were introduced,
+   so this gate should start green — if it starts red, the checker is wrong, not the code.
+
+#### One open decision, deliberately not made by an executor
+
+`src/lib/import/pipedrive-api-client.ts:42` is `log.warn("Pipedrive API", …)` — the phase's ONLY
+scope containing a space and capital letters, harvested verbatim per the plan's own "reuse the
+existing bracket prefix" rule. Every other scope is lowercase-kebab. Normalizing it is a judgment
+call; 42-16 flagged rather than took it. Decide in 42-18 or defer explicitly.
+
+#### Two stale-document traps that already cost time
+
+- **`deferred-items.md` went stale mid-wave and misled two executors.** 42-12 and 42-13 both
+  reported `trash/prune.ts:14` and `prune.test.ts:132` as open; 42-06 had already fixed both. They
+  read the table instead of the files. The table is now reconciled against merged master, with a
+  dated section at the bottom — but the lesson is to verify against the file.
+
+- **Remaining `Dockerfile:24` / "suppressed failure" mentions in `heartbeat.ts:14`,
+  `scan-cleanup.ts:27` and `scan-cleanup.test.ts:11` are historical narrative** of the 2026-08-08
+  incident, not false current-state claims. Correct as written. Do not "fix" them.
+
+#### Redaction — the phase's real risk, and how it went
+
+Zero leaks across ~273 migrated sites. It held because every executor was told the rule lives at the
+call site (`log.ts` cannot enforce it) and asked to name what was *in scope and excluded*, not just
+what it wrote. Notable saves worth preserving as precedent:
+
+- **42-04:** RESEARCH Pattern 5's `cookies: { deny: ["*"] }` is a SILENT NO-OP — Sentry's filter
+  substring-matches with no glob support, so `authjs.session-token` would have shipped to sentry.io
+  behind a deny list that read correctly. Now `cookies: false`. Its `httpHeaders: { deny: [...] }`
+  does not typecheck either. **Treat every RESEARCH config snippet in this phase as unverified.**
+
+- **42-16:** two `formula-recalc.ts` sites pass a *sanitized* string; the idiomatic `{ err: thrown }`
+  would have restored SQL text and a stack, undoing `sanitizeFormulaError` (T-34-06).
+
+- **42-13:** `redactDbError` emits only `{ code, constraint }` from a driver error whose message
+  embeds the SQL and every bound parameter. All five sites pass its return value; `err: error` → 0.
+
+- **42-14:** a Pipedrive `apiKey` was in scope two lines from a `"use client"` log site — a token in
+  a browser console is third-party credential disclosure.
+
+#### OBS-03 is STILL UNPROVEN in production
+
+Unchanged by 13 green plans. Vitest has one module registry and structurally cannot reproduce the
+four-instance Turbopack split; 42-05's globalThis test is labelled a proxy in three places.
+**42-18's container check is the only real proof.** If the container reports all ten workers
+`alive:false` while processors are visibly logging, that is the split-graph fingerprint, not dead
+workers. All ten roster entries now have a live writer (42-07 closed the last four).
 
 ## Performance Metrics
 

@@ -547,10 +547,10 @@ Plans:
 - [x] 42-10-PLAN.md — migration: fifteen `api/v1` route files, 29 sites (OBS-01)
 - [x] 42-11-PLAN.md — migration: non-v1 API routes + `lib/api` + the bare-reference catch, 21 sites (OBS-01)
 - [x] 42-12-PLAN.md — migration: eight dedup modules + the A7 gate repair, 28 sites (OBS-01)
-- [ ] 42-13-PLAN.md — migration: trash/audit/execution/triggers/views + `redactDbError`, 34 sites (OBS-01)
-- [ ] 42-14-PLAN.md — migration: import and admin actions, 22 sites (OBS-01)
-- [ ] 42-15-PLAN.md — migration: duplicates/notes/entity actions, 24 sites (OBS-01)
-- [ ] 42-16-PLAN.md — migration: remaining `lib` modules + five components, 29 sites (OBS-01)
+- [x] 42-13-PLAN.md — migration: trash/audit/execution/triggers/views + `redactDbError`, 34 sites (OBS-01)
+- [x] 42-14-PLAN.md — migration: import and admin actions, 22 sites (OBS-01)
+- [x] 42-15-PLAN.md — migration: duplicates/notes/entity actions, 24 sites (OBS-01)
+- [x] 42-16-PLAN.md — migration: remaining `lib` modules + five components, 29 sites (OBS-01)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
