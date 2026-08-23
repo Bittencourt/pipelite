@@ -185,6 +185,16 @@ None — no external service configuration required.
 - **For 41-12/41-verification:** the zero-`audit_log`-row proof is structural now, resting on the mutation call being skipped. Any future rewrite toward a rolled-back transaction would silently destroy it; the reason is recorded as rule 3 on gate 1 of `crm.ts`.
 - **Blocker for none.** STATE.md and ROADMAP.md deliberately untouched — the orchestrator owns those writes.
 
+## Self-Check: PASSED
+
+- `src/lib/execution/actions/crm.ts` — modified in `024b4c5` (+88 lines), 3 gates confirmed by grep
+- `src/lib/execution/actions/webhook-response.ts` — modified in `31ef3c9` (+31 lines), 1 gate confirmed
+- `src/lib/execution/actions/__tests__/crm.test.ts` — +485 lines in `024b4c5`
+- `src/lib/execution/actions/__tests__/webhook-response.test.ts` — +154 lines in `31ef3c9`
+- Commits `024b4c5`, `31ef3c9`, `0ad2f12` all present in `git log`
+- No file deletions in any commit (`git diff --diff-filter=D` empty for each)
+- `STATE.md` and `ROADMAP.md` not staged, not modified, not committed
+
 ---
 *Phase: 41-workflow-operator-affordances*
 *Completed: 2026-08-23*
