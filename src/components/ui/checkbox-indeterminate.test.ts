@@ -282,7 +282,20 @@ const CHECKBOX_CONSUMERS = walkSources(SRC_ROOT)
  * for free — that file is deliberately NOT allow-listed, because allow-listing is for phase-38
  * selection surfaces and would buy a free slot in this count rather than prove anything.
  */
-const EXPECTED_CONSUMER_COUNT = 11
+/**
+ * BUMPED 11 -> 12 BY PLAN 41-10, AFTER THE SAME HAND-CHECK.
+ *
+ * The twelfth consumer is `src/app/workflows/[id]/runs/components/status-filter.tsx` — the
+ * "Show test runs" reveal on the workflow runs list — and it cannot reach the mixed branch either.
+ * Its `checked` is `searchParams.get(SHOW_DRY_RUNS_PARAM) === SHOW_DRY_RUNS_VALUE`, a strict
+ * boolean by construction of `===`, and its `onCheckedChange` collapses Radix's `CheckedState`
+ * with `checked === true` before the handler sees it. There is no third state for a URL param that
+ * is either exactly `"1"` or absent, so the "never puts the Root into the mixed state" assertion
+ * below covers it for free. Deliberately NOT allow-listed, for the reason 40-08 gave: allow-listing
+ * is for phase-38 selection surfaces and would buy a free slot in this count rather than prove
+ * anything.
+ */
+const EXPECTED_CONSUMER_COUNT = 12
 
 describe("consumer safety: the new branch is unreachable for existing Checkbox users", () => {
   it("finds the walk itself is not vacuous", () => {
