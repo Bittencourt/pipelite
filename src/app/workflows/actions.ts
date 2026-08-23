@@ -319,6 +319,8 @@ export async function replayWorkflowRun(
       workflowId: workflowRuns.workflowId,
       status: workflowRuns.status,
       triggerData: workflowRuns.triggerData,
+      // Read, because a replay INHERITS it. See the `dryRun` argument below.
+      dryRun: workflowRuns.dryRun,
     })
     .from(workflowRuns)
     .where(and(eq(workflowRuns.id, runId), eq(workflowRuns.workflowId, workflowId)))
@@ -343,6 +345,15 @@ export async function replayWorkflowRun(
   const input = buildReplayRunInput(origin)
 
   const run = await createWorkflowRun(input.workflowId, input.triggerEnvelope, input.depth, {
+    // A REPLAY OF A TEST RUN IS ANOTHER TEST RUN (CR-01). The recorded decision "a replay is never a
+    // dry run" is about replaying a REAL run — it exists so a replay does not skip the CRM writes
+    // the operator is trying to re-run. A dry origin has no such writes to skip, and there is a
+    // two-click path from a page badged "Test run" to this call: the dry-run dialog navigates the
+    // operator to the failed run's detail page, which renders the replay button. Omitting the key
+    // lets `dry_run`'s NOT NULL DEFAULT false promote a simulated run into a production one — real
+    // mail through the relay, real `crmBus` events, real outbound HTTP. That is amendment A1's harm
+    // by another route. `=== true` because the value is a jsonb-era column read off an untyped row.
+    dryRun: origin.dryRun === true,
     replayedFromRunId: input.replayedFromRunId,
   })
 
