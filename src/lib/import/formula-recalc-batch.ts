@@ -24,6 +24,7 @@ import {
   FORMULA_EVALUATION_BUDGET,
   ENTITY_NATIVE_ATTRIBUTES,
 } from "@/lib/formula-recalc"
+import { log } from "@/lib/log"
 
 /** A row as an importer's `.returning()` hands it back. */
 export interface ImportedRow extends Record<string, unknown> {
@@ -126,10 +127,11 @@ export async function recalculateImportedRows(
       // Logged, not swallowed (T-34-17). The row keeps whatever blob it was inserted with and
       // self-heals on its next save.
       failed += 1
-      console.error(
-        `[formula-recalc] ${entityType} import: recalculation failed for row ${row.id}:`,
-        error
-      )
+      log.error("formula-recalc", "import recalculation failed for row", {
+        entityType,
+        rowId: row.id,
+        err: error,
+      })
     }
   }
 
@@ -137,10 +139,17 @@ export async function recalculateImportedRows(
   // a silent partial recalculation otherwise, which is precisely the repudiation risk T-34-25
   // names — the importers additionally surface `skipped` in their user-visible warnings.
   if (budgetSkipped > 0) {
-    console.warn(
-      `[formula-recalc] ${entityType} import: evaluation budget of ${limit} exhausted after ` +
-        `${recalculated + failed} of ${rows.length} rows; ${budgetSkipped} rows were not ` +
-        `recalculated and keep the values they were imported with`
+    // Counts and the configured limit only — never a row or a field value.
+    log.warn(
+      "formula-recalc",
+      "import evaluation budget exhausted; skipped rows keep the values they were imported with",
+      {
+        entityType,
+        budget: limit,
+        rowsAttempted: recalculated + failed,
+        rowsTotal: rows.length,
+        rowsNotRecalculated: budgetSkipped,
+      }
     )
   }
 

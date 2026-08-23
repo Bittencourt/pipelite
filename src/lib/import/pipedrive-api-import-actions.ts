@@ -60,6 +60,7 @@ import { recalculateImportedRows, type ImportedRow } from "./formula-recalc-batc
 // DEDUP-01, the importer's REPORTING half. Never rejects a row, never prompts: it counts, after
 // the write, how many created rows look like duplicates so the summary can say so.
 import { countFlaggedImportedRecords } from "@/lib/dedup/import-flags"
+import { log } from "@/lib/log"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -381,7 +382,7 @@ export async function importFromPipedrive(
         // Awaited — unlike the subscriber's fire-and-forget — but swallowed. Whatever this run
         // loaded is already in the database, and failing the import because its audit row failed
         // would report a lie about the user's own data (T-36-26).
-        console.error('[audit-import] failed to write Pipedrive import summary:', auditError)
+        log.error('audit-import', 'failed to write Pipedrive import summary', { err: auditError })
       }
     }
 
@@ -1152,7 +1153,10 @@ export async function importFromPipedrive(
           errorMessage = sdkError.message
         }
       }
-      console.error('[importFromPipedrive] Error:', errorMessage, error)
+      // Both values the original line carried: the derived, user-facing `errorMessage` string
+      // (which is also what `addImportError` persists on the next line) AND the raw error, whose
+      // stack the logger serialises. Neither is a remote Pipedrive record.
+      log.error('importFromPipedrive', 'Error', { errorMessage, err: error })
       await addImportError(importId, 'general', errorMessage)
       await updateImportState(importId, {
         status: 'error',

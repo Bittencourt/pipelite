@@ -1,4 +1,5 @@
 import Redis from "ioredis"
+import { log } from "@/lib/log"
 
 let redis: Redis | null = null
 
@@ -10,7 +11,7 @@ export function getRedisClient(): Redis | null {
   if (redis) return redis
 
   if (!process.env.REDIS_URL) {
-    console.info("REDIS_URL not configured - using database sessions only")
+    log.info("lib/redis", "REDIS_URL not configured - using database sessions only")
     return null
   }
 
@@ -21,16 +22,16 @@ export function getRedisClient(): Redis | null {
     })
 
     redis.on("error", (err) => {
-      console.error("Redis connection error:", err)
+      log.error("lib/redis", "Redis connection error", { err })
     })
 
     redis.on("connect", () => {
-      console.info("Redis connected successfully")
+      log.info("lib/redis", "Redis connected successfully")
     })
 
     return redis
   } catch (error) {
-    console.error("Failed to initialize Redis:", error)
+    log.error("lib/redis", "Failed to initialize Redis", { err: error })
     return null
   }
 }

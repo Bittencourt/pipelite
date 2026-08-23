@@ -233,7 +233,15 @@ describe("the server's recomputed values are authoritative after a save (CFUI-02
       setLocalValuesArguments().filter((a) => /^values$/.test(a)),
       "both revert-to-prop paths must survive"
     ).toHaveLength(2)
-    expect(source.match(/console\.error\(\s*['"]Failed to save field:['"]/g) ?? []).toHaveLength(2)
+    // Phase 42 / OBS-01: both sites now log through the structured logger. This is a SOURCE-TEXT
+    // scan, not a `vi.spyOn(console, …)` assertion, so it was invisible to the migration's
+    // spy-based blast-radius census — see 42-16-SUMMARY.md. The scope is asserted alongside the
+    // message, which makes the check stricter than the string it replaces.
+    expect(
+      source.match(
+        /log\.error\(\s*['"]components\/custom-fields\/custom-fields-section['"],\s*['"]Failed to save field['"]/g
+      ) ?? []
+    ).toHaveLength(2)
     expect(source, "the thrown-fetch recovery path is gone").toMatch(/catch\s*\(/)
   })
 

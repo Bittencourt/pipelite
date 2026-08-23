@@ -1335,12 +1335,17 @@ describe("cross-entity cascade (D-03/D-04/D-09/D-13)", () => {
       const message = String(warnSpy.mock.calls[0][0])
       // Asserted fragment by fragment: a reworded message still passes, a message missing a
       // diagnostic field fails.
-      expect(message).toContain("[formula-recalc]")
-      expect(message).toContain("organization")
-      expect(message).toContain("o1")
-      expect(message).toContain("deal")
-      expect(message).toContain("600")
-      expect(message).toContain("100")
+      //
+      // Each fragment is the JSON `"key":value` pair rather than the bare value. That is what
+      // KEEPS the promise in the sentence above: the structured line now carries a `ts`, and a
+      // bare `toContain("100")` would be satisfied by the digits of an ISO timestamp, so a
+      // migrated line that had DROPPED `childrenSkipped` entirely would still have passed.
+      expect(message).toContain('"scope":"formula-recalc"')
+      expect(message).toContain('"parentType":"organization"')
+      expect(message).toContain('"parentId":"o1"')
+      expect(message).toContain('"child":"deal"')
+      expect(message).toContain('"childrenFound":600')
+      expect(message).toContain('"childrenSkipped":100')
     },
     20000
   )

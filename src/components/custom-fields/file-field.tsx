@@ -8,6 +8,8 @@ import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { CustomFieldDefinition, FileConfig } from '@/db/schema'
+// Legal in a "use client" file only because `@/lib/log` has zero imports (T-42-52).
+import { log } from '@/lib/log'
 
 export interface FileItem {
   id: string
@@ -135,7 +137,10 @@ export function FileField({ definition, value, entityId, onSave, disabled }: Fil
         throw new Error(data.error || 'Upload failed')
       }
     } catch (error) {
-      console.error('Upload error:', error)
+      // No filename and no file contents. The uploaded file's name is in scope on this path and
+      // was not in the original string (T-42-51). The `alert` below is unchanged — it is the
+      // component's user-facing error handling, not this plan's business.
+      log.error('components/custom-fields/file-field', 'Upload error', { err: error })
       alert(error instanceof Error ? error.message : 'Upload failed')
     } finally {
       setUploading(false)

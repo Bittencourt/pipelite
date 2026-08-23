@@ -11,6 +11,7 @@
 import { db } from "@/db"
 import { importSessions } from "@/db/schema"
 import { eq, and, lt } from "drizzle-orm"
+import { log } from "@/lib/log"
 
 export async function cleanupStaleImportSessions(): Promise<void> {
   try {
@@ -38,10 +39,15 @@ export async function cleanupStaleImportSessions(): Promise<void> {
       .returning({ id: importSessions.id })
 
     const total = staleRunning.length + staleIdle.length + old.length
+    // Deliberately conditional — this module logs only when it actually cleaned something up,
+    // and `scan-cleanup.ts`'s header contrasts the two modules on exactly this point. Counts
+    // only: `staleRunning`, `staleIdle` and `old` are arrays of returned row ids.
     if (total > 0) {
-      console.log(`Cleaned up ${total} stale import sessions`)
+      // No bracket prefix on this line today, so the scope is path-derived. The line below
+      // carries `[import-cleanup]` and keeps it — two scopes in one file, per-site.
+      log.info("lib/import/import-session-cleanup", "Cleaned up stale import sessions", { total })
     }
   } catch (error) {
-    console.error("[import-cleanup] Failed to clean up stale sessions:", error)
+    log.error("import-cleanup", "Failed to clean up stale sessions", { err: error })
   }
 }

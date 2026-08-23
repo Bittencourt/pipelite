@@ -164,10 +164,13 @@ describe("recalculateImportedRows", () => {
 
     expect(warnSpy).toHaveBeenCalledTimes(1)
     const message = String(warnSpy.mock.calls[0][0])
-    expect(message).toContain("[formula-recalc]")
-    expect(message).toContain("deal")
-    expect(message).toContain("5")
-    expect(message).toContain("2")
+    // JSON `"key":value` pairs, not bare values. The structured line carries a `ts`, and the
+    // previous `toContain("5")` / `toContain("2")` would have been satisfied by the digits of
+    // any ISO timestamp — leaving two assertions that could never fail.
+    expect(message).toContain('"scope":"formula-recalc"')
+    expect(message).toContain('"entityType":"deal"')
+    expect(message).toContain('"rowsTotal":5')
+    expect(message).toContain('"rowsNotRecalculated":2')
   })
 
   it("recalculates nothing and warns when the budget starts at zero", async () => {
@@ -243,7 +246,7 @@ describe("recalculateImportedRows", () => {
     expect(mockRecalc).toHaveBeenCalledTimes(3)
     expect(summary).toEqual({ recalculated: 2, skipped: 1, evaluations: 2 })
     expect(errorSpy).toHaveBeenCalledTimes(1)
-    expect(String(errorSpy.mock.calls[0][0])).toContain("[formula-recalc]")
+    expect(String(errorSpy.mock.calls[0][0])).toContain('"scope":"formula-recalc"')
     // A single broken formula must not turn into a budget-exhaustion warning.
     expect(warnSpy).not.toHaveBeenCalled()
   })

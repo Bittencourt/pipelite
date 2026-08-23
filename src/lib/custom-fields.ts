@@ -4,6 +4,7 @@ import { eq, and, isNull } from "drizzle-orm"
 import type { SelectConfig, LookupConfig } from "@/db/schema"
 import { crmBus } from "@/lib/events/bus"
 import type { CrmEventPayload } from "@/lib/events/types"
+import { log } from "@/lib/log"
 // `formula-recalc` imports `getActiveFieldDefinitions` from this module, so the two form an
 // import cycle. It is safe: every binding involved is a hoisted function declaration and
 // neither module reads the other at module-evaluation time.
@@ -317,10 +318,11 @@ export async function saveFieldValues(
   } catch (error) {
     // D-05: a broken admin-authored formula must never block a user's edit. Unchanged — the
     // fallback to `next` above is what makes swallowing safe for the caller.
-    console.error(
-      `[formula-recalc] saveFieldValues failed, entityType=${entityType} entityId=${entityId}:`,
-      error
-    )
+    log.error("formula-recalc", "saveFieldValues failed", {
+      entityType,
+      entityId,
+      err: error,
+    })
   }
 
   // Emitted AFTER the recalculation and AFTER the D-05 catch, so `data` carries the

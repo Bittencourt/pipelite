@@ -422,7 +422,7 @@ describe("saveFieldValues — ordering and failure isolation", () => {
     )
   })
 
-  it("a rejecting recalculation still returns success and logs with a [formula-recalc] prefix (D-05)", async () => {
+  it("a rejecting recalculation still returns success and logs under the formula-recalc scope (D-05)", async () => {
     captureUpdate()
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     mockRecalc.mockRejectedValueOnce(new Error("boom"))
@@ -431,7 +431,7 @@ describe("saveFieldValues — ordering and failure isolation", () => {
 
     expect(result.success).toBe(true)
     expect(errorSpy).toHaveBeenCalled()
-    expect(String(errorSpy.mock.calls[0][0])).toContain("[formula-recalc]")
+    expect(String(errorSpy.mock.calls[0][0])).toContain('"scope":"formula-recalc"')
   })
 
   it("a validation failure short-circuits: no write, no recalculation", async () => {

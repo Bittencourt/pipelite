@@ -24,6 +24,7 @@
 import { and, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { users } from "@/db/schema/users"
+import { log } from "@/lib/log"
 
 /** Matches the `user_role` pg enum in src/db/schema/users.ts. */
 export interface NoteActor {
@@ -79,7 +80,9 @@ export async function resolveActorRole(userId: string): Promise<NoteActor | null
 
     return { userId: row.id, role: row.role }
   } catch (error) {
-    console.error("Failed to resolve actor role:", error)
+    // `userId` is in scope and is deliberately NOT added: it was not in the original string,
+    // and this is an authorization path where the identifier is the sensitive part.
+    log.error("lib/notes/authorize", "Failed to resolve actor role", { err: error })
     return null
   }
 }

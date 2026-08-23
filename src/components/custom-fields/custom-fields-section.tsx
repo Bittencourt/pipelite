@@ -7,6 +7,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { FieldRenderer } from './field-renderer'
 import { buildClientFieldValues } from '@/lib/client-field-values'
 import type { CustomFieldDefinition, EntityType } from '@/db/schema'
+// Legal in a "use client" file only because `@/lib/log` has zero imports (T-42-52).
+import { log } from '@/lib/log'
 
 // Server action for saving custom field values
 async function saveCustomFields(
@@ -72,12 +74,22 @@ export function CustomFieldsSection({
         if (result.values) setLocalValues(result.values)
         onValuesChange?.(result.values ?? newValues)
       } else {
-        console.error('Failed to save field:', result.error)
+        // `result.error` exactly, not the whole `result` — `result.values` is the entity's
+        // post-write custom-field blob. `fieldName`, `value` and `localValues` are also in
+        // scope and none was in the original string, so none is carried (T-42-51).
+        log.error('components/custom-fields/custom-fields-section', 'Failed to save field', {
+          err: result.error,
+        })
         // Revert on error
         setLocalValues(values)
       }
     } catch (error) {
-      console.error('Failed to save field:', error)
+      // Same scope and message as the branch above, exactly as the two `console.error` strings
+      // were identical before. What distinguishes them in the output is the shape of `err`: a
+      // plain string from the server action there, a serialised Error with a stack here.
+      log.error('components/custom-fields/custom-fields-section', 'Failed to save field', {
+        err: error,
+      })
       // Revert on error
       setLocalValues(values)
     }

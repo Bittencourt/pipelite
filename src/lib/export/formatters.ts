@@ -20,6 +20,7 @@ import { formatFormulaValueForText } from "@/lib/formula-helpers"
 // predicate MIRRORS the list page it must match" claim below enforceable rather than aspirational —
 // review finding CR-01 was two copies of this rule drifting apart into a silently narrower CSV.
 import { endOfDayExclusive, startOfDayInclusive } from "@/lib/filters/date-range"
+import { log } from "@/lib/log"
 
 // Re-exported so the export module has one public surface; the implementation lives in a
 // dependency-free module because `pipedrive.ts` needs it too and this file already imports that.
@@ -655,7 +656,9 @@ export async function fetchFilteredData(
 
     return { success: true, data, filename, count: flatData.length }
   } catch (error) {
-    console.error("Export failed:", error)
+    // `entityType`, `format` and `flatData` are all in scope here; none was in the original
+    // string, so none is added. `flatData` in particular is the whole export payload.
+    log.error("lib/export/formatters", "Export failed", { err: error })
     return { success: false, error: "Export failed. Please try again." }
   }
 }

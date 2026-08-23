@@ -9,6 +9,7 @@ import {
   getWeeklyDigestTemplate,
 } from "./templates"
 import type { WeeklyDigestData } from "./templates"
+import { log } from "@/lib/log"
 
 const fromEmail = process.env.EMAIL_FROM || "noreply@example.com"
 const appUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
@@ -18,7 +19,9 @@ export async function safeSend(
   template: { subject: string; html: string; text: string }
 ): Promise<void> {
   if (!process.env.SMTP_HOST) {
-    console.warn("[email] No SMTP_HOST configured, skipping email to:", to)
+    // `to` is the only value carried here, and it was already in the string being replaced.
+    // The subject, html and text bodies are in scope on the line below and stay out (T-42-50).
+    log.warn("email", "No SMTP_HOST configured, skipping email", { to })
     return
   }
   const transporter = getEmailTransporter()
@@ -30,9 +33,9 @@ export async function safeSend(
       html: template.html,
       text: template.text,
     })
-    console.log("[email] Email sent to:", to, "messageId:", info.messageId)
+    log.info("email", "Email sent", { to, messageId: info.messageId })
   } catch (error) {
-    console.error("[email] Failed to send email to:", to, error)
+    log.error("email", "Failed to send email", { to, err: error })
     throw error
   }
 }
