@@ -620,6 +620,128 @@ describe("the WFOPS-01 / WFOPS-02 server actions — src/app/workflows/actions.t
     })
   })
 
+  describe("startDryRun — the caller-supplied-JSON trust boundary", () => {
+    const CLIENT_IS_NOT_A_BOUNDARY =
+      "T-41-62: the dialog's own parse is UX feedback, not a trust boundary. A server action is " +
+      "reachable by anything that can make an HTTP request, and the browser can post any string it " +
+      "likes — including one the client component never saw."
+
+    it("is exported", () => {
+      expect(source).toContain("export async function startDryRun")
+    })
+
+    it("bounds a region that is neither empty nor the whole file", () => {
+      // ANTI-VACUITY for every negative assertion below: a region extraction that silently returned
+      // the entire source would let the `active`-absence assertion pass by luck, since
+      // `toggleWorkflow` above sets `active` legitimately.
+      const region = functionRegion(source, "startDryRun")
+
+      expect(region.length).toBeGreaterThan(0)
+      expect(region.length).toBeLessThan(source.length)
+
+      // And the discriminator that makes the scoping meaningful: the FILE does contain `active`
+      // (toggleWorkflow sets it), so "the region contains no active check" is a real claim about
+      // the region and not a fact about the file.
+      expect(source).toContain("active")
+    })
+
+    it("re-validates the caller's JSON server-side", () => {
+      const region = functionRegion(source, "startDryRun")
+
+      expect(
+        /JSON\.parse|safeParse/.test(region),
+        CLIENT_IS_NOT_A_BOUNDARY,
+      ).toBe(true)
+    })
+
+    it("refuses a parsed value that is not a plain object — null, arrays and scalars", () => {
+      const region = functionRegion(source, "startDryRun")
+
+      expect(
+        region,
+        "A bare `typeof x === \"object\"` accepts BOTH null and arrays, and the parsed value reaches " +
+          "the engine and then the QuickJS transform sandbox. All four of null, an array, a string " +
+          "and a number must be refused.",
+      ).toContain("Array.isArray")
+      expect(/typeof|\.object\(/.test(region)).toBe(true)
+    })
+
+    it("returns two DISTINCT error codes the dialog can map to its two locked strings", () => {
+      const region = functionRegion(source, "startDryRun")
+
+      // The dialog renders `dryRun.invalidJson` and `dryRun.notAnObject`, which are different
+      // sentences — "check for a missing comma" versus "must be a JSON object with named fields".
+      // One shared error would render the wrong advice for one of the two failures.
+      expect(region).toContain("invalidJson")
+      expect(region).toContain("notAnObject")
+    })
+
+    it("sets the dry-run flag SERVER-side as a literal, never from a parameter", () => {
+      const region = functionRegion(source, "startDryRun")
+
+      expect(region.replace(/\s+/g, " ")).toContain("dryRun: true")
+
+      const bindings = [...region.matchAll(/dryRun:\s*([A-Za-z0-9_$.!]+)/g)].map(
+        (match) => match[1],
+      )
+
+      // Anti-vacuity: there IS at least one binding, so `every` is not quantifying over nothing.
+      expect(bindings.length).toBeGreaterThan(0)
+      for (const bound of bindings) {
+        expect(
+          bound,
+          "T-41-63: dry-run-ness is not an access-control boundary the client may assert. This " +
+            "action is the single place it is decided, and the engine independently re-derives it " +
+            "from the column on every entry — two controls, neither of them a client claim.",
+        ).toBe("true")
+      }
+    })
+
+    it("does NOT reject an inactive workflow (Pitfall 8)", () => {
+      const region = functionRegion(source, "startDryRun")
+
+      expect(
+        region,
+        "The phase goal is \"a failed or UNPROVEN workflow\". Every other trigger path rejects an " +
+          "inactive workflow, correctly — `triggerManualRun` at src/lib/triggers/manual-trigger.ts:38-44 " +
+          "is the one being deliberately not copied. Copying it makes an unactivated draft " +
+          "untestable, which is the primary use case for a test run.",
+      ).not.toContain("workflow.active")
+      expect(region).not.toContain("not active")
+      expect(region).not.toContain("workflow_inactive")
+    })
+
+    it("guards a zero-node workflow", () => {
+      const region = functionRegion(source, "startDryRun")
+
+      expect(
+        region,
+        "engine.ts:143-149 completes a run with zero nodes immediately, so an empty workflow " +
+          "produces a green dry run that looks like a pass and proves nothing.",
+      ).toContain("nodes")
+      expect(region).toContain("length")
+    })
+
+    it("goes through createWorkflowRun and never a hand-rolled insert", () => {
+      const region = functionRegion(source, "startDryRun")
+
+      expect(region, NO_HAND_ROLLED_INSERT).toContain("createWorkflowRun")
+      expect(region, NO_HAND_ROLLED_INSERT).not.toContain("db.insert(workflowRuns")
+    })
+
+    it("gates on the session before any database read, with no role check", () => {
+      const region = functionRegion(source, "startDryRun")
+      const authAt = region.indexOf("auth()")
+      const readAt = region.indexOf(".select(")
+
+      expect(authAt).toBeGreaterThan(-1)
+      expect(readAt).toBeGreaterThan(-1)
+      expect(authAt).toBeLessThan(readAt)
+      expect(region, D_A4).not.toContain("session.user.role")
+      expect(region, D_A4).not.toContain("admin")
+    })
+  })
+
   describe("getWorkflowRunStatus — the poll target", () => {
     it("is exported", () => {
       expect(source).toContain("export async function getWorkflowRunStatus")
