@@ -60,6 +60,7 @@ import {
   FORMULA_EVAL_TIMEOUT_MS,
 } from "@/lib/formula-engine"
 import { unwrapFormulaValue, sanitizeFormulaError, type FormulaWrapper } from "@/lib/formula-helpers"
+import { log } from "@/lib/log"
 
 /** Entity type to Drizzle table. Mirrors the private map in `custom-fields.ts`. */
 const entityTables = {
@@ -886,10 +887,15 @@ async function cascadeToChildren({
           and(eq(relation.foreignKey, parentId), isNull(relation.deletedAt))
         )) as unknown as Record<string, unknown>[]
     } catch (thrown) {
-      console.warn(
-        `[formula-recalc] child lookup failed, parent=${parentType} parentId=${parentId} ` +
-          `child=${relation.child}: ${sanitizeFormulaError(thrown)}`
-      )
+      // `err` carries the SANITIZED string, not the raw `thrown`. Passing the Error object would
+      // be the idiomatic migration and would defeat `sanitizeFormulaError`, which exists to drop
+      // the stack and cap the length because a Drizzle error here can carry SQL text (T-34-06).
+      log.warn("formula-recalc", "child lookup failed", {
+        parentType,
+        parentId,
+        child: relation.child,
+        err: sanitizeFormulaError(thrown),
+      })
       continue
     }
 
@@ -914,22 +920,29 @@ async function cascadeToChildren({
         )
         evaluations += result.evaluations
       } catch (thrown) {
-        console.warn(
-          `[formula-recalc] child recalculation failed, child=${relation.child} ` +
-            `childId=${String(child.id)}: ${sanitizeFormulaError(thrown)}`
-        )
+        // Sanitized string under `err` for the same T-34-06 reason as the lookup site above.
+        log.warn("formula-recalc", "child recalculation failed", {
+          child: relation.child,
+          childId: String(child.id),
+          err: sanitizeFormulaError(thrown),
+        })
       }
     }
 
     if (processed < children.length && !budget.warned) {
       budget.warned = true
-      // T-34-06: identifiers and counts only, never row contents or field values.
-      console.warn(
-        `[formula-recalc] evaluation budget exhausted, cascade truncated: ` +
-          `parent=${parentType} parentId=${parentId} child=${relation.child} ` +
-          `childrenFound=${children.length} childrenSkipped=${children.length - processed} ` +
-          `budget=${budget.limit}`
-      )
+      // T-34-06: identifiers and counts only, never row contents or field values. This is the
+      // site that established that rule for this codebase (T-37-27, cited by
+      // src/app/trash/actions.ts). The structured form carries the same six values it always
+      // did — four identifiers/limits and two counts — and no element of `children` itself.
+      log.warn("formula-recalc", "evaluation budget exhausted, cascade truncated", {
+        parentType,
+        parentId,
+        child: relation.child,
+        childrenFound: children.length,
+        childrenSkipped: children.length - processed,
+        budget: budget.limit,
+      })
     }
   }
 

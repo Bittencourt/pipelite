@@ -1,4 +1,5 @@
 import { v2, v1 } from "pipedrive"
+import { log } from "@/lib/log"
 
 // ---------------------------------------------------------------------------
 // Rate Limiting with Exponential Backoff
@@ -35,9 +36,14 @@ async function withRetry<T>(
 
       if (status === 429 && attempt < maxAttempts - 1) {
         const delayMs = Math.pow(2, attempt) * BASE_DELAY_MS
-        console.warn(
-          `[Pipedrive API] Rate limited, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxAttempts})`
-        )
+        // Scope harvested verbatim from the existing `[Pipedrive API]` prefix, per the
+        // bracket-wins rule. Note it carries a space and capitals, unlike every other scope in
+        // the phase — flagged in the summary rather than silently normalised.
+        log.warn("Pipedrive API", "Rate limited, retrying", {
+          delayMs,
+          attempt: attempt + 1,
+          maxAttempts,
+        })
         await new Promise((resolve) => setTimeout(resolve, delayMs))
         continue
       }
