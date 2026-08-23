@@ -73,7 +73,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 38: Bulk Operations** - Multi-select with bulk delete, owner reassignment, and scoped export (completed 2026-08-17; the one remaining human check — dragging a Deals kanban card by its body with a real mouse — is instrument-blocked and carried into Phase 45)
 - [x] **Phase 39: Duplicate Detection & Merge** - Warn on likely duplicates and merge without orphaning children (completed 2026-08-20)
 - [x] **Phase 40: Saved Views & Shared Filters** - Persist, share, default, and export named filter sets (completed 2026-08-22)
-- [x] **Phase 41: Workflow Operator Affordances** - Replay, dry-run, failure alerting, and the single-instance constraint documented (completed 2026-08-22; 15/15 plans, 4 waves)
+- [x] **Phase 41: Workflow Operator Affordances** - Replay, dry-run, failure alerting, and the single-instance constraint documented (completed 2026-08-22; 15/15 plans, 4 waves, verified `passed` — UI witnessed in a real browser, 12/12 at 320px)
 - [ ] **Phase 42: Observability** - Structured logging, opt-in error tracking, and a health endpoint that sees the processors
 - [ ] **Phase 43: Type Safety & Deployment Docs** - Clear the 14 type suppressions and document backup/restore
 - [x] **Phase 44: Custom Field UI Repair** - Restore the ability to add custom fields to Deals, and make the formula display agree with the stored value (completed 2026-08-15)

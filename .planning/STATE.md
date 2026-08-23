@@ -9,7 +9,7 @@ progress:
   total_phases: 14
   completed_phases: 12
   total_plans: 167
-  completed_plans: 166
+  completed_plans: 167
   percent: 86
 ---
 
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 41 executed 2026-08-22 (15/15 plans, 4 waves) — code review and goal
-verification pending. Phases 42 and 43 remain in v1.3, both still `Plans: TBD`.
+**Current focus:** Phase 41 COMPLETE 2026-08-22 (15/15 plans, 4 waves, verified `passed`). Phases 42
+and 43 remain in v1.3, both still `Plans: TBD`, so the next step is planning.
 
 ## Position
 
 Phase: 41 - Workflow Operator Affordances
 Plan: 15 of 15 complete
-Status: Phase 41 EXECUTED — all 15 plans merged; code review and goal verification pending
+Status: Phase 41 COMPLETE — verified `passed`; UI witnessed in a real browser
 Last activity: 2026-08-22
 
 Progress: [██████████] 100%
