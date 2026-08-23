@@ -1,6 +1,5 @@
 import { db } from "@/db"
-import { sql } from "drizzle-orm"
-import { eq } from "drizzle-orm"
+import { sql, and, eq } from "drizzle-orm"
 import { workflowRuns, workflowRunSteps } from "@/db/schema/workflows"
 import { executeRun } from "./engine"
 
@@ -158,41 +157,78 @@ export async function processPendingRuns(): Promise<number> {
  * Queries workflow_run_steps with status "waiting" and resume_at <= now,
  * transitions them to "running", and calls executeRun which picks up
  * from the run's currentNodeId.
+ *
+ * The claim is transactional and the step transition is GUARDED. It was neither, and delay
+ * resume was the one claim path in this file that was not multi-instance safe: the
+ * `SELECT ... FOR UPDATE SKIP LOCKED` below ran through `db.execute` on a transaction-free
+ * postgres-js client (src/db/index.ts:1-13), so its row locks were released at the end of that
+ * statement, and the follow-up step `UPDATE` carried no status predicate. Two instances could
+ * therefore both select the same ready step and both call executeRun, duplicating the run's
+ * remaining steps and every side effect after the delay.
+ *
+ * Both halves are needed and neither is decoration. The transaction makes the SELECT's locks
+ * actually hold until the claims are written; the guard in the write is what a loser can detect.
+ * That is the same atomic-claim protocol claimWorkflowRun (src/lib/triggers/create-run.ts:65-73)
+ * and processPendingRuns already use: whichever side wins the UPDATE owns the step, and the other
+ * sees zero affected rows and backs off.
+ *
+ * executeRun runs OUTSIDE the transaction, after the claims commit. A run's execution can take
+ * seconds and issues its own writes; holding the step locks across it would serialize the whole
+ * table behind one slow workflow.
  */
 export async function processWaitingRuns(): Promise<number> {
-  const readySteps = await db.execute(sql`
-    SELECT wrs.id, wrs.run_id
-    FROM workflow_run_steps wrs
-    WHERE wrs.status = 'waiting'
-      AND wrs.resume_at <= NOW()
-    FOR UPDATE SKIP LOCKED
-  `)
+  const claimedRunIds = await db.transaction(async (tx) => {
+    const readySteps = await tx.execute(sql`
+      SELECT wrs.id, wrs.run_id
+      FROM workflow_run_steps wrs
+      WHERE wrs.status = 'waiting'
+        AND wrs.resume_at <= NOW()
+      FOR UPDATE SKIP LOCKED
+    `)
 
-  if (!readySteps || (readySteps as unknown[]).length === 0) {
-    return 0
-  }
+    if (!readySteps || (readySteps as unknown[]).length === 0) {
+      return [] as string[]
+    }
+
+    const runIds: string[] = []
+
+    for (const step of readySteps as Record<string, unknown>[]) {
+      const stepId = step.id as string
+      const runId = step.run_id as string
+
+      // Transition step to completed (delay elapsed) -- and claim it while doing so. The
+      // `status = 'waiting'` predicate is the claim: exactly one instance can match it.
+      const claimedStep = await tx
+        .update(workflowRunSteps)
+        .set({ status: "completed" as const, completedAt: new Date() })
+        .where(and(eq(workflowRunSteps.id, stepId), eq(workflowRunSteps.status, "waiting")))
+        .returning({ id: workflowRunSteps.id })
+
+      // Zero rows means another instance claimed this step first. Back off from THIS step and
+      // carry on with the rest -- `continue`, never `break`: a lost claim says nothing about the
+      // other elapsed delays in this batch, and breaking would strand them until the next tick.
+      if (!claimedStep || claimedStep.length === 0) {
+        continue
+      }
+
+      // Transition run back to running. Reset started_at: it still holds the
+      // original claim time (pre-delay, possibly hours ago), and the stale-run
+      // reclaim measures the execution lease against started_at -- without the
+      // reset a legitimately resumed run would be reclaimed immediately.
+      await tx
+        .update(workflowRuns)
+        .set({ status: "running" as const, startedAt: new Date() })
+        .where(eq(workflowRuns.id, runId))
+
+      runIds.push(runId)
+    }
+
+    return runIds
+  })
 
   let count = 0
 
-  for (const step of readySteps as Record<string, unknown>[]) {
-    const stepId = step.id as string
-    const runId = step.run_id as string
-
-    // Transition step to completed (delay elapsed)
-    await db
-      .update(workflowRunSteps)
-      .set({ status: "completed" as const, completedAt: new Date() })
-      .where(eq(workflowRunSteps.id, stepId))
-
-    // Transition run back to running. Reset started_at: it still holds the
-    // original claim time (pre-delay, possibly hours ago), and the stale-run
-    // reclaim measures the execution lease against started_at -- without the
-    // reset a legitimately resumed run would be reclaimed immediately.
-    await db
-      .update(workflowRuns)
-      .set({ status: "running" as const, startedAt: new Date() })
-      .where(eq(workflowRuns.id, runId))
-
+  for (const runId of claimedRunIds) {
     try {
       await executeRun(runId)
       count++
