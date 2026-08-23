@@ -15,9 +15,21 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - EMAIL_FROM=${EMAIL_FROM}
       - INTERNAL_SECRET=${INTERNAL_SECRET}
+      # Observability (both optional). These MUST be listed here: this file has no
+      # `env_file:`, so a variable absent from this list never reaches the container.
+      # Without these two entries, LOG_LEVEL=debug in .env would change nothing and
+      # SENTRY_DSN would never be seen — both features would appear to work while
+      # neither functioned, and nothing would fail.
+      - LOG_LEVEL=${LOG_LEVEL}
+      - SENTRY_DSN=${SENTRY_DSN}
     depends_on:
       postgres:
         condition: service_healthy
+    # Deliberately NO health check on `app`: /api/health legitimately returns 503
+    # when a background worker reads stale, and combined with `restart: unless-stopped`
+    # a probe on that endpoint could restart-loop the container — turning an
+    # observability feature into the outage it exists to reveal. Adding one is its
+    # own decision, not this phase's.
     restart: unless-stopped
 
   postgres:
