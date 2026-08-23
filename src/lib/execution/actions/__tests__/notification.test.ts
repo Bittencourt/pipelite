@@ -59,13 +59,18 @@ vi.mock("../../recursion", () => ({
   runWithExecutionDepth: vi.fn((_depth: number, fn: () => unknown) => fn()),
 }))
 
-// Mock notification template
+// Mock notification template.
+// Hoisted to a module-level vi.fn so the reference survives the beforeEach
+// vi.resetModules() — the dry-run cases assert the template builder still ran
+// with the INTERPOLATED message, which needs a stable handle on the mock.
+const mockGetWorkflowNotificationTemplate = vi.fn((message: string) => ({
+  subject: "Workflow Notification",
+  html: `<html>${message}</html>`,
+  text: `Workflow Notification\n\n${message}`,
+}))
 vi.mock("@/lib/email/templates", () => ({
-  getWorkflowNotificationTemplate: vi.fn((message: string) => ({
-    subject: "Workflow Notification",
-    html: `<html>${message}</html>`,
-    text: `Workflow Notification\n\n${message}`,
-  })),
+  getWorkflowNotificationTemplate: (message: string) =>
+    mockGetWorkflowNotificationTemplate(message),
 }))
 
 function makeContext(overrides?: Partial<ExecutionContext>): ExecutionContext {
@@ -175,5 +180,208 @@ describe("Notification action handler", () => {
         "run-1"
       )
     ).rejects.toThrow(/no notification recipients/i)
+  })
+
+  // Amendment A1: notification is the FIFTH side-effecting handler. CONTEXT's
+  // dry-run decision enumerated four. `.env` points SMTP at a real relay on port
+  // 465, NOT mailhog's localhost:1025, so without the gate below a dry run of a
+  // workflow containing a notification node sends real mail from the production
+  // sending domain to real addresses read from the `users` table.
+  describe("dry run (amendment A1 — the fifth side-effecting handler)", () => {
+    it("sends nothing for a THREE-user config, while looking users up for real", async () => {
+      mockWhere.mockResolvedValue([
+        { email: "alice@team.com" },
+        { email: "bob@team.com" },
+        { email: "carol@team.com" },
+      ])
+      mockSafeSend.mockResolvedValue(undefined)
+
+      const result = await executeAction(
+        "notification",
+        {
+          actionType: "notification",
+          userIds: ["user-alice", "user-bob", "user-carol"],
+          message: "Deal {{trigger.data.dealTitle}} created",
+        },
+        makeContext({ _dryRun: true }),
+        "run-dry"
+      )
+
+      // Zero calls asserted for THREE users: a partial gate that skipped only the
+      // first row and mailed the rest would pass a single-user test.
+      expect(mockSafeSend).toHaveBeenCalledTimes(0)
+      // The users SELECT still ran.
+      expect(mockFrom).toHaveBeenCalled()
+      expect(result.output.sent).toBe(false)
+      expect(result.output.simulated).toBe(true)
+      expect(result.output.recipientCount).toBe(3)
+      expect(result.output.recipients).toEqual([
+        "alice@team.com",
+        "bob@team.com",
+        "carol@team.com",
+      ])
+    })
+
+    it("STILL throws \"No notification recipients specified\" for empty userIds", async () => {
+      await expect(
+        executeAction(
+          "notification",
+          { actionType: "notification", userIds: [], message: "Test" },
+          makeContext({ _dryRun: true }),
+          "run-dry"
+        )
+      ).rejects.toThrow("No notification recipients specified")
+    })
+
+    it("STILL throws \"No valid users found for notification\" when the SELECT is empty", async () => {
+      mockWhere.mockResolvedValue([])
+
+      await expect(
+        executeAction(
+          "notification",
+          {
+            actionType: "notification",
+            userIds: ["user-ghost"],
+            message: "Test",
+          },
+          makeContext({ _dryRun: true }),
+          "run-dry"
+        )
+      ).rejects.toThrow("No valid users found for notification")
+    })
+
+    it("still interpolates the message into the template builder", async () => {
+      mockWhere.mockResolvedValue([{ email: "alice@team.com" }])
+      mockSafeSend.mockResolvedValue(undefined)
+
+      await executeAction(
+        "notification",
+        {
+          actionType: "notification",
+          userIds: ["user-alice"],
+          message: "New deal: {{trigger.data.dealTitle}} for {{trigger.data.personName}}",
+        },
+        makeContext({ _dryRun: true }),
+        "run-dry"
+      )
+
+      expect(mockGetWorkflowNotificationTemplate).toHaveBeenCalledWith(
+        "New deal: Big Deal for John"
+      )
+      expect(mockSafeSend).toHaveBeenCalledTimes(0)
+    })
+
+    it("reports REAL recipients: three rows, one with a null email, counts 2", async () => {
+      mockWhere.mockResolvedValue([
+        { email: "alice@team.com" },
+        { email: null },
+        { email: "carol@team.com" },
+      ])
+      mockSafeSend.mockResolvedValue(undefined)
+
+      const result = await executeAction(
+        "notification",
+        {
+          actionType: "notification",
+          userIds: ["user-alice", "user-null", "user-carol"],
+          message: "Test",
+        },
+        makeContext({ _dryRun: true }),
+        "run-dry"
+      )
+
+      // emails.push must stay OUTSIDE the gate — a dry run must report who WOULD
+      // have been notified, and a row with a null email is still excluded.
+      expect(result.output.recipientCount).toBe(2)
+      expect(result.output.recipients).toEqual([
+        "alice@team.com",
+        "carol@team.com",
+      ])
+      expect(mockSafeSend).toHaveBeenCalledTimes(0)
+    })
+
+    it("output key set equals the real output's key set plus exactly `simulated`, and the real half proves the mock is wired", async () => {
+      mockWhere.mockResolvedValue([
+        { email: "alice@team.com" },
+        { email: "bob@team.com" },
+      ])
+      mockSafeSend.mockResolvedValue(undefined)
+
+      const config = {
+        actionType: "notification",
+        userIds: ["user-alice", "user-bob"],
+        message: "Shared config",
+      }
+
+      const dry = await executeAction(
+        "notification",
+        config,
+        makeContext({ _dryRun: true }),
+        "run-dry"
+      )
+      const dryCallCount = mockSafeSend.mock.calls.length
+
+      const real = await executeAction(
+        "notification",
+        config,
+        makeContext(),
+        "run-real"
+      )
+      const realCallCount = mockSafeSend.mock.calls.length - dryCallCount
+
+      // ANTI-VACUITY, load-bearing: both halves observe THE SAME mock. A test where
+      // the mock was never wired would report zero calls under dry run and prove
+      // nothing at all — so the real half must see a NON-zero count on that same mock.
+      expect(
+        dryCallCount,
+        "dry run must not call safeSend (this is the gate under test)"
+      ).toBe(0)
+      expect(
+        realCallCount,
+        "the real run must call the SAME safeSend mock a non-zero number of times — " +
+          "otherwise the dry-run zero-count above is vacuous, because an unwired mock " +
+          "also reports zero"
+      ).toBe(2)
+
+      // Computed, not listed twice: a downstream transform/condition node reads
+      // fields off the previous node's output.
+      const realKeys = Object.keys(real.output).sort()
+      const dryKeys = Object.keys(dry.output).sort()
+      expect(dryKeys).toEqual([...realKeys, "simulated"].sort())
+    })
+
+    it("with _dryRun false, sends once per row with an email and unchanged arguments", async () => {
+      mockWhere.mockResolvedValue([
+        { email: "alice@team.com" },
+        { email: null },
+        { email: "carol@team.com" },
+      ])
+      mockSafeSend.mockResolvedValue(undefined)
+
+      const result = await executeAction(
+        "notification",
+        {
+          actionType: "notification",
+          userIds: ["user-alice", "user-null", "user-carol"],
+          message: "Test",
+        },
+        makeContext({ _dryRun: false }),
+        "run-real"
+      )
+
+      expect(mockSafeSend).toHaveBeenCalledTimes(2)
+      expect(mockSafeSend).toHaveBeenNthCalledWith(
+        1,
+        "alice@team.com",
+        expect.objectContaining({ subject: "Workflow Notification" })
+      )
+      expect(mockSafeSend).toHaveBeenNthCalledWith(
+        2,
+        "carol@team.com",
+        expect.objectContaining({ subject: "Workflow Notification" })
+      )
+      expect(result.output.sent).toBe(true)
+      expect(result.output.simulated).toBeUndefined()
+    })
   })
 })

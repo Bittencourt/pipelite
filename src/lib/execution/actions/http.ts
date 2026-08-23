@@ -82,6 +82,35 @@ async function httpHandler(
     }
   }
 
+  // DRY-RUN GATE — everything above still runs for real: interpolation, the SSRF
+  // check, the GET/HEAD body guard and the auto Content-Type.
+  //
+  // 1. validateUrl is DELIBERATELY above this gate. It performs a DNS resolution
+  //    (ssrf.ts), which is pedantically an outbound packet, but it is a *validation*
+  //    and not the "outgoing request" the locked dry-run copy is about. Dropping it
+  //    would let a dry run pass a URL that a real run rejects — turning the dry-run
+  //    path into an SSRF laundering step that "proves" a blocked host is reachable.
+  //    ssrf.ts treats a DNS failure as an IP literal rather than throwing, so an
+  //    offline environment still dry-runs fine.
+  //
+  // 2. The gate is above the retry loop, NOT inside it. Inside, a node configured
+  //    with retryCount: 5 would sit in the dry-run dialog for ~31 seconds of
+  //    exponential sleep() doing nothing, blowing the dialog's 30-second budget for
+  //    a reason that has nothing to do with the workflow being tested.
+  //
+  // The simulated output carries the same keys as the real one plus `simulated`, so a
+  // downstream transform/condition node reading this output behaves identically.
+  if (context._dryRun) {
+    return {
+      output: {
+        statusCode: 200,
+        headers: {},
+        body: {},
+        simulated: true,
+      },
+    }
+  }
+
   // Retry loop
   let lastError: Error | null = null
 
