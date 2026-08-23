@@ -1,6 +1,8 @@
 import { db } from "@/db"
 import { workflows } from "@/db/schema/workflows"
 import { and, eq, lte } from "drizzle-orm"
+import { log } from "@/lib/log"
+import { recordTick, registerProcessor } from "@/lib/observability/heartbeat"
 import { createWorkflowRun } from "./create-run"
 import { computeNextRun, getScheduleTrigger } from "./schedule-utils"
 import type { TriggerConfig } from "./types"
@@ -15,10 +17,19 @@ const POLL_INTERVAL = 30_000 // 30 seconds between ticks
  * creates pending workflow runs, and computes next execution times.
  *
  * Uses setTimeout chaining (not setInterval) to prevent overlap.
- * Started once on server boot via instrumentation.ts.
+ * Started once on server boot via instrumentation.ts. Whether that actually happened is now
+ * reportable rather than only greppable: `registerProcessor` below puts this worker in the
+ * heartbeat registry that `GET /api/health` reads off a hard-coded roster, so a processor that
+ * never started reads `alive: false` instead of reading as nothing at all.
  */
 export function startScheduleProcessor(): void {
-  console.log("[schedule-processor] Starting with initial delay of 10s")
+  // The delay is a FIELD, not prose: "initial delay of 10s" could not stay true through an edit
+  // of INITIAL_DELAY, and this can.
+  log.info("schedule-processor", "Starting", { initialDelayMs: INITIAL_DELAY })
+  // This module's own constants are passed IN rather than imported OUT by the health route — the
+  // registry is dependency-free so that reading it does not drag `db` and `drizzle` into the route
+  // bundle, and passing them keeps the staleness bound tied to the real cadence.
+  registerProcessor("schedule-processor", POLL_INTERVAL, INITIAL_DELAY)
   scheduleTick(INITIAL_DELAY)
 }
 
@@ -27,11 +38,16 @@ function scheduleTick(delay: number): void {
     try {
       const count = await processScheduledWorkflows()
       if (count > 0) {
-        console.log(`[schedule-processor] Processed ${count} scheduled workflow(s)`)
+        log.info("schedule-processor", "Processed scheduled workflows", { processed: count })
       }
     } catch (error) {
-      console.error("[schedule-processor] Tick error:", error)
+      log.error("schedule-processor", "Tick error", { err: error })
     }
+
+    // OUTSIDE the try, for the same reason as the reschedule below: a tick that ERRORED still ran.
+    // Inside it, a processor failing every tick would read as DEAD at /api/health, so a real
+    // outage and a real bug would produce the same signal.
+    recordTick("schedule-processor")
 
     // Always schedule the next tick
     scheduleTick(POLL_INTERVAL)
@@ -93,10 +109,10 @@ export async function processScheduledWorkflows(): Promise<number> {
       })
       runCreated = true
     } catch (error) {
-      console.error(
-        `[schedule-processor] Failed to create run for workflow ${workflow.id}:`,
-        error
-      )
+      log.error("schedule-processor", "Failed to create run for workflow", {
+        workflowId: workflow.id,
+        err: error,
+      })
     }
 
     // Compute and store next run time -- always, even when run creation failed
@@ -124,10 +140,10 @@ export async function processScheduledWorkflows(): Promise<number> {
             .where(eq(workflows.id, workflow.id))
         }
       } catch (error) {
-        console.error(
-          `[schedule-processor] Failed to update nextRunAt for workflow ${workflow.id}:`,
-          error
-        )
+        log.error("schedule-processor", "Failed to update nextRunAt for workflow", {
+          workflowId: workflow.id,
+          err: error,
+        })
       }
     }
   }
