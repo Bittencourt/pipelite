@@ -3,10 +3,13 @@ import { db } from "@/db"
 import { workflows, workflowRuns, workflowRunSteps } from "@/db/schema/workflows"
 import type { WorkflowRunStepStatus } from "@/db/schema/workflows"
 import { eq, and } from "drizzle-orm"
+import { getTranslations } from "next-intl/server"
 import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
 import { RunStatusBadge } from "../components/run-status-badge"
+import { DryRunBadge } from "../components/dry-run-badge"
 import { formatDuration } from "@/lib/workflows/format"
+import { ReplayRunButton } from "./components/replay-run-button"
 import { RunStepList } from "./components/run-step-list"
 import type { RunStep } from "./components/run-step-list"
 import { RunChangedRecords } from "./components/run-changed-records"
@@ -128,6 +131,15 @@ export default async function RunDetailPage({
     changedRecordsFailed = true
   }
 
+  // Only the strings THIS PHASE authors go through a translator — the replay button's label, the
+  // dry-run badge and the lineage line. UI-SPEC § i18n Scope declares that seam, and
+  // `run-changed-records.tsx:14-19` is the in-tree precedent: the `/workflows` tree is English
+  // literals today, and writing new untranslated English would propagate the debt while
+  // translating the rest of this page is unrelated scope. So es-ES and pt-BR will show a
+  // translated Replay button beside an English "Back to Runs", "Started" and "Duration:". That is
+  // the declared trade, and it is NOT to be "fixed" here.
+  const t = await getTranslations("workflows")
+
   const startedAtFormatted = run.startedAt
     ? new Intl.DateTimeFormat("en-US", {
         dateStyle: "medium",
@@ -144,16 +156,71 @@ export default async function RunDetailPage({
         &larr; Back to Runs
       </Link>
 
+      {/* R-1. TWO CLUSTERS, and `flex-wrap` on both of them, because this row went from two items
+          to four. UI-SPEC's budget is 241px of content on a `container` page (305px client width
+          less 64px of `padding-inline`), and an `<h1>` at `text-2xl font-bold` plus two badges plus
+          a `size="sm"` button do not share that. `justify-between` + `flex-wrap` is the pattern
+          `run-changed-records.tsx:119` already uses for its rows.
+
+          The INNER cluster's `flex-wrap` is not decoration either: cluster A alone is three items,
+          and it deliberately does NOT carry the old `flex items-center gap-3` string. Re-using it
+          would let the R-1 gate's negative pass while the very row it names was still non-wrapping
+          — the "added a wrapper and left the old row in place" defect that negative exists to
+          catch.
+
+          V-41-1: the title + RunStatusBadge cluster is the primary anchor and takes the first line
+          when the row wraps. Replay is SECONDARY and right-aligned — a failed run's *status* is
+          what the operator came to read; replay is what they do next. */}
       <div className="space-y-2">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">
-            Run #{run.id.slice(0, 8)}
-          </h1>
-          <RunStatusBadge status={run.status} />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-bold">
+              Run #{run.id.slice(0, 8)}
+            </h1>
+            <RunStatusBadge status={run.status} />
+            {run.dryRun && (
+              <DryRunBadge />
+            )}
+          </div>
+          {/* WRITTEN IN EXACTLY THIS SHAPE ON PURPOSE. The reshaped G-6 gate reads this site with
+              `enclosingConditional`, which understands only `{<test> && ( … )}` and THROWS on a
+              ternary, on an extracted `const`, or on an early return — and it asserts the test
+              VERBATIM with `toBe`, so no second clause may be OR-ed in. That strictness is the
+              point: an `|| isAdmin` here would render a button `replayWorkflowRun` then refuses
+              (T-41-75). ABSENT, not disabled: a disabled button on every completed run is noise on
+              a page that has no other action. And note `src/lib/workflows/replay.ts` exports no
+              constant for this literal, deliberately — a `REPLAYABLE_RUN_STATUS` would make the
+              scan unsatisfiable. The server action consumes `isRunReplayable` for the same
+              decision, so the two cannot drift. */}
+          {run.status === "failed" && (
+            <ReplayRunButton workflowId={id} runId={run.id} />
+          )}
         </div>
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        {/* R-2 — `flex-wrap` added. This row gains a third item and its two existing ones already
+            measure close to 241px in es-ES. Exactly the defect commit `c082430` fixed on the
+            activities stats row. */}
+        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
           <span>Started {startedAtFormatted}</span>
           <span>Duration: {formatDuration(run.startedAt, run.completedAt)}</span>
+          {/* TERTIARY metadata (V-41-1): below the title cluster, never beside the title. It adds
+              no size or colour class — it inherits `text-sm text-muted-foreground` from the row, so
+              it cannot out-weigh its two siblings. The id is truncated to 8 characters, and the
+              target route scopes its lookup by BOTH ids, so a stale or cross-workflow origin id
+              404s rather than leaking (T-41-77). One direction only: no "replayed as …" reverse
+              link on the origin, which would need a reverse query and a list — a chain can fan
+              out — for no criterion. */}
+          {run.replayedFromRunId && (
+            <span>
+              <Link
+                href={`/workflows/${id}/runs/${run.replayedFromRunId}`}
+                className="underline-offset-4 hover:underline"
+              >
+                {t("replay.lineage", {
+                  runId: run.replayedFromRunId.slice(0, 8),
+                })}
+              </Link>
+            </span>
+          )}
         </div>
       </div>
 
