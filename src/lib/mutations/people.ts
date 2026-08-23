@@ -14,6 +14,7 @@ import {
   ENTITY_NATIVE_ATTRIBUTES,
   CHANGED_FIELDS_CUSTOM_SENTINEL,
 } from "@/lib/formula-recalc"
+import { log } from "@/lib/log"
 
 // ---- Zod Schemas ----
 
@@ -82,9 +83,10 @@ async function stripCallerFormulaKeys(
   try {
     return stripFormulaKeys(values, await loadDefinitions(cache))
   } catch (error) {
-    console.error(
-      "[formula-recalc] failed to load person field definitions for the formula-key strip:",
-      error
+    log.error(
+      "formula-recalc",
+      "failed to load person field definitions for the formula-key strip",
+      { err: error }
     )
     return values
   }
@@ -119,9 +121,10 @@ async function recalcCustomFieldsForEmit(
     // `null` = recalculation could not describe the entity, not "no custom fields".
     return recalced.customFields ?? ((row.customFields ?? {}) as Record<string, unknown>)
   } catch (error) {
-    console.error(
-      "[formula-recalc] person recalculation failed; emitting the pre-recalc blob:",
-      error
+    log.error(
+      "formula-recalc",
+      "person recalculation failed; emitting the pre-recalc blob",
+      { err: error }
     )
     return (row.customFields ?? {}) as Record<string, unknown>
   }
@@ -260,7 +263,7 @@ export async function createPersonMutation(
 
     return { success: true, id: person.id, person }
   } catch (error) {
-    console.error("Failed to create person:", error)
+    log.error("mutations/people", "Failed to create person", { err: error })
     return { success: false, error: "Failed to create person" }
   }
 }
@@ -373,7 +376,7 @@ export async function updatePersonMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to update person:", error)
+    log.error("mutations/people", "Failed to update person", { err: error })
     return { success: false, error: "Failed to update person" }
   }
 }
@@ -439,7 +442,7 @@ export async function updatePersonOwnerMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to reassign person owner:", error)
+    log.error("mutations/people", "Failed to reassign person owner", { err: error })
     return { success: false, error: "Failed to reassign person owner" }
   }
 }
@@ -478,7 +481,7 @@ export async function deletePersonMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to delete person:", error)
+    log.error("mutations/people", "Failed to delete person", { err: error })
     return { success: false, error: "Failed to delete person" }
   }
 }
@@ -533,7 +536,7 @@ export async function restorePersonMutation(
       })
     } catch (error) {
       // D-05: formula machinery never blocks a user's write, and the restore has already landed.
-      console.error("[formula-recalc] person restore recalculation failed:", error)
+      log.error("formula-recalc", "person restore recalculation failed", { err: error })
     }
 
     // A lost audit row must not roll back a restore the user can already see, so this failure is
@@ -547,12 +550,12 @@ export async function restorePersonMutation(
         ...auditActorColumns(actor),
       })
     } catch (error) {
-      console.error("[audit] failed to record person restore:", error)
+      log.error("audit", "failed to record person restore", { err: error })
     }
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to restore person:", error)
+    log.error("mutations/people", "Failed to restore person", { err: error })
     return { success: false, error: "Failed to restore person" }
   }
 }
@@ -646,7 +649,7 @@ export async function purgePersonMutation(
 
     return { success: true, detached }
   } catch (error) {
-    console.error("Failed to purge person:", error)
+    log.error("mutations/people", "Failed to purge person", { err: error })
     return { success: false, error: "Failed to purge person" }
   }
 }
