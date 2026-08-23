@@ -545,7 +545,7 @@ a third party to re-prove it.
 | 3. `docker compose up -d` (env-only, no rebuild) | done |
 | 4. "DSN unset" line disappears | **PASS, and better** — replaced by `{"level":"info","scope":"sentry","msg":"Error tracking enabled"}` |
 | 5. Trigger a genuinely unhandled error | **PASS** — `curl -H 'RSC: 1' -H 'Next-Router-State-Tree: %ZZ-bad' localhost:3001/` → HTTP 500 |
-| 6. Event visible in sentry.io Issues view | **delivery CONFIRMED accepted** (HTTP 200 + event id from their ingest endpoint; no rejection on the app's own events). The final visual confirmation in the Issues view is the user's to make — it needs their login, which the orchestrator does not have. |
+| 6. Event visible in sentry.io Issues view | **PASS — confirmed by the user**, 2026-08-23: "i see the error at sentry dashboard". Delivery had already been shown accepted (HTTP 200 + matching event id from their ingest endpoint, no rejection on the app's own events); this closes the visual leg, which needed their login. |
 | 7. PII scrubbing held | **PASS, non-vacuously** — see below |
 | 8. Remove DSN, return to default | done and verified |
 
@@ -577,14 +577,21 @@ it reads the bytes on the wire rather than what a web UI chooses to render. It a
 re-confirms 42-04's fix: had `cookies: { deny: ["*"] }` survived as RESEARCH specified, the
 `authjs.session-token` canary would have appeared here.
 
-**What remains:** one visual check in the Sentry Issues view, which requires the user's login. Look
-for `Error: The router state header was sent but could not be parsed.` — two occurrences, plus one
-`info`-level probe event tagged `source=pipelite-phase-42-verification`
-(id `e53ac262ea684524a6d1968bb5cea9b8`). Everything mechanically checkable is checked: the ingest
-endpoint returned 200 with a matching event id, the SDK initialised against this exact DSN, the
-errors genuinely occurred, and nothing was rejected.
+**Nothing remains. All eight steps pass.** The user confirmed the visual leg directly — "i see the
+error at sentry dashboard" — so `Error: The router state header was sent but could not be parsed.`
+reached their project's Issues view. The full chain is now observed rather than inferred at every
+link: `SENTRY_DSN` set → SDK initialises (`"msg":"Error tracking enabled"`) → a genuinely unhandled
+server error occurs → Next calls `onRequestError` → `captureRequestError` → outbound HTTP →
+sentry.io accepts (200 + matching event id) → the event renders in the dashboard.
 
-**OBS-02 is met.** Both halves are now evidenced. The negative half — no phone home with
+The one thing NOT re-verified on the real project is PII scrubbing, deliberately: the canary secrets
+were sent only to the local endpoint, where the full envelope was inspected byte-for-byte. Sending
+secret-shaped strings to a third party to re-prove an already-proven property would have been the
+wrong trade. If anyone wants belt-and-braces, the delivered event in the dashboard should show no
+`user` section, no request body, no cookies and no request headers — `request` should hold only
+`method` and `url`.
+
+**OBS-02 is met, fully and by observation.** Both halves are evidenced end to end. The negative half — no phone home with
 `SENTRY_DSN` unset, which is the one that matters for a self-hosted deployment — is fully automated
 across 17 plans and re-verified live in the container. The positive half is proven end to end:
 `onRequestError` → `captureRequestError` → outbound HTTP → accepted by sentry.io, with PII scrubbing
@@ -679,7 +686,7 @@ was already necessary; a second, optional one is not worth the cost to the evide
 | Req | Status | Evidence |
 |---|---|---|
 | **OBS-01** | met | `no-console: error`, 0 lint errors, negative check fires with exit 1; 21/21 container log lines valid JSON with a `scope`; `"err":{}` = 0 with 10 fully-serialized Errors |
-| **OBS-02** | **met, both halves** | negative half fully automated (17 plans); `onRequestError` **proven called by Next** on a real error with correct field selection; edge bundle SDK-free; `SENTRY_DSN` visible and empty when unset. Real-DSN delivery **CONFIRMED** in task 3: the user's own project's ingest returned HTTP 200 with a matching event id, and two genuine app errors transmitted with no rejection |
+| **OBS-02** | **met, both halves, end to end** | negative half fully automated (17 plans); `onRequestError` **proven called by Next** on a real error with correct field selection; edge bundle SDK-free; `SENTRY_DSN` visible and empty when unset. Real-DSN delivery **CONFIRMED** in task 3: the user's own project's ingest returned HTTP 200 with a matching event id, and two genuine app errors transmitted with no rejection |
 | **OBS-03** | **met — first time in production** | freshly built image `c9cd5e47`, `/api/health` 200, `status: "ok"`, 10/10 workers alive, `db.ok` true; Dockerfile postcondition demonstrated firing |
 
 ## Baseline
@@ -749,4 +756,4 @@ above — a synthetic fixture from 42-04, not a leak.
 
 ---
 *Phase: 42-observability*
-*Completed: 2026-08-23 — task 3 checkpoint CONFIRMED: delivery accepted by the user's real sentry.io project (HTTP 200 + event id); PII scrubbing proven non-vacuously on the wire; one visual Issues-view check left to the user*
+*Completed: 2026-08-23 — task 3 checkpoint CONFIRMED in full: all eight steps pass. Delivery accepted by the user's real sentry.io project (HTTP 200 + event id), the event confirmed VISIBLE in their dashboard by the user, and PII scrubbing proven non-vacuously on the wire against live canaries.*
