@@ -69,6 +69,22 @@ export function NotificationForm({ initialPreferences }: NotificationFormProps) 
 
         <div className="flex items-start space-x-3">
           <Checkbox
+            id="workflow-failed"
+            checked={prefs.emailWorkflowFailed}
+            onCheckedChange={() => handleToggle("emailWorkflowFailed")}
+          />
+          <div className="space-y-1">
+            <Label htmlFor="workflow-failed" className="font-medium cursor-pointer">
+              {t("workflowFailed")}
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              {t("workflowFailedDescription")}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start space-x-3">
+          <Checkbox
             id="weekly-digest"
             checked={prefs.emailWeeklyDigest}
             onCheckedChange={() => handleToggle("emailWeeklyDigest")}
