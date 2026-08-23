@@ -32,6 +32,18 @@ RUN npm run build
 # RUN's shell immediately, because more commands follow it.
 # This is a build-time guard; it complements rather than replaces the runtime
 # detection /api/health provides.
+#
+# The isDirectory() branch in the nft walk below is NOT decorative. Adding
+# @sentry/nextjs (phase 42) changed what instrumentation.js.nft.json enumerates:
+# it now lists `../node_modules/import-in-the-middle-<hash>`, which Next emits as a
+# DIRECTORY inside .next/. The original walk assumed every nft entry was a regular
+# file and called copyFileSync unconditionally, so the first directory entry aborted
+# the whole RUN with `EISDIR: illegal operation on a directory, copyfile` — after
+# the postcondition above had already passed. Measured 2026-08-23: `docker compose
+# build` failed at this step on merged master while `npm test` (4524), `tsc` and
+# `eslint` were all green, because nothing in the test suite builds a container.
+# import-in-the-middle is Sentry's ESM loader hook, so this will recur for any
+# future dependency Next chooses to vendor as a directory rather than a file.
 RUN test -f .next/standalone/.next/server/instrumentation.js \
       || cp .next/server/instrumentation.js .next/standalone/.next/server/instrumentation.js; \
     test -f .next/standalone/.next/server/instrumentation.js \
@@ -47,7 +59,11 @@ RUN test -f .next/standalone/.next/server/instrumentation.js \
           const dst = path.join('.next/standalone/.next/server', f); \
           if (fs.existsSync(src) && !fs.existsSync(dst)) { \
             fs.mkdirSync(path.dirname(dst), { recursive: true }); \
-            fs.copyFileSync(src, dst); \
+            if (fs.statSync(src).isDirectory()) { \
+              fs.cpSync(src, dst, { recursive: true }); \
+            } else { \
+              fs.copyFileSync(src, dst); \
+            } \
             console.log('Copied instrumentation dep:', f); \
           } \
         } \
