@@ -554,7 +554,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 42-17-PLAN.md — `instrumentation.ts`: `initSentry` first, `onRequestError` exported, A7 gate comment repaired (OBS-02, OBS-03)
+- [x] 42-17-PLAN.md — `instrumentation.ts`: `initSentry` first, `onRequestError` exported, A7 gate comment repaired (OBS-02, OBS-03)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 

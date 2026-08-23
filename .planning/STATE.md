@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
-status: executing
-last_updated: "2026-08-23T22:07:12.528Z"
+status: "Phase 42 at the 42-18 CHECKPOINT — `autonomous: no`, needs a human decision on SENTRY_DSN"
+last_updated: "2026-08-23T22:28:02.935Z"
 last_activity: 2026-08-23
 progress:
   total_phases: 14
   completed_phases: 12
   total_plans: 184
-  completed_plans: 182
+  completed_plans: 183
   percent: 86
 ---
 
@@ -26,19 +26,19 @@ wave 1 of 4 merged. Phase 43 is still `Plans: TBD`.
 ## Position
 
 Phase: 42 - Observability
-Plan: 16 of 18 complete (waves 1 and 2 COMPLETE; wave 3 = 42-17 next)
-Status: Executing Phase 42 — WAVE 2 COMPLETE. Remaining: 42-17 (wave 3), 42-18 (wave 4, autonomous: no)
+Plan: 17 of 18 complete (waves 1, 2, 3 COMPLETE — only 42-18 remains)
+Status: Phase 42 at the 42-18 CHECKPOINT — `autonomous: no`, needs a human decision on SENTRY_DSN
 Last activity: 2026-08-23
 
 Progress: [██████████] 99%
 
-## ► RESUME HERE — Phase 42, wave 3 (42-17)
+## ► RESUME HERE — Phase 42, wave 4 (42-18) — HUMAN CHECKPOINT
 
 **Command:** `/gsd:execute-phase 42` — it filters on `has_summary`, so 42-01..42-06 are skipped
 automatically. Do NOT re-plan; all 18 plans exist and were verified by gsd-plan-checker.
 
 **Wave map** (plan frontmatter is authoritative): wave 1 = 42-01,02,03 (DONE) · wave 2 =
-42-04..42-16, **ALL DONE** · wave 3 = 42-17 ·
+42-04..42-16, **ALL DONE** · wave 3 = 42-17 **DONE** ·
 wave 4 = 42-18. **42-18 is `autonomous: no`** — a deliberate Sentry-DSN checkpoint.
 
 **Wave 2 is being run in batches of 3-4, not all 13 at once.** This box has 4 CPUs / ~9GB free and
@@ -92,7 +92,21 @@ this number — their deltas are what reconcile.
 
 Thirteen executors ran in isolation and could not see each other's findings. This is the merged set.
 
-#### For 42-17 (`instrumentation.ts`) — four items
+#### For 42-17 — CLOSED, all four items handled. Two outcomes differ from what was written here:
+
+- **It chose `/api/health` over the repaired grep, overriding item 1 below, and was RIGHT.** The
+  plan demanded zero `trash-prune` strings in the file, which is mutually exclusive with item 1's
+  proposed gate. Deciding fact it verified: `heartbeat.ts:100-111`'s `EXPECTED_WORKERS` INCLUDES
+  `trash-prune`, so that pruner has a non-vacuous runtime detector via the endpoint — unlike
+  `dedup-scan-cleanup` and `import-session-cleanup`, which are off the roster and have nothing but
+  their log line. The new comment also records that a boot-line grep is vacuous whatever its string.
+
+- **It fixed the `Dockerfile:24` citation despite the plan AND `42-PATTERNS.md` §5(f) both saying
+  "keep the first four lines verbatim"** — those lines carried a false present-tense claim. Now past
+  tense citing `Dockerfile:35-38` (line 35 = `RUN test -f`, line 38 = `exit 1`). This CLOSES the last
+  open item in `deferred-items.md`.
+
+Original four items, retained for the record:
 
 1. **`instrumentation.ts:40` documents a gate that CANNOT PASS.** Its comment names
    `docker compose logs app | grep -F '[trash-prune] Starting'`; 42-06 retired that string. You own
