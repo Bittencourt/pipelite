@@ -246,6 +246,14 @@ None for this plan. `SENTRY_DSN` is genuinely optional — unset is a supported,
 
 **One caution for 42-18's container check:** every assertion here runs against a mocked SDK in a single vitest module registry. The A2 `globalThis` case is a **proxy** for the four-instance Turbopack hazard and is labelled as such in the test — vitest structurally cannot reproduce a graph split. If Sentry is ever enabled in a real deployment, "an error appears in the Sentry project" is the only assertion that closes that gap.
 
+## Self-Check: PASSED
+
+- `src/lib/observability/sentry.ts` — FOUND
+- `src/lib/observability/sentry.test.ts` — FOUND
+- `.planning/phases/42-observability/42-04-SUMMARY.md` — FOUND
+- Commits `5d958af`, `c3c5e14`, `011c8d0` — all three FOUND in `git log --all`
+- `STATE.md` / `ROADMAP.md` — untouched, as required in worktree mode
+
 ---
 *Phase: 42-observability*
 *Completed: 2026-08-23*
