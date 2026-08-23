@@ -37,11 +37,10 @@ import { revalidatePath } from "next/cache"
 import { auth } from "@/auth"
 import type { EntityType } from "@/db/schema/custom-fields"
 import { runWithActor } from "@/lib/audit/actor-context"
+import { log } from "@/lib/log"
 import { purgeRecordByType, restoreRecordByType } from "@/lib/trash/dispatch"
 import { parseTrashTab, TRASH_TAB_TO_ENTITY, type TrashTab } from "@/lib/trash/entity-types"
 import { countPurgeImpact, findTrashedParents, findTrashedRecord } from "@/lib/trash/queries"
-
-const LOG_PREFIX = "[trash-actions]"
 
 /**
  * Why a record was refused. Five codes, each of which the UI turns into a different sentence:
@@ -266,10 +265,14 @@ export async function restoreWithLinked(
   if (skipped.length > 0 || failed.length > 0) {
     // Identifiers and counts only, never record contents — the rule `formula-recalc.ts:927`
     // established for this codebase (T-37-27).
-    console.error(
-      `${LOG_PREFIX} restoreWithLinked ${entityType} ${recordId}: skipped ${skipped.length} ` +
-        `[${skipped.join(", ")}], failed ${failed.length} [${failed.join(", ")}]`
-    )
+    log.error("trash-actions", "restoreWithLinked partially skipped", {
+      entityType,
+      recordId,
+      skippedCount: skipped.length,
+      skipped: skipped.join(", "),
+      failedCount: failed.length,
+      failed: failed.join(", "),
+    })
   }
 
   if (!outcome.record.success) {

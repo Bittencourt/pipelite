@@ -14,6 +14,7 @@ import { findCertainMatches } from "@/lib/dedup/matching"
 import type { CertainMatch } from "@/lib/dedup/matching"
 import { fetchFilteredData } from "@/lib/export/formatters"
 import type { ExportResult } from "@/lib/export/types"
+import { log } from "@/lib/log"
 import {
   createOrganizationMutation,
   updateOrganizationMutation,
@@ -68,7 +69,9 @@ async function certainMatchesOrNone(
   try {
     return await findCertainMatches(input)
   } catch (error) {
-    console.warn("[dedup] create-time duplicate check failed; creating without a warning:", error)
+    log.warn("dedup", "create-time duplicate check failed; creating without a warning", {
+      err: error,
+    })
     return []
   }
 }
