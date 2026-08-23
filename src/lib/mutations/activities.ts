@@ -7,6 +7,7 @@ import { crmBus } from "@/lib/events"
 import type { CrmEventPayload } from "@/lib/events"
 import { getCurrentActor } from "@/lib/audit/actor-context"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import { log } from "@/lib/log"
 import {
   recalculateFormulas,
   stripFormulaKeys,
@@ -101,7 +102,7 @@ async function recalcCustomFields(
     // row supplied), NOT that the entity has no custom fields. Fall back to the blob we wrote.
     return customFields ?? fallback
   } catch (error) {
-    console.error("[formula-recalc] activity recalculation failed:", error)
+    log.error("formula-recalc", "activity recalculation failed", { err: error })
     return fallback
   }
 }
@@ -194,7 +195,7 @@ export async function createActivityMutation(
 
     return { success: true, id: activity.id, activity }
   } catch (error) {
-    console.error("Failed to create activity:", error)
+    log.error("mutations/activities", "Failed to create activity", { err: error })
     return { success: false, error: "Failed to create activity" }
   }
 }
@@ -318,7 +319,7 @@ export async function updateActivityMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to update activity:", error)
+    log.error("mutations/activities", "Failed to update activity", { err: error })
     return { success: false, error: "Failed to update activity" }
   }
 }
@@ -357,7 +358,7 @@ export async function deleteActivityMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to delete activity:", error)
+    log.error("mutations/activities", "Failed to delete activity", { err: error })
     return { success: false, error: "Failed to delete activity" }
   }
 }
@@ -416,10 +417,10 @@ export async function restoreActivityMutation(
       })
     } catch (error) {
       // D-05: a broken admin-authored formula must never block a user's write.
-      console.error("[formula-recalc] activity restore recalculation failed:", error)
+      log.error("formula-recalc", "activity restore recalculation failed", { err: error })
     }
   } catch (error) {
-    console.error("Failed to restore activity:", error)
+    log.error("mutations/activities", "Failed to restore activity", { err: error })
     return { success: false, error: "Failed to restore activity" }
   }
 
@@ -439,7 +440,7 @@ export async function restoreActivityMutation(
       importSessionId: actor?.importSessionId ?? null,
     })
   } catch (error) {
-    console.error("[audit] failed to record activity restore:", error)
+    log.error("audit", "failed to record activity restore", { err: error })
   }
 
   return { success: true }
@@ -502,7 +503,7 @@ export async function purgeActivityMutation(
 
     return { success: true, detached: 0 }
   } catch (error) {
-    console.error("Failed to purge activity:", error)
+    log.error("mutations/activities", "Failed to purge activity", { err: error })
     return { success: false, error: "Failed to purge activity" }
   }
 }
@@ -570,7 +571,7 @@ export async function updateActivityOwnerMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to reassign activity owner:", error)
+    log.error("mutations/activities", "Failed to reassign activity owner", { err: error })
     return { success: false, error: "Failed to reassign activity owner" }
   }
 }
@@ -628,7 +629,7 @@ export async function toggleActivityCompletionMutation(
 
     return { success: true, completed: newCompletedAt !== null }
   } catch (error) {
-    console.error("Failed to toggle activity completion:", error)
+    log.error("mutations/activities", "Failed to toggle activity completion", { err: error })
     return { success: false, error: "Failed to toggle activity completion" }
   }
 }

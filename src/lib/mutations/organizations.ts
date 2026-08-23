@@ -8,6 +8,7 @@ import type { CrmEventPayload } from "@/lib/events"
 import { getCurrentActor } from "@/lib/audit/actor-context"
 import type { AuditActor } from "@/lib/audit/actor-context"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
+import { log } from "@/lib/log"
 import {
   recalculateFormulas,
   stripFormulaKeys,
@@ -78,9 +79,10 @@ async function stripCallerFormulaKeys(
   try {
     return stripFormulaKeys(values, await loadDefinitions(cache))
   } catch (error) {
-    console.error(
-      "[formula-recalc] failed to load organization field definitions for the formula-key strip:",
-      error
+    log.error(
+      "formula-recalc",
+      "failed to load organization field definitions for the formula-key strip",
+      { err: error }
     )
     return values
   }
@@ -122,9 +124,10 @@ async function recalcCustomFieldsForEmit(
     // `null` = recalculation could not describe the entity, not "no custom fields".
     return recalced.customFields ?? ((row.customFields ?? {}) as Record<string, unknown>)
   } catch (error) {
-    console.error(
-      "[formula-recalc] organization recalculation failed; emitting the pre-recalc blob:",
-      error
+    log.error(
+      "formula-recalc",
+      "organization recalculation failed; emitting the pre-recalc blob",
+      { err: error }
     )
     return (row.customFields ?? {}) as Record<string, unknown>
   }
@@ -252,7 +255,7 @@ export async function createOrganizationMutation(
 
     return { success: true, id: organization.id, organization }
   } catch (error) {
-    console.error("Failed to create organization:", error)
+    log.error("mutations/organizations", "Failed to create organization", { err: error })
     return { success: false, error: "Failed to create organization" }
   }
 }
@@ -341,7 +344,7 @@ export async function updateOrganizationMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to update organization:", error)
+    log.error("mutations/organizations", "Failed to update organization", { err: error })
     return { success: false, error: "Failed to update organization" }
   }
 }
@@ -407,7 +410,7 @@ export async function updateOrganizationOwnerMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to reassign organization owner:", error)
+    log.error("mutations/organizations", "Failed to reassign organization owner", { err: error })
     return { success: false, error: "Failed to reassign organization owner" }
   }
 }
@@ -446,7 +449,7 @@ export async function deleteOrganizationMutation(
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to delete organization:", error)
+    log.error("mutations/organizations", "Failed to delete organization", { err: error })
     return { success: false, error: "Failed to delete organization" }
   }
 }
@@ -505,7 +508,7 @@ export async function restoreOrganizationMutation(
       })
     } catch (error) {
       // D-05: formula machinery never blocks a user's write, and the restore has already landed.
-      console.error("[formula-recalc] organization restore recalculation failed:", error)
+      log.error("formula-recalc", "organization restore recalculation failed", { err: error })
     }
 
     // A lost audit row must not roll back a restore the user can already see, so this failure is
@@ -519,12 +522,12 @@ export async function restoreOrganizationMutation(
         ...auditActorColumns(actor),
       })
     } catch (error) {
-      console.error("[audit] failed to record organization restore:", error)
+      log.error("audit", "failed to record organization restore", { err: error })
     }
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to restore organization:", error)
+    log.error("mutations/organizations", "Failed to restore organization", { err: error })
     return { success: false, error: "Failed to restore organization" }
   }
 }
@@ -642,7 +645,7 @@ export async function purgeOrganizationMutation(
 
     return { success: true, detached }
   } catch (error) {
-    console.error("Failed to purge organization:", error)
+    log.error("mutations/organizations", "Failed to purge organization", { err: error })
     return { success: false, error: "Failed to purge organization" }
   }
 }

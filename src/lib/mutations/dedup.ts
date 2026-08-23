@@ -23,6 +23,7 @@ import {
   ENTITY_NATIVE_ATTRIBUTES,
   FORMULA_EVALUATION_BUDGET,
 } from "@/lib/formula-recalc"
+import { log } from "@/lib/log"
 
 /* -----------------------------------------------------------------------------------------
  * THE MOST DESTRUCTIVE OPERATION IN THE APPLICATION (DEDUP-03, SC-4, SC-5).
@@ -646,7 +647,7 @@ export async function mergeRecordsMutation(input: MergeRecordsInput): Promise<Me
       })
     } catch (error) {
       // D-05: formula machinery never blocks a write, and the merge has already committed.
-      console.error("[dedup-merge] post-merge formula recalculation failed:", error)
+      log.error("dedup-merge", "post-merge formula recalculation failed", { err: error })
     }
 
     // 2. The bus emit for the loser's deletion.
@@ -685,7 +686,7 @@ export async function mergeRecordsMutation(input: MergeRecordsInput): Promise<Me
         timestamp: new Date().toISOString(),
       } satisfies CrmEventPayload)
     } catch (error) {
-      console.error("[dedup-merge] post-merge event emit failed:", error)
+      log.error("dedup-merge", "post-merge event emit failed", { err: error })
     }
 
     return { success: true, movedChildren: outcome.movedChildren, loserName }
@@ -698,7 +699,7 @@ export async function mergeRecordsMutation(input: MergeRecordsInput): Promise<Me
     // reads `duplicate key value violates unique constraint "notes_migration_uniq"` - an index
     // name, a table name and a column set, handed to whoever crafted the request. The real error
     // goes to the server log, where it belongs.
-    console.error("[dedup-merge] merge failed:", error)
+    log.error("dedup-merge", "merge failed", { err: error })
     return { success: false, error: "FAILED" }
   }
 }
@@ -776,10 +777,11 @@ async function recalcReparentedChildren({
   for (const child of children) {
     if (remaining <= 0) {
       // Identifiers and counts only, never row contents or field values (T-34-06).
-      console.warn(
-        `[dedup-merge] formula budget exhausted, refresh truncated: parent=${entityType} ` +
-          `parentId=${survivorId} childrenTotal=${children.length}`
-      )
+      log.warn("dedup-merge", "formula budget exhausted, refresh truncated", {
+        parent: entityType,
+        parentId: survivorId,
+        childrenTotal: children.length,
+      })
       break
     }
     if (!cascadeChildren.has(child.type)) continue
