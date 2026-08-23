@@ -532,9 +532,9 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 42-01-PLAN.md — `src/lib/log.ts`: structured JSON logger with explicit Error serialization and console delegation (OBS-01)
-- [ ] 42-02-PLAN.md — `heartbeat.ts`: globalThis worker registry with the hard-coded EXPECTED_WORKERS roster (OBS-03)
-- [ ] 42-03-PLAN.md — `LOG_LEVEL`/`SENTRY_DSN` env pass-through, `@sentry/nextjs` install, Dockerfile postcondition (OBS-01/02/03)
+- [x] 42-01-PLAN.md — `src/lib/log.ts`: structured JSON logger with explicit Error serialization and console delegation (OBS-01)
+- [x] 42-02-PLAN.md — `heartbeat.ts`: globalThis worker registry with the hard-coded EXPECTED_WORKERS roster (OBS-03)
+- [x] 42-03-PLAN.md — `LOG_LEVEL`/`SENTRY_DSN` env pass-through, `@sentry/nextjs` install, Dockerfile postcondition (OBS-01/02/03)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
