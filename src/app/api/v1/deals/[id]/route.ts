@@ -157,7 +157,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
       return singleResponse(data)
     } catch (error) {
-      console.error("GET /api/v1/deals/[id] failed:", error)
+      log.error("api/v1/deals/[id]", "GET failed", { err: error })
       return Problems.internalError()
     }
   })
@@ -376,7 +376,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
       return singleResponse(serializedDeal)
     } catch (error) {
-      console.error("PUT /api/v1/deals/[id] failed:", error)
+      log.error("api/v1/deals/[id]", "PUT failed", { err: error })
       return Problems.internalError()
     }
   })
@@ -426,7 +426,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
       return noContentResponse()
     } catch (error) {
-      console.error("DELETE /api/v1/deals/[id] failed:", error)
+      log.error("api/v1/deals/[id]", "DELETE failed", { err: error })
       return Problems.internalError()
     }
   })

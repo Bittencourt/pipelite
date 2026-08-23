@@ -5,6 +5,7 @@ import { withApiAuth, type ApiAuthContext } from "@/lib/api/auth"
 import { noContentResponse } from "@/lib/api/response"
 import { Problems } from "@/lib/api/errors"
 import { resolveActorRole } from "@/lib/notes/authorize"
+import { log } from "@/lib/log"
 import type { EntityType } from "@/db/schema/custom-fields"
 import { TRASH_TABS, TRASH_TAB_TO_ENTITY, isTrashEntityType } from "@/lib/trash/entity-types"
 import { findTrashedRecord } from "@/lib/trash/queries"
@@ -129,7 +130,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       return noContentResponse()
     } catch (error) {
-      console.error("POST /api/v1/trash/[type]/[id]/restore failed:", error)
+      log.error("api/v1/trash/[type]/[id]/restore", "POST failed", { err: error })
       return Problems.internalError()
     }
   })

@@ -6,6 +6,7 @@ import { Problems } from "@/lib/api/errors"
 import { serializeWorkflow } from "@/lib/api/serialize"
 import { createWorkflow, listWorkflows } from "@/lib/mutations/workflows"
 import { triggersArraySchema } from "@/lib/triggers/types"
+import { log } from "@/lib/log"
 import { z } from "zod"
 
 const createWorkflowApiSchema = z.object({
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
 
       return paginatedResponse(data, result.total, offset, limit)
     } catch (error) {
-      console.error("GET /api/v1/workflows failed:", error)
+      log.error("api/v1/workflows", "GET failed", { err: error })
       return Problems.internalError()
     }
   })
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest) {
 
       return createdResponse(serializeWorkflow(result.workflow))
     } catch (error) {
-      console.error("POST /api/v1/workflows failed:", error)
+      log.error("api/v1/workflows", "POST failed", { err: error })
       return Problems.internalError()
     }
   })

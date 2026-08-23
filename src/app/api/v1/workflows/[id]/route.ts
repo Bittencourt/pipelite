@@ -5,6 +5,7 @@ import { Problems } from "@/lib/api/errors"
 import { serializeWorkflow } from "@/lib/api/serialize"
 import { getWorkflow, updateWorkflow, deleteWorkflow } from "@/lib/mutations/workflows"
 import { triggersArraySchema } from "@/lib/triggers/types"
+import { log } from "@/lib/log"
 import { z } from "zod"
 
 const updateWorkflowApiSchema = z.object({
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
       return singleResponse(serializeWorkflow(workflow))
     } catch (error) {
-      console.error("GET /api/v1/workflows/[id] failed:", error)
+      log.error("api/v1/workflows/[id]", "GET failed", { err: error })
       return Problems.internalError()
     }
   })
@@ -77,7 +78,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
       return singleResponse(serializeWorkflow(result.workflow))
     } catch (error) {
-      console.error("PUT /api/v1/workflows/[id] failed:", error)
+      log.error("api/v1/workflows/[id]", "PUT failed", { err: error })
       return Problems.internalError()
     }
   })
@@ -102,7 +103,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
       return noContentResponse()
     } catch (error) {
-      console.error("DELETE /api/v1/workflows/[id] failed:", error)
+      log.error("api/v1/workflows/[id]", "DELETE failed", { err: error })
       return Problems.internalError()
     }
   })

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { readFile } from "fs/promises"
 import { join } from "path"
 import { parse } from "yaml"
+import { log } from "@/lib/log"
 
 /**
  * GET /api/v1/docs - OpenAPI specification
@@ -25,7 +26,7 @@ export async function GET() {
       },
     })
   } catch (error) {
-    console.error("Failed to load OpenAPI spec:", error)
+    log.error("api/v1/docs", "Failed to load OpenAPI spec", { err: error })
     return NextResponse.json(
       { error: "OpenAPI specification not available" },
       { status: 500 }
