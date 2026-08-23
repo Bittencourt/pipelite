@@ -1,4 +1,5 @@
 import { createTransport, type Transporter } from "nodemailer"
+import { log } from "@/lib/log"
 
 let transporter: Transporter | null = null
 
@@ -19,7 +20,13 @@ export function getEmailTransporter(): Transporter {
     tls: { rejectUnauthorized: false },
   }
 
-  console.log("[email] Creating transporter with config:", {
+  // These four fields are the WHOLE of what may be logged here, and the list is deliberate —
+  // do not "complete" it by spreading `config`. `config.auth.user` and `config.auth.pass` are
+  // `SMTP_USER` and `SMTP_PASSWORD` read verbatim eight lines above; either one on the log
+  // stream is a credential disclosure (T-42-49). `hasAuth` is the boolean presence check that
+  // answers the only operational question ("did credentials get picked up?") without carrying
+  // the credential itself.
+  log.info("email", "Creating transporter", {
     host: config.host,
     port: config.port,
     secure: config.secure,

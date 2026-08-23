@@ -30,10 +30,14 @@ describe('safeSend', () => {
       text: 'Test',
     })
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('No SMTP_HOST configured'),
-      expect.any(String)
-    )
+    // The structured logger emits exactly ONE argument — a single JSON line — where the old
+    // `console.warn` passed the message and the recipient as two separate arguments. The
+    // single-argument form of `toHaveBeenCalledWith` is therefore part of the assertion: a
+    // second argument here would mean a raw `console.*` call survived the migration.
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('"scope":"email"'))
+    const warnLine = warnSpy.mock.calls[0][0]
+    expect(warnLine).toContain('No SMTP_HOST configured')
+    expect(warnLine).toContain('"to":"test@example.com"')
     expect(mockSendMail).not.toHaveBeenCalled()
     warnSpy.mockRestore()
   })
