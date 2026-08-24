@@ -99,9 +99,7 @@ export function useColumns(): ColumnDef<Organization, unknown>[] {
       header: "",
       cell: ({ row, table }) => {
         const organization = row.original
-        // @ts-expect-error - meta callbacks are passed via table options
         const onEdit = table.options.meta?.onEdit
-        // @ts-expect-error - meta callbacks are passed via table options
         const onDelete = table.options.meta?.onDelete
 
         return (
@@ -201,9 +199,7 @@ export const columns: ColumnDef<Organization, unknown>[] = [
     header: "",
     cell: ({ row, table }) => {
       const organization = row.original
-      // @ts-expect-error - meta callbacks are passed via table options
       const onEdit = table.options.meta?.onEdit
-      // @ts-expect-error - meta callbacks are passed via table options
       const onDelete = table.options.meta?.onDelete
 
       return (

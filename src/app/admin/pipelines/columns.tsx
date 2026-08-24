@@ -89,11 +89,8 @@ export function useColumns(): ColumnDef<Pipeline, unknown>[] {
       header: "",
       cell: ({ row, table }) => {
         const pipeline = row.original
-        // @ts-expect-error - meta callbacks are passed via table options
         const onEdit = table.options.meta?.onEdit
-        // @ts-expect-error - meta callbacks are passed via table options
         const onDelete = table.options.meta?.onDelete
-        // @ts-expect-error - meta callbacks are passed via table options
         const onSetDefault = table.options.meta?.onSetDefault
         const isDefault = pipeline.isDefault === 1
 
@@ -196,11 +193,8 @@ export const columns: ColumnDef<Pipeline, unknown>[] = [
     header: "",
     cell: ({ row, table }) => {
       const pipeline = row.original
-      // @ts-expect-error - meta callbacks are passed via table options
       const onEdit = table.options.meta?.onEdit
-      // @ts-expect-error - meta callbacks are passed via table options
       const onDelete = table.options.meta?.onDelete
-      // @ts-expect-error - meta callbacks are passed via table options
       const onSetDefault = table.options.meta?.onSetDefault
       const isDefault = pipeline.isDefault === 1
 
