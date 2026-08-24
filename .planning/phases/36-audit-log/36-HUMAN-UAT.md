@@ -37,8 +37,21 @@ detail: |
 
 ### 2. Workflow run "Records changed" list — dark mode, 320px, es-ES + pt-BR
 expected: Same three dimensions as above
-result: [pending]
-reason: "NOT CHECKED. This surface was not located in the workflow UI during the 2026-08-18 re-run and no attempt is recorded as a pass. It is the only one of the three surfaces still genuinely unverified — recorded as pending rather than folded into the two that were checked."
+result: closed 2026-08-24 — by automation, not by a manual pass
+reason: >
+  Was NOT CHECKED through 2026-08-18: this surface was not located in the workflow UI during the
+  re-run and no attempt was recorded as a pass. It was the only one of the three surfaces genuinely
+  unverified, and was deliberately recorded as pending rather than folded into the two that were.
+
+  CLOSED 2026-08-24 by `e2e/workflow-run-320.spec.ts` (commit a6000a7) — an automated check covering
+  all three named dimensions in all three locales, light and dark, proven able to fail on each of
+  them by five observed RED runs. Why it was never findable by hand is now understood: the section
+  only renders inside a workflow run that EXISTS, so reaching it manually requires provoking a run;
+  the spec creates one (failed + dry + lineage link, the widest header the page produces) plus two
+  audit_log rows so the list renders instead of the empty box.
+
+  See 36-VERIFICATION.md's human_verification entry for the full evidence, the five RED runs, and the
+  two stated limits (colour-based not pixel-based; the `unavailable` branch unmeasured).
 
 ### 3. /admin/audit retention form — dark mode, 320px, es-ES + pt-BR
 expected: Same three dimensions as above

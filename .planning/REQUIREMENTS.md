@@ -106,15 +106,19 @@ dark mode switchable and surviving a reload, and the deals-kanban drag **convert
 automated test** (`e2e/deals-drag.spec.ts`, driven by trusted `page.mouse.*` input with zero
 `dispatchEvent`/`dragTo`/`dragAndDrop`).
 
-**Four UAT residuals remain open across the milestone.** None blocks a requirement; all four are
-recorded here so the milestone does not close as if they did not exist:
+**Four UAT residuals were open at milestone close. One was closed (#1); three carry forward as
+accepted debt.** None ever blocked a requirement; all four are recorded here so the milestone does not
+close as if they did not exist:
 
-1. **Phase 36 — workflow-run "Records changed" list at 320px / dark mode / es-ES+pt-BR.** Carried
-   forward alone by 36's own re-verification because the 2026-08-18 re-run could not locate the
-   surface. **Verified 2026-08-24 as genuinely NOT covered by Phase 45**: `e2e/viewport-320.spec.ts`
-   exercises `/activities`, `/admin/audit`, `/deals`, `/duplicates`, `/organizations`, `/people`,
-   `/trash` — no workflow route. This is the one residual that is an *uncovered check* rather than a
-   known-and-accepted defect.
+1. ~~**Phase 36 — workflow-run "Records changed" list at 320px / dark mode / es-ES+pt-BR.**~~
+   **CLOSED 2026-08-24** by `e2e/workflow-run-320.spec.ts` (commit `a6000a7`). This was the only
+   residual that was an *uncovered check* rather than a known-and-accepted defect, which is why it was
+   closed before archiving the milestone rather than carried forward. Confirmed first that Phase 45
+   genuinely had not covered it — `e2e/viewport-320.spec.ts` exercises `/activities`, `/admin/audit`,
+   `/deals`, `/duplicates`, `/organizations`, `/people`, `/trash`, with no workflow route. The new
+   spec measures all three named dimensions in all three locales, light and dark, and was proven able
+   to fail on each by five observed RED runs. Two limits stated in `36-VERIFICATION.md`: the dark
+   check is colour-based rather than pixel-based, and the section's `unavailable` branch is unmeasured.
 2. **D-45-04 — swipe-to-dismiss on the admin drawer.** Tested by the user on a real phone and it
    FAILED, but root-caused as not a regression: `src/components/ui/sheet.tsx` wraps Radix `Dialog`,
    which has no gesture layer, and `vaul` is not a dependency. Radix never had this capability.

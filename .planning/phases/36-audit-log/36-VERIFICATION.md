@@ -10,7 +10,40 @@ uat: 36-HUMAN-UAT.md
 human_verification:
   - test: "Workflow run 'Records changed' list: dark mode, 320px viewport, es-ES and pt-BR"
     expected: "Renders correctly in dark mode, at 320px with no overflow/clipping, and in both locales with no missing keys"
-    why_human: "STILL OPEN. The 2026-08-18 re-run covered the other two surfaces of the original bundled item but did not locate this one in the workflow UI, so it is carried forward alone rather than being marked verified by association."
+    why_human: "Was STILL OPEN through 2026-08-18. The re-run covered the other two surfaces of the original bundled item but did not locate this one in the workflow UI, so it was carried forward alone rather than being marked verified by association."
+    result: closed
+    closed: 2026-08-24
+    closed_by: "e2e/workflow-run-320.spec.ts (commit a6000a7)"
+    evidence: >
+      CLOSED BY AUTOMATION, not by a manual pass. The reason it was never located by hand is now
+      understood: the section only renders inside a workflow run that EXISTS, so reaching it manually
+      means provoking a run. The spec creates one — a failed, dry run with a lineage link, which is
+      the widest header this page produces (ReplayRunButton + DryRunBadge + a third metadata item) —
+      plus two audit_log rows so the list renders rather than the empty box.
+
+      All three dimensions the item names are now measured, 3 tests (one per locale) each covering
+      light AND dark: (1) 320px, asserting scrollWidth <= clientWidth with both numbers reported, at
+      the project viewport with the --hide-scrollbars flag live so clientWidth is 305 not 320;
+      (2) es-ES and pt-BR, anchored on audit.run.heading READ FROM src/messages/*.json
+      ("Registros modificados" / "Registros alterados") plus audit.run.untitledRecord as a second
+      locale-dependent anchor; (3) dark mode, asserted on three COMPUTED colours rather than a class
+      name — body background near-black, the list border resolving to the translucent .dark --border
+      token (alpha ~26, not 255), and the record title inverting to light-on-dark.
+
+      PROVEN ABLE TO FAIL — five RED runs observed and restored: a random run id made all three
+      locale anchors report "element(s) not found" (so it is not measuring a 404 or a /login
+      redirect); renaming the locale cookie failed es-ES and pt-BR while en-US correctly PASSED as
+      the fallback; a 900px unwrapped div produced "scrollWidth 933 > clientWidth 305 (overflow
+      628px)"; forcing the list border to rgb(229,231,235) in dark gave "Expected: < 60 / Received:
+      255"; forcing the record title to rgb(39,39,39) gave "Expected: > 128 / Received: 39".
+
+      Colours are read through a 1x1 canvas fill because Chromium serialises these computed values as
+      lab(2.75381 0 0) — a string comparison would be asserting the serialiser, not the colour.
+
+      STATED LIMITS: three computed colours, not pixels — an island whose text and border are
+      tokenised while a background deeper in the subtree is hardcoded would still pass, which needs
+      screenshot comparison and a PNG decoder this repo does not depend on. And the section's
+      `unavailable` (read-threw) branch is not measured.
 resolved_in_uat:
   # The original single item bundled three surfaces behind one checkbox. Split in 36-HUMAN-UAT.md so
   # partial coverage cannot read as full coverage. Two surfaces resolved, one still open above.
@@ -20,7 +53,8 @@ resolved_in_uat:
   - test: "/admin/audit retention form: dark mode, 320px, es-ES and pt-BR"
     result: issue
     evidence: "Locales PASS with full es-ES and pt-BR coverage of the retention copy. 320px FAILS worse than anywhere else measured — 508px in pt-BR and 526px in es-ES against a 305px client width, growing with translated string length, which is precisely the failure mode this item was written to catch. Second cause is this surface's own shell: the admin sidebar rail never collapses at mobile. Separate minor i18n defect: the entire admin sidebar is hardcoded English in both locales."
-dark_mode_premise_invalidated: >
+dark_mode_premise_invalidated_SUPERSEDED_2026_08_24: >   # no longer holds: ThemeProvider IS mounted at src/app/layout.tsx:73 (Phase 45). Retained for history.
+dark_mode_premise_invalidated_original: >
   Every dark-mode clause in this item assumed dark mode is a reachable user state. It is not: no
   ThemeProvider is mounted and no toggle exists anywhere, so <html> never receives the .dark class.
   Forcing the class shows the tokens are correct, which is a weaker claim than the item intended.
