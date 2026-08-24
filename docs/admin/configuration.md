@@ -265,6 +265,37 @@ FILE_STORAGE=local
 
 **For Vercel deployments, you use `s3`** (no persistent local storage)
 
+**Notes:**
+- With `local`, the directory files are written to is set by [`UPLOAD_DIR`](#upload_dir) below
+- Backing up local file storage is a separate step from backing up the database — see
+  [Backup and Restore](./backup-restore.md)
+
+### UPLOAD_DIR
+
+Directory that local file storage writes uploaded files into. Applies when
+[`FILE_STORAGE`](#file_storage) is `local`; ignored entirely when it is `s3`.
+
+**Default:** `/tmp/uploads`
+
+**Example:**
+```bash
+UPLOAD_DIR=/var/lib/pipelite/uploads
+```
+
+**Notes:**
+- **Docker deployments have this fixed to `/app/uploads` by `docker-compose.yml`, and setting it in
+  `.env` has no effect there.** The compose file has no `env_file:` and hardcodes the value, so that
+  it can never disagree with the `uploads_data` volume's mount target — a mismatch between the two
+  would move the write path out from under the mount and silently stop uploads persisting. Changing
+  the path on Docker means editing both lines in `docker-compose.yml`.
+- **Bare-metal and PM2 installs must set this to a persistent path outside `/tmp`.** The default is
+  `/tmp/uploads`, and most distributions clean `/tmp` on a schedule or at reboot — every uploaded file
+  can disappear with no deploy, no restart and no error anywhere.
+- The directory must be writable by the user the application runs as
+- Back it up alongside the database: file custom-field values are rows pointing at files on disk, so
+  restoring one without the other leaves records referencing files that no longer exist. See
+  [Backup and Restore](./backup-restore.md).
+
 ## S3 File Storage Variables
 
 Required when `FILE_STORAGE=s3`:

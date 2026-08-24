@@ -115,7 +115,21 @@ cp .env.example .env
 
 ```bash
 # Required variables (see Configuration Reference for details)
-DATABASE_URL=postgresql://pipelite:yourpassword@db:5432/pipelite
+
+# The host part MUST be the compose service name. docker-compose.yml defines
+# `app`, `postgres` and `mailhog`, so inside the compose network PostgreSQL is
+# reachable as `postgres` — not as `localhost`, and not as any other name.
+DATABASE_URL=postgresql://pipelite:yourpassword@postgres:5432/pipelite
+
+# These three configure the postgres container itself, and docker-compose.yml
+# passes all three through. Without them the database container starts with no
+# user, no password and no database, and the app cannot connect.
+# DATABASE_URL above must AGREE with them: its user, password and database name
+# are these same three values.
+POSTGRES_USER=pipelite
+POSTGRES_PASSWORD=yourpassword
+POSTGRES_DB=pipelite
+
 AUTH_SECRET=your-secret-key-here
 NEXTAUTH_URL=http://localhost:3000
 SMTP_HOST=smtp.example.com
@@ -206,23 +220,49 @@ server {
 
 ### Volume Mounts for Persistence
 
-Ensure data persists across container restarts:
+Two things have to survive a rebuild: the database, and the uploaded files. The shipped
+`docker-compose.yml` already configures both — this is what it contains, and why each line is there.
 
 ```yaml
 # docker-compose.yml
 services:
-  db:
+  app:
+    environment:
+      # MANDATORY alongside the mount below, and not merely tidiness. UPLOAD_DIR
+      # defaults to /tmp/uploads in the application code, and this compose file has
+      # no `env_file:` — so a variable absent from this list never reaches the
+      # container. Without this line the app writes to /tmp inside the container and
+      # the volume below stays empty forever: nothing errors, and every upload is
+      # still destroyed on the next rebuild.
+      # Hardcoded rather than ${UPLOAD_DIR} so it can never disagree with the mount
+      # target on the next line.
+      - UPLOAD_DIR=/app/uploads
+    volumes:
+      - uploads_data:/app/uploads
+
+  postgres:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  app:
-    volumes:
-      - uploads:/app/uploads
-
 volumes:
   postgres_data:
-  uploads:
+  uploads_data:
 ```
+
+The `UPLOAD_DIR` value and the mount target must stay equal. If they diverge, the volume is mounted
+somewhere the application never writes, and uploads silently stop persisting again.
+
+The image pre-creates and `chown`s `/app/uploads` to the container's user (uid 1001) in a build layer
+that still runs as root. That is what makes a fresh named volume writable: Docker copies the image
+directory's ownership onto a new volume, and a volume mounted at a path *absent* from the image is
+created `root:root`, which the app cannot write to — every upload would return 500.
+
+**Bind-mount alternative**, if you want uploads inside an existing host backup sweep: replace the
+mount with `- ./uploads:/app/uploads`, and `chown 1001:1001` that host directory yourself. The named
+volume avoids that step, and is the recommendation.
+
+To back either one up, see **[Backup and Restore](../backup-restore.md)**. Docker names the volume
+`pipelite_uploads_data` — the compose project name prefixes the declaration above.
 
 ### Resource Limits
 
@@ -269,17 +309,14 @@ Two categories of workflow failure also never raise a failure alert — recursio
 
 ### Backup Strategy
 
-1. **Database backups:**
+See **[Backup and Restore](../backup-restore.md)**. It is the single authoritative procedure and
+covers both halves of a backup — the PostgreSQL database and the uploaded files — for Docker and for
+bare metal, with verified commands, the flags a restore needs to be trustworthy, and a scheduling
+example.
 
-```bash
-# Backup database
-docker compose exec db pg_dump -U pipelite pipelite > backup_$(date +%Y%m%d).sql
-
-# Restore database
-cat backup_20260304.sql | docker compose exec -T db psql -U pipelite pipelite
-```
-
-2. **Upload backups:** Sync uploads directory to S3 or backup server
+The commands are deliberately not duplicated here. Two copies drift, and the copy that used to live
+in this section had drifted: it named a service this compose file does not define, so both of its
+commands failed as written.
 
 ## Updating
 

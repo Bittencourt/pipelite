@@ -557,8 +557,8 @@ pm2 logs pipelite
 # Common locations:
 tail -f /var/log/postgresql/postgresql-*.log
 
-# Docker
-docker compose logs db
+# Docker — the service is named `postgres` in docker-compose.yml
+docker compose logs postgres
 ```
 
 ### 3. Review Recent Changes

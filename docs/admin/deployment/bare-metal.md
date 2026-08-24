@@ -192,6 +192,24 @@ EMAIL_FROM=noreply@example.com
 
 > **Note**: See [Configuration Reference](../configuration.md) for complete documentation.
 
+#### File uploads
+
+Set `UPLOAD_DIR` to a persistent directory owned by the user PM2 runs as:
+
+```bash
+UPLOAD_DIR=/var/lib/pipelite/uploads
+```
+
+```bash
+sudo mkdir -p /var/lib/pipelite/uploads
+sudo chown pipelite:pipelite /var/lib/pipelite/uploads
+```
+
+> **Warning**: the application's fallback is `/tmp/uploads`, and most distributions clean `/tmp` on a
+> schedule or at reboot. Leaving `UPLOAD_DIR` unset means a bare-metal install can lose every
+> uploaded file with no deploy, no restart and no error in any log. Back this directory up alongside
+> the database — see [Backup and Restore](../backup-restore.md).
+
 #### Run Migrations
 
 ```bash
@@ -356,7 +374,7 @@ Before going live, verify:
 
 - [ ] **HTTPS enabled**: SSL certificate installed and working
 - [ ] **Firewall configured**: Only ports 22, 80, 443 open
-- [ ] **Backups scheduled**: Database and file backups automated
+- [ ] **Backups scheduled**: Database and file backups automated — follow [Backup and Restore](../backup-restore.md), including its scheduling section, and restore once into a scratch database to prove the backup works
 - [ ] **Monitoring enabled**: PM2 monitoring and health checks active
 - [ ] **Log rotation**: Logs rotating to prevent disk filling
 - [ ] **Security updates**: Automatic security updates enabled
