@@ -7,6 +7,7 @@ import {
   flexRender,
   getCoreRowModel,
   useReactTable,
+  type TableMeta,
 } from "@tanstack/react-table"
 import {
   Table,
@@ -24,6 +25,29 @@ import { DeleteDialog } from "./delete-dialog"
 import { deletePipeline, setDefaultPipeline } from "./actions"
 import { toast } from "sonner"
 import { useDataTableKeyboard } from "@/components/keyboard"
+
+/**
+ * WHAT THIS TABLE PROMISES ITS COLUMNS. A NARROWING of the one shared `TableMeta` declaration in
+ * `src/types/tanstack-table.d.ts` — NOT a second interface. `Pick` selects from that same
+ * declaration, so a member renamed there stops compiling here, which is the whole point.
+ *
+ * WHY REQUIRED-NESS LIVES HERE AND NOT THERE. Every member of the shared declaration is optional
+ * and must stay optional, because it is shared by every table in the app and
+ * `src/app/admin/users/data-table.tsx:41` passes only `{ refresh }` — making `onEdit` required over
+ * there breaks that table, in a file a change to the declaration would never make you open. So the
+ * declaration says what a table MAY pass, and this alias says what THIS table DOES pass.
+ *
+ * `settingDefaultId` IS IN HERE ON PURPOSE, and it is the member most likely to be got wrong: it is
+ * a VALUE (`useState<string | null>(null)` below), not a callback, and the columns file never reads
+ * it. It is listed because it is in the literal, and `Required<>` strips only the `?`, leaving its
+ * `string | null` intact — so `null` stays assignable and the four-member object still compiles.
+ *
+ * MEASURED, NOT ASSUMED: deleting `settingDefaultId` from the literal below yields
+ * `TS2741: Property 'settingDefaultId' is missing`. Plan 43-02 ran exactly that deletion, on this
+ * member specifically because a value nobody reads is the one whose absence nothing else would
+ * notice, and then reverted it.
+ */
+type PipelineTableMeta = Required<Pick<TableMeta<Pipeline>, "onEdit" | "onDelete" | "onSetDefault" | "settingDefaultId">>
 
 interface DataTableProps {
   columns: ColumnDef<Pipeline, unknown>[]
@@ -107,16 +131,24 @@ export function DataTable({ columns, data }: DataTableProps) {
     getId: (pipeline) => pipeline.id,
   })
 
+  /**
+   * Annotated, so the object is checked against the contract in BOTH directions: a missing member is
+   * TS2741 here, a misspelled one is TS2353 against the shared declaration. Handed to the table by
+   * reference below rather than written inline, which is the shape `src/app/trash/trash-table.tsx`
+   * has used since Phase 37 — an inline literal is checked too, but nothing names what it must be.
+   */
+  const meta: PipelineTableMeta = {
+    onEdit: handleEdit,
+    onDelete: handleDeleteClick,
+    onSetDefault: handleSetDefault,
+    settingDefaultId,
+  }
+
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    meta: {
-      onEdit: handleEdit,
-      onDelete: handleDeleteClick,
-      onSetDefault: handleSetDefault,
-      settingDefaultId,
-    },
+    meta,
   })
 
   return (
