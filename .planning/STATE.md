@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
-status: "Phase 42 at the 42-18 CHECKPOINT — `autonomous: no`, needs a human decision on SENTRY_DSN"
-last_updated: "2026-08-23T22:28:02.935Z"
+status: "Phase 42 COMPLETE and verified (3/3). Next: plan Phase 43 — the last phase in v1.3."
+last_updated: "2026-08-24T00:06:11.419Z"
 last_activity: 2026-08-23
 progress:
   total_phases: 14
-  completed_phases: 12
+  completed_phases: 13
   total_plans: 184
-  completed_plans: 183
-  percent: 86
+  completed_plans: 184
+  percent: 93
 ---
 
 # Session State
@@ -26,191 +26,93 @@ wave 1 of 4 merged. Phase 43 is still `Plans: TBD`.
 ## Position
 
 Phase: 42 - Observability
-Plan: 17 of 18 complete (waves 1, 2, 3 COMPLETE — only 42-18 remains)
-Status: Phase 42 at the 42-18 CHECKPOINT — `autonomous: no`, needs a human decision on SENTRY_DSN
+Plan: 18 of 18 COMPLETE — phase 42 verified PASSED (3/3 criteria)
+Status: **Phase 42 COMPLETE and VERIFIED.** Next: Phase 43 (Type Safety & Deployment Docs), which is still `Plans: TBD` and needs planning.
 Last activity: 2026-08-23
 
-Progress: [██████████] 99%
+Progress: [██████████] 100%
 
-## ► RESUME HERE — Phase 42, wave 4 (42-18) — HUMAN CHECKPOINT
+## ► RESUME HERE — Phase 43 needs PLANNING
 
-**Command:** `/gsd:execute-phase 42` — it filters on `has_summary`, so 42-01..42-06 are skipped
-automatically. Do NOT re-plan; all 18 plans exist and were verified by gsd-plan-checker.
+**Command:** `/gsd:plan-phase 43`. Phase 43 (Type Safety & Deployment Docs) is the last phase in
+milestone v1.3 and is still `Plans: TBD`.
 
-**Wave map** (plan frontmatter is authoritative): wave 1 = 42-01,02,03 (DONE) · wave 2 =
-42-04..42-16, **ALL DONE** · wave 3 = 42-17 **DONE** ·
-wave 4 = 42-18. **42-18 is `autonomous: no`** — a deliberate Sentry-DSN checkpoint.
+**Do not be misled by "100%" in the frontmatter.** `gsd-sdk` reports 184/184 plans complete, but that
+is 100% of *planned* plans — Phase 43 has no plans yet, so none of its work is counted in the
+denominator. The milestone is **13 of 14 phases** done, not finished.
 
-**Wave 2 is being run in batches of 3-4, not all 13 at once.** This box has 4 CPUs / ~9GB free and
-13 concurrent executors each running a 4455+ test suite thrashes it. All wave-2 plans depend only on
-wave 1 and own disjoint file sets (verified: 137 distinct files, zero collisions), so batching costs
-nothing semantically. All four batches merged: A = 04,05,06 · B = 07,08,09 · C = 10,11,12 · D = 13,14,15,16.
-13 of 13 plans succeeded, zero failures, zero merge conflicts, zero file collisions.
+Phase 43's ROADMAP entry notes its Phase 38 dependency was **designed out** during Phase 38 planning
+(38-UI-SPEC § Surface 1 put the bulk checkbox column in a shared `src/components/bulk/select-column.tsx`,
+so `organizations/columns.tsx` and `people/columns.tsx` are explicitly NOT edited by Phase 38 and
+POLISH-01's retype has no merge surface with it). The dependency is an ordering preference, not a blocker.
 
-**Baseline at this point:** 4524 passed / 32 skipped + RSC 8/8 · typecheck 0 · lint 0 errors /
-**124** warnings. `@sentry/nextjs` 10.70.0 installed, lockfile committed.
+---
 
-**Lint warning counts are ENVIRONMENT-DEPENDENT: 124 on the main checkout, 122 inside a worktree.**
-Four separate executors measured 122 and each proved it was not their doing. Cause not pinned
-(`next-env.d.ts` is eslint-ignored, so it is not that). Consequence: **gate on errors = 0, never on
-a warning total** — an assertion on "124 warnings" fails spuriously inside a worktree.
+## Phase 42 (Observability) — COMPLETE, VERIFIED PASSED 3/3
 
-**`console.*` census — OBS-01's migration is COMPLETE.** eslint `no-console` over
-`src/**/*.{ts,tsx}` excluding tests reports **4 sites, all of them inside `src/lib/log.ts`** — the
-logger's own intentional console delegations. Every one of the phase's ~273 original call sites is
-migrated. The arithmetic reconciled at every step: 277 → 244 (42-06) → 191 (07/08/09) → 113
-(10/11/12) → 4 (13/14/15/16).
+18 of 18 plans, 4 waves. Verification report: `.planning/phases/42-observability/42-VERIFICATION.md`.
 
-**Baseline is stable, not a lucky run.** Three consecutive full runs on an idle box: 4524 passed /
-32 skipped, RSC 8/8, typecheck 0, lint 0 errors / 124 warnings. Two executors each reported one
-transient single-test failure (42-13 saw 1 in 6 runs; 42-16 saw 4522/2 once) — both were four
-concurrent 4500-test suites contending for 4 CPUs, and both reproduced clean in isolation. Do not
-trust a single red run from inside a parallel wave; re-run it.
+**Final state:** 4524 passed / 32 skipped · RSC 8/8 · typecheck 0 · lint **0 errors** with
+`no-console` now set to `error` · `console.*` in non-test source down to **4**, all of them
+`log.ts`'s own necessary delegations · `/api/health` returns 200 with ten workers `alive: true` in a
+freshly built container.
 
-**Use eslint, not grep, to census.** `grep` and eslint disagree on the absolute count (grep reads
-higher); the deltas agree. Batch A/B executors reported grep-based absolutes that will not match
-this number — their deltas are what reconcile.
+**All three criteria MET, each reproduced independently by the verifier rather than cited:**
+1. Structured, level-controlled logging with zero bare `console.*`. The gate is *enforceable*, proven
+   by injecting a scratch `console.log` and watching lint fail. `LOG_LEVEL` genuinely filters rather
+   than merely being passed through.
+2. Opt-in error tracking, met in BOTH directions by observation. DSN unset → `@sentry/nextjs` is
+   never imported and nothing leaves the deployment. DSN set → the full chain was watched end to end:
+   SDK init → unhandled error → `onRequestError` → `captureRequestError` → outbound HTTP → accepted
+   by sentry.io (200 + matching event id) → **visible in the user's dashboard, confirmed by them**.
+3. `/api/health` reports DB connectivity plus ten workers (not the stale "four processors" wording —
+   `42-CONTEXT.md`'s measured correction supersedes the ROADMAP text). The shipped implementation is
+   roster-based off `EXPECTED_WORKERS`, not registry-iterating; the empty-registry ⇒ 503 proof passes
+   19/19.
 
-**Read before dispatching anyone:** `42-WAVE1-HANDOFF.md`, and `42-CONTEXT.md` § Amendments
-(A1-A9 — A1 and A2 are load-bearing and override the decisions above them).
+### The two findings worth carrying into future phases
 
-### Three things the GSD executor prompt does NOT supply — inject them yourself
+**1. The container gate earned its place, decisively.** Phase 42 had silently broken
+`docker compose build`. Seventeen green plans, 4524 passing tests, zero type errors, zero lint
+errors — and no image could be produced at all. `@sentry/nextjs` added
+`../node_modules/import-in-the-middle-<hash>` to `instrumentation.js.nft.json`; Next emits that entry
+as a **directory**, and 42-03's dep walk called `fs.copyFileSync` on every entry, so the build died
+with `EISDIR` at `Dockerfile:35` *after* the postcondition had already passed. Fixed in 42-18.
+**No test at any level would ever have caught this.** Keep a real container build as a phase gate.
 
-1. **The three bootstrap symlinks** (`node_modules`, `.env`, and `admin.json` inside a REAL
-   `e2e/.auth` directory). A worktree holds only tracked files; without these every verification
-   fails. See the `worktree-bootstrap` memory.
+**2. Vacuous gates were this phase's dominant failure mode — not bugs in the code.** The scope gate
+used throughout the phase `grep -oE 'log\.[a-z]+\("[a-z0-9/\[\]-]+"'` **matches nothing at all**:
+the `\]` closes the bracket expression early, leaving `-]+` as literal regex, so it fails to match
+even `log.error("a"`. It cannot fail, therefore it passes an empty diff. Six executors diagnosed
+symptoms before 42-13 root-caused it. Two sibling gates were similarly broken: 42-11's credential
+grep returned 9 hits that were all its own file paths, and 42-17's count gates over a
+self-documenting file counted prose the plan itself had ordered written.
+**Lesson: a gate that has never been observed to FAIL has not been tested.**
 
-2. **The base-correction check.** Worktrees branch from a stale commit *systematically* — now
-   **17 for 17** across phases 41 and 42 (all three batch-A worktrees were created at `286c470`).
-   Use `git merge --ff-only <base>`, never `git reset --hard`, so concurrent commits survive.
+Also worth remembering: `42-PATTERNS.md` §5(e) is **wrong** — it claims `.catch(log.error)` compiles
+silently; it is a TS2345, proven twice independently. The protection is `log.error` requiring both
+`scope` and `msg`; making `msg` optional would turn three sites into silent bugs.
 
-3. **`npm install` / `npm ci` / `slopcheck install` are forbidden** during a wave — `node_modules`
-   is a shared symlink and an install corrupts sibling executors mid-run. Also forbid `git stash`
-   (`refs/stash` is shared across worktrees).
+### Zero redaction leaks across ~273 migrated sites
 
-### WAVE 2 CARRY-FORWARD — everything 42-17 and 42-18 inherit
+It held because every executor was told the rule lives at the call site (`log.ts` cannot enforce it)
+and was asked to name what was *in scope and deliberately excluded*, not merely what it wrote.
+Notable catches: RESEARCH Pattern 5's `cookies: { deny: ["*"] }` was a **silent no-op** (Sentry's
+filter substring-matches with no glob support) that would have shipped `authjs.session-token` to
+sentry.io behind a deny list that read correctly; two `formula-recalc.ts` sites would have undone
+`sanitizeFormulaError` and restored SQL text to the log line; and a Pipedrive `apiKey` sat two lines
+from a `"use client"` log site, where a token in a browser console is third-party credential
+disclosure.
 
-Thirteen executors ran in isolation and could not see each other's findings. This is the merged set.
+### One open cosmetic decision, deliberately deferred
 
-#### For 42-17 — CLOSED, all four items handled. Two outcomes differ from what was written here:
-
-- **It chose `/api/health` over the repaired grep, overriding item 1 below, and was RIGHT.** The
-  plan demanded zero `trash-prune` strings in the file, which is mutually exclusive with item 1's
-  proposed gate. Deciding fact it verified: `heartbeat.ts:100-111`'s `EXPECTED_WORKERS` INCLUDES
-  `trash-prune`, so that pruner has a non-vacuous runtime detector via the endpoint — unlike
-  `dedup-scan-cleanup` and `import-session-cleanup`, which are off the roster and have nothing but
-  their log line. The new comment also records that a boot-line grep is vacuous whatever its string.
-
-- **It fixed the `Dockerfile:24` citation despite the plan AND `42-PATTERNS.md` §5(f) both saying
-  "keep the first four lines verbatim"** — those lines carried a false present-tense claim. Now past
-  tense citing `Dockerfile:35-38` (line 35 = `RUN test -f`, line 38 = `exit 1`). This CLOSES the last
-  open item in `deferred-items.md`.
-
-Original four items, retained for the record:
-
-1. **`instrumentation.ts:40` documents a gate that CANNOT PASS.** Its comment names
-   `docker compose logs app | grep -F '[trash-prune] Starting'`; 42-06 retired that string. You own
-   this file — fix it. New form: `grep -F '"scope":"trash-prune","msg":"Starting"'`.
-
-2. **`instrumentation.ts:36` cites `Dockerfile:24`**, stale since 42-03 moved the copy block to
-   `Dockerfile:35-38`. This is the LAST open item in `deferred-items.md`; you own it.
-
-3. **Sentry contract from 42-04:** the guard is `export function isNodeRuntime(): boolean` (unset
-   `NEXT_RUNTIME` counts as node) and **both exported sentry functions short-circuit on it
-   internally** — you need no runtime logic of your own. `reportRequestError`'s `context` gained an
-   optional `routerKind` because Sentry's `ErrorContext` requires it; forward `onRequestError`'s
-   third argument untouched.
-
-4. **A9 is already satisfied inside `initSentry()`** — 42-04 wrapped `init()` in try/catch, so a
-   typo'd DSN degrades to "no error tracking" rather than "no processors". Do not remove it.
-
-#### For 42-18 — SIX corrections, every one found by an executor
-
-1. **The scope gate in this phase's acceptance criteria MATCHES NOTHING.** Root-caused by 42-13:
-   in `grep -oE 'log\.[a-z]+\("[a-z0-9/\[\]-]+"'` the `\]` closes the bracket expression early,
-   leaving `-]+` as literal regex. It fails to match even `log.error("a"`. **It cannot fail, so it
-   passes an empty diff** (42-15's phrasing). Every plan that reported this gate green reported a
-   vacuous pass. A *repaired* class still has two residual blind spots: same-line only (misses
-   wrapped calls — 19 of 42-16's 29 sites) and lowercase-only (misses path-derived camelCase
-   scopes). **Use a multi-line matcher with `"[^"]+"`, or `perl -0777`.** 42-14's number: a missing
-   migration and a correct one produce identical empty output under the gate as written.
-
-2. **Pin a test that `log.error` requires BOTH `scope` and `msg`.** That typing is the only thing
-   stopping `.catch(log.error)` from compiling silently at three sites — 42-11 proved it is a
-   TS2345, contradicting `42-PATTERNS.md` §5(e), which claims TypeScript will not stop you.
-   Make `msg` optional and the bug becomes silent. Comment recorded at `api-keys.ts:78-88`.
-
-3. **The `ts` flake class, in BOTH directions.** Every migrated line now carries an ISO `ts` — the
-   only run-varying digits in the line. It contains `"1.5"` ~1 run in 100 and `"111"` ~1 in 1000.
-
-   - *Flaky red:* `not.toContain("<short digits>")` against log output. 42-12 hit it and pinned the
-     clock in two suites without changing an assertion.
-
-   - *Silently green:* `toContain("5")` / `toContain("600")` against log output can now NEVER fail.
-     42-16 found two such suites, one sitting under a comment promising the opposite.
-
-   - **Scope of the sweep (42-15 narrowed it):** only bites when the needle is a short digit string
-     AND the subject is log output. Assertions against a `result` object or a source-file slice are
-     unaffected.
-
-4. **Gate on lint ERRORS (0), never on a warning total.** Warnings read **124** on the main checkout
-   and **122** inside a worktree; four executors each proved independently it was not their doing.
-   Cause unpinned (`next-env.d.ts` is eslint-ignored, so it is not that). An assertion on "124
-   warnings" fails spuriously in a worktree.
-
-5. **A7's new gate strings, verbatim from 42-12** — `log.ts:97` fixes key order, so these are
-   contiguous: liveness `grep -F '"scope":"dedup-scan-cleanup"'`; startup line
-   `grep -F '"scope":"dedup-scan-cleanup","msg":"Starting"'`.
-
-6. **Add a ctx-key collision check** for the four reserved names (`level`/`scope`/`msg`/`ts`), and
-   make it multi-line-aware per item 1. Across all 13 wave-2 plans zero collisions were introduced,
-   so this gate should start green — if it starts red, the checker is wrong, not the code.
-
-#### One open decision, deliberately not made by an executor
-
-`src/lib/import/pipedrive-api-client.ts:42` is `log.warn("Pipedrive API", …)` — the phase's ONLY
-scope containing a space and capital letters, harvested verbatim per the plan's own "reuse the
-existing bracket prefix" rule. Every other scope is lowercase-kebab. Normalizing it is a judgment
-call; 42-16 flagged rather than took it. Decide in 42-18 or defer explicitly.
-
-#### Two stale-document traps that already cost time
-
-- **`deferred-items.md` went stale mid-wave and misled two executors.** 42-12 and 42-13 both
-  reported `trash/prune.ts:14` and `prune.test.ts:132` as open; 42-06 had already fixed both. They
-  read the table instead of the files. The table is now reconciled against merged master, with a
-  dated section at the bottom — but the lesson is to verify against the file.
-
-- **Remaining `Dockerfile:24` / "suppressed failure" mentions in `heartbeat.ts:14`,
-  `scan-cleanup.ts:27` and `scan-cleanup.test.ts:11` are historical narrative** of the 2026-08-08
-  incident, not false current-state claims. Correct as written. Do not "fix" them.
-
-#### Redaction — the phase's real risk, and how it went
-
-Zero leaks across ~273 migrated sites. It held because every executor was told the rule lives at the
-call site (`log.ts` cannot enforce it) and asked to name what was *in scope and excluded*, not just
-what it wrote. Notable saves worth preserving as precedent:
-
-- **42-04:** RESEARCH Pattern 5's `cookies: { deny: ["*"] }` is a SILENT NO-OP — Sentry's filter
-  substring-matches with no glob support, so `authjs.session-token` would have shipped to sentry.io
-  behind a deny list that read correctly. Now `cookies: false`. Its `httpHeaders: { deny: [...] }`
-  does not typecheck either. **Treat every RESEARCH config snippet in this phase as unverified.**
-
-- **42-16:** two `formula-recalc.ts` sites pass a *sanitized* string; the idiomatic `{ err: thrown }`
-  would have restored SQL text and a stack, undoing `sanitizeFormulaError` (T-34-06).
-
-- **42-13:** `redactDbError` emits only `{ code, constraint }` from a driver error whose message
-  embeds the SQL and every bound parameter. All five sites pass its return value; `err: error` → 0.
-
-- **42-14:** a Pipedrive `apiKey` was in scope two lines from a `"use client"` log site — a token in
-  a browser console is third-party credential disclosure.
-
-#### OBS-03 is STILL UNPROVEN in production
-
-Unchanged by 13 green plans. Vitest has one module registry and structurally cannot reproduce the
-four-instance Turbopack split; 42-05's globalThis test is labelled a proxy in three places.
-**42-18's container check is the only real proof.** If the container reports all ten workers
-`alive:false` while processors are visibly logging, that is the split-graph fingerprint, not dead
-workers. All ten roster entries now have a live writer (42-07 closed the last four).
+`src/lib/import/pipedrive-api-client.ts:42` is `log.warn("Pipedrive API", …)` — the only scope in the
+codebase containing a space and capital letters, harvested verbatim per the plan's own "reuse the
+existing bracket prefix" rule. Every other scope is lowercase-kebab. 42-16 flagged rather than took
+it; 42-18 deferred it with a recommendation to normalize to `pipedrive-api`, reasoning that changing
+it would have left the freshly-witnessed container no longer matching HEAD for a cosmetic gain.
+**Recommended: normalize it in Phase 43 or a cleanup pass.** The space is the only genuinely harmful
+property.
 
 ## Performance Metrics
 

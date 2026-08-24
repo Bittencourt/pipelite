@@ -14,7 +14,7 @@ that is now factually **false**:
 | `src/lib/trash/prune.test.ts` | 132 | "`Dockerfile:24` ends in a suppressed failure" | ~~FALSE~~ **CLOSED by 42-06** — comment removed |
 | `src/lib/dedup/scan-cleanup.ts` | 25 | cites `Dockerfile:24` | **CLOSED by 42-12** (A7 repair); remaining mention is historical narrative of the 2026-08-08 incident, correct as written |
 | `src/lib/dedup/scan-cleanup.test.ts` | 9 | cites `Dockerfile:24` | **CLOSED by 42-12** (A7 repair); same — historical narrative |
-| `instrumentation.ts` | 36 | cites `Dockerfile:24` | **OPEN — assigned to 42-17**, which owns this file. Note its line 40 gate comment is ALSO now unpassable: it names `grep -F '[trash-prune] Starting'`, a string 42-06 retired. |
+| `instrumentation.ts` | 36 | cites `Dockerfile:24` | **CLOSED by 42-17.** Both problems fixed: the citation is now `Dockerfile:35-38` in past tense (line 35 = `RUN test -f`, line 38 = `exit 1`), and the line-40 gate — which named the `[trash-prune] Starting` string 42-06 retired — was replaced by `/api/health`, since `EXPECTED_WORKERS` includes `trash-prune`. 42-17 also recorded that a boot-line grep is vacuous whatever its string. |
 
 **Not fixed here, deliberately.** All five files are outside plan 42-03's file ownership
 (`docker-compose.yml`, `.env.example`, `package.json`, `package-lock.json`, `Dockerfile`).
@@ -112,3 +112,16 @@ on disk. 42-18 exempted `.planning/**` from `no-console` for this reason. The di
 contributes 2 non-`no-console` warnings, and **this is the pinned cause of the previously-unexplained
 124-vs-122 lint warning split**: a worktree contains only tracked files, so those two warnings are
 absent there. 124 − 2 = 122. Four executors each proved it was not their doing; this is why.
+
+### Update, 2026-08-23 (after phase verification)
+
+**This table now has ZERO open entries.** The `instrumentation.ts` row above was the last one; it
+was written mid-wave and went stale when 42-17 closed it. The phase verifier caught the
+discrepancy — the code fix was in place and `STATE.md` said closed while this table still read
+"OPEN". Corrected above.
+
+That makes this table stale-then-corrected **three** times in one phase (42-12 and 42-13 were both
+misled by it into reporting already-fixed items as open, and the row above outlived its own fix).
+The lesson for future phases is structural, not clerical: **a deferred-items table maintained by hand
+across parallel waves will go stale, because the plan that closes an item is rarely the plan that
+recorded it.** Verify against the file, not the table.
