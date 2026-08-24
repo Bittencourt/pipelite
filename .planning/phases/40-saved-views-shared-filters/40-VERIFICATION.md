@@ -3,7 +3,7 @@ phase: 40-saved-views-shared-filters
 verified: 2026-08-22T15:22:51Z
 verified_at_commit: c082340
 verdict: achieved_with_qualifications
-status: gaps_found
+status: gaps_closed_2026_08_24   # was gaps_found; see the reconciliation block below
 score: 4/4 success criteria met — 3 unqualified, 1 (criterion 4) met with a deliberate narrowing and an open security regression
 overrides_applied: 0
 re_verification:
@@ -22,6 +22,42 @@ evidence_generated_by_this_verification:
   - "DATABASE_URL=... npx vitest run src/lib/export/formatters-live.test.ts — 23 passed, 1 FAILED. New finding, see G-1."
   - "Read-only psql against the live database — WR-04 re-measured independently, and the activity status partition measured."
   - "docker image inspect pipelite-app — image built 2026-08-22T11:56 and confirmed to contain HEAD's last commit (c082340) by grepping the built chunks."
+# ─────────────────────────────────────────────────────────────────────────────
+# RECONCILIATION, 2026-08-24 — checked during the v1.3 milestone audit, before archiving.
+# All three gaps below are RESOLVED. Verified independently rather than from the summaries:
+#
+#   G-1  live export test — CLOSED. The assertion was updated to the three-way partition
+#        (completed + pending + overdue === total). Re-ran it today against the real database:
+#        24 passed / 24. NOTE the invocation matters — `.env`'s DATABASE_URL is
+#        postgresql://…@postgres:5432 (the Docker-internal hostname), which fails from the host
+#        with `getaddrinfo EAI_AGAIN postgres`. From the host use @localhost:5433.
+#
+#   G-2  views.export.disabledReason — CLOSED by rewording rather than by adding a second string.
+#        It now reads "Add a filter that narrows the results before exporting.", which is accurate
+#        for the pipeline-only case the criterion-4 narrowing exists for. The reported wrong string
+#        ("Choose at least one filter first. An unfiltered export isn't allowed.") is gone.
+#
+#   G-3  the two security findings — CLOSED as tracking. BACKLOG.md:515 carries WR-04 in full,
+#        including that the exposure is UNCHANGED (a non-admin can still export 44,254 of 46,054
+#        organizations, 96.1%, under the 50,000 EXPORT_ROW_CAP). BACKLOG.md:560 carries IN-06,
+#        struck through and marked FIXED 2026-08-22. G-3 asked for them to be *tracked somewhere a
+#        later reader will look*, not fixed — that is satisfied. WR-04 remains a real open exposure.
+#
+# ONE SUB-ITEM OF G-1 REMAINS GENUINELY OPEN, and it is the interesting one:
+#
+#        "Give this file a way to be run that someone actually runs, or it will go red again
+#         silently."
+#
+#        Still true. `src/lib/export/formatters-live.test.ts` is SKIPPED in every normal run — it
+#        reports as 24 skipped inside the 4605-passing suite — and CI never runs it either, because
+#        CI has no DATABASE_URL. So the milestone's headline "4605 passed" says nothing whatsoever
+#        about the export path this file exists to guard. This is the same disease phases 42 and 43
+#        kept finding (a check that cannot fail), in its purest form: a check that never runs at all.
+#        Its own header records that it exists because a wholly-mocked suite once passed a malformed
+#        drizzle fragment in Phase 37 — so the risk it guards is real and has materialised before.
+#        Filed to BACKLOG.md 2026-08-24. NOT fixed here: giving CI a database is an infrastructure
+#        decision, not a drive-by edit on the last day of a milestone.
+# ─────────────────────────────────────────────────────────────────────────────
 gaps:
   - truth: "The phase's only live-database proof of the export path is green"
     status: failed

@@ -512,6 +512,46 @@ it into this file when the phase's other findings did. The phase's verifier caug
 (gap G-3). They are recorded here because a finding that lives only in a phase artifact is a
 finding nobody will read again.
 
+### The live export test guards a path nobody runs (phase 40 G-1, residual sub-item)
+
+**Filed 2026-08-24 during the v1.3 milestone audit.** Priority: medium — it is not a defect today, it
+is the *absence of a signal*.
+
+`src/lib/export/formatters-live.test.ts` is the only live-database proof of the export path. It is
+**skipped in every normal run** (it reports as part of the suite's 24 skipped) and **CI never runs it**,
+because CI has no `DATABASE_URL`. So the milestone's headline "4605 passed" says nothing at all about
+the code this file exists to guard.
+
+This is not hypothetical. The file's own header records why it exists: a wholly-mocked suite once
+passed a malformed drizzle fragment in Phase 37. And it has already gone red silently once — the WR-05
+fix (`7f8982e`) narrowed the `pending` predicate, changed the live count from 4,165 to 14, and broke
+the two-way-partition assertion. The fix note said the file "was not relied on as a gate", which is
+exactly why the breakage went unseen until phase 40's verification found it. Its assertion has since
+been corrected to the three-way partition and it passes 24/24 today, but nothing stops the same thing
+happening again.
+
+**Verified 2026-08-24:** passes 24/24 against the live database. The invocation matters —
+`.env`'s `DATABASE_URL` is `postgresql://…@postgres:5432`, the Docker-internal hostname, which fails
+from the host with `getaddrinfo EAI_AGAIN postgres`. From the host, use `@localhost:5433`:
+
+```bash
+DATABASE_URL="postgresql://<creds>@localhost:5433/pipelite" \
+  npx vitest run src/lib/export/formatters-live.test.ts
+```
+
+**Options, cheapest first:**
+1. A documented npm script (e.g. `npm run test:live`) so the invocation is discoverable rather than
+   folklore. Does not make anyone run it, but removes the "I did not know how" excuse — and would have
+   saved this audit the `EAI_AGAIN` detour.
+2. A CI job with a Postgres service container and a seeded database. Real infrastructure work: the
+   suite asserts against live row counts (79,022 activities), so a seeded CI database would need
+   either different assertions or a restored dump.
+3. Rewrite the assertions to be shape-based rather than count-based, so they can run against any
+   non-empty database. Loses some of the point — the counts are what caught WR-05.
+
+**Deliberately not fixed during phase 43**: giving CI a database is an infrastructure decision, not a
+drive-by edit on the last day of a milestone.
+
 ### Export authorization is materially weaker than before Phase 38's gate (review WR-04)
 
 **Where:** `src/lib/export/view-export-guard.ts`, `src/lib/views/export-action.ts`
