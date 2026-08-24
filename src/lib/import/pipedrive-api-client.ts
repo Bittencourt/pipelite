@@ -36,10 +36,13 @@ async function withRetry<T>(
 
       if (status === 429 && attempt < maxAttempts - 1) {
         const delayMs = Math.pow(2, attempt) * BASE_DELAY_MS
-        // Scope harvested verbatim from the existing `[Pipedrive API]` prefix, per the
-        // bracket-wins rule. Note it carries a space and capitals, unlike every other scope in
-        // the phase — flagged in the summary rather than silently normalised.
-        log.warn("Pipedrive API", "Rate limited, retrying", {
+        // Scope normalised to lowercase-kebab by Phase 43 D-6. It was originally harvested
+        // verbatim from this file's pre-existing `[Pipedrive API]` bracket prefix under Phase 42's
+        // bracket-wins rule, which is where the space and the capitals came from; the space was
+        // the harmful part, because it made this the one scope in the log stream that could not be
+        // grepped as a single token. `src/lib/log-scope-format.test.ts` now holds that shape for
+        // every scope in the codebase, and asserts this one is present by name.
+        log.warn("pipedrive-api", "Rate limited, retrying", {
           delayMs,
           attempt: attempt + 1,
           maxAttempts,
