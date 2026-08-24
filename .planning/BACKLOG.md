@@ -512,6 +512,52 @@ it into this file when the phase's other findings did. The phase's verifier caug
 (gap G-3). They are recorded here because a finding that lives only in a phase artifact is a
 finding nobody will read again.
 
+### Merge never recalculates the SURVIVOR's own formula fields (phases 39 x 34 seam)
+
+**Filed 2026-08-24 by the v1.3 cross-phase integration audit.** Priority: medium, but **dormant
+today** — see below. This defect could not have been caught by either phase's own verification,
+because it lives exactly at their shared seam: phase 34 built formula reactivity, phase 39 built
+merge, and each verified its own half.
+
+**The asymmetry.** An ordinary entity edit always recalculates formulas — `src/lib/mutations/
+organizations.ts` carries a dedicated "Formula recalculation helpers (D-01 / D-03 / D-17 / T-34-04)"
+section and calls `recalculateFormulas` on every save. A **merge** does not. `src/lib/mutations/
+dedup.ts:641` calls only `recalcReparentedChildren` — a documented one-hop refresh for the child rows
+that MOVED from loser to survivor. Nothing recalculates the **survivor itself**, even though a merge
+writes the survivor's field values from the user's merge choices, which is precisely the input a
+formula depends on.
+
+So: edit a field by hand and its dependent formulas update. Take that same field's value from the
+loser during a merge and they do not.
+
+**Why it is dormant, and exactly when it goes live.** Verified against the live database
+2026-08-24:
+
+```
+select count(*) from custom_field_definitions where type='formula';  ->  0
+```
+
+There are no formula field definitions on any entity, so there is currently nothing to be stale. It
+becomes a live data-correctness bug the moment an admin adds a formula field to Organizations or
+People **and** someone merges two records whose inputs to that formula disagree. The survivor then
+carries a formula value computed from its pre-merge inputs, silently, with no error and nothing in
+the audit log to indicate the value is stale.
+
+**Why this was not already tracked.** It is absent from STATE.md's known-limitations list and from
+this backlog. Both phases passed their own verification legitimately — neither was wrong about its
+own scope.
+
+**Fix shape.** After the merge transaction commits, recalculate the survivor the way an ordinary edit
+does, alongside the existing `recalcReparentedChildren` call. Note the constraint the file already
+documents at `dedup.ts:631`: `recalculateFormulas` and its cascade use the module-level `db` and
+cannot be handed a `tx`, so this must run POST-commit, not inside the transaction. The existing
+post-commit block at `dedup.ts:629-650` is the right place, and it already try/catches and logs
+through `log.error("dedup-merge", ...)`.
+
+**Test it can fail:** create a formula field on Organizations, create two orgs whose formula inputs
+differ, merge them taking the loser's input value, and assert the survivor's stored formula value
+matches a fresh computation. Without the fix that assertion should fail.
+
 ### The live export test guards a path nobody runs (phase 40 G-1, residual sub-item)
 
 **Filed 2026-08-24 during the v1.3 milestone audit.** Priority: medium — it is not a defect today, it
