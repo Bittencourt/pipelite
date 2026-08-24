@@ -10,6 +10,7 @@ import {
   getCoreRowModel,
   useReactTable,
   type RowSelectionState,
+  type TableMeta,
 } from "@tanstack/react-table"
 import {
   Table,
@@ -40,6 +41,24 @@ import type { BulkOutcome } from "@/lib/bulk/types"
 import { SavedViewsBar } from "@/components/views/saved-views-bar"
 import { VIEW_ESCAPE_KEY, withViewEscape } from "@/lib/views/url-params"
 import type { SavedViewsBarProps } from "@/lib/views/types"
+
+/**
+ * WHAT THIS TABLE PROMISES ITS COLUMNS. A NARROWING of the one shared `TableMeta` declaration in
+ * `src/types/tanstack-table.d.ts` — NOT a second interface. `Pick` selects from that same
+ * declaration, so a member renamed there stops compiling here, which is the whole point.
+ *
+ * WHY REQUIRED-NESS LIVES HERE AND NOT THERE. Every member of the shared declaration is optional
+ * and must stay optional, because it is shared by every table in the app and
+ * `src/app/admin/users/data-table.tsx:41` passes only `{ refresh }` — making `onEdit` required over
+ * there breaks that table, in a file a change to the declaration would never make you open. So the
+ * declaration says what a table MAY pass, and this alias says what THIS table DOES pass. Optional
+ * members alone would mean a callback renamed in `columns.tsx` still compiles here and this list's
+ * Edit and Delete buttons silently do nothing — in a CRM.
+ *
+ * MEASURED, NOT ASSUMED: plan 43-02 deleted a member from the sibling organizations contract on
+ * purpose and got TS2741 naming both the member and the contract, then reverted it. Same shape here.
+ */
+type PersonTableMeta = Required<Pick<TableMeta<Person>, "refresh" | "onEdit" | "onDelete">>
 
 interface DataTableProps {
   columns: ColumnDef<Person, unknown>[]
@@ -332,6 +351,18 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
     getId: (person) => person.id,
   })
 
+  /**
+   * Annotated, so the object is checked against the contract in BOTH directions: a missing member is
+   * TS2741 here, a misspelled one is TS2353 against the shared declaration. Handed to the table by
+   * reference below rather than written inline, which is the shape `src/app/trash/trash-table.tsx`
+   * has used since Phase 37 — an inline literal is checked too, but nothing names what it must be.
+   */
+  const meta: PersonTableMeta = {
+    refresh: refresh || (() => {}),
+    onEdit: handleEdit,
+    onDelete: handleDeleteClick,
+  }
+
   const table = useReactTable({
     data,
     columns: columnsWithSelect,
@@ -347,11 +378,7 @@ export function DataTable({ columns, data, hasMore = false, search = "", current
     onRowSelectionChange: setRowSelection,
     enableRowSelection: true,
     getCoreRowModel: getCoreRowModel(),
-    meta: {
-      refresh: refresh || (() => {}),
-      onEdit: handleEdit,
-      onDelete: handleDeleteClick,
-    },
+    meta,
   })
 
   return (
