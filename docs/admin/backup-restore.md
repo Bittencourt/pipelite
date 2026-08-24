@@ -175,25 +175,48 @@ sudo chown -R pipelite:pipelite "$UPLOAD_DIR"     # your service user, whatever 
 
 ## 6. Verify the restore
 
-Run these three in this order. The first one leads because it is the check that cannot be wrong.
+Run these three in this order. The **ledger query leads**, because it is the only one of the three
+whose output differs between a good restore and a bad one.
 
 ```bash
-# 1. AUTHORITATIVE. Migrate must find nothing to do. If it wants to apply migrations, your
-#    restore is missing the migration ledger — see the pitfalls table.
-docker compose exec -T app npx drizzle-kit migrate
-
-# 2. The restored database's recorded schema position.
+# 1. AUTHORITATIVE — the migration ledger. This is the check that distinguishes a complete
+#    restore from a broken one, because the NUMBER changes. Expect a count matching your
+#    source database (20 as of this writing) and a plausible timestamp. A count of 0, or a
+#    "relation does not exist" error, means the dump did not include the `drizzle` schema —
+#    see the pitfalls table.
 docker compose exec -T postgres psql -U pipelite -d pipelite -qAt \
   -c "select count(*), max(created_at) from drizzle.__drizzle_migrations;"
 
-# 3. Extensions. Run this BEFORE restoring on managed Postgres, not after.
+# 2. Extensions. Run this BEFORE restoring on managed Postgres, not after.
 docker compose exec -T postgres psql -U pipelite -d pipelite -qAt \
   -c "select name, default_version from pg_available_extensions where name in ('pg_trgm','unaccent');"
+
+# 3. Migration replay — a smoke test, NOT a verdict. Read the warning below before trusting it.
+docker compose exec -T app npx drizzle-kit migrate
 ```
 
-Step 1 is authoritative because the container entrypoint runs `drizzle-kit migrate` unconditionally
-on every start. If the restore was complete, it is a no-op; if the ledger is missing, it will try to
-apply the entire migration history on top of restored data.
+### Why step 3 is not the authoritative check
+
+It is tempting to treat `drizzle-kit migrate` as the verdict, because the container entrypoint runs it
+unconditionally on every start, so a complete restore makes it a no-op. **Do not rely on its output.**
+Measured 2026-08-24 against a correctly restored database:
+
+```
+{ severity: 'NOTICE', code: '42P07',
+  message: 'relation "__drizzle_migrations" already exists, skipping', ... }
+[✓] migrations applied successfully!
+```
+
+Two problems for an operator reading that:
+
+1. **`[✓] migrations applied successfully!` is printed whether it applied 0 migrations or all 20.**
+   The success line is identical in the case you want and the case you fear, so it cannot tell them
+   apart. Only the ledger count in step 1 can.
+2. **The `NOTICE` blocks look like errors and are not.** `relation ... already exists, skipping` is
+   the expected, healthy output on a restored database. Operators routinely mistake this for a failed
+   restore and re-run the whole procedure.
+
+Run step 3 to confirm the app can start, then judge the restore on step 1's number.
 
 To compare the restored database against the source in one number:
 
