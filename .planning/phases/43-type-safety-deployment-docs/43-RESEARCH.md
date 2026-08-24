@@ -1266,7 +1266,15 @@ gate that cannot fail.
 | A4 | Re-restoring without `--clean` cannot duplicate rows | B1 | Measured row count was unchanged (46,054) after a no-`--clean` re-restore, but I did not prove *why* — likely PK conflicts aborting the COPY. Do not claim idempotence for that path in the doc; recommend `--clean` or a fresh database. |
 | A5 | The `.d.ts` augmentation is picked up by the Next.js production build as well as `tsc` | A5 | A type error could surface only in `docker compose build`. Low risk: `next.config.ts` sets no `ignoreBuildErrors`, `tsconfig.json` includes `**/*.ts`, and the builder stage does `COPY . .`. Task 3's rebuild exercises it in practice. |
 
-## Open Questions
+## Open Questions (ALL RESOLVED — see resolutions below, traced into the plans 2026-08-23)
+
+> **Resolution trace**, added by the plan-checker pass:
+> 1. *Retype `useColumns` or delete it?* → **retype, do not delete** — enforced in `43-01`'s
+>    `<scope_boundary>`. Deleting is a scope expansion with no requirement behind it.
+> 2. *Fold `TrashTableMeta` into the shared declaration (Tier 3)?* → **no, Tier 1 only.** `43-01`
+>    records it as a narrowing and leaves both trash files untouched; no Tier-3 task exists.
+> 3. *Add `POSTGRES_*` to `.env.example`?* → **yes** — done in `43-03` task 2, with a gate
+>    asserting every compose `${VAR}` has an `.env.example` key.
 
 1. **Should the dead `useColumns` exports be deleted?**
    - Known: all three are exported and imported nowhere; the rendered tables use the legacy `columns`

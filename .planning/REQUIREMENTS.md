@@ -73,14 +73,29 @@ the motivating evidence stays one hop away.
 
 ### Observability (999.11)
 
-- [ ] **OBS-01**: Application logs are structured and level-controlled, replacing the 108 bare `console.*` calls in non-test source
-- [ ] **OBS-02**: Unhandled server errors are reported to an error tracker, opt-in via env var so the self-hosted default stays no-phone-home
-- [ ] **OBS-03**: `/api/health` reports database connectivity and the liveness of all four background processors, so a dead instrumentation register() is detectable without reading container logs
+- [x] **OBS-01**: Application logs are structured and level-controlled, replacing the 108 bare `console.*` calls in non-test source
+- [x] **OBS-02**: Unhandled server errors are reported to an error tracker, opt-in via env var so the self-hosted default stays no-phone-home
+- [x] **OBS-03**: `/api/health` reports database connectivity and the liveness of all four background processors, so a dead instrumentation register() is detectable without reading container logs
 
 ### Type Safety & Docs (999.12)
 
 - [ ] **POLISH-01**: The codebase has zero `@ts-expect-error` suppressions — a shared typed `TableMeta` interface replaces all 14 in `admin/pipelines/columns.tsx`, `organizations/columns.tsx`, and `people/columns.tsx`
 - [ ] **POLISH-02**: Operator can follow documented backup and restore procedures for a self-hosted deployment
+
+### Note on OBS-01 and OBS-03's wording (added 2026-08-23, after Phase 42 closed)
+
+Both requirement texts above carry pre-implementation estimates that Phase 42 **measured to be
+wrong**. They are left as written for traceability; `42-CONTEXT.md`'s scope correction supersedes them:
+
+- **OBS-01 says "the 108 bare `console.*` calls".** The real figure was **273** in non-test source
+  (277 counting `log.ts`'s own 4 internal delegations). All are migrated; the final non-test count is
+  **4**, all inside `src/lib/log.ts`, and `no-console` is now `error` so a 274th cannot land.
+- **OBS-03 says "all four background processors".** The real surface is **six** long-running
+  processors **plus four** `crmBus` event subscribers — **ten** workers. `/api/health` reports all ten
+  from a hard-coded roster, and a freshly built container was witnessed returning 200 with 10/10
+  `alive: true`.
+
+Verification: `.planning/phases/42-observability/42-VERIFICATION.md` — all three criteria MET.
 
 ### Custom Field UI Repair (999.25, 999.26, 999.27)
 
@@ -151,9 +166,9 @@ Which phases cover which requirements. Populated during roadmap creation (2026-0
 | WFOPS-02 | Phase 41 | Pending |
 | WFOPS-03 | Phase 41 | Pending |
 | WFOPS-04 | Phase 41 | Pending |
-| OBS-01 | Phase 42 | Pending |
-| OBS-02 | Phase 42 | Pending |
-| OBS-03 | Phase 42 | Pending |
+| OBS-01 | Phase 42 | Complete |
+| OBS-02 | Phase 42 | Complete |
+| OBS-03 | Phase 42 | Complete |
 | CFUI-01 | Phase 44 | Complete |
 | CFUI-02 | Phase 44 | Complete |
 | CFUI-03 | Phase 44 | Complete |
