@@ -22,6 +22,27 @@ services:
       # neither functioned, and nothing would fail.
       - LOG_LEVEL=${LOG_LEVEL}
       - SENTRY_DSN=${SENTRY_DSN}
+      # MANDATORY alongside the volume below — load-bearing, not tidiness. UPLOAD_DIR
+      # defaults to /tmp/uploads (src/app/api/upload/route.ts:12) and, per the comment
+      # above, this file has no `env_file:`. So WITHOUT this line the app writes to /tmp
+      # and the uploads_data volume below stays empty forever: a persistence fix that
+      # ships, reviews clean, and does nothing, with nothing erroring anywhere.
+      # Hardcoded rather than ${UPLOAD_DIR} so it can never disagree with the mount
+      # target on the next line — an operator who set UPLOAD_DIR=/srv/files in .env would
+      # otherwise move the write path out from under the mount and silently lose
+      # persistence again. Changing the path means editing both lines, which is honest
+      # and which src/lib/__tests__/compose-uploads-persistence.test.ts enforces by
+      # asserting the two are equal.
+      - UPLOAD_DIR=/app/uploads
+    volumes:
+      # Uploaded files (FILE_STORAGE=local, the default). Without this, uploads live in
+      # the container filesystem and are destroyed by every `docker compose up --build`,
+      # while postgres survives — leaving restored rows pointing at files that no longer
+      # exist. Backup/restore procedure: docs/admin/backup-restore.md.
+      # Alternative for an operator who wants uploads inside an existing host backup
+      # sweep: `- ./uploads:/app/uploads`. That host directory must be chown 1001:1001,
+      # because the container runs as uid 1001; a named volume avoids that entirely.
+      - uploads_data:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,3 +79,4 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:

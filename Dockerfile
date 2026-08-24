@@ -82,6 +82,32 @@ RUN apk add --no-cache openssl
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
+# Pre-create the upload directory so the named volume mounted there is writable.
+#
+# Measured: a fresh named volume mounted at a path ABSENT from the image is created
+# root:root 0755, and this container runs as uid 1001 — `touch: Permission denied`,
+# i.e. every upload would return 500, which is strictly worse than the ephemeral-uploads
+# defect it was meant to fix. Docker copies the image directory's ownership onto a new
+# volume, so creating and chowning it HERE, in a layer still built as root and before
+# `USER nextjs` below, is what makes the volume writable. After `USER nextjs` it cannot
+# run at all. Runner stage only — the builder image is discarded and its ownership never
+# reaches the volume.
+#
+# chown to the USER, not the group: `adduser` above has no `-G nodejs`, so nextjs's
+# primary group is `nogroup` (measured gid=65533) and it is NOT a member of nodejs. A
+# `chown root:nodejs` + `chmod g+w` fix does not work here, and widening the mode to
+# world-writable (0777) is the wrong answer to the resulting EACCES — world-writable
+# upload storage in a CRM is a tampering and disclosure surface, not a permissions
+# convenience. The gate scans this stage as RAW TEXT, comments included, so it is
+# deliberately spelled "0777" above rather than as the literal command form; reword
+# prose on a collision, never relax the assertion.
+#
+# The path must stay equal to UPLOAD_DIR in docker-compose.yml; if they disagree the
+# volume is mounted somewhere the app never writes and persistence silently reverts.
+# src/lib/__tests__/compose-uploads-persistence.test.ts asserts both the equality and
+# that this line precedes `USER nextjs`.
+RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
+
 # Copy standalone output
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
