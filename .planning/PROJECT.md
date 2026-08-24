@@ -8,7 +8,52 @@ A lightweight, self-hostable CRM inspired by Pipedrive with a built-in workflow 
 
 API-complete CRM core that handles fundamentals well — pipelines, orgs, people, deals, activities, and custom fields. Advanced features (email sync, automation, reporting) can be built externally via the API.
 
-## Current Milestone: v1.3 Foundation & CRM Depth
+## Current State: v1.3 SHIPPED (2026-08-24)
+
+**Latest shipped milestone:** v1.3 "Foundation & CRM Depth" — 14 phases (32-45), 190 plans,
+42/42 requirements, 1,274 commits. Archive:
+[v1.3-ROADMAP.md](milestones/v1.3-ROADMAP.md) ·
+[requirements](milestones/v1.3-REQUIREMENTS.md) ·
+[audit](milestones/v1.3-MILESTONE-AUDIT.md) ·
+[integration](milestones/v1.3-INTEGRATION.md)
+
+v1.3 took a CRM that worked and made it one you can operate: history you can read, deletions you can
+undo, duplicates you can merge, filters you can share, workflows you can replay, and failures you can
+actually see. It also made the deployment recoverable — uploads persist in a named volume, and the
+backup/restore runbook's restore was exercised against a real 34 MB dump.
+
+**State at ship:** 4,605 tests passing / 32 skipped · RSC 8/8 · `tsc --noEmit` 0 errors · lint 0
+errors · `@ts-expect-error` down to 2 (both deliberate negative-test assertions) · `/api/health` 200
+with 10/10 background workers alive · CI green on `master`.
+
+## Next Milestone Goals
+
+Not yet defined — run `/gsd:new-milestone` to scope v1.4.
+
+**Seven items carry forward**, all tracked in `BACKLOG.md`, none blocking. Two are worth weighing when
+scoping v1.4 because they are structural rather than cosmetic:
+
+- **Merge does not recalculate the survivor's own formula fields** (phases 39 x 34 seam). Found by
+  v1.3's cross-phase audit — neither phase's own verification could see it. Dormant while zero
+  `type='formula'` definitions exist; a live data-correctness bug the moment one is added.
+- **`formatters-live.test.ts` (24 tests) never runs in CI**, so the export path it guards is
+  structurally unproven by any automated gate. It has already gone red silently once.
+
+The rest: WR-04's export authorization exposure (a non-admin can export 96.1% of organizations under
+the row cap), the trash pruner not deleting uploaded file blobs on purge, and the three UI items
+D-45-02/03/04.
+
+**One process lesson from v1.3 worth carrying into how v1.4 is planned.** Six gates were found that
+*could not fail* — a grep whose malformed bracket class matched nothing, a credential grep matching
+its own file paths, count gates counting prose, a `--build` that hit the layer cache, operator docs
+whose "authoritative" check printed the same line for 0 or 20 migrations, and a suite CI never runs.
+None was a product bug; every one was a bug in the checking. What worked was requiring executors to
+mutate their own gate and watch it go red before trusting it.
+
+<details>
+<summary>v1.3's original milestone brief (as written at kickoff)</summary>
+
+### v1.3 Foundation & CRM Depth
 
 **Goal:** Harden what v1.2 left soft and close the CRM gaps — make regressions unmergeable,
 index the core, fix stale formula data, and add the notes, audit, and operational surfaces a
@@ -35,6 +80,8 @@ verification is untrustworthy until the suite is green.
 - Audit-log retention and pruning — this table grows fastest of anything in the schema, on a
   self-hosted product where nobody may be watching disk
 - Duplicate-detection heuristics — which field combinations constitute a match
+
+</details>
 
 ## Requirements
 

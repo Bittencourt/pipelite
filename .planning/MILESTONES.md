@@ -1,5 +1,40 @@
 # Milestones
 
+## v1.3 Foundation & CRM Depth (Shipped: 2026-08-24)
+
+**Phases completed:** 14 phases (32-45), 190 plans · 1,274 commits · 1,077 files changed
+(+317,433 / −3,377) · 2026-03-28 → 2026-08-24
+
+**Key accomplishments:**
+
+- **The record gained a memory** — field-level audit history with actor kind (user / workflow run / API key / import), a chronological per-record timeline, and append-only attributed notes, all fed by one `crmBus` event spine with four subscribers
+- **Destructive actions became reversible** — soft delete surfaced as a real Trash with restore and an ordered transactional purge, plus a daily pruner and an admin-set retention window
+- **Duplicates stopped being permanent** — detection warns before you create one; merge reparents children inside a transaction and audits both sides rather than orphaning anything
+- **Operators got leverage** — bulk multi-select with delete and owner reassignment, saved and shared named filter sets with CSV/JSON export, and workflow replay + dry-run with failure alerting
+- **Failure became visible** — structured JSON logging replaced ~273 bare `console.*` calls with `no-console` flipped to `error` so a 274th cannot land; opt-in Sentry that phones home to nobody until a DSN is set; and `/api/health` reporting ten workers from a hard-coded roster, so a dead `register()` is visible from the endpoint alone
+- **The deployment became recoverable** — uploads persist in a named volume (proven by losing a file before the fix and surviving a forced container recreate after), and a backup/restore runbook covering Docker and bare metal whose restore was exercised against a real 34 MB dump
+- **Type safety without suppressions** — `@ts-expect-error` went from 14 standing suppressions to 0 in non-test source via a single `TableMeta` module augmentation, with `Required<Pick<>>` consumer contracts so the win was not just relocated into optional members
+
+**State at ship:** 4,605 tests passing / 32 skipped · RSC 8/8 · `tsc --noEmit` 0 errors · lint 0 errors · `/api/health` 200 with 10/10 workers alive · CI green on `master`
+
+**Archive:** [roadmap](milestones/v1.3-ROADMAP.md) · [requirements](milestones/v1.3-REQUIREMENTS.md) · [audit](milestones/v1.3-MILESTONE-AUDIT.md) · [cross-phase integration](milestones/v1.3-INTEGRATION.md)
+
+### Known Gaps
+
+Seven items carried forward, all tracked in `BACKLOG.md`, none blocking. Two found by the closing audit:
+
+1. **Merge does not recalculate the survivor's own formula fields** (phases 39 × 34 seam) — invisible to either phase's own verification. Dormant while zero `type='formula'` definitions exist.
+2. **`formatters-live.test.ts` (24 tests) never runs in CI** — the export path it guards is unproven by any automated gate, and it has already gone red silently once.
+3. WR-04 — a non-admin can export 44,254 of 46,054 organizations (96.1%) under the 50,000 row cap.
+4. The trash pruner never deletes uploaded file blobs on purge (phases 37 × 43).
+5. D-45-04 — swipe-to-dismiss on the admin drawer; a Radix `Dialog` limitation, never worked.
+6. D-45-03 — `/deals` pipeline select label in dark mode; UNCONFIRMED, needs a human look.
+7. D-45-02 — `ShortcutsHint` bar vertical occlusion; predates Phase 45.
+
+### Lesson
+
+Six gates were found that **could not fail** — a grep whose malformed bracket class matched nothing, a credential grep matching its own file paths, count gates counting prose the plan itself ordered written, a `docker compose --build` that hit the layer cache and never recreated the container, operator docs whose "authoritative" check printed the same line for 0 or 20 migrations, and a 24-test suite CI never runs. None was a product bug; every one was a bug in the *checking*. Requiring executors to mutate their own gate and watch it go red found four of the six.
+
 ## v1.2 Workflows (Shipped: 2026-03-28)
 
 **Phases completed:** 8 phases, 26 plans, 52 tasks
