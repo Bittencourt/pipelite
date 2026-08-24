@@ -26,7 +26,7 @@ wave 1 of 4 merged. Phase 43 is still `Plans: TBD`.
 ## Position
 
 Phase: 42 - Observability
-Plan: phase 42 COMPLETE (18/18, verified 3/3) · phase 43 wave 1 of 3 merged (3/6 plans)
+Plan: phase 42 COMPLETE (18/18, verified 3/3) · phase 43 waves 1-2 merged (5/6 plans)
 Status: Executing Phase 43
 Last activity: 2026-08-24
 
