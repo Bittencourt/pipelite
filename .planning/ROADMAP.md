@@ -571,7 +571,23 @@ Plans:
   2. Table meta callbacks across pipelines, organizations, and people columns are typed through one shared `TableMeta` interface
   3. Operator follows documented steps to back up and restore a self-hosted deployment, with the restore exercised at least once against a real dump
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+**Wave 1** *(fully parallel — zero file overlap)*
+
+- [ ] 43-01-PLAN.md — one shared `TableMeta` (module augmentation) plus all 14 suppression deletions, atomically (POLISH-01)
+- [ ] 43-03-PLAN.md — persist uploads: compose volume + `UPLOAD_DIR` + image-layer chown, one commit, gated by a three-file cross-check (POLISH-02)
+- [ ] 43-06-PLAN.md — normalize the `Pipedrive API` log scope to `pipedrive-api` behind a scope-shape gate (OBS-01, D-6)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 43-02-PLAN.md — `Required<Pick<TableMeta<T>, …>>` consumer contracts in the three data-tables, with the TS2741 negative proof (POLISH-01)
+- [ ] 43-04-PLAN.md — `docs/admin/backup-restore.md` runbook, plus repairing every phantom `db` service and `@db:5432` in `docs/` (POLISH-02)
+
+**Wave 3** *(blocked on Wave 2 — runs against the main checkout, not a worktree)*
+
+- [ ] 43-05-PLAN.md — prove it: upload survives `up -d --build` under `/app/uploads`, and a real 34 MB dump restores into `pipelite_restore_drill` (POLISH-02)
 
 ### Phase 44: Custom Field UI Repair
 
