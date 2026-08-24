@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Foundation & CRM Depth
-status: "Phase 42 COMPLETE and verified (3/3). Next: plan Phase 43 — the last phase in v1.3."
-last_updated: "2026-08-24T00:06:11.419Z"
-last_activity: 2026-08-23
+status: executing
+last_updated: "2026-08-24T03:14:05.387Z"
+last_activity: 2026-08-24
 progress:
   total_phases: 14
   completed_phases: 13
-  total_plans: 184
-  completed_plans: 184
+  total_plans: 190
+  completed_plans: 187
   percent: 93
 ---
 
@@ -20,17 +20,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 42 — observability
+**Current focus:** Phase 43 — type-safety-deployment-docs
 wave 1 of 4 merged. Phase 43 is still `Plans: TBD`.
 
 ## Position
 
 Phase: 42 - Observability
-Plan: 18 of 18 COMPLETE — phase 42 verified PASSED (3/3 criteria)
-Status: **Phase 42 COMPLETE and VERIFIED.** Next: Phase 43 (Type Safety & Deployment Docs), which is still `Plans: TBD` and needs planning.
-Last activity: 2026-08-23
+Plan: phase 42 COMPLETE (18/18, verified 3/3) · phase 43 wave 1 of 3 merged (3/6 plans)
+Status: Executing Phase 43
+Last activity: 2026-08-24
 
-Progress: [██████████] 100%
+Progress: [██████████] 98%
 
 ## ► RESUME HERE — Phase 43 needs PLANNING
 
@@ -58,13 +58,16 @@ POLISH-01's retype has no merge surface with it). The dependency is an ordering 
 freshly built container.
 
 **All three criteria MET, each reproduced independently by the verifier rather than cited:**
+
 1. Structured, level-controlled logging with zero bare `console.*`. The gate is *enforceable*, proven
    by injecting a scratch `console.log` and watching lint fail. `LOG_LEVEL` genuinely filters rather
    than merely being passed through.
+
 2. Opt-in error tracking, met in BOTH directions by observation. DSN unset → `@sentry/nextjs` is
    never imported and nothing leaves the deployment. DSN set → the full chain was watched end to end:
    SDK init → unhandled error → `onRequestError` → `captureRequestError` → outbound HTTP → accepted
    by sentry.io (200 + matching event id) → **visible in the user's dashboard, confirmed by them**.
+
 3. `/api/health` reports DB connectivity plus ten workers (not the stale "four processors" wording —
    `42-CONTEXT.md`'s measured correction supersedes the ROADMAP text). The shipped implementation is
    roster-based off `EXPECTED_WORKERS`, not registry-iterating; the empty-registry ⇒ 503 proof passes
