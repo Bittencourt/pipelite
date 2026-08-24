@@ -295,6 +295,14 @@ describe("uploads persistence: the image makes that path writable before droppin
     expect(chownLine).not.toContain("chown root:")
     // World-writable upload storage in a CRM is a tampering and disclosure surface, not a
     // permissions convenience. It is the wrong fix an executor reaches for on EACCES.
+    //
+    // This scan is RAW TEXT over the runner stage, comments INCLUDED, and deliberately so:
+    // there is no Dockerfile comment-stripper in this repo, and for a four-character mode
+    // string the conservative posture is right — a commented-out world-writable chmod is a
+    // patch away from being live. It collided once, with this plan's own Dockerfile prose,
+    // which is why that comment spells the mode "0777" instead. Per the standing house rule
+    // (src/components/bulk/__tests__/select-wiring.test.ts, note (a)): on a collision REWORD
+    // THE PROSE, never weaken the gate.
     expect(stage.lines.join("\n")).not.toContain("chmod 777")
   })
 })
