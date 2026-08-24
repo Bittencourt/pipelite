@@ -67,6 +67,7 @@ Documentation for administrators deploying and managing Pipelite.
 - **[Pipeline Setup](./admin/pipeline-setup.md)** — Creating and configuring pipelines
 - **[Custom Fields](./admin/custom-fields.md)** — Managing custom field definitions
 - **[Import & Export](./admin/import-export.md)** — Data management
+- **[Backup & Restore](./admin/backup-restore.md)** — Database and file backup procedures
 - **[Troubleshooting](./admin/troubleshooting.md)** — Common issues and solutions
 
 ### Developer Documentation
