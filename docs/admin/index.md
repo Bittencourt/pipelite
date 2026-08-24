@@ -48,6 +48,7 @@ Choose your deployment method based on your infrastructure preferences:
 - **[Pipeline Setup](./pipeline-setup.md)** - Configure deal pipelines and stages
 - **[Custom Fields](./custom-fields.md)** - Extend entities with custom data
 - **[Import/Export](./import-export.md)** - Migrate data in and out
+- **[Backup & Restore](./backup-restore.md)** - Back up and restore the database and uploaded files
 
 ### Troubleshooting
 

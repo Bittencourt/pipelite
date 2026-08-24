@@ -35,6 +35,14 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# Database and upload backups. docs/admin/backup-restore.md tells the operator to run
+# `pg_dump -Fc` and `tar czf` from the repository directory, so a ~34 MB UNENCRYPTED copy
+# of every record in the CRM — contacts, deal values, notes, API keys — lands here by
+# design. These two entries block the obvious next mistake rather than merely discouraging
+# it. Store backups off the app host; never commit one.
+*.dump
+pipelite-uploads-*.tar.gz
+
 # vercel
 .vercel
 
