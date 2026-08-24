@@ -79,8 +79,49 @@ the motivating evidence stays one hop away.
 
 ### Type Safety & Docs (999.12)
 
-- [ ] **POLISH-01**: The codebase has zero `@ts-expect-error` suppressions — a shared typed `TableMeta` interface replaces all 14 in `admin/pipelines/columns.tsx`, `organizations/columns.tsx`, and `people/columns.tsx`
-- [ ] **POLISH-02**: Operator can follow documented backup and restore procedures for a self-hosted deployment
+- [x] **POLISH-01**: The codebase has zero `@ts-expect-error` suppressions — a shared typed `TableMeta` interface replaces all 14 in `admin/pipelines/columns.tsx`, `organizations/columns.tsx`, and `people/columns.tsx`
+- [x] **POLISH-02**: Operator can follow documented backup and restore procedures for a self-hosted deployment
+
+### Coverage-table reconciliation, 2026-08-24 (closing v1.3)
+
+Eighteen rows still read `Pending` while every one of the 14 phases was complete on disk with a
+verification report. All eighteen were **bookkeeping lag**, not unmet work — the same lag that left
+OBS-01/02/03 open after Phase 42. Resolved as follows, after reading each phase's verification rather
+than trusting the table:
+
+| Requirements | Phase | Verification status | Resolution |
+|---|---|---|---|
+| NOTE-01..03 | 35 | `passed` | **Complete** |
+| TRASH-01..03 | 37 | `passed` | **Complete** |
+| WFOPS-01..04 | 41 | `passed` | **Complete** |
+| AUDIT-01..04 | 36 | `gaps_found` | **Complete\*** — see below |
+| BULK-01..04 | 38 | `gaps_found` | **Complete\*** — see below |
+
+**\* Why phases 36 and 38 count as complete despite `gaps_found`.** Both scored **5/5 on their
+success criteria**; the `gaps_found` status was raised by *UAT* items, not unmet criteria. Those items
+were the explicit remit of **Phase 45** ("Close the five app-wide defects the Phase 36-38 browser UAT
+surfaced"), which verified `passed` 5/5 on 2026-08-19 — after 36's and 38's reports were written on
+2026-08-16/17. Phase 45 closed them with real evidence: 320px across 6 routes x 3 locales (23/23),
+dark mode switchable and surviving a reload, and the deals-kanban drag **converted into a genuine
+automated test** (`e2e/deals-drag.spec.ts`, driven by trusted `page.mouse.*` input with zero
+`dispatchEvent`/`dragTo`/`dragAndDrop`).
+
+**Four UAT residuals remain open across the milestone.** None blocks a requirement; all four are
+recorded here so the milestone does not close as if they did not exist:
+
+1. **Phase 36 — workflow-run "Records changed" list at 320px / dark mode / es-ES+pt-BR.** Carried
+   forward alone by 36's own re-verification because the 2026-08-18 re-run could not locate the
+   surface. **Verified 2026-08-24 as genuinely NOT covered by Phase 45**: `e2e/viewport-320.spec.ts`
+   exercises `/activities`, `/admin/audit`, `/deals`, `/duplicates`, `/organizations`, `/people`,
+   `/trash` — no workflow route. This is the one residual that is an *uncovered check* rather than a
+   known-and-accepted defect.
+2. **D-45-04 — swipe-to-dismiss on the admin drawer.** Tested by the user on a real phone and it
+   FAILED, but root-caused as not a regression: `src/components/ui/sheet.tsx` wraps Radix `Dialog`,
+   which has no gesture layer, and `vaul` is not a dependency. Radix never had this capability.
+3. **D-45-03 (F-2) — `/deals` pipeline select possibly rendering an empty label in dark mode.**
+   Explicitly **UNCONFIRMED** — recorded by the finding team as neither broken nor fine.
+4. **D-45-02 (F-1) — the fixed `ShortcutsHint` bar occluding controls vertically.** Predates Phase 45,
+   outside SC-1's horizontal-overflow scope, deferred deliberately.
 
 ### Note on OBS-01 and OBS-03's wording (added 2026-08-23, after Phase 42 closed)
 
@@ -142,30 +183,30 @@ Which phases cover which requirements. Populated during roadmap creation (2026-0
 | PERF-02 | Phase 33 | Complete |
 | FORMULA-01 | Phase 34 | Complete |
 | FORMULA-02 | Phase 34 | Complete |
-| NOTE-01 | Phase 35 | Pending |
-| NOTE-02 | Phase 35 | Pending |
-| NOTE-03 | Phase 35 | Pending |
-| AUDIT-01 | Phase 36 | Pending |
-| AUDIT-02 | Phase 36 | Pending |
-| AUDIT-03 | Phase 36 | Pending |
-| AUDIT-04 | Phase 36 | Pending |
-| BULK-01 | Phase 38 | Pending |
-| BULK-02 | Phase 38 | Pending |
-| BULK-03 | Phase 38 | Pending |
-| BULK-04 | Phase 38 | Pending |
+| NOTE-01 | Phase 35 | Complete |
+| NOTE-02 | Phase 35 | Complete |
+| NOTE-03 | Phase 35 | Complete |
+| AUDIT-01 | Phase 36 | Complete\* |
+| AUDIT-02 | Phase 36 | Complete\* |
+| AUDIT-03 | Phase 36 | Complete\* |
+| AUDIT-04 | Phase 36 | Complete\* |
+| BULK-01 | Phase 38 | Complete\* |
+| BULK-02 | Phase 38 | Complete\* |
+| BULK-03 | Phase 38 | Complete\* |
+| BULK-04 | Phase 38 | Complete\* |
 | DEDUP-01 | Phase 39 | Complete |
 | DEDUP-02 | Phase 39 | Complete |
 | DEDUP-03 | Phase 39 | Complete |
 | VIEW-01 | Phase 40 | Complete |
 | VIEW-02 | Phase 40 | Complete |
 | VIEW-03 | Phase 40 | Complete |
-| TRASH-01 | Phase 37 | Pending |
-| TRASH-02 | Phase 37 | Pending |
-| TRASH-03 | Phase 37 | Pending |
-| WFOPS-01 | Phase 41 | Pending |
-| WFOPS-02 | Phase 41 | Pending |
-| WFOPS-03 | Phase 41 | Pending |
-| WFOPS-04 | Phase 41 | Pending |
+| TRASH-01 | Phase 37 | Complete |
+| TRASH-02 | Phase 37 | Complete |
+| TRASH-03 | Phase 37 | Complete |
+| WFOPS-01 | Phase 41 | Complete |
+| WFOPS-02 | Phase 41 | Complete |
+| WFOPS-03 | Phase 41 | Complete |
+| WFOPS-04 | Phase 41 | Complete |
 | OBS-01 | Phase 42 | Complete |
 | OBS-02 | Phase 42 | Complete |
 | OBS-03 | Phase 42 | Complete |
@@ -174,8 +215,8 @@ Which phases cover which requirements. Populated during roadmap creation (2026-0
 | CFUI-03 | Phase 44 | Complete |
 | CFUI-04 | Phase 44 | Complete |
 | CFUI-05 | Phase 44 | Complete |
-| POLISH-01 | Phase 43 | Pending |
-| POLISH-02 | Phase 43 | Pending |
+| POLISH-01 | Phase 43 | Complete |
+| POLISH-02 | Phase 43 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 37 total

@@ -75,7 +75,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 40: Saved Views & Shared Filters** - Persist, share, default, and export named filter sets (completed 2026-08-22)
 - [x] **Phase 41: Workflow Operator Affordances** - Replay, dry-run, failure alerting, and the single-instance constraint documented (completed 2026-08-22; 15/15 plans, 4 waves, verified `passed` — UI witnessed in a real browser, 12/12 at 320px)
 - [x] **Phase 42: Observability** - Structured logging, opt-in error tracking, and a health endpoint that sees the processors (completed 2026-08-23; 18/18 plans, 4 waves, verified `passed` 3/3 — ~273 `console.*` sites migrated leaving only `log.ts`'s own 4 delegations, `no-console` flipped to `error`, `/api/health` witnessed in a freshly built container with 10/10 workers alive, and a real Sentry event delivered end to end with PII scrubbing proven on the wire. The container gate caught that `docker compose build` was silently broken behind 17 green plans.)
-- [ ] **Phase 43: Type Safety & Deployment Docs** - Clear the 14 type suppressions and document backup/restore
+- [x] **Phase 43: Type Safety & Deployment Docs** - Clear the 14 type suppressions and document backup/restore (completed 2026-08-24; 6/6 plans, 3 waves, verified `passed` 3/3 — `TableMeta` augmented via `declare module` with all 14 suppressions deleted atomically and `Required<Pick<>>` consumer contracts proven by TS2741; uploads now genuinely persist, demonstrated by losing a file pre-fix and surviving a forced container recreate post-fix; and a real 34MB dump restored into a scratch database with row-count parity across 37 tables. Repaired five operator-facing doc defects including a setup-blocking `@db:5432`.)
 - [x] **Phase 44: Custom Field UI Repair** - Restore the ability to add custom fields to Deals, and make the formula display agree with the stored value (completed 2026-08-15)
 - [x] **Phase 45: Cross-Cutting UI Repair and UAT Closure** - Close the five app-wide defects the Phase 36-38 browser UAT surfaced: mobile overflow, unreachable dark mode, untranslated shells, a lying failure panel, and the one drag check no tool can drive (completed 2026-08-18; 11/11 plans, 5/5 criteria, e2e 23/23 — swipe-to-dismiss on the admin drawer deferred as D-45-04, a capability Radix Dialog never had)
 
@@ -576,18 +576,18 @@ Plans:
 Plans:
 **Wave 1** *(fully parallel — zero file overlap)*
 
-- [ ] 43-01-PLAN.md — one shared `TableMeta` (module augmentation) plus all 14 suppression deletions, atomically (POLISH-01)
-- [ ] 43-03-PLAN.md — persist uploads: compose volume + `UPLOAD_DIR` + image-layer chown, one commit, gated by a three-file cross-check (POLISH-02)
-- [ ] 43-06-PLAN.md — normalize the `Pipedrive API` log scope to `pipedrive-api` behind a scope-shape gate (OBS-01, D-6)
+- [x] 43-01-PLAN.md — one shared `TableMeta` (module augmentation) plus all 14 suppression deletions, atomically (POLISH-01)
+- [x] 43-03-PLAN.md — persist uploads: compose volume + `UPLOAD_DIR` + image-layer chown, one commit, gated by a three-file cross-check (POLISH-02)
+- [x] 43-06-PLAN.md — normalize the `Pipedrive API` log scope to `pipedrive-api` behind a scope-shape gate (OBS-01, D-6)
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 43-02-PLAN.md — `Required<Pick<TableMeta<T>, …>>` consumer contracts in the three data-tables, with the TS2741 negative proof (POLISH-01)
-- [ ] 43-04-PLAN.md — `docs/admin/backup-restore.md` runbook, plus repairing every phantom `db` service and `@db:5432` in `docs/` (POLISH-02)
+- [x] 43-02-PLAN.md — `Required<Pick<TableMeta<T>, …>>` consumer contracts in the three data-tables, with the TS2741 negative proof (POLISH-01)
+- [x] 43-04-PLAN.md — `docs/admin/backup-restore.md` runbook, plus repairing every phantom `db` service and `@db:5432` in `docs/` (POLISH-02)
 
 **Wave 3** *(blocked on Wave 2 — runs against the main checkout, not a worktree)*
 
-- [ ] 43-05-PLAN.md — prove it: upload survives `up -d --build` under `/app/uploads`, and a real 34 MB dump restores into `pipelite_restore_drill` (POLISH-02)
+- [x] 43-05-PLAN.md — prove it: upload survives `up -d --build` under `/app/uploads`, and a real 34 MB dump restores into `pipelite_restore_drill` (POLISH-02)
 
 ### Phase 44: Custom Field UI Repair
 
