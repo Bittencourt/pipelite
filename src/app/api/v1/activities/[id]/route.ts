@@ -101,6 +101,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return Problems.notFound("Activity")
     }
 
+    // Verify ownership
+    if (activity.ownerId !== ctx.userId) {
+      return Problems.forbidden()
+    }
+
     const serialized: Record<string, unknown> = serializeActivity(activity)
 
     if (expand.has("type") && activity.type) {
@@ -146,6 +151,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return Problems.notFound("Activity")
     }
 
+    // Verify ownership. Placed BEFORE the body parse below, so a foreign caller's payload is never
+    // even read — matching pipelines/[id]/route.ts, where the same guard precedes the JSON parse.
+    if (existingActivity.ownerId !== ctx.userId) {
+      return Problems.forbidden()
+    }
+
     let body: unknown
     try {
       body = await req.json()
@@ -165,6 +176,22 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const updates = parsed.data
+
+    // `owner_id` decides all future authorization on this row, so a caller handing it to somebody
+    // else is an elevation-of-privilege write, not a field update. It is REJECTED rather than
+    // silently dropped: a security boundary must fail loudly, otherwise the caller is left believing
+    // the write landed as sent. The field deliberately stays in `updateActivitySchema` — dropping it
+    // there would make zod strip it and produce exactly the silent success this rejects.
+    if (updates.owner_id !== undefined && updates.owner_id !== ctx.userId) {
+      return Problems.validation([
+        {
+          field: "owner_id",
+          code: "forbidden",
+          message: "owner_id cannot be reassigned through this endpoint",
+        },
+      ])
+    }
+
     const now = new Date()
 
     // Build update object and track changed fields
@@ -274,6 +301,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     if (!existingActivity) {
       return Problems.notFound("Activity")
+    }
+
+    // Verify ownership
+    if (existingActivity.ownerId !== ctx.userId) {
+      return Problems.forbidden()
     }
 
     // Soft delete
