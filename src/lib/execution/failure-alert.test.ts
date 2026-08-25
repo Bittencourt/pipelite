@@ -5,16 +5,37 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 // throttle's SQL can be asserted as text and as VALUES, which is the only way to prove the
 // guard lives in the write rather than in a preceding read.
 //
-// The module under test is loaded with `await import(...)` inside each case, exactly as
-// execution-processor.test.ts does it: a static import is hoisted ABOVE these const
-// declarations, so the `@/db` mock factory would run before `mockDb` exists.
-const mockExecute = vi.fn()
-const mockSelect = vi.fn()
-const mockDb = {
-  execute: mockExecute,
-  select: mockSelect,
-  update: vi.fn(),
-}
+// ── WHY THE MOCK STATE IS IN `vi.hoisted` AND THE MODULE IS A STATIC IMPORT (47-14) ──────────
+//
+// It used to be plain `const mockExecute = vi.fn()` declarations with the module under test loaded
+// by `await import("./failure-alert")` inside each of the 35 cases, and the reason recorded here was
+// correct as far as it went: vitest's transform hoists a static import ABOVE module-scope consts, so
+// the `@/db` factory below would have run while `mockDb` was still in its TDZ and thrown
+// `Cannot access 'mockDb' before initialization`.
+//
+// `vi.hoisted` is the answer to exactly that, and it is what makes the static import legal: its
+// callback is lifted above the imports too, so `mockDb` exists before any factory can read it. The
+// two cannot move independently — the `vi.mock` factories close over these bindings — which is why
+// they are one block.
+//
+// The reason for making the change at all: 47-06 measured this class of defect (module import cost
+// paid inside a test body, billed against `testTimeout` 5000 ms rather than the collect phase)
+// taking three of six full-suite runs RED at a sampled 2.50x-9.00x CPU oversubscription. This file
+// calls no `vi.resetModules()`, so 34 of its 35 loads were already cache hits and only the first one
+// cost anything — but that first one is a test, and it was carrying the whole module graph.
+//
+// `src/lib/__tests__/suite-hook-hygiene.test.ts` is the suite-wide gate that keeps this true.
+const { mockExecute, mockSelect, mockDb, mockSafeSend, mockGetTemplate } = vi.hoisted(() => {
+  const mockExecute = vi.fn()
+  const mockSelect = vi.fn()
+  return {
+    mockExecute,
+    mockSelect,
+    mockDb: { execute: mockExecute, select: mockSelect, update: vi.fn() },
+    mockSafeSend: vi.fn(),
+    mockGetTemplate: vi.fn(),
+  }
+})
 
 vi.mock("@/db", () => ({ db: mockDb }))
 
@@ -50,15 +71,20 @@ vi.mock("@/db/schema/notification-preferences", () => ({
   },
 }))
 
-const mockSafeSend = vi.fn()
 vi.mock("@/lib/email/send", () => ({
   safeSend: (...args: unknown[]) => mockSafeSend(...args),
 }))
 
-const mockGetTemplate = vi.fn()
 vi.mock("@/lib/email/templates/workflow-failed", () => ({
   getWorkflowFailedTemplate: (...args: unknown[]) => mockGetTemplate(...args),
 }))
+
+import {
+  claimFailureAlert,
+  releaseFailureAlert,
+  maybeAlertOnRunFailure,
+  FAILURE_ALERT_WINDOW_MINUTES,
+} from "./failure-alert"
 
 /** The mocked `sql` tag's captured shape. */
 type CapturedSql = { _tag: string; strings: TemplateStringsArray; values: unknown[] }
@@ -78,7 +104,6 @@ function capturedSqlText(): string {
 
 describe("FAILURE_ALERT_WINDOW_MINUTES", () => {
   it("is an exported number equal to 60", async () => {
-    const { FAILURE_ALERT_WINDOW_MINUTES } = await import("./failure-alert")
     expect(typeof FAILURE_ALERT_WINDOW_MINUTES).toBe("number")
     expect(FAILURE_ALERT_WINDOW_MINUTES).toBe(60)
   })
@@ -102,7 +127,6 @@ describe("claimFailureAlert", () => {
   })
 
   it("claims when the guarded UPDATE returns a row, and reports what it wrote and displaced", async () => {
-    const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue([CLAIMED_ROW])
 
     // The claim used to answer a bare boolean. It now also carries the value it WROTE and the value
@@ -116,7 +140,6 @@ describe("claimFailureAlert", () => {
   })
 
   it("reports a first-ever claim with a null previous, not with a missing field", async () => {
-    const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue([{ claimed_at: "2026-08-22T10:00:00.000001", previous: null }])
 
     await expect(claimFailureAlert("wf-1")).resolves.toEqual({
@@ -127,7 +150,6 @@ describe("claimFailureAlert", () => {
   })
 
   it("does not claim when the UPDATE matches nothing (already alerted inside the window)", async () => {
-    const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue([])
     await expect(claimFailureAlert("wf-1")).resolves.toEqual({
       claimed: false,
@@ -139,19 +161,16 @@ describe("claimFailureAlert", () => {
   it("does not claim rather than throwing for an undefined result", async () => {
     // postgres-js does not always hand back an array; the
     // `(x as unknown as unknown[])?.length ?? 0` idiom in reclaimStaleRuns exists for this.
-    const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue(undefined)
     await expect(claimFailureAlert("wf-1")).resolves.toMatchObject({ claimed: false })
   })
 
   it("does not claim rather than throwing for a null result", async () => {
-    const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue(null)
     await expect(claimFailureAlert("wf-1")).resolves.toMatchObject({ claimed: false })
   })
 
   it("builds a guarded UPDATE ... RETURNING against workflows.failure_alert_sent_at", async () => {
-    const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue([CLAIMED_ROW])
     await claimFailureAlert("wf-1")
 
@@ -174,7 +193,6 @@ describe("claimFailureAlert", () => {
   })
 
   it("passes the workflow id and the window as parameterised VALUES, never as literals", async () => {
-    const { claimFailureAlert, FAILURE_ALERT_WINDOW_MINUTES } = await import("./failure-alert")
     mockExecute.mockResolvedValue([CLAIMED_ROW])
     await claimFailureAlert("wf-1")
 
@@ -191,7 +209,6 @@ describe("claimFailureAlert", () => {
   })
 
   it("contains NO SELECT — the guard is IN the UPDATE, not in a preceding read", async () => {
-    const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue([CLAIMED_ROW])
     await claimFailureAlert("wf-1")
 
@@ -211,7 +228,6 @@ describe("claimFailureAlert", () => {
   })
 
   it("does NOT touch workflows.updated_at", async () => {
-    const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue([CLAIMED_ROW])
     await claimFailureAlert("wf-1")
 
@@ -223,7 +239,6 @@ describe("claimFailureAlert", () => {
   })
 
   it("returns the DISPLACED value from a pre-update snapshot, still in ONE statement", async () => {
-    const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue([CLAIMED_ROW])
     await claimFailureAlert("wf-1")
 
@@ -239,7 +254,6 @@ describe("claimFailureAlert", () => {
   })
 
   it("round-trips both timestamps as TEXT, not as a Date", async () => {
-    const { claimFailureAlert } = await import("./failure-alert")
     mockExecute.mockResolvedValue([CLAIMED_ROW])
     await claimFailureAlert("wf-1")
 
@@ -275,7 +289,6 @@ describe("releaseFailureAlert", () => {
   }
 
   it("restores the displaced value, guarded on the value this caller wrote", async () => {
-    const { releaseFailureAlert } = await import("./failure-alert")
     await releaseFailureAlert("wf-1", CLAIM)
 
     const { values } = capturedSql()
@@ -298,14 +311,12 @@ describe("releaseFailureAlert", () => {
   })
 
   it("does nothing when nothing was claimed", async () => {
-    const { releaseFailureAlert } = await import("./failure-alert")
     await releaseFailureAlert("wf-1", { claimed: false, claimedAt: null, previous: null })
 
     expect(mockExecute).not.toHaveBeenCalled()
   })
 
   it("does nothing when the claim cannot say what it wrote", async () => {
-    const { releaseFailureAlert } = await import("./failure-alert")
     await releaseFailureAlert("wf-1", { claimed: true, claimedAt: null, previous: null })
 
     expect(
@@ -356,7 +367,6 @@ describe("maybeAlertOnRunFailure", () => {
   it.each(["completed", "running", "pending", "waiting"])(
     "does nothing for a run in status %s",
     async (status) => {
-      const { maybeAlertOnRunFailure } = await import("./failure-alert")
       queueSelects([{ ...RUN, status }], [WORKFLOW], [AUTHOR], [])
 
       await maybeAlertOnRunFailure("run-1")
@@ -368,7 +378,6 @@ describe("maybeAlertOnRunFailure", () => {
   )
 
   it("returns quietly when the run row is gone (pruned between executeRun and this read)", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([])
 
     await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
@@ -377,7 +386,6 @@ describe("maybeAlertOnRunFailure", () => {
   })
 
   it("alerts on a failed non-dry run", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
 
     await maybeAlertOnRunFailure("run-1")
@@ -388,7 +396,6 @@ describe("maybeAlertOnRunFailure", () => {
   // --- Dry-run exclusion (T-41-44).
 
   it("does not alert on a failed DRY run, and does not burn the claim window", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([{ ...RUN, dryRun: true }], [WORKFLOW], [AUTHOR], [])
 
     await maybeAlertOnRunFailure("run-1")
@@ -405,7 +412,6 @@ describe("maybeAlertOnRunFailure", () => {
   // --- Preference, whose default is the one that silently disables the feature if inverted.
 
   it("sends when the author has NO preference row", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
 
     await maybeAlertOnRunFailure("run-1")
@@ -420,7 +426,6 @@ describe("maybeAlertOnRunFailure", () => {
   })
 
   it("does not send when emailWorkflowFailed is false, and does not burn the claim", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([RUN], [WORKFLOW], [AUTHOR], [{ emailWorkflowFailed: false }])
 
     await maybeAlertOnRunFailure("run-1")
@@ -433,7 +438,6 @@ describe("maybeAlertOnRunFailure", () => {
   })
 
   it("sends when emailWorkflowFailed is true", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([RUN], [WORKFLOW], [AUTHOR], [{ emailWorkflowFailed: true }])
 
     await maybeAlertOnRunFailure("run-1")
@@ -444,7 +448,6 @@ describe("maybeAlertOnRunFailure", () => {
   // --- Recipient (T-41-46). Exactly one address, the workflow's author.
 
   it("sends to exactly one address — the workflow's createdBy — in that user's locale", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
 
     await maybeAlertOnRunFailure("run-1")
@@ -462,7 +465,6 @@ describe("maybeAlertOnRunFailure", () => {
   })
 
   it("does not send when the workflow row is gone", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([RUN], [])
 
     await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
@@ -470,7 +472,6 @@ describe("maybeAlertOnRunFailure", () => {
   })
 
   it("does not send when the author was deleted", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([RUN], [WORKFLOW], [])
 
     await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
@@ -478,7 +479,6 @@ describe("maybeAlertOnRunFailure", () => {
   })
 
   it("does not send when the author has no email address", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([RUN], [WORKFLOW], [{ email: null, locale: "en-US" }], [])
 
     await expect(maybeAlertOnRunFailure("run-1")).resolves.toBeUndefined()
@@ -486,7 +486,6 @@ describe("maybeAlertOnRunFailure", () => {
   })
 
   it("passes an empty error string through when the run recorded none", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([{ ...RUN, error: null }], [WORKFLOW], [AUTHOR], [])
 
     await maybeAlertOnRunFailure("run-1")
@@ -497,7 +496,6 @@ describe("maybeAlertOnRunFailure", () => {
   // --- Throttle integration.
 
   it("does not send when the claim is lost (already alerted inside the window)", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
     mockExecute.mockResolvedValue([])
 
@@ -512,7 +510,6 @@ describe("maybeAlertOnRunFailure", () => {
   // abort a tick and leave pending runs unclaimed.
 
   it("resolves even when safeSend rejects, and logs the rejection with the [failure-alert] prefix", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
     queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
     mockSafeSend.mockRejectedValue(new Error("SMTP 421"))
@@ -529,7 +526,6 @@ describe("maybeAlertOnRunFailure", () => {
   // --- WR-06: a send that never happened gives the window back.
 
   it("releases the window when safeSend rejects, guarded on the claim it made", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
     queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
     mockSafeSend.mockRejectedValue(new Error("SMTP 421 service not available"))
@@ -555,7 +551,6 @@ describe("maybeAlertOnRunFailure", () => {
   })
 
   it("releases the window when the TEMPLATE throws, before the transport is ever reached", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
     queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
     // getEmailTranslator throws on a missing message key. Letting the outer catch swallow that
@@ -573,7 +568,6 @@ describe("maybeAlertOnRunFailure", () => {
   })
 
   it("does NOT release the window when the send succeeded", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
 
     await maybeAlertOnRunFailure("run-1")
@@ -588,7 +582,6 @@ describe("maybeAlertOnRunFailure", () => {
   })
 
   it("survives a release that itself fails, without rejecting", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
     queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
     mockSafeSend.mockRejectedValue(new Error("SMTP 421"))
@@ -609,7 +602,6 @@ describe("maybeAlertOnRunFailure", () => {
   })
 
   it("does not await safeSend", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     queueSelects([RUN], [WORKFLOW], [AUTHOR], [])
     // A send that never settles must not hold the processor tick open.
     mockSafeSend.mockReturnValue(new Promise(() => {}))
@@ -619,7 +611,6 @@ describe("maybeAlertOnRunFailure", () => {
   })
 
   it("swallows and logs a throw from the database read rather than propagating it", async () => {
-    const { maybeAlertOnRunFailure } = await import("./failure-alert")
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
     mockSelect.mockImplementation(() => {
       throw new Error("connection terminated unexpectedly")
