@@ -196,32 +196,304 @@ function formatOffender(file: string, handler: HandlerInfo): string {
 }
 
 /**
+ * The bare name a call expression's callee resolves to: `eq` for `eq(a, b)`, `findFirst` for
+ * `db.query.activities.findFirst(...)`. `null` for anything else — an element access, a call of a
+ * call, a parenthesised expression.
+ */
+function calleeName(expression: ts.Expression): string | null {
+  if (ts.isIdentifier(expression)) return expression.text
+  if (ts.isPropertyAccessExpression(expression)) return expression.name.text
+  return null
+}
+
+/**
+ * THE identity expression: `ctx.userId` or `context.userId`, as a `PropertyAccessExpression` whose
+ * object is a bare identifier in `IDENTITY_OBJECTS`.
+ *
+ * A node kind, never a token. `ctx.userId` written inside a `//` comment is trivia and inside a
+ * string literal is a `StringLiteral`; neither is a `PropertyAccessExpression`, so neither can
+ * satisfy any rule below. Fixtures P4 and P5 prove that rather than assume it.
+ */
+function isIdentityExpression(node: ts.Node): boolean {
+  return (
+    ts.isPropertyAccessExpression(node) &&
+    node.name.text === "userId" &&
+    ts.isIdentifier(node.expression) &&
+    IDENTITY_OBJECTS.has(node.expression.text)
+  )
+}
+
+/** A property access naming the row's owner column — `pipeline.ownerId`, `organizations.ownerId`. */
+function isOwnerLikeAccess(node: ts.Node): boolean {
+  return ts.isPropertyAccessExpression(node) && OWNER_PROPS.has(node.name.text)
+}
+
+/** True when one of the two nodes is the identity and the other is an owner column. Order-free. */
+function pairsIdentityWithOwner(left: ts.Node, right: ts.Node): boolean {
+  return (
+    (isIdentityExpression(left) && isOwnerLikeAccess(right)) ||
+    (isIdentityExpression(right) && isOwnerLikeAccess(left))
+  )
+}
+
+/**
+ * R1 — the `where`-SCOPED idiom: a drizzle `eq`/`ne` comparing an owner column to the caller.
+ *
+ * Accepts `src/app/api/v1/organizations/[id]/route.ts:31-36`
+ * (`and(eq(organizations.id, id), eq(organizations.ownerId, context.userId), isNull(...))`) and the
+ * `conditions` array form at `src/app/api/v1/activities/route.ts:53-70` once a caller predicate is
+ * pushed into it.
+ *
+ * Both arguments are required to be a comparison pair, which is what keeps
+ * `eq(activities.ownerId, ownerId)` — the `?owner_id=` FILTER at `activities/route.ts` — out: its
+ * second argument is a bare `Identifier` read from the query string, not an identity expression. A
+ * caller-supplied filter is not an authorization check and must not be mistaken for one.
+ */
+function matchesR1(node: ts.Node): boolean {
+  if (!ts.isCallExpression(node)) return false
+  const callee = calleeName(node.expression)
+  if (callee !== "eq" && callee !== "ne") return false
+  if (node.arguments.length !== 2) return false
+  return pairsIdentityWithOwner(node.arguments[0], node.arguments[1])
+}
+
+/** The four equality operators R2 accepts. `<`/`>` are not authorization comparisons. */
+const EQUALITY_OPERATORS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.EqualsEqualsToken,
+  ts.SyntaxKind.EqualsEqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsEqualsToken,
+])
+
+/**
+ * R2 — the FETCH-THEN-COMPARE idiom, which yields 403 rather than 404.
+ *
+ * Accepts `src/app/api/v1/pipelines/[id]/route.ts:56-58` — the reference implementation,
+ * `if (pipeline.ownerId !== ctx.userId) return Problems.forbidden()` — and the same shape at
+ * `webhooks/[id]/route.ts`.
+ *
+ * ⚠ This is also the rule that accepts `src/app/api/v1/stages/[id]/route.ts:81-83`, the SEC-02
+ * defect. See the header: the comparison is real, the relation it reads is decided by the caller,
+ * and a presence gate is structurally incapable of telling those apart.
+ */
+function matchesR2(node: ts.Node): boolean {
+  if (!ts.isBinaryExpression(node)) return false
+  if (!EQUALITY_OPERATORS.has(node.operatorToken.kind)) return false
+  return pairsIdentityWithOwner(node.left, node.right)
+}
+
+/**
+ * R3 — DELEGATION to a named authorizer that receives the caller identity.
+ *
+ * Accepts `src/app/api/v1/stages/[id]/route.ts:93` (`verifyStageOwnership(id, ctx.userId)`) and
+ * `:149`, the audit and trash routes' `resolveActorRole` / `authorizeAuditRead` calls, and the
+ * workflows routes' `getWorkflow(id, context.userId)`.
+ *
+ * Receiving the identity is required, not just the name: a `getWorkflow(id)` that dropped its second
+ * argument is exactly the regression this gate exists to catch.
+ */
+function matchesR3(node: ts.Node): boolean {
+  if (!ts.isCallExpression(node)) return false
+  const callee = calleeName(node.expression)
+  if (callee === null || !AUTHORIZERS.has(callee)) return false
+  return node.arguments.some(isIdentityExpression)
+}
+
+/**
+ * R4 — CREATE-TIME ownership assignment. A create handler has no existing row to compare against;
+ * it authorizes by stamping the caller onto the new row.
+ *
+ * Accepts `src/app/api/v1/organizations/batch/route.ts:58` (`userId: context.userId` passed into
+ * `createOrganizationMutation`) and the `values({ ownerId: ctx.userId })` form.
+ *
+ * The property NAME must be an owner column. `actorId: ctx.userId` in a CRM event payload —
+ * `activities/[id]/route.ts:255` — deliberately does not match: identity present in the body,
+ * reaching nothing. Fixture P2 is that shape.
+ */
+function matchesR4(node: ts.Node): boolean {
+  if (!ts.isPropertyAssignment(node)) return false
+  const name =
+    ts.isIdentifier(node.name) || ts.isStringLiteral(node.name) ? node.name.text : null
+  if (name === null || !OWNER_PROPS.has(name)) return false
+  return isIdentityExpression(node.initializer)
+}
+
+/** True when any node in `root`'s subtree satisfies R1, R2, R3 or R4. */
+function subtreeAuthorizes(root: ts.Node): boolean {
+  let found = false
+  const visit = (node: ts.Node): void => {
+    if (found) return
+    if (matchesR1(node) || matchesR2(node) || matchesR3(node) || matchesR4(node)) {
+      found = true
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  ts.forEachChild(root, visit)
+  return found
+}
+
+/** True when a `withApiAuth(...)` call appears anywhere in `root`'s subtree. */
+function subtreeCallsWithApiAuth(root: ts.Node): boolean {
+  let found = false
+  const visit = (node: ts.Node): void => {
+    if (found) return
+    if (ts.isCallExpression(node) && calleeName(node.expression) === "withApiAuth") {
+      found = true
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  ts.forEachChild(root, visit)
+  return found
+}
+
+/** Whether a top-level statement carries the `export` modifier. */
+function hasExportModifier(statement: ts.Statement): boolean {
+  return (
+    ts.canHaveModifiers(statement) &&
+    (ts.getModifiers(statement) ?? []).some(
+      (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword
+    )
+  )
+}
+
+/**
  * Parse `sourceText` and classify every exported verb handler in it.
  *
- * Exported and taking a source STRING rather than only a path, so the fixtures below reach exactly
+ * Exported and taking a source STRING rather than only a path, so the fixtures above reach exactly
  * this code path. A fixture is a string literal; a string literal is not a `FunctionDeclaration`,
  * which is why this gate's own file cannot be flagged by its own rules even if the corpus predicate
  * were widened.
  *
- * ⚠ DELIBERATE STUB — plan 48-05, task 1. The real implementation lands in task 2. This body parses
- * and returns nothing, on purpose, to demonstrate the exact vacuity the KNOWN_NEGATIVE parse floor
- * defends against: a detector that detects nothing passes EVERY negative fixture.
+ * BOTH handler forms are collected. The binding form is not decoration: four `/api/v1` files export
+ * `const { GET, POST } = noteCollectionHandlers(...)` and export no `FunctionDeclaration` at all, so
+ * a `FunctionDeclaration`-only walker sees eight live handlers as ZERO and they leave the sweep with
+ * no exemption entry and no record.
  */
 export function scanSource(fileName: string, sourceText: string): ScanResult {
-  ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const src = ts.createSourceFile(
+    fileName,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  )
 
-  return {
-    handlers: [],
-    offenders: [],
-    counters: {
-      declarationHandlers: 0,
-      bindingHandlers: 0,
-      withApiAuthCalls: 0,
-      identityHits: { ctx: 0, context: 0 },
-      ownerLikeAccesses: 0,
-      nodesSeen: 0,
-    },
+  const lineOf = (node: ts.Node): number =>
+    src.getLineAndCharacterOfPosition(node.getStart(src)).line + 1
+
+  const counters: ScanCounters = {
+    declarationHandlers: 0,
+    bindingHandlers: 0,
+    withApiAuthCalls: 0,
+    identityHits: { ctx: 0, context: 0 },
+    ownerLikeAccesses: 0,
+    nodesSeen: 0,
   }
+
+  // One full walk for the anti-vacuity counters. `nodesSeen` is what tells "clean file" apart from
+  // "ts.createSourceFile returned a silently truncated tree", which it does rather than throwing.
+  const count = (node: ts.Node): void => {
+    counters.nodesSeen += 1
+    if (ts.isCallExpression(node) && calleeName(node.expression) === "withApiAuth") {
+      counters.withApiAuthCalls += 1
+    }
+    if (isIdentityExpression(node) && ts.isPropertyAccessExpression(node)) {
+      const object = (node.expression as ts.Identifier).text
+      if (object === "ctx") counters.identityHits.ctx += 1
+      else counters.identityHits.context += 1
+    }
+    if (isOwnerLikeAccess(node)) counters.ownerLikeAccesses += 1
+    ts.forEachChild(node, count)
+  }
+  ts.forEachChild(src, count)
+
+  const handlers: HandlerInfo[] = []
+
+  for (const statement of src.statements) {
+    if (!hasExportModifier(statement)) continue
+
+    // Form 1 of 2 — `export async function GET(...) { ... }`. Measured: 62 across the corpus.
+    if (ts.isFunctionDeclaration(statement)) {
+      const name = statement.name?.text
+      if (name === undefined || !VERBS.has(name)) continue
+      counters.declarationHandlers += 1
+      handlers.push({
+        verb: name,
+        line: lineOf(statement),
+        form: "declaration",
+        delegatedTo: null,
+        authorized: subtreeAuthorizes(statement),
+        withApiAuthSeen: subtreeCallsWithApiAuth(statement),
+      })
+      continue
+    }
+
+    // Form 2 of 2 — `export const { GET, POST } = noteCollectionHandlers({ ... })`. Measured: 8
+    // handlers across exactly 4 files, every one of which exports zero FunctionDeclarations.
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isObjectBindingPattern(declaration.name)) continue
+      const initializer = declaration.initializer
+      const delegatedTo =
+        initializer !== undefined && ts.isCallExpression(initializer)
+          ? calleeName(initializer.expression)
+          : initializer !== undefined
+            ? calleeName(initializer)
+            : null
+
+      for (const element of declaration.name.elements) {
+        // `{ GET }` binds under `name`; `{ GET: handleGet }` binds the VERB under `propertyName`.
+        const bound =
+          element.propertyName !== undefined && ts.isIdentifier(element.propertyName)
+            ? element.propertyName.text
+            : ts.isIdentifier(element.name)
+              ? element.name.text
+              : null
+        if (bound === null || !VERBS.has(bound)) continue
+        counters.bindingHandlers += 1
+        handlers.push({
+          verb: bound,
+          line: lineOf(statement),
+          form: "binding",
+          delegatedTo,
+          // A binding-form handler is NEVER an offender: the body it exports lives in the factory,
+          // which this single-file parse cannot see. It is reported with `delegatedTo` so plan
+          // 48-08 can build a live control over the delegation target rather than a path exclusion.
+          authorized: true,
+          withApiAuthSeen: false,
+        })
+      }
+    }
+  }
+
+  const offenders = handlers
+    .filter((handler) => !handler.authorized)
+    .map((handler) => formatOffender(fileName, handler))
+
+  return { handlers, offenders, counters }
+}
+
+function readRepoFile(relativePath: string): string {
+  return readFileSync(path.join(REPO_ROOT, relativePath), "utf8")
+}
+
+/**
+ * Every `route.ts` under `relativeDir`, as repo-relative POSIX paths.
+ *
+ * The corpus predicate is `entry.name === "route.ts"` — an exact string comparison, not a glob and
+ * not a grep. `rtk` makes `grep ... | wc -l` return a wrong count in this environment (measured
+ * 36 -> 19), so a shelled-out enumeration could not be trusted even as a cross-check.
+ */
+export function walkRouteFiles(relativeDir: string): string[] {
+  const out: string[] = []
+  for (const entry of readdirSync(path.join(REPO_ROOT, relativeDir), { withFileTypes: true })) {
+    const rel = `${relativeDir}/${entry.name}`
+    if (entry.isDirectory()) out.push(...walkRouteFiles(rel))
+    else if (entry.name === "route.ts") out.push(rel)
+  }
+  return out
 }
 
 /** The extracted value the positive fixtures assert on — `VERB:line`, never a boolean. */
@@ -528,5 +800,51 @@ describe("the authorization matcher, unit-tested against fixtures FIRST", () => 
     const result = scanSource("known-negative.ts", source)
     expect(result.handlers.length, `the parse saw no exported handler in: ${label}`).toBeGreaterThan(0)
     expect(result.counters.nodesSeen, `the parse visited no AST node in: ${label}`).toBeGreaterThan(0)
+  })
+
+  it("sees the binding form as a first-class handler shape, with its delegation target", () => {
+    // The blind spot this closes, stated as a number: a `FunctionDeclaration`-only walker reports
+    // ZERO handlers for N7 and for the four real files it is drawn from — 8 live handlers that
+    // would leave the sweep with no exemption entry, no reason and no record.
+    const n7 = KNOWN_NEGATIVE.find((fixture) => fixture.label.startsWith("N7"))
+    const result = scanSource("known-negative.ts", n7?.source ?? "")
+
+    expect(result.handlers.map((handler) => `${handler.form} ${handler.verb}`)).toEqual([
+      "binding GET",
+      "binding POST",
+    ])
+    expect(result.counters.bindingHandlers).toBe(2)
+    expect(result.counters.declarationHandlers).toBe(0)
+    for (const handler of result.handlers) {
+      expect(handler.delegatedTo, "the delegation target is what 48-08's live control keys on")
+        .toBe("noteCollectionHandlers")
+    }
+  })
+
+  it("distinguishes the four rules by which one fires, not just by the verdict", () => {
+    // A single rule that happened to match everything would satisfy every negative above. These
+    // assert the SPECIFIC rule, at the AST level, on the exact expression each idiom produces.
+    const parse = (text: string): ts.Node =>
+      ts.createSourceFile("rule-probe.ts", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+
+    const firstMatch = (text: string, rule: (node: ts.Node) => boolean): boolean => {
+      let hit = false
+      const visit = (node: ts.Node): void => {
+        if (hit) return
+        if (rule(node)) hit = true
+        else ts.forEachChild(node, visit)
+      }
+      ts.forEachChild(parse(text), visit)
+      return hit
+    }
+
+    expect(firstMatch(`const w = eq(organizations.ownerId, context.userId)`, matchesR1)).toBe(true)
+    expect(firstMatch(`const w = eq(activities.ownerId, ownerId)`, matchesR1)).toBe(false)
+    expect(firstMatch(`if (pipeline.ownerId !== ctx.userId) {}`, matchesR2)).toBe(true)
+    expect(firstMatch(`if (pipeline.id !== id) {}`, matchesR2)).toBe(false)
+    expect(firstMatch(`const r = verifyStageOwnership(id, ctx.userId)`, matchesR3)).toBe(true)
+    expect(firstMatch(`const r = verifyStageOwnership(id)`, matchesR3)).toBe(false)
+    expect(firstMatch(`const v = { ownerId: ctx.userId }`, matchesR4)).toBe(true)
+    expect(firstMatch(`const v = { actorId: ctx.userId }`, matchesR4)).toBe(false)
   })
 })
