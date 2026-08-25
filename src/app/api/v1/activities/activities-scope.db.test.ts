@@ -92,6 +92,8 @@
  * no TRUNCATE, no DROP and no unfiltered DELETE anywhere in this file.
  * =============================================================================
  */
+import { createHash } from "node:crypto"
+
 import { and, eq, isNull, like, or, sql } from "drizzle-orm"
 import { NextRequest } from "next/server"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
@@ -385,8 +387,10 @@ describe("the fixture set is what every assertion below assumes", () => {
 
     expect(row.keyHash).toBe(
       // Recomputed here rather than imported from the fixture, so a fixture that stored the
-      // plaintext (or a truncated digest) would be caught rather than described.
-      (await import("node:crypto")).createHash("sha256").update(keyA.plaintextKey).digest("hex"),
+      // plaintext (or a truncated digest) would be caught rather than described. STATIC import:
+      // src/lib/__tests__/suite-hook-hygiene.test.ts forbids a dynamic import() in a test body,
+      // because a lazy module load inside a timed body charges the first test that reaches it.
+      createHash("sha256").update(keyA.plaintextKey).digest("hex"),
     )
     expect(row.keyHash).not.toBe(keyA.plaintextKey)
     expect(row.keyPrefix).toBe(keyA.plaintextKey.slice(0, 12))
