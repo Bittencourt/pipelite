@@ -128,25 +128,73 @@ function progress(line) {
 // ---------------------------------------------------------------------------
 
 /**
- * The DATABASE_URL assignment in `.env`, matched as a WHOLE LINE.
+ * The DATABASE_URL assignment on ONE line of `.env`, or `null` if the line is not one.
  *
- * The anchor is load-bearing, not tidiness: `E2E_DATABASE_URL=` CONTAINS `DATABASE_URL=`
- * as a substring, so an unanchored search finds two assignments and can return the wrong
- * one. Plan 46-02 hit exactly this while editing the same file.
+ * TWO PROPERTIES, BOTH LOAD-BEARING.
+ *
+ * 1. WHOLE-LINE ANCHORING. `E2E_DATABASE_URL=` CONTAINS `DATABASE_URL=` as a substring, so
+ *    an unanchored search finds two assignments and can return the wrong one. Plan 46-02
+ *    hit exactly this while editing the same file.
+ *
+ * 2. THE SAME RULES AS THE PARSER THE DOCS' COMMAND ACTUALLY USES. The file header claims
+ *    "this script and the command the docs print resolve the same server by the same
+ *    rule". The first version of this function did not: it accepted neither dotenv's
+ *    `export ` prefix nor dotenv's inline-`#`-comment stripping, both of which occur in
+ *    real `.env` files. The consequences were not cosmetic —
+ *      - `export DATABASE_URL="…"` worked for `npm run db:migrate` and made this script
+ *        fatal with "no DATABASE_URL", telling the operator to create a file they have;
+ *      - `DATABASE_URL=postgresql://u:p@localhost:5433/pipelite # dev` produced a value
+ *        `new URL()` parses with pathname `/pipelite%20`, so the reference lookup found no
+ *        such database and the run reported `SKIPPED: reference equivalence`. A skip caused
+ *        by a parser disagreement is the "misconfiguration disguised as an absence" that
+ *        `resolveReference` goes to great lengths to prevent everywhere else.
+ *    Reference: dotenv 16.5.0's LINE regex as bundled in `drizzle-kit/bin.cjs` — optional
+ *    `export`, three value forms, `[^#\r\n]+` for the unquoted one.
+ *
+ * AMBIGUITY IS A HARD ERROR, NEVER A SKIP. A value that OPENS with a quote and does not
+ * close it on the same line is dotenv's multi-line form, which this reader does not
+ * implement. Returning the raw text would hand a leading `"` to `new URL()`; returning
+ * `null` would report the variable as absent. Both are the failure this whole file is
+ * written against, so it throws instead.
+ *
+ * Exported for src/lib/__tests__/migrate-from-zero-fences.test.ts, which pins every form
+ * above against fixtures. A parser this small is exactly the kind that is "obviously
+ * right" and silently wrong.
  */
+export function databaseUrlFromEnvLine(line) {
+  const match =
+    /^\s*(?:export\s+)?DATABASE_URL\s*=\s*(?:"([^"]*)"|'([^']*)'|([^#\r\n]*?))\s*(?:#.*)?$/.exec(
+      line
+    )
+  if (!match) return null
+
+  // Which alternative fired matters. The unquoted branch is `[^#\r\n]*?`, which happily
+  // swallows a value that OPENS with a quote and never closes it — dotenv falls back to
+  // the same branch and would hand back a leading `"` as part of the connection string.
+  // That is the one place this reader deliberately diverges, and it diverges LOUDLY.
+  if (match[3] !== undefined) {
+    const raw = match[3].trim()
+    if (raw.startsWith('"') || raw.startsWith("'")) {
+      fatal(
+        `.env assigns DATABASE_URL in a form this script cannot parse: ${line.trim()}\n` +
+          "  A quoted value must close its quote on the same line. dotenv's multi-line " +
+          "quoted form is not implemented here, and guessing would either hand a stray " +
+          "quote to the connection string or report the variable as absent — and an " +
+          "absence is what this script refuses to let a misconfiguration disguise itself as."
+      )
+    }
+  }
+
+  const value = (match[1] ?? match[2] ?? match[3] ?? "").trim()
+  return value === "" ? null : value
+}
+
+/** The first usable `DATABASE_URL` assignment in `.env`, or `null` if the file has none. */
 function databaseUrlFromDotenv() {
   const envPath = path.resolve(process.cwd(), ".env")
   if (!existsSync(envPath)) return null
   for (const line of readFileSync(envPath, "utf8").split("\n")) {
-    const match = /^\s*DATABASE_URL\s*=\s*(.*)$/.exec(line)
-    if (!match) continue
-    let value = match[1].trim()
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1)
-    }
+    const value = databaseUrlFromEnvLine(line)
     if (value) return value
   }
   return null

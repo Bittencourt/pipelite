@@ -32,12 +32,15 @@
  * guard is ever removed, this file will hang or fail rather than quietly stop proving
  * anything — which is the correct direction for the failure to point.
  */
+import { readFileSync } from "node:fs"
+
 import { describe, expect, it } from "vitest"
 
 import {
   FORBIDDEN_SCRATCH_NAMES,
   SCRATCH_PATTERN,
   assertScratchName,
+  databaseUrlFromEnvLine,
 } from "../../../scripts/migrate-from-zero.mjs"
 
 /** The reference database on this machine, and the name the live records live in. */
@@ -108,5 +111,95 @@ describe("assertScratchName refuses every name the script does not own", () => {
     // cannot be bound. `"` is the identifier quote, so a name carrying one could close
     // the quoted identifier and start a second statement.
     expect(() => assertScratchName(name, REFERENCE_DB)).toThrow(/refusing to touch/)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────
+// THE `.env` READER, PINNED AGAINST THE PARSER THE DOCUMENTED COMMAND ACTUALLY USES.
+//
+// `scripts/migrate-from-zero.mjs`'s header claims that "this script and the command the
+// docs print resolve the same server by the same rule". The rule on the other side is
+// dotenv 16.5.0, bundled inside `drizzle-kit/bin.cjs`, which `npm run db:migrate` invokes.
+// The first version of the reader diverged from it in two ways that occur in real files:
+// it rejected the `export ` prefix, and it did not strip an inline `#` comment.
+//
+// Neither divergence produced an error message naming the cause. `export DATABASE_URL=…`
+// made the script say "no DATABASE_URL" and tell the operator to create a file they
+// already had; a trailing `# dev` produced a URL whose database name parsed as
+// `pipelite%20`, so the reference lookup found nothing and the run printed
+// `SKIPPED: reference equivalence` — a misconfiguration wearing the costume of an absence,
+// which is the exact failure `resolveReference`'s seven-branch ladder exists to prevent.
+//
+// These fixtures are the standing proof that the two parsers still agree. If a form here
+// goes red, check what dotenv does with it BEFORE changing the expectation.
+// ─────────────────────────────────────────────────────────────────────────────────────────
+
+const HOST_URL = "postgresql://pipelite:change-me@localhost:5433/pipelite"
+
+describe("databaseUrlFromEnvLine matches dotenv's rules, not a simplified guess", () => {
+  it.each([
+    ["the plain form", `DATABASE_URL=${HOST_URL}`, HOST_URL],
+    ["the double-quoted form", `DATABASE_URL="${HOST_URL}"`, HOST_URL],
+    ["the single-quoted form", `DATABASE_URL='${HOST_URL}'`, HOST_URL],
+    ["a leading-indent form", `   DATABASE_URL=${HOST_URL}`, HOST_URL],
+    ["spaces around the equals", `DATABASE_URL = ${HOST_URL}`, HOST_URL],
+    // dotenv's LINE regex is `(?:export\s+)?`. A `.env` that is also `source`-able is an
+    // ordinary thing to have, and deployment-docs-accuracy.test.ts:552 already anticipates
+    // the form — so the two readers in this repository must not disagree about it.
+    ["a shell-export prefix", `export DATABASE_URL="${HOST_URL}"`, HOST_URL],
+    // dotenv's unquoted value group is `[^#\r\n]+`, so it strips this.
+    ["an inline comment after an unquoted value", `DATABASE_URL=${HOST_URL} # dev`, HOST_URL],
+    ["an inline comment after a quoted value", `DATABASE_URL="${HOST_URL}" # dev`, HOST_URL],
+    ["a trailing carriage return (CRLF file)", `DATABASE_URL=${HOST_URL}\r`, HOST_URL],
+    // A `#` INSIDE quotes is part of the value — a password may legitimately contain one.
+    [
+      "a hash inside a quoted password",
+      'DATABASE_URL="postgresql://u:pa#ss@localhost:5433/pipelite"',
+      "postgresql://u:pa#ss@localhost:5433/pipelite",
+    ],
+  ])("reads %s", (_label, line, expected) => {
+    expect(databaseUrlFromEnvLine(line)).toBe(expected)
+  })
+
+  it.each([
+    // THE ONE THE ANCHOR EXISTS FOR. `E2E_DATABASE_URL=` contains `DATABASE_URL=` as a
+    // substring, and this repository's `.env` carries both keys — an unanchored search
+    // returns whichever comes first, which may be the Playwright one.
+    ["E2E_DATABASE_URL", `E2E_DATABASE_URL=${HOST_URL}`],
+    ["a commented-out assignment", `# DATABASE_URL=${HOST_URL}`],
+    ["an indented commented-out assignment", `   #   DATABASE_URL="${HOST_URL}"`],
+    ["a different variable", `POSTGRES_DB=pipelite`],
+    ["prose that merely names the variable", `Set DATABASE_URL to your connection string`],
+    ["an empty assignment", `DATABASE_URL=`],
+    ["an assignment of only whitespace", `DATABASE_URL=   `],
+    ["an assignment of only a comment", `DATABASE_URL= # not set yet`],
+    ["a blank line", ``],
+  ])("does not read %s", (_label, line) => {
+    expect(databaseUrlFromEnvLine(line)).toBeNull()
+  })
+
+  it("throws rather than guessing at an unterminated quote", () => {
+    // dotenv's multi-line quoted form. Returning the raw text would hand a stray `"` to
+    // `new URL()`; returning null would report the variable as ABSENT, and an absence is
+    // the one thing this script refuses to let a misconfiguration disguise itself as.
+    expect(() => databaseUrlFromEnvLine(`DATABASE_URL="${HOST_URL}`)).toThrow(
+      /cannot parse/,
+    )
+    expect(() => databaseUrlFromEnvLine(`DATABASE_URL='${HOST_URL}`)).toThrow(
+      /cannot parse/,
+    )
+  })
+
+  it("agrees with .env.example, the file a self-hoster actually copies", () => {
+    // A cross-file control rather than another fixture: if the shipped example is ever
+    // rewritten into a form this reader cannot read, `npm run db:check-migrations` breaks
+    // for every new self-hoster on their first run, and no fixture above would notice.
+    const assignments = readFileSync(".env.example", "utf8")
+      .split("\n")
+      .filter((line) => /^\s*(?:export\s+)?DATABASE_URL\s*=/.test(line))
+    expect(assignments, ".env.example no longer assigns DATABASE_URL").toHaveLength(1)
+    const parsed = databaseUrlFromEnvLine(assignments[0])
+    expect(parsed).not.toBeNull()
+    expect(new URL(parsed!).port).toBe("5433")
   })
 })
