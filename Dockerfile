@@ -1,5 +1,22 @@
+# THE NODE PIN. All three stages below carry it and all three must move together.
+#
+# Node 20 reached END OF LIFE on 2026-04-30, so the tag this file used to carry shipped an
+# unpatched V8 and an unpatched OpenSSL to everyone who built the image. Node 24 is Active LTS
+# (EOL 2028-04-30).
+#
+# The binding constraint is not a preference: @napi-rs/lzma-linux-x64-gnu declares
+# "^22.20 || ^24.12 || >=25" and arrives via rollup as an optional dependency with no `libc`
+# field, so npm does not filter it out on alpine/musl and it lands in the install tree anyway.
+# Note the "^24.12" term — major 24 alone does not satisfy it, which is why package.json declares
+# a patch-level floor of >=24.12.0 rather than a bare major.
+#
+# Before raising or lowering this tag, read src/lib/__tests__/node-engines-floor.test.ts. It walks
+# every engines.node range package-lock.json declares and binds the lockfile to package.json's
+# engines.node, to these three tags, and to the node-version the required CI check installs. Raise
+# the pin, never the assertion.
+#
 # Stage 1: Dependencies
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
@@ -7,7 +24,7 @@ COPY package.json package-lock.json* ./
 RUN npm install --legacy-peer-deps
 
 # Stage 2: Builder
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -71,7 +88,7 @@ RUN test -f .next/standalone/.next/server/instrumentation.js \
     fi
 
 # Stage 3: Runner
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production

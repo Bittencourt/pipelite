@@ -46,9 +46,14 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          # Active LTS (EOL 2028-04-30). The binding floor is vite 7's
-          # engines ^20.19.0 || >=22.12.0, reached transitively via vitest —
-          # not next's >=20.9.0.
+          # Active LTS (EOL 2028-04-30). The binding engines floor is
+          # @napi-rs/lzma-linux-x64-gnu's ^22.20 || ^24.12 || >=25, reached
+          # transitively via rollup — it superseded vite's floor in August 2026,
+          # which is why nothing here is compared against a hardcoded number.
+          # This pin, package.json engines.node and the three Dockerfile tags
+          # are asserted against each other and against every engines.node range
+          # in package-lock.json by
+          # src/lib/__tests__/node-engines-floor.test.ts. Move all four together.
           node-version: 24
           # Caches the global npm cache (not node_modules), keyed on
           # package-lock.json, so it can never yield a half-installed tree.
