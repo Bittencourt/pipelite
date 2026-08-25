@@ -222,8 +222,17 @@ function withDatabase(source, name) {
   return url.toString()
 }
 
+/**
+ * The database name a connection string names, PERCENT-DECODED.
+ *
+ * The decode is load-bearing. `pg_database.datname` holds the real name, so a legitimately
+ * encoded name in the URL — `my%20db`, `caf%C3%A9` — was previously compared as the literal
+ * `my%20db`, never found, and quietly downgraded the run to the "reference absent" skip.
+ * The same string is also what `assertScratchName` compares the scratch name against, so an
+ * undecoded value could let a reference database through the check under an alias.
+ */
 function databaseNameOf(source) {
-  return new URL(source).pathname.replace(/^\//, "")
+  return decodeURIComponent(new URL(source).pathname.replace(/^\//, ""))
 }
 
 /** Host, port and database — never the credentials. T-46-04-03. */
@@ -232,12 +241,24 @@ function describeTarget(source) {
   return `${url.hostname}:${url.port || "5432"}/${databaseNameOf(source)}`
 }
 
-function connect(url) {
+/**
+ * A single-connection client.
+ *
+ * `database` overrides whatever the URL's path says, and it exists because postgres.js
+ * does NOT percent-decode the path: a URL ending `/pipelite%20mig` makes it ask the server
+ * for a database literally named `pipelite%20mig`, which fails with `does not exist` even
+ * though the database is right there under the name `pipelite mig`. Measured. Every name
+ * this script builds itself is `[a-z0-9_]` only and unaffected; the operator-supplied
+ * REFERENCE name is the one that can carry a reserved character, so that call site passes
+ * the decoded name explicitly.
+ */
+function connect(url, database) {
   return postgres(url, {
     max: 1,
     idle_timeout: 5,
     connect_timeout: 15,
     onnotice: () => {},
+    ...(database === undefined ? {} : { database }),
   })
 }
 
@@ -626,7 +647,7 @@ async function resolveReference({ admin, sourceUrl, requireReference, snapshotTa
     progress(`reference: REFERENCE_DATABASE_URL -> ${describeTarget(explicit)}`)
     let sql
     try {
-      sql = connect(explicit)
+      sql = connect(explicit, name)
       const count = await publicTableCount(sql)
       if (count < snapshotTableCount) {
         await sql.end()
@@ -648,10 +669,17 @@ async function resolveReference({ admin, sourceUrl, requireReference, snapshotTa
   }
 
   // Branch 2. The candidate is the database DATABASE_URL names.
+  //
+  // BOUND, not interpolated. Unlike the CREATE/DROP statements — where the name is an
+  // IDENTIFIER and cannot be a parameter — this is a WHERE clause comparing a VALUE, which
+  // postgres.js binds natively. The manual `''` doubling it replaced was correct only while
+  // `standard_conforming_strings` is `on`; a server- or role-level
+  // `SET standard_conforming_strings = off` re-enables backslash escapes and defeats it.
+  // There is no reason to carry that assumption when the driver's second argument exists.
   const name = databaseNameOf(sourceUrl)
-  const existing = await admin.unsafe(
-    `select 1 as v from pg_database where datname = '${name.replace(/'/g, "''")}'`
-  )
+  const existing = await admin.unsafe("select 1 as v from pg_database where datname = $1", [
+    name,
+  ])
 
   if (existing.length === 0) {
     // Branch 3.
@@ -666,7 +694,7 @@ async function resolveReference({ admin, sourceUrl, requireReference, snapshotTa
   const url = withDatabase(sourceUrl, name)
   let sql
   try {
-    sql = connect(url)
+    sql = connect(url, name)
     const count = await publicTableCount(sql)
 
     if (count === 0) {
