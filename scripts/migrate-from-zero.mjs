@@ -258,6 +258,42 @@ const CATALOG_QUERIES = {
     "select table_name::text as v from information_schema.views where table_schema = 'public'",
 }
 
+/**
+ * ANTI-VACUITY FLOORS FOR ASSERTION SET B — the half this file's own doctrine (see the
+ * `MIN_*` block at the top) originally applied only to the snapshot side.
+ *
+ * Set B runs the SAME query string against both databases, so a defect that makes a query
+ * return zero rows on BOTH sides reports `IDENTICAL`. One typo — `table_schema = 'publik'`,
+ * `nspname = 'pubic'`, a `where` clause that stops matching after a Postgres upgrade —
+ * silently converts a dimension into a permanent pass, and the printed table then reports
+ * it as evidence. That is precisely the "two empty sets compare equal" shape v1.3 shipped
+ * six of.
+ *
+ * The floor is asserted against the REFERENCE side, which is a real, populated database by
+ * the time we get here (branches 3-5 of `resolveReference` refuse anything less). Each
+ * number sits BELOW the value measured on 2026-08-25 against `pipelite` so ordinary growth
+ * — and legitimate shrinkage — does not trip it, but a query that stopped matching does.
+ *
+ * The three genuine zeroes are NOT a weakness of the floor, they are a fact about this
+ * schema: this application declares no triggers, no standalone sequences (drizzle uses
+ * `gen_random_uuid()` and identity-free text keys, not `serial`) and no views. A zero floor
+ * cannot catch a broken query for those three, so they are labelled `IDENTICAL (both
+ * empty)` in the printed table instead of being allowed to read as verification. If one of
+ * them ever gains a member, RAISE ITS FLOOR — that is the moment it becomes load-bearing.
+ */
+const DIMENSION_FLOORS = {
+  tables: 30, // measured 36
+  columns: 250, // measured 293
+  indexes: 60, // measured 81
+  constraints: 70, // measured 83
+  enums: 6, // measured 9
+  functions: 30, // measured 38
+  extensions: 2, // measured 3 (plpgsql, pgcrypto, uuid-ossp)
+  triggers: 0, // measured 0 — genuinely empty, see above
+  sequences: 0, // measured 0 — genuinely empty, see above
+  views: 0, // measured 0 — genuinely empty, see above
+}
+
 async function catalogValues(sql, query) {
   const rows = await sql.unsafe(query)
   return rows.map((row) => String(row.v)).sort()
@@ -771,11 +807,39 @@ async function main() {
         const scratchValues = await catalogValues(scratch, query)
         const diff = setDifference(referenceValues, scratchValues)
         const identical = diff.missing.length === 0 && diff.unexpected.length === 0
+
+        // THE FLOOR, asserted against the populated reference before the verdict is read.
+        const floor = DIMENSION_FLOORS[dimension]
+        if (floor === undefined) {
+          record(
+            `catalog dimension "${dimension}" has no entry in DIMENSION_FLOORS. A dimension ` +
+              "added without a measured floor can report IDENTICAL because its query matches " +
+              "nothing on both sides. Measure it against a populated database and record it."
+          )
+        } else if (referenceValues.length < floor) {
+          record(
+            `catalog dimension "${dimension}" returned ${referenceValues.length} rows from ` +
+              `${reference.name}, below the measured floor of ${floor}. ${reference.name} is a ` +
+              "populated reference, so this means the QUERY stopped matching, not that the " +
+              `schema shrank — and a query that matches nothing on both sides reports ` +
+              `IDENTICAL. This dimension's verdict is meaningless until the query is fixed. ` +
+              "(If the schema legitimately shrank, lower the floor and record the new " +
+              "measurement; this is a tripwire, not a schema-size assertion.)"
+          )
+        }
+
         rows.push({
           dimension,
           reference: referenceValues.length,
           built: scratchValues.length,
-          verdict: identical ? "IDENTICAL" : "DIFFERS",
+          // A zero-vs-zero dimension is an empty-set identity, not evidence. Saying so in
+          // the table is the difference between "this dimension is genuinely empty" and
+          // "this query stopped working" for the next person reading the output.
+          verdict: identical
+            ? referenceValues.length === 0
+              ? "IDENTICAL (both empty — proves nothing)"
+              : "IDENTICAL"
+            : "DIFFERS",
         })
         if (!identical) {
           record(
