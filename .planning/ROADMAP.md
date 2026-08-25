@@ -152,9 +152,9 @@ onto `@napi-rs/lzma-linux-x64-gnu`.
 Plans:
 **Wave 1**
 
-- [ ] 46-01-PLAN.md — GATE A (static chain integrity, RED first) + repair migration 0006 by prepend + reconcile the dedup script's now-false comment · NC-5
-- [ ] 46-02-PLAN.md — `.env`/`.env.example` describe the host, compose constructs the container URL, docs reconciled, two gates re-anchored · SC-4, NC-4
-- [ ] 46-03-PLAN.md — all three Dockerfile pins to `node:24-alpine`, lockfile-derived `engines.node`, GATE C, ci.yml comment reconciled · NC-3
+- [x] 46-01-PLAN.md — GATE A (static chain integrity, RED first) + repair migration 0006 by prepend + reconcile the dedup script's now-false comment · NC-5
+- [x] 46-02-PLAN.md — `.env`/`.env.example` describe the host, compose constructs the container URL, docs reconciled, two gates re-anchored · SC-4, NC-4
+- [x] 46-03-PLAN.md — all three Dockerfile pins to `node:24-alpine`, lockfile-derived `engines.node`, GATE C, ci.yml comment reconciled · NC-3
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -456,7 +456,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 46. Migration Chain & Toolchain Floor | 0/? | Not started | - |
+| 46. Migration Chain & Toolchain Floor | 3/6 | In Progress|  |
 | 47. Suite Trust & Supply Chain | 0/? | Not started | - |
 | 48. REST API Authorization | 0/? | Not started | - |
 | 49. Mutation-Layer Truth After Commit | 0/? | Not started | - |

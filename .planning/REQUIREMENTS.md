@@ -32,7 +32,7 @@ activities, and custom fields. Advanced features can be built externally via the
 - [ ] **DEPLOY-02**: The documented migrate command works from the host without an inline override.
       *Source: `999.20`. `.env.local:1` points at `localhost:5432`; Postgres publishes on **5433**.
       Every phase since 33 that ran a migration paid a manual workaround.*
-- [ ] **DEPLOY-03**: The container's base image satisfies the toolchain's declared engines floor and
+- [x] **DEPLOY-03**: The container's base image satisfies the toolchain's declared engines floor and
       cannot silently drift below it. *Source: `999.14`. `node:20-alpine` is pinned at all three build
       stages; `vite@7` declares `^20.19.0 || >=22.12.0`. Latent, not broken — CI pins Node 24
       independently, which is why nothing has failed.*
@@ -195,7 +195,7 @@ Which phases cover which requirements. Filled in during roadmap creation.
 |-------------|-------|--------|
 | DEPLOY-01 | Phase 46 | Pending |
 | DEPLOY-02 | Phase 46 | Pending |
-| DEPLOY-03 | Phase 46 | Pending |
+| DEPLOY-03 | Phase 46 | Complete |
 | QG-01 | Phase 47 | Pending |
 | SEC-05 | Phase 47 | Pending |
 | SEC-01 | Phase 48 | Pending |
