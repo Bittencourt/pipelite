@@ -242,6 +242,27 @@ satisfies it at v24.19.0, but "major 24" alone does not.
 own rule), it is major-only (CONTEXT's own pinning style), and it equals what `ci.yml:52` already
 pins — closing the container/CI divergence 999.14 named.
 
+
+### C4 — `pg_dump`/`psql` are absent from the host; catalog queries replace the dump diff (DEPLOY-01 SC-1)
+
+CONTEXT's *Equivalence proof* block locks *"a table-by-table, column-by-column diff of two
+`pg_dump --schema-only` outputs"*. Measured 2026-08-24: **neither `pg_dump` nor `psql` is installed on
+this host at all** (§ Environment Availability). The decision's stated *mechanism* is unavailable.
+
+**Substitution:** ten catalog-level queries issued through the already-present `postgres` driver —
+tables, columns, indexes, constraints, enums, functions, extensions, defaults, nullability, and
+generated-column expressions. This preserves the decision's *intent* exactly (table-by-table and
+column-by-column, proved rather than inferred from a clean exit) and is strictly stronger in one
+respect: it is immune to `pg_dump`'s random `\restrict` token and `SET`-preamble noise, which is the
+reason CONTEXT itself had to say "normalise dump noise before diffing; do not `diff` raw dumps."
+
+Measured on the repaired chain: tables 36=36, columns 293=293, indexes 81=81, constraints 83=83,
+enums 9=9, functions 38=38, extensions 3=3 — all identical, including the four `GENERATED ALWAYS`
+columns `dedup-db-test-setup.sh` cites as its reason for needing a dump.
+
+This is a mechanism correction only. SC-1 is unchanged and is still proved by comparison, not by
+absence of error.
+
 ---
 
 ## Architectural Responsibility Map
@@ -1033,7 +1054,9 @@ function nodeBaseTags(dockerfile = readFileSync("Dockerfile", "utf8")) {
 
 ---
 
-## Open Questions
+## Open Questions (ALL RESOLVED — see CONTEXT.md § Resolved open questions)
+
+> All five were resolved at plan time and are reflected in 46-01..46-06. Retained for the reasoning.
 
 1. **Should `scripts/dedup-db-test-setup.sh` be converted to build from migrations?**
    - What we know: after this phase the chain can build a complete, verified-equivalent schema. The

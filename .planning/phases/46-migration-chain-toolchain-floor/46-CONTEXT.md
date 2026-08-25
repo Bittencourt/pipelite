@@ -44,11 +44,16 @@ behaviour; CI topology beyond wiring the new check in.
 - The restored DDL must match what `src/db/schema/` declares, minus the `user_id` column and FK that
   `0006` itself adds. Never hand-write index SQL into a migration (Phase 33 rule).
 
-### Equivalence proof (DEPLOY-01 SC-1, SC-2)
-- Equivalence is proved by a **table-by-table, column-by-column diff** of two `pg_dump --schema-only`
-  outputs: one from a throwaway database built only by `drizzle-kit migrate`, one from the working
-  database. Normalise dump noise (comments, `SET` preamble, ownership, dump version banner) before
-  diffing; do not `diff` raw dumps.
+### Equivalence proof (DEPLOY-01 SC-1, SC-2) — AMENDED by RESEARCH C4
+- **AMENDED 2026-08-24.** The original text locked a `pg_dump --schema-only` diff. Measured: **neither
+  `pg_dump` nor `psql` is installed on this host**, so that mechanism is unavailable.
+- Equivalence is instead proved by **ten catalog-level queries** through the already-present `postgres`
+  driver — tables, columns, indexes, constraints, enums, functions, extensions, defaults, nullability,
+  generated-column expressions — comparing a throwaway database built only by `drizzle-kit migrate`
+  against the working database. Intent is unchanged (table-by-table, column-by-column, **proved rather
+  than inferred from a clean exit**) and the catalog form is stronger: it is immune to `pg_dump`'s
+  random `\restrict` token and `SET`-preamble noise, which is why the original text had to add a
+  "normalise dump noise before diffing" caveat at all.
 - SC-2 (`/api/health` 200) is proved against the migration-built database **and nothing else** — no
   `db:push`, no dump restore anywhere in that path.
 
