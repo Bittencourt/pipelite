@@ -405,11 +405,14 @@ on purpose, and the verbatim output is recorded in
   `expires`, and an emptied `failOn` each make the evaluator report a problem, and each is asserted
   alongside the complementary case where it does *not*, so a function that always reported
   something would fail too.
-- **Two document-shape controls** on the script's own floors: an `npm audit` document whose
+- **Three document-shape controls** on the script's own floors. An `npm audit` document whose
   `vulnerabilities` object is empty while `metadata` still claims 14 packages must **fatal on the
-  reconciliation**, and a self-consistent but tiny document must **fatal on
-  `MIN_PACKAGES_AUDITED`**. This is the single most likely way this gate ships vacuous — a network
-  error, a proxy interception or a schema change all produce zero offenders and exit 0.
+  reconciliation**; a tiny document must **fatal on `MIN_PACKAGES_AUDITED`**; and a document that
+  is *self-consistent, full-size and empty* — a resolved 1285-package tree for which the registry
+  returned no advisories at all — must **fatal on `MIN_ADVISORIES_PARSED`**, because it reconciles
+  (0 === 0) and clears the package floor, so that is the only control that fires on it. This is the
+  single most likely way this gate ships vacuous — a network error, a proxy interception or a
+  schema change all produce zero offenders and exit 0.
 - **The end-to-end control**, which belongs to CI rather than to this file: add a knowingly
   vulnerable dependency (`minimist@1.2.5`, one critical advisory, zero dependencies, trivially
   reverted), watch the required `ci` check go red, revert, watch it go green. The order matters —

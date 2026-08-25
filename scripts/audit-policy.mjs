@@ -92,9 +92,22 @@ import path from "node:path"
  * Full remediation of every `failOn` advisory would leave 8 (the moderate and low ones with no
  * fix in range), so any floor above 8 would fatal on success and be "fixed" by the next person
  * lowering it, which is the failure mode the floor mechanism exists to prevent arriving through
- * the floor mechanism. The load-bearing empty-document detector here is NOT this number: it is
- * MIN_PACKAGES_AUDITED plus the histogram reconciliation in `assertAuditDocument`, which fails
- * on `{"vulnerabilities":{}}` no matter how few advisories a healthy tree would report.
+ * the floor mechanism.
+ *
+ * DO NOT LOWER IT BELOW 3, and note what an earlier version of this comment got wrong (WR-02).
+ * MIN_PACKAGES_AUDITED and the histogram reconciliation catch a TRUNCATED or DOCTORED document —
+ * `{"vulnerabilities":{}}` with a non-zero `metadata` fails the reconciliation, and a tiny tree
+ * fails the package floor. They do NOT catch the case that matters most here: a fully RESOLVED
+ * tree for which the registry, an intercepting proxy, or a mirror with no advisory database
+ * returned zero advisories. That document reconciles (0 === 0) and clears MIN_PACKAGES_AUDITED
+ * (1285 >= 500), and THIS floor is the only control that fires on it. Verified:
+ *
+ *     vulnerabilities {}, histogram all-zero, dependencies.total 1285
+ *       -> fatal: "only 0 distinct advisory id(s) were parsed ... the floor is 3"
+ *
+ * `staleAllowlistProblems` currently backstops it by reporting all 39 entries as stale — but only
+ * while the allowlist is non-empty, which is explicitly the state this project is working toward.
+ * If this floor is ever lowered, replace that guard in the same commit.
  */
 const MIN_ADVISORIES_PARSED = 3
 
