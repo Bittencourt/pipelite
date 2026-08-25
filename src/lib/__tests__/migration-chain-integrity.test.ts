@@ -163,12 +163,130 @@ interface Snapshot {
   tables?: Record<string, SnapshotTable | undefined>
 }
 
-/** Strip SQL comments, PRESERVING line structure so `file:line` reporting stays accurate. */
+/** A dollar-quote opening tag: the bare form or a named one. Postgres treats everything up to
+ *  the matching tag as body text, so nothing inside it is comment syntax. */
+const DOLLAR_TAG_RE = /^\$\$|^\$[A-Za-z_][A-Za-z0-9_]*\$/
+
+/**
+ * Strip SQL comments, PRESERVING line structure so `file:line` reporting stays accurate.
+ *
+ * ── WHY THIS IS ONE QUOTE-AWARE PASS AND NOT TWO REGEXES ─────────────────────────────────────
+ *
+ * It used to be two independent `replace` calls: block comments first, then line comments.
+ * Neither pass knew about SQL string literals, and stripping blocks first made that pass
+ * authoritative. Three reachable consequences, in a chain that already carries `--` prose in 0009
+ * and 0013 and a dollar-quoted function body in 0016:
+ *
+ *   - a `--` comment containing a block-comment OPENER, with any closer anywhere later in the
+ *     same file, made the block pass blank EVERYTHING between them — real `CREATE TABLE` lines
+ *     included;
+ *   - a literal containing `--` or a block opener (`INSERT … VALUES ('a--b')`, a CHECK carrying a
+ *     regex) was partially blanked;
+ *   - inside a dollar-quoted function body, an apostrophe or a `--` was read as SQL syntax rather
+ *     than as body text.
+ *
+ * All three fail LOUDLY here — a blanked `CREATE TABLE` shows up as a missing snapshot table — so
+ * this was never a vacuity hole. But the failure names the wrong cause, and the reader who sees
+ * "the chain does not create X" will go looking at X. Meanwhile the sibling helper `codeLines` in
+ * `src/lib/mutations/__tests__/db-test-isolation.test.ts` already implemented the quote-aware
+ * single-pass form, so the suite carried two comment strippers with different correctness
+ * properties.
+ *
+ * This is that same state machine with the arms SQL needs: `''` and `""` doubling rather than
+ * backslash escapes (correct while `standard_conforming_strings` is `on`, the default since 9.1),
+ * NESTING block comments (Postgres nests them; a non-greedy regex cannot), and dollar-quoting,
+ * which `drizzle/0016_dedup_functions.sql` uses.
+ *
+ * Newlines are always emitted, so the line count is invariant. Proved in both directions below.
+ */
 function stripSqlComments(sql: string): string {
-  const blockless = sql.replace(/\/\*[\s\S]*?\*\//g, (match) =>
-    match.replace(/[^\n]/g, " ")
-  )
-  return blockless.replace(/--[^\n]*/g, (match) => " ".repeat(match.length))
+  let out = ""
+  let i = 0
+  let blockDepth = 0
+  /** A single quote character, or the whole dollar-quote tag, currently open. */
+  let quote: string | null = null
+
+  while (i < sql.length) {
+    const ch = sql[i]
+    const next = sql[i + 1]
+
+    if (blockDepth > 0) {
+      if (ch === "*" && next === "/") {
+        blockDepth -= 1
+        out += "  "
+        i += 2
+        continue
+      }
+      if (ch === "/" && next === "*") {
+        blockDepth += 1
+        out += "  "
+        i += 2
+        continue
+      }
+      out += ch === "\n" ? "\n" : " "
+      i += 1
+      continue
+    }
+
+    if (quote !== null) {
+      if (quote.length > 1) {
+        // A dollar-quoted body. Only the exact opening tag closes it, and nothing inside it is
+        // SQL syntax — that is the whole point of the construct.
+        if (sql.startsWith(quote, i)) {
+          out += quote
+          i += quote.length
+          quote = null
+          continue
+        }
+        out += ch
+        i += 1
+        continue
+      }
+      out += ch
+      if (ch === quote) {
+        if (next === quote) {
+          // A doubled quote is an escaped quote, not a close.
+          out += next
+          i += 2
+          continue
+        }
+        quote = null
+      }
+      i += 1
+      continue
+    }
+
+    if (ch === "-" && next === "-") {
+      while (i < sql.length && sql[i] !== "\n") {
+        out += " "
+        i += 1
+      }
+      continue
+    }
+    if (ch === "/" && next === "*") {
+      blockDepth = 1
+      out += "  "
+      i += 2
+      continue
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch
+      out += ch
+      i += 1
+      continue
+    }
+    const dollarTag = DOLLAR_TAG_RE.exec(sql.slice(i))
+    if (dollarTag) {
+      quote = dollarTag[0]
+      out += dollarTag[0]
+      i += dollarTag[0].length
+      continue
+    }
+
+    out += ch
+    i += 1
+  }
+  return out
 }
 
 const journal = JSON.parse(readRepoFile(JOURNAL_PATH)) as Journal
@@ -448,6 +566,68 @@ describe("stripSqlComments, proved in both directions", () => {
     expect(
       createdTable(stripSqlComments('CREATE TABLE "notes" ( --> statement-breakpoint'))
     ).toBe("notes")
+  })
+
+  it("keeps a real statement whose LITERAL contains a double dash", () => {
+    // The old two-regex form blanked from the `--` inside the literal to end of line, taking the
+    // rest of a real statement with it. Nothing in the chain does this today; the point is that a
+    // future migration inserting seed rows must not silently disappear from the scan.
+    const fixture = `INSERT INTO t VALUES ('a--b'); CREATE TABLE "x" (`
+    expect(stripSqlComments(fixture)).toBe(fixture)
+    expect(createdTable('CREATE TABLE "x" (')).toBe("x")
+  })
+
+  it("does not let a block-comment opener inside a `--` comment swallow real DDL", () => {
+    // THE EXPENSIVE ONE. Block comments were stripped FIRST and knew nothing about line comments,
+    // so a `--` line mentioning an opener paired with any closer later in the file blanked
+    // everything between them. Here that is a whole `CREATE TABLE`, which the gate would then
+    // report as "the chain does not create notes" - naming a defect that is not there.
+    const opener = "/" + "*"
+    const closer = "*" + "/"
+    const fixture = `-- see ${opener} below\nCREATE TABLE "notes" (\n-- and ${closer} here`
+    const stripped = stripSqlComments(fixture)
+    expect(createdTable(stripped.split("\n")[1])).toBe("notes")
+  })
+
+  it("treats a dollar-quoted function body as text, not as syntax", () => {
+    // drizzle/0016_dedup_functions.sql uses this form. An apostrophe or a `--` inside the body is
+    // body text; reading it as SQL syntax leaves the stripper's quote state wrong for the whole
+    // REST OF THE FILE, which is how one migration's function body can blank another's DDL.
+    const fixture = [
+      "CREATE FUNCTION f() RETURNS text AS $$",
+      "  -- not a comment to strip; it is part of the body",
+      "  SELECT 'it''s fine';",
+      "$$ LANGUAGE sql;",
+      'CREATE TABLE "after" (',
+    ].join("\n")
+    const stripped = stripSqlComments(fixture)
+    expect(stripped.split("\n")[1]).toContain("not a comment to strip")
+    expect(createdTable(stripped.split("\n")[4])).toBe("after")
+  })
+
+  it("closes a NESTING block comment where Postgres closes it", () => {
+    // Postgres nests block comments; a non-greedy `/\*[\s\S]*?\*\//` closes at the FIRST closer
+    // and treats the remainder as code. That resurrects commented-out DDL.
+    const o = "/" + "*"
+    const c = "*" + "/"
+    const fixture = `${o} outer ${o} inner ${c}\nCREATE TABLE "ghost" (\n${c}\nCREATE TABLE "real" (`
+    const stripped = stripSqlComments(fixture)
+    expect(createdTable(stripped.split("\n")[1])).toBeNull()
+    expect(createdTable(stripped.split("\n")[3])).toBe("real")
+  })
+
+  it("leaves every migration in the real chain byte-identical apart from its comments", () => {
+    // A cross-check against the actual inputs rather than another fixture: the stripper must not
+    // shorten or reflow any file it is fed. Length and line count are invariant by construction,
+    // and this is the standing proof that they still are for all 20 files.
+    for (const file of chainFiles) {
+      const raw = readRepoFile(file)
+      const stripped = stripSqlComments(raw)
+      expect(stripped.length, `${file}: stripper changed the byte length`).toBe(raw.length)
+      expect(stripped.split("\n").length, `${file}: stripper changed the line count`).toBe(
+        raw.split("\n").length,
+      )
+    }
   })
 
   it("preserves line count, because every failure this gate reports is a file:line", () => {
