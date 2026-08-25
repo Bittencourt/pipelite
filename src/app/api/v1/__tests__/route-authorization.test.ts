@@ -94,6 +94,64 @@ const API_ROOT = "src/app/api/v1"
 const GATE_PATH = "src/app/api/v1/__tests__/route-authorization.test.ts"
 
 /**
+ * Floor on the number of `route.ts` files the walk enumerates under `src/app/api/v1`.
+ * Measured on the tree this gate was written against: **36**. 30 is a deliberately loose floor, set
+ * BELOW the measurement so that ordinary consolidation does not fatal with a message that
+ * misdiagnoses shrinkage as a broken walk.
+ *
+ * Without this floor a wrong root constant or a broken recursion yields an empty file list,
+ * therefore zero offenders, therefore a permanently green gate — the exact shape of the v1.3 gates
+ * that could not fail, and the shape SEC-48-B proved this repository still had.
+ */
+const MIN_ROUTE_FILES = 30
+
+/**
+ * Floor on exported `FunctionDeclaration` verb handlers parsed across that corpus.
+ * Measured: **62**. 55 is set below it, for the reason above.
+ *
+ * "The sweep found no offenders" is satisfied perfectly by a handler detector that stopped detecting
+ * handlers — a renamed `SyntaxKind`, a `typescript` major that changes how modifiers are reached, or
+ * a typo in `VERBS`. This is what tells those apart from a tree in which every route authorizes.
+ */
+const MIN_HANDLERS_PARSED = 55
+
+/**
+ * Floor on handlers exported via `export const { GET, POST } = factory(...)`.
+ * Measured: **8**, across exactly **4** files — `activities/[id]/notes`, `deals/[id]/notes`,
+ * `organizations/[id]/notes`, `people/[id]/notes`. Every one of those files exports ZERO
+ * `FunctionDeclaration`s.
+ *
+ * Set at HALF the measurement, deliberately and unlike the other four floors. The failure this
+ * defends against is a walker that reports **zero** — the entire binding-form population dropping
+ * out of the sweep with no exemption entry and no record. Consolidating two of the four note routes
+ * is an ordinary refactor and must not false-RED; regressing to a `FunctionDeclaration`-only walk
+ * must.
+ */
+const MIN_BINDING_HANDLERS = 4
+
+/**
+ * Floor on `withApiAuth(...)` call expressions across the corpus.
+ * Measured: **61** — which is the 62 declaration-form handlers minus `docs/route.ts`'s GET, the one
+ * handler deliberately outside the wrapper. 50 is set below it.
+ */
+const MIN_WITH_API_AUTH_CALLS = 50
+
+/**
+ * WR-11 token floors: the identifiers this detector MATCHES ON must still be FOUND in the corpus.
+ * Measured `context.userId` **55**, `ctx.userId` **22**, owner-like property accesses **123**.
+ *
+ * Phase 46's lesson, restated: a scan that never asserts its own search term still matches goes
+ * green precisely when it breaks. If `context.userId` were renamed repo-wide and `IDENTITY_OBJECTS`
+ * were not updated, every handler would become an offender — loud. But if the rename went the other
+ * way, or if `isIdentityExpression` regressed, every handler would become authorized and the sweep
+ * would report a clean tree. These three floors are the only thing standing between that and a
+ * green tick beside an open hole.
+ */
+const MIN_IDENTITY_HITS_CONTEXT = 40
+const MIN_IDENTITY_HITS_CTX = 15
+const MIN_OWNER_LIKE_ACCESSES = 90
+
+/**
  * The five HTTP verb names Next.js route handlers may export. A name outside this set is not a
  * route handler, whichever form it is exported in.
  */
@@ -846,5 +904,182 @@ describe("the authorization matcher, unit-tested against fixtures FIRST", () => 
     expect(firstMatch(`const r = verifyStageOwnership(id)`, matchesR3)).toBe(false)
     expect(firstMatch(`const v = { ownerId: ctx.userId }`, matchesR4)).toBe(true)
     expect(firstMatch(`const v = { actorId: ctx.userId }`, matchesR4)).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 3. THE CORPUS. Walked once, parsed once, at module scope.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Measured cost of this block, this session: `import ts from "typescript"` **522.9 ms** (once per
+ * vitest WORKER, not once per gate), the directory walk **1.3 ms**, parsing all 36 route files
+ * **161.7 ms** over **23,215 AST nodes**. Worst case for the whole file ≈ 690 ms.
+ *
+ * Those numbers live in this comment and NOWHERE in an assertion. `suite-timing-hygiene.test.ts`
+ * forbids an `expect()` over a clock-derived delta or ratio, and a timing assertion in CI is a
+ * flake generator rather than a control.
+ *
+ * The corpus is `route.ts` files, which is DISJOINT from the `*.test.ts` corpus of
+ * `suite-hook-hygiene.test.ts` and `suite-timing-hygiene.test.ts`. There is no `CORPUS` constant to
+ * extend and nothing to share; this gate is standalone on purpose.
+ */
+const ROUTE_FILES = walkRouteFiles(API_ROOT).sort()
+const CORPUS = ROUTE_FILES.map((file) => ({ file, ...scanSource(file, readRepoFile(file)) }))
+
+const TOTAL_DECLARATION_HANDLERS = CORPUS.reduce(
+  (sum, entry) => sum + entry.counters.declarationHandlers,
+  0
+)
+const TOTAL_BINDING_HANDLERS = CORPUS.reduce(
+  (sum, entry) => sum + entry.counters.bindingHandlers,
+  0
+)
+const TOTAL_WITH_API_AUTH_CALLS = CORPUS.reduce(
+  (sum, entry) => sum + entry.counters.withApiAuthCalls,
+  0
+)
+const TOTAL_IDENTITY_HITS = CORPUS.reduce(
+  (totals, entry) => ({
+    ctx: totals.ctx + entry.counters.identityHits.ctx,
+    context: totals.context + entry.counters.identityHits.context,
+  }),
+  { ctx: 0, context: 0 }
+)
+const TOTAL_OWNER_LIKE_ACCESSES = CORPUS.reduce(
+  (sum, entry) => sum + entry.counters.ownerLikeAccesses,
+  0
+)
+const CORPUS_OFFENDERS = CORPUS.flatMap((entry) => entry.offenders)
+
+describe("the sweep reaches the tree it claims to scan", () => {
+  it(`enumerates at least ${MIN_ROUTE_FILES} route files under ${API_ROOT}/`, () => {
+    expect(
+      ROUTE_FILES.length,
+      `the walk found ${ROUTE_FILES.length} route files. Measured 36 when this gate was written; ` +
+        `a count this low means API_ROOT or the recursion is wrong, and every negative assertion ` +
+        `that reads this corpus is passing because it has nothing to look at.`
+    ).toBeGreaterThanOrEqual(MIN_ROUTE_FILES)
+  })
+
+  it(`parses at least ${MIN_HANDLERS_PARSED} declaration-form verb handlers`, () => {
+    expect(
+      TOTAL_DECLARATION_HANDLERS,
+      `the parse found ${TOTAL_DECLARATION_HANDLERS} exported function handlers. Measured 62. If ` +
+        `this collapsed, the handler detector stopped detecting — check VERBS, hasExportModifier ` +
+        `and ts.isFunctionDeclaration against the installed typescript major.`
+    ).toBeGreaterThanOrEqual(MIN_HANDLERS_PARSED)
+  })
+
+  it(`parses at least ${MIN_BINDING_HANDLERS} binding-form verb handlers`, () => {
+    // The floor that makes the FunctionDeclaration-only blind spot impossible to reintroduce
+    // silently. Measured 8, across exactly 4 files. A regression to a declaration-only walk reports
+    // ZERO here while leaving every other assertion in this file perfectly green.
+    expect(
+      TOTAL_BINDING_HANDLERS,
+      `the parse found ${TOTAL_BINDING_HANDLERS} binding-form handlers. Measured 8 across 4 note ` +
+        `routes, each of which exports NO FunctionDeclaration at all. A zero here means those ` +
+        `files left the sweep with no exemption entry, no reason and no record.`
+    ).toBeGreaterThanOrEqual(MIN_BINDING_HANDLERS)
+  })
+
+  it(`parses at least ${MIN_WITH_API_AUTH_CALLS} withApiAuth call expressions`, () => {
+    expect(
+      TOTAL_WITH_API_AUTH_CALLS,
+      `the parse found ${TOTAL_WITH_API_AUTH_CALLS} withApiAuth calls. Measured 61 — the 62 ` +
+        `declaration-form handlers minus docs/route.ts's deliberately unwrapped GET.`
+    ).toBeGreaterThanOrEqual(MIN_WITH_API_AUTH_CALLS)
+  })
+
+  it("parses every enumerated file without a syntax error swallowing its contents", () => {
+    // `ts.createSourceFile` returns a SourceFile even when it fails to parse — silently, with a
+    // truncated tree, no throw and no diagnostic unless you ask for one. A file that parsed to zero
+    // nodes is a parse failure, not a clean file, and a file that parsed to zero handlers is a
+    // route.ts that exports no route handler, which does not exist in this tree.
+    const emptyParses = CORPUS.filter((entry) => entry.counters.nodesSeen === 0).map((e) => e.file)
+    expect(emptyParses, `these route files parsed to ZERO AST nodes`).toEqual([])
+
+    const noHandler = CORPUS.filter((entry) => entry.handlers.length === 0).map((e) => e.file)
+    expect(
+      noHandler,
+      `these route.ts files parsed to zero exported verb handlers. Every route.ts in this tree ` +
+        `exports at least one, so this is a parse or a detector failure rather than a clean file.`
+    ).toEqual([])
+  })
+})
+
+describe("the detector still finds the identifiers it matches on (WR-11)", () => {
+  it("finds both identity spellings and the owner-like property accesses", () => {
+    // The negative this gate ultimately asserts is "no handler fails to reach an identity
+    // expression". A detector that stopped recognising `context.userId` satisfies that by finding
+    // nothing to recognise. These three floors are what make the eventual `toEqual([])` mean
+    // something rather than mean "it broke".
+    expect(
+      TOTAL_IDENTITY_HITS.context,
+      `\`context.userId\` fell to ${TOTAL_IDENTITY_HITS.context} occurrences in ${API_ROOT} ` +
+        `(measured 55). The detector was almost certainly renamed rather than the codebase ` +
+        `rewritten — check IDENTITY_OBJECTS and isIdentityExpression.`
+    ).toBeGreaterThanOrEqual(MIN_IDENTITY_HITS_CONTEXT)
+
+    expect(
+      TOTAL_IDENTITY_HITS.ctx,
+      `\`ctx.userId\` fell to ${TOTAL_IDENTITY_HITS.ctx} occurrences in ${API_ROOT} (measured 22). ` +
+        `Both spellings are in live use; a detector matching only one under-detects by 26% and ` +
+        `reports offenders that are correctly authorized.`
+    ).toBeGreaterThanOrEqual(MIN_IDENTITY_HITS_CTX)
+
+    expect(
+      TOTAL_OWNER_LIKE_ACCESSES,
+      `owner-like property accesses fell to ${TOTAL_OWNER_LIKE_ACCESSES} in ${API_ROOT} ` +
+        `(measured 123). If this collapsed, OWNER_PROPS no longer names the schema's ownership ` +
+        `columns and rules R1, R2 and R4 have stopped being able to fire at all.`
+    ).toBeGreaterThanOrEqual(MIN_OWNER_LIKE_ACCESSES)
+  })
+})
+
+describe("the gate does not sweep itself, and that is structural rather than an exclusion", () => {
+  it("is not enumerated by its own walk", () => {
+    // EXACTLY ONE mitigation, and this is it: the corpus predicate is `entry.name === "route.ts"`,
+    // and this file is not one. Asserted rather than assumed, because widening that predicate to
+    // `*.ts` would silently pull this file's fixtures in and give the gate a second, unprovable
+    // reason to be green.
+    //
+    // Do NOT additionally path-exclude this file, and do not claim the string fixtures are a second
+    // mitigation. Two mitigations is one fewer than one: neither ends up provable.
+    expect(ROUTE_FILES).not.toContain(GATE_PATH)
+    expect(ROUTE_FILES.some((file) => file.includes("__tests__"))).toBe(false)
+  })
+})
+
+describe("PRE-FIX OBSERVATION — plan 48-05 wave 1", () => {
+  /**
+   * ⚠ TEMPORARY OBSERVATION SLOT. THIS `it` IS NOT A GATE.
+   *
+   * Its only assertion is the `MIN_ROUTE_FILES` floor. The offender list is PRINTED, not asserted,
+   * and a log line is not a gate — that is deliberate and it is stated here so no reader mistakes
+   * the console output for a control.
+   *
+   * Why it exists: this file lands in wave 1, alongside plans 48-01 through 48-04, which are fixing
+   * four of the routes below. `expect(CORPUS_OFFENDERS).toEqual([])` would be red today, and
+   * asserting the pre-fix set exactly would go red the moment those four plans merge. So wave 1
+   * records the RED-first evidence — the direct answer to SEC-48-B, which measured 5237 passing
+   * tests failing to notice three deleted ownership predicates — and wave 2 turns it into a gate.
+   *
+   * **PLAN 48-08 DELETES THIS `it`**, adds the four exemption lists as live controls, and replaces
+   * it with the array-form `expect(CORPUS_OFFENDERS).toEqual([])` plus the falsification controls
+   * that prove this gate can fail.
+   */
+  it("records the offender list the detector produces today", () => {
+    console.log(
+      `\n[48-05] ${CORPUS_OFFENDERS.length} unauthorized /api/v1 handlers, pre-fix, no exemptions:\n` +
+        CORPUS_OFFENDERS.map((offender) => `  ${offender}`).join("\n") +
+        `\n[48-05] corpus: ${ROUTE_FILES.length} route files, ` +
+        `${TOTAL_DECLARATION_HANDLERS} declaration-form + ${TOTAL_BINDING_HANDLERS} binding-form ` +
+        `handlers, ${TOTAL_WITH_API_AUTH_CALLS} withApiAuth calls, ` +
+        `${TOTAL_IDENTITY_HITS.context} context.userId + ${TOTAL_IDENTITY_HITS.ctx} ctx.userId, ` +
+        `${TOTAL_OWNER_LIKE_ACCESSES} owner-like accesses\n`
+    )
+
+    expect(ROUTE_FILES.length).toBeGreaterThanOrEqual(MIN_ROUTE_FILES)
   })
 })
