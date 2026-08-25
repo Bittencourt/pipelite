@@ -62,6 +62,13 @@ const eslintConfig = defineConfig([
     //     activity type: Call" — not an application log line. Emitting those as JSON would
     //     degrade the CLI and serve no observability goal; nothing ships a seed script's
     //     stdout anywhere.
+    //   - `scripts/**`: repo-level operational scripts an operator runs in a terminal.
+    //     `migrate-from-zero.mjs` (phase 46 / DEPLOY-01) is the first non-bash one. Its
+    //     entire output IS its interface — the `-> …` progress echoes, the ten-dimension
+    //     catalog table and the FATAL diagnoses that an npm script and a CI job read. It
+    //     never runs inside the server, so there is no logger to bypass and nothing to
+    //     level or ship. Same category and same reasoning as `drizzle/**` above; the two
+    //     entries would be one glob if this repo kept its scripts in one directory.
     //   - `.planning/**`: phase-38 UAT evidence scripts (9 sites). All 29 files in
     //     `.planning/milestones/v1.3-phases/38-bulk-operations/38-20-uat-evidence/` are UNTRACKED — `git
     //     ls-files` returns 0 — so they are not in the repository, never reach CI, and are
@@ -69,7 +76,7 @@ const eslintConfig = defineConfig([
     //     a transient copy must not fail the repo's lint gate for reasons unrelated to the
     //     real tree.
     //
-    // These four non-src entries were NOT in the phase plan, which measured the migration
+    // These five non-src entries were NOT in the phase plan, which measured the migration
     // surface with an eslint run scoped to `src/` and so never counted them. Bare `eslint`
     // walks the whole repo. Adding them is a scope correction, not a hole: every path here
     // is outside `src/`, so criterion 1's actual surface is untouched.
@@ -85,6 +92,7 @@ const eslintConfig = defineConfig([
       "**/__tests__/**",
       "e2e/**",
       "drizzle/**",
+      "scripts/**",
       ".planning/**",
     ],
     rules: { "no-console": "off" },

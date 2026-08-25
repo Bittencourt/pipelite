@@ -1,0 +1,748 @@
+#!/usr/bin/env node
+/**
+ * Build a throwaway database from the migration chain ALONE, prove its CATALOG is the
+ * schema this repository claims to ship, and remove the throwaway database again.
+ *
+ * Run it with `npm run db:check-migrations`. Plain ESM, bare `node`, no `tsx` — `tsx` is
+ * not a declared dependency here (see e2e/seed-admin.ts:4-9, which records that this is
+ * why `db:seed-activities` is currently unrunnable). Not bash either: this host has
+ * neither `psql` nor `pg_dump`.
+ *
+ * WHY THIS EXISTS
+ *   DEPLOY-01. A self-hoster who clones this repository must be able to build a working
+ *   database from `drizzle/` with the command the docs print. Until phase 46 they could
+ *   not: migration 0006 had lost TWO `CREATE TABLE` statements. One of them,
+ *   `import_sessions`, failed loudly — 42P01, the whole chain rolled back, zero tables.
+ *   The other, `webhook_deliveries`, failed SILENTLY: nothing referenced it, so
+ *   `drizzle-kit migrate` exited 0 and shipped a database that was one table short until
+ *   application code inserted into it (src/lib/api/webhooks/deliver.ts:61 does
+ *   `db.insert(webhookDeliveries)` — every delivery would have raised 42P01 behind a
+ *   green migrate). The static half of this gate is
+ *   src/lib/__tests__/migration-chain-integrity.test.ts; this is the behavioural half.
+ *
+ * WHY THE CATALOG AND NOT A DUMP, AND NEVER AN EXIT CODE
+ *   `drizzle-kit migrate` prints the identical `migrations applied successfully!` line
+ *   for 0 applied migrations and for 20 — measured, and already written down at
+ *   docs/admin/backup-restore.md:200-210. A gate that greps that line, or that reads the
+ *   child's exit code and stops there, cannot see the silent class at all. So the exit
+ *   code is RECORDED and never branched on: the catalog is asserted either way.
+ *   A `pg_dump` text diff is no good either — pg_dump from postgres:16-alpine emits
+ *   `\restrict <token>` lines whose token changes on every invocation, plus a SET
+ *   preamble, OWNER TO and a version banner, and this host has no pg_dump to run.
+ *   Ten catalog queries through the `postgres` driver (already a direct dependency) are
+ *   stronger, readable, and run unchanged on the host, in Docker and in CI.
+ *
+ * IT IS FENCED THREE WAYS
+ *   This script executes CREATE DATABASE / DROP DATABASE against a cluster that also
+ *   hosts the operator's real records. It is fenced the way
+ *   scripts/dedup-db-test-setup.sh:65-73 and :107-130 are fenced, translated to a
+ *   generated name:
+ *     1. the scratch name must match /^pipelite_migchk_[a-z0-9_]+$/ — re-checked
+ *        immediately before every interpolation, because a database identifier cannot be
+ *        a bound parameter;
+ *     2. it must equal neither REFERENCE_DB nor the literal `pipelite`;
+ *     3. every CREATE/DROP is issued on its own connection to the `postgres` maintenance
+ *        database (neither statement can run inside a transaction), and on the scratch
+ *        connection itself `select current_database()` must equal the scratch name before
+ *        a single assertion runs.
+ *   The reference database is opened READ ONLY and only ever receives SELECT.
+ *
+ * HOW IT REACHES THE SERVER
+ *   Over TCP with the `postgres` driver, using DATABASE_URL from the environment or, if
+ *   it is not there, from the ONE file drizzle-kit's bundled dotenv reads:
+ *   path.resolve(cwd, ".env") (drizzle-kit/bin.cjs:754). So this script and the command
+ *   the docs print resolve the same server by the same rule. No `docker exec`, no
+ *   `docker compose` (which infers a different project name from a git worktree — see
+ *   scripts/dedup-db-test-setup.sh:53-59). The connection string is never an argv
+ *   parameter and is never printed: only host, port and database name are logged.
+ *
+ * HOW TO BREAK IT ON PURPOSE
+ *   Both controls edit drizzle/0006_import-sessions-user-id.sql and are restored with
+ *   `git checkout --`.
+ *     NC-1, the loud class: remove the `CREATE TABLE "import_sessions"` block. Expect the
+ *       child migrate to fail with 42P01 `relation "import_sessions" does not exist`, that
+ *       text to reach the terminal verbatim, `public` tables 0 while `drizzle`.
+ *       __drizzle_migrations survives the rollback, and a non-zero exit here.
+ *     NC-2, the silent class, and the one that matters: remove the
+ *       `CREATE TABLE "webhook_deliveries"` block AND its CREATE INDEX line. Expect the
+ *       child migrate to EXIT 0 and report success while THIS SCRIPT exits 1 on the
+ *       table-set assertion, 35 against the snapshot's 36, naming `webhook_deliveries`.
+ *       That combination is the whole proof that this gate is stronger than an exit code.
+ */
+
+import { spawn } from "node:child_process"
+import { existsSync, readFileSync } from "node:fs"
+import path from "node:path"
+
+import postgres from "postgres"
+
+// ---------------------------------------------------------------------------
+// Anti-vacuity floors. Two empty sets compare equal, which is the exact shape of the six
+// gates v1.3 shipped that could not fail. Each number below was measured on 2026-08-25
+// against this tree; each floor sits BELOW the measurement so ordinary growth does not
+// trip it, but a parse that silently yields nothing does.
+// ---------------------------------------------------------------------------
+const MIN_JOURNAL_ENTRIES = 20 // measured: exactly 20 (0000..0019)
+const MIN_SNAPSHOT_TABLES = 36 // measured: exactly 36
+const MIN_SNAPSHOT_COLUMNS = 280 // measured: 293 table.column pairs
+const MIN_SNAPSHOT_INDEXES = 30 // measured: 41 declared index names
+
+const SCRATCH_PATTERN = /^pipelite_migchk_[a-z0-9_]+$/
+const FORBIDDEN_SCRATCH_NAMES = ["pipelite", "postgres", "template0", "template1"]
+
+class Fatal extends Error {}
+
+function fatal(message) {
+  throw new Fatal(message)
+}
+
+function progress(line) {
+  console.log(`-> ${line}`)
+}
+
+// ---------------------------------------------------------------------------
+// Connection resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * The DATABASE_URL assignment in `.env`, matched as a WHOLE LINE.
+ *
+ * The anchor is load-bearing, not tidiness: `E2E_DATABASE_URL=` CONTAINS `DATABASE_URL=`
+ * as a substring, so an unanchored search finds two assignments and can return the wrong
+ * one. Plan 46-02 hit exactly this while editing the same file.
+ */
+function databaseUrlFromDotenv() {
+  const envPath = path.resolve(process.cwd(), ".env")
+  if (!existsSync(envPath)) return null
+  for (const line of readFileSync(envPath, "utf8").split("\n")) {
+    const match = /^\s*DATABASE_URL\s*=\s*(.*)$/.exec(line)
+    if (!match) continue
+    let value = match[1].trim()
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1)
+    }
+    if (value) return value
+  }
+  return null
+}
+
+function resolveConnectionString() {
+  const fromEnv = process.env.DATABASE_URL
+  if (fromEnv) return { url: fromEnv, origin: "process.env.DATABASE_URL" }
+  const fromFile = databaseUrlFromDotenv()
+  if (fromFile) return { url: fromFile, origin: ".env" }
+  fatal(
+    "no DATABASE_URL. Set it in the environment, or put it in .env — the one file " +
+      "drizzle-kit reads. Copy the example and edit the credentials:\n" +
+      "  cp .env.example .env"
+  )
+  return null
+}
+
+/** A new connection string for another database on the same server. URL surgery, never
+ *  string concatenation — the vitest.db.config.ts:75-79 rule, so credentials, host and
+ *  port stay exactly as configured and nothing has to be re-quoted. */
+function withDatabase(source, name) {
+  const url = new URL(source)
+  url.pathname = `/${name}`
+  return url.toString()
+}
+
+function databaseNameOf(source) {
+  return new URL(source).pathname.replace(/^\//, "")
+}
+
+/** Host, port and database — never the credentials. T-46-04-03. */
+function describeTarget(source) {
+  const url = new URL(source)
+  return `${url.hostname}:${url.port || "5432"}/${databaseNameOf(source)}`
+}
+
+function connect(url) {
+  return postgres(url, {
+    max: 1,
+    idle_timeout: 5,
+    connect_timeout: 15,
+    onnotice: () => {},
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Fences 1 and 2 — re-checked immediately before every interpolation, because a database
+// identifier cannot be parameterised. T-46-04-01, T-46-04-02.
+// ---------------------------------------------------------------------------
+function assertScratchName(name, referenceName) {
+  if (!SCRATCH_PATTERN.test(name)) {
+    fatal(
+      `refusing to touch "${name}": a scratch database name must match ` +
+        `${SCRATCH_PATTERN}. This script provisions throwaway databases and nothing else.`
+    )
+  }
+  if (name === referenceName) {
+    fatal(
+      `refusing to touch "${name}": it is the reference database, which this script only ` +
+        "ever reads with SELECT."
+    )
+  }
+  if (FORBIDDEN_SCRATCH_NAMES.includes(name)) {
+    fatal(
+      `refusing to touch "${name}": it is a reserved or development database name. The ` +
+        "scratch database must be a generated pipelite_migchk_* name."
+    )
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The ten catalog dimensions. Exactly the queries measured in 46-RESEARCH § Code
+// Examples 3, issued through the driver rather than psql. Each returns one text column
+// `v`; both sides are sorted and diffed by value, never by count.
+// ---------------------------------------------------------------------------
+
+// The column dimension deliberately omits one information_schema.columns attribute:
+// ordinal_position. Physical column order differs on `activities` and `deals` because the
+// live database received several columns through db:push/ALTER in a different order than
+// the chain adds them — same columns, same types, same defaults. Drizzle always names
+// columns, so the order is not a defect; including it makes this gate permanently red for
+// a reason that does not matter, and the next person to see it red will "fix" it by
+// weakening the whole comparison. Do not re-add it.
+const CATALOG_QUERIES = {
+  tables:
+    "select table_name::text as v from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE'",
+  columns:
+    "select (table_name||'|'||column_name||'|'||data_type||'|'||coalesce(character_maximum_length::text,'-')||'|'||coalesce(numeric_precision::text,'-')||'|'||is_nullable||'|'||coalesce(column_default,'-')||'|'||coalesce(is_generated,'-')||'|'||coalesce(generation_expression,'-'))::text as v from information_schema.columns where table_schema = 'public'",
+  indexes:
+    "select (indexname||' :: '||indexdef)::text as v from pg_indexes where schemaname = 'public'",
+  constraints:
+    "select (conrelid::regclass||'|'||conname||'|'||pg_get_constraintdef(oid))::text as v from pg_constraint where connamespace = 'public'::regnamespace",
+  enums:
+    "select (t.typname||'='||e.enumlabel)::text as v from pg_type t join pg_enum e on e.enumtypid = t.oid join pg_namespace n on n.oid = t.typnamespace where n.nspname = 'public'",
+  functions:
+    "select (p.proname||'|'||pg_get_function_identity_arguments(p.oid))::text as v from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'",
+  extensions: "select extname::text as v from pg_extension",
+  triggers:
+    "select (tgrelid::regclass||'|'||tgname)::text as v from pg_trigger where not tgisinternal",
+  sequences:
+    "select sequence_name::text as v from information_schema.sequences where sequence_schema = 'public'",
+  views:
+    "select table_name::text as v from information_schema.views where table_schema = 'public'",
+}
+
+async function catalogValues(sql, query) {
+  const rows = await sql.unsafe(query)
+  return rows.map((row) => String(row.v)).sort()
+}
+
+/** Public BASE TABLE count. The `public` qualifier is load-bearing: after a FAILED
+ *  migrate the `drizzle` schema still holds __drizzle_migrations, because CREATE SCHEMA
+ *  and the ledger table run OUTSIDE session.transaction
+ *  (drizzle-orm/pg-core/dialect.js:54-55 vs :60). An unqualified count returns 1 where the
+ *  honest answer is 0, and gets "fixed" by relaxing it. */
+async function publicTableCount(sql) {
+  const rows = await sql.unsafe(
+    "select count(*)::int as v from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE'"
+  )
+  return rows[0].v
+}
+
+/** What survived a rolled-back chain, read from pg_catalog so this diagnostic cannot be
+ *  confused with the assertion above. */
+async function drizzleLedgerState(sql) {
+  const tables = await sql.unsafe(
+    "select count(*)::int as v from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'drizzle' and c.relkind = 'r'"
+  )
+  let rows = null
+  if (tables[0].v > 0) {
+    const present = await sql.unsafe(
+      "select to_regclass('drizzle.__drizzle_migrations') is not null as v"
+    )
+    if (present[0].v) {
+      const counted = await sql.unsafe(
+        "select count(*)::int as v from drizzle.__drizzle_migrations"
+      )
+      rows = counted[0].v
+    }
+  }
+  return { tables: tables[0].v, ledgerRows: rows }
+}
+
+function setDifference(expected, actual) {
+  const actualSet = new Set(actual)
+  const expectedSet = new Set(expected)
+  return {
+    missing: expected.filter((v) => !actualSet.has(v)),
+    unexpected: actual.filter((v) => !expectedSet.has(v)),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The always-available reference: the LAST journal entry's snapshot.
+// ---------------------------------------------------------------------------
+function loadSnapshotReference() {
+  const journalPath = path.resolve(process.cwd(), "drizzle", "meta", "_journal.json")
+  if (!existsSync(journalPath)) {
+    fatal(`${journalPath} does not exist — run this from the repository root.`)
+  }
+  const journal = JSON.parse(readFileSync(journalPath, "utf8"))
+  const entries = Array.isArray(journal.entries) ? journal.entries : []
+  if (entries.length < MIN_JOURNAL_ENTRIES) {
+    fatal(
+      `drizzle/meta/_journal.json parsed ${entries.length} entries, floor is ` +
+        `${MIN_JOURNAL_ENTRIES} (measured 20). Either the journal shrank or this script ` +
+        "stopped being able to read it — both make every assertion below vacuous."
+    )
+  }
+  const last = entries[entries.length - 1]
+  const idx = String(last.idx).padStart(4, "0")
+  const snapshotPath = path.resolve(process.cwd(), "drizzle", "meta", `${idx}_snapshot.json`)
+  if (!existsSync(snapshotPath)) {
+    fatal(`journal's last entry is idx ${last.idx} but ${snapshotPath} does not exist.`)
+  }
+  const snapshot = JSON.parse(readFileSync(snapshotPath, "utf8"))
+
+  const tables = []
+  const columnPairs = []
+  const indexNames = []
+  for (const [key, table] of Object.entries(snapshot.tables ?? {})) {
+    const name = table.name ?? key.replace(/^public\./, "")
+    tables.push(name)
+    for (const column of Object.keys(table.columns ?? {})) columnPairs.push(`${name}.${column}`)
+    for (const index of Object.keys(table.indexes ?? {})) indexNames.push(index)
+  }
+
+  if (tables.length < MIN_SNAPSHOT_TABLES) {
+    fatal(
+      `${path.basename(snapshotPath)} parsed ${tables.length} tables, floor is ` +
+        `${MIN_SNAPSHOT_TABLES} (measured 36). A snapshot that parses to nothing compares ` +
+        "equal to an empty database."
+    )
+  }
+  if (columnPairs.length < MIN_SNAPSHOT_COLUMNS) {
+    fatal(
+      `${path.basename(snapshotPath)} parsed ${columnPairs.length} table.column pairs, ` +
+        `floor is ${MIN_SNAPSHOT_COLUMNS} (measured 293).`
+    )
+  }
+  if (indexNames.length < MIN_SNAPSHOT_INDEXES) {
+    fatal(
+      `${path.basename(snapshotPath)} parsed ${indexNames.length} declared index names, ` +
+        `floor is ${MIN_SNAPSHOT_INDEXES} (measured 41).`
+    )
+  }
+
+  return {
+    file: path.relative(process.cwd(), snapshotPath),
+    journalEntries: entries.length,
+    tables: tables.sort(),
+    columnPairs: columnPairs.sort(),
+    indexNames: indexNames.sort(),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The from-zero build
+// ---------------------------------------------------------------------------
+/** The running child, so an interrupt can end it instead of orphaning it. */
+let activeChild = null
+/** Set by the SIGINT/SIGTERM handlers at the bottom of this file. */
+let interrupted = false
+
+function runDrizzleMigrate(scratchUrl) {
+  const bin = path.resolve(process.cwd(), "node_modules", ".bin", "drizzle-kit")
+  if (!existsSync(bin)) {
+    fatal(`${bin} does not exist. Install dependencies first:\n  npm install`)
+  }
+  return new Promise((resolve, reject) => {
+    // DATABASE_URL travels in the child's ENVIRONMENT, never on its argv: a connection
+    // string on a command line is visible in `ps`, in shell history and in CI logs.
+    // drizzle-kit's bundled dotenv uses `override: false`, so a value already present in
+    // the child's environment WINS over .env — that is the mechanism that aims the CLI at
+    // the scratch database without editing a single file.
+    const child = spawn(bin, ["migrate"], {
+      cwd: process.cwd(),
+      env: { ...process.env, DATABASE_URL: scratchUrl },
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+    // stdout AND stderr are echoed through verbatim. On the failing path `42P01` IS the
+    // diagnosis; swallowing stderr destroys the only useful output the failure produces.
+    activeChild = child
+    // drizzle-kit's last line carries no trailing newline, so without this the next
+    // progress line is glued onto `migrations applied successfully!`.
+    let atLineStart = true
+    const echo = (stream, chunk) => {
+      atLineStart = chunk[chunk.length - 1] === 0x0a
+      stream.write(chunk)
+    }
+    child.stdout.on("data", (chunk) => echo(process.stdout, chunk))
+    child.stderr.on("data", (chunk) => echo(process.stderr, chunk))
+    child.on("error", (error) => {
+      activeChild = null
+      reject(error)
+    })
+    child.on("close", (code, signal) => {
+      activeChild = null
+      if (!atLineStart) process.stdout.write("\n")
+      resolve({ code: code ?? -1, signal })
+    })
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Reference selection. This must never become a silent pass, and it must behave in CI,
+// where no reference database exists at all.
+// ---------------------------------------------------------------------------
+async function resolveReference({ admin, sourceUrl, requireReference, snapshotTableCount }) {
+  const explicit = process.env.REFERENCE_DATABASE_URL
+
+  if (explicit) {
+    // Branch 1. The caller named a reference. Unreachable for ANY reason is FATAL — a
+    // misconfiguration must never be able to disguise itself as an absence.
+    const name = databaseNameOf(explicit)
+    progress(`reference: REFERENCE_DATABASE_URL -> ${describeTarget(explicit)}`)
+    let sql
+    try {
+      sql = connect(explicit)
+      const count = await publicTableCount(sql)
+      if (count < snapshotTableCount) {
+        await sql.end()
+        fatal(
+          `REFERENCE_DATABASE_URL names ${name}, which has ${count} public tables against ` +
+            `the snapshot's ${snapshotTableCount}. An explicitly requested reference that ` +
+            "is empty or partial is a misconfiguration, not an absence."
+        )
+      }
+      return { mode: "run", name, sql, count }
+    } catch (error) {
+      if (sql) await sql.end().catch(() => {})
+      if (error instanceof Fatal) throw error
+      fatal(
+        `REFERENCE_DATABASE_URL (${describeTarget(explicit)}) is unreachable: ` +
+          `${error.message}. An unreachable explicit reference is never a skip.`
+      )
+    }
+  }
+
+  // Branch 2. The candidate is the database DATABASE_URL names.
+  const name = databaseNameOf(sourceUrl)
+  const existing = await admin.unsafe(
+    `select 1 as v from pg_database where datname = '${name.replace(/'/g, "''")}'`
+  )
+
+  if (existing.length === 0) {
+    // Branch 3.
+    const line = `SKIPPED: reference equivalence — database ${name} does not exist`
+    if (requireReference) {
+      fatal(`${line}, and --require-reference was given.`)
+    }
+    console.log(line)
+    return { mode: "skipped", name, reason: "absent" }
+  }
+
+  const url = withDatabase(sourceUrl, name)
+  let sql
+  try {
+    sql = connect(url)
+    const count = await publicTableCount(sql)
+
+    if (count === 0) {
+      // Branch 4 — the branch CI takes, where the service container hands us the
+      // `postgres` maintenance database.
+      await sql.end()
+      const line =
+        `SKIPPED: reference equivalence — ${name} has 0 public tables, so it is not a ` +
+        "populated reference (this is the expected state in CI)"
+      if (requireReference) {
+        fatal(`${line}, and --require-reference was given.`)
+      }
+      console.log(line)
+      return { mode: "skipped", name, reason: "empty" }
+    }
+
+    if (count < snapshotTableCount) {
+      // Branch 5 — ALWAYS fatal, with or without --require-reference. A half-populated
+      // reference is a misconfiguration, and treating a misconfiguration as an absence is
+      // exactly how a skip turns into a silent pass.
+      await sql.end()
+      fatal(
+        `reference ${name} has ${count} public tables against the snapshot's ` +
+          `${snapshotTableCount}. That is a partially-populated database, not an absent ` +
+          "one, and this script will not pretend it is missing. Point " +
+          "REFERENCE_DATABASE_URL at a complete database, or migrate this one."
+      )
+    }
+
+    // Branch 6.
+    progress(`reference: DATABASE_URL -> ${describeTarget(url)} (${count} public tables)`)
+    return { mode: "run", name, sql, count }
+  } catch (error) {
+    if (sql) await sql.end().catch(() => {})
+    if (error instanceof Fatal) throw error
+    // Branch 7. Auth failure, connection refused, wrong port — always fatal. Those are the
+    // shapes that would let a misconfiguration disguise itself as an absent reference.
+    fatal(
+      `reference ${name} exists but could not be read (${error.message}). Authentication ` +
+        "and connection failures are never treated as an absent reference."
+    )
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
+const problems = []
+
+function record(problem) {
+  problems.push(problem)
+}
+
+async function main() {
+  const requireReference =
+    process.argv.slice(2).includes("--require-reference") ||
+    process.env.npm_config_require_reference === "true"
+
+  const { url: sourceUrl, origin } = resolveConnectionString()
+  const REFERENCE_DB = process.env.REFERENCE_DATABASE_URL
+    ? databaseNameOf(process.env.REFERENCE_DATABASE_URL)
+    : databaseNameOf(sourceUrl)
+
+  const scratchName = `pipelite_migchk_${process.pid}_${Date.now()}`
+  assertScratchName(scratchName, REFERENCE_DB)
+
+  const maintenanceUrl = withDatabase(sourceUrl, "postgres")
+  const scratchUrl = withDatabase(sourceUrl, scratchName)
+
+  progress(`connection: ${describeTarget(sourceUrl)} (from ${origin})`)
+  progress(`scratch database: ${scratchName}`)
+  progress(`reference database (read with SELECT only): ${REFERENCE_DB}`)
+  if (requireReference) progress("--require-reference: a skip is an error in this run")
+
+  const snapshot = loadSnapshotReference()
+  progress(
+    `snapshot reference: ${snapshot.file} — ${snapshot.tables.length} tables, ` +
+      `${snapshot.columnPairs.length} table.column pairs, ${snapshot.indexNames.length} ` +
+      `declared index names, ${snapshot.journalEntries} journal entries`
+  )
+
+  const admin = connect(maintenanceUrl)
+  let scratch = null
+  let reference = null
+
+  try {
+    // A previously leaked database must not be able to poison this run.
+    assertScratchName(scratchName, REFERENCE_DB)
+    await admin.unsafe(`DROP DATABASE IF EXISTS "${scratchName}" WITH (FORCE)`)
+
+    assertScratchName(scratchName, REFERENCE_DB)
+    await admin.unsafe(`CREATE DATABASE "${scratchName}"`)
+    progress(`created ${scratchName}`)
+
+    progress("running `drizzle-kit migrate` against the scratch database — output verbatim:")
+    const migrate = await runDrizzleMigrate(scratchUrl)
+    // RECORDED, never branched on. An exit-code-shaped check is vacuous for the silent
+    // class by construction: that is precisely the defect this gate exists to catch.
+    progress(`migrate exit code: ${migrate.code}${migrate.signal ? ` (${migrate.signal})` : ""}`)
+    if (interrupted) fatal("interrupted — abandoning the run, the scratch database goes with it")
+
+    scratch = connect(scratchUrl)
+
+    // Fence 3, in-session: prove we are where we think we are before asserting anything.
+    const current = await scratch.unsafe("select current_database()::text as v")
+    if (current[0].v !== scratchName) {
+      fatal(
+        `connected to "${current[0].v}" but expected the scratch database ` +
+          `"${scratchName}". Refusing to assert against an unknown database.`
+      )
+    }
+
+    const built = await publicTableCount(scratch)
+    const ledger = await drizzleLedgerState(scratch)
+    progress(
+      `public tables: ${built} | drizzle schema tables: ${ledger.tables} | ` +
+        `drizzle.__drizzle_migrations rows: ${ledger.ledgerRows ?? "n/a"}`
+    )
+
+    // -----------------------------------------------------------------------
+    // Assertion set A — snapshot equivalence. Unconditional; runs everywhere, CI included.
+    // -----------------------------------------------------------------------
+    const builtTables = await catalogValues(scratch, CATALOG_QUERIES.tables)
+    const tableDiff = setDifference(snapshot.tables, builtTables)
+    progress(
+      `A/tables: ${builtTables.length} built / ${snapshot.tables.length} declared — ` +
+        (tableDiff.missing.length || tableDiff.unexpected.length ? "DIFFERS" : "IDENTICAL")
+    )
+    if (tableDiff.missing.length) {
+      record(
+        `the migration chain does not create ${tableDiff.missing.length} table(s) the ` +
+          `snapshot declares: ${tableDiff.missing.join(", ")}. A from-zero install is ` +
+          "short these tables; application code touching them raises 42P01 at runtime, " +
+          "behind a migrate that may well have exited 0."
+      )
+    }
+    if (tableDiff.unexpected.length) {
+      record(
+        `the migration chain creates ${tableDiff.unexpected.length} table(s) the snapshot ` +
+          `does not declare: ${tableDiff.unexpected.join(", ")}.`
+      )
+    }
+
+    const builtColumnRows = await scratch.unsafe(
+      "select (table_name||'.'||column_name)::text as v from information_schema.columns where table_schema = 'public'"
+    )
+    const builtColumns = builtColumnRows.map((row) => String(row.v)).sort()
+    const columnDiff = setDifference(snapshot.columnPairs, builtColumns)
+    progress(
+      `A/columns: ${builtColumns.length} built / ${snapshot.columnPairs.length} declared — ` +
+        (columnDiff.missing.length || columnDiff.unexpected.length ? "DIFFERS" : "IDENTICAL")
+    )
+    if (columnDiff.missing.length) {
+      record(
+        `${columnDiff.missing.length} table.column pair(s) the snapshot declares are ` +
+          `absent from the built database: ${columnDiff.missing.slice(0, 40).join(", ")}`
+      )
+    }
+    if (columnDiff.unexpected.length) {
+      record(
+        `${columnDiff.unexpected.length} table.column pair(s) exist in the built database ` +
+          `that the snapshot does not declare: ${columnDiff.unexpected.slice(0, 40).join(", ")}`
+      )
+    }
+
+    // SUBSET, not equality: pg_indexes also reports primary-key and unique-constraint
+    // indexes, which the snapshot's `indexes` map never lists. Measured: 41 declared
+    // against 81 present.
+    const builtIndexRows = await scratch.unsafe(
+      "select indexname::text as v from pg_indexes where schemaname = 'public'"
+    )
+    const builtIndexNames = new Set(builtIndexRows.map((row) => String(row.v)))
+    const missingIndexes = snapshot.indexNames.filter((name) => !builtIndexNames.has(name))
+    progress(
+      `A/indexes: ${snapshot.indexNames.length - missingIndexes.length} / ` +
+        `${snapshot.indexNames.length} snapshot index names present ` +
+        `(${builtIndexNames.size} indexes in total) — ` +
+        (missingIndexes.length ? "DIFFERS" : "IDENTICAL")
+    )
+    if (missingIndexes.length) {
+      record(
+        `${missingIndexes.length} index name(s) the snapshot declares are absent from the ` +
+          `built database: ${missingIndexes.join(", ")}`
+      )
+    }
+
+    // -----------------------------------------------------------------------
+    // Assertion set B — reference equivalence, when a reference is reachable.
+    // -----------------------------------------------------------------------
+    reference = await resolveReference({
+      admin,
+      sourceUrl,
+      requireReference,
+      snapshotTableCount: snapshot.tables.length,
+    })
+
+    if (reference.mode === "run") {
+      const rows = []
+      for (const [dimension, query] of Object.entries(CATALOG_QUERIES)) {
+        const referenceValues = await catalogValues(reference.sql, query)
+        const scratchValues = await catalogValues(scratch, query)
+        const diff = setDifference(referenceValues, scratchValues)
+        const identical = diff.missing.length === 0 && diff.unexpected.length === 0
+        rows.push({
+          dimension,
+          reference: referenceValues.length,
+          built: scratchValues.length,
+          verdict: identical ? "IDENTICAL" : "DIFFERS",
+        })
+        if (!identical) {
+          record(
+            `catalog dimension "${dimension}" differs between ${reference.name} and the ` +
+              `migration-built database.\n` +
+              diff.missing.map((v) => `      only in ${reference.name}: ${v}`).join("\n") +
+              (diff.missing.length && diff.unexpected.length ? "\n" : "") +
+              diff.unexpected.map((v) => `      only in ${scratchName}: ${v}`).join("\n")
+          )
+        }
+      }
+      progress(`B/reference equivalence against ${reference.name}:`)
+      console.log(
+        `   ${"dimension".padEnd(12)}${"reference".padStart(10)}${"from-zero".padStart(11)}  verdict`
+      )
+      for (const row of rows) {
+        console.log(
+          `   ${row.dimension.padEnd(12)}${String(row.reference).padStart(10)}` +
+            `${String(row.built).padStart(11)}  ${row.verdict}`
+        )
+      }
+    }
+  } finally {
+    // Both the DROP and every client.end() live here, so a throw anywhere above — the
+    // migrate step included — still removes the scratch database. There is no in-repo
+    // analog for this combination: shell `trap` appears nowhere in scripts/, and
+    // e2e/seed-admin.ts:94-96 closes a client but provisions nothing.
+    if (scratch) await scratch.end().catch(() => {})
+    if (reference?.sql) await reference.sql.end().catch(() => {})
+    try {
+      assertScratchName(scratchName, REFERENCE_DB)
+      await admin.unsafe(`DROP DATABASE IF EXISTS "${scratchName}" WITH (FORCE)`)
+      progress(`removed ${scratchName}`)
+    } catch (error) {
+      console.error(
+        `WARNING: could not remove the scratch database ${scratchName}: ${error.message}`
+      )
+    }
+    await admin.end().catch(() => {})
+  }
+
+  if (interrupted) {
+    console.error("")
+    console.error(
+      "FATAL: interrupted before this run could reach a verdict. The scratch database was " +
+        "removed on the way out; nothing was proved."
+    )
+    process.exitCode = 130
+    return
+  }
+
+  if (problems.length) {
+    console.error("")
+    for (const problem of problems) {
+      console.error(`FATAL: ${problem}`)
+    }
+    console.error("")
+    console.error(
+      `FATAL: the migration chain does NOT build the schema this repository declares ` +
+        `(${problems.length} problem(s) above). Note that the child migrate's exit code is ` +
+        "reported above and is deliberately NOT what this verdict is based on — a chain " +
+        "missing a table nothing else references exits 0 and still ships a broken install."
+    )
+    process.exitCode = 1
+    return
+  }
+
+  console.log("OK: the migration chain builds a complete schema from zero")
+}
+
+// Signal handling exists so an operator's Ctrl-C does not leak a database: without it the
+// process dies before `finally` runs. The handler lets main's own finally do the work by
+// closing the event loop path it is already on.
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    if (interrupted) process.exit(130)
+    interrupted = true
+    console.error(`\n-> ${signal} received — removing the scratch database before exiting`)
+    process.exitCode = 130
+    if (activeChild) activeChild.kill("SIGTERM")
+  })
+}
+
+try {
+  await main()
+} catch (error) {
+  if (error instanceof Fatal) {
+    console.error(`FATAL: ${error.message}`)
+  } else {
+    console.error(`FATAL: ${error?.stack ?? error}`)
+  }
+  process.exitCode = interrupted ? 130 : 1
+}
