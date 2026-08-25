@@ -1150,6 +1150,17 @@ describe("the prose policy and the machine-readable policy cannot drift apart", 
       "It is **not** evaluated against the production image",
       "conservative over-approximation",
       "event-stream@4.0.1", // why no off-the-shelf tool
+      // WR-07. This document presented the end-to-end control as delivered while
+      // 47-12-SUMMARY.md:60 records "Control E's real-runner half is NOT DELIVERED." The planning
+      // artifact was honest and the shipped, human-facing policy was not — which by this file's own
+      // standard ("a claim in a policy document is a liability unless something checks it") is the
+      // worst kind of stale prose in a security policy.
+      //
+      // DELETE THIS TOKEN IN THE SAME COMMIT that records the runner observation, and not before.
+      // It fails in the SAFE direction: if the runner half is delivered and this is forgotten, the
+      // document understates what has been proved. The opposite — a document claiming the required
+      // check has been observed red when it has not — is what this token exists to prevent.
+      "THE RUNNER HALF IS NOT DELIVERED",
     ] as const
     for (const token of required) {
       expect(document.includes(token), `${POLICY_DOC} does not state: ${token}`).toBe(true)

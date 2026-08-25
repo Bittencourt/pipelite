@@ -396,9 +396,12 @@ thing to look at, and replacing or dropping `drizzle-kit` is the only real instr
 
 ## How this policy is proved able to fail
 
-A gate nobody has watched go red is a stated intention, not a policy. Both halves have been broken
-on purpose, and the verbatim output is recorded in
-`.planning/phases/47-suite-trust-supply-chain/47-09-SUMMARY.md`:
+A gate nobody has watched go red is a stated intention, not a policy. The **offline half** (the
+vitest gate) and the **script half** (`npm run security:audit` on the working tree) have both been
+broken on purpose, and the verbatim output is recorded in
+`.planning/phases/47-suite-trust-supply-chain/47-09-SUMMARY.md` and `47-12-SUMMARY.md`. **The
+runner half has not been.** Read the third bullet before treating the required `ci` check as
+proven.
 
 - **Three permanent negative controls** live in `src/lib/__tests__/audit-policy.test.ts` and stay
   there forever, so they cannot rot out of the repository: a `dev-only` reason, a back-dated
@@ -413,11 +416,23 @@ on purpose, and the verbatim output is recorded in
   (0 === 0) and clears the package floor, so that is the only control that fires on it. This is the
   single most likely way this gate ships vacuous — a network error, a proxy interception or a
   schema change all produce zero offenders and exit 0.
-- **The end-to-end control**, which belongs to CI rather than to this file: add a knowingly
+- **The end-to-end control — LOCAL HALF ONLY. THE RUNNER HALF IS NOT DELIVERED.** On the working
+  tree the evaluator was driven **green (exit 0) → red (exit 1) → green** by adding a knowingly
   vulnerable dependency (`minimist@1.2.5`, one critical advisory, zero dependencies, trivially
-  reverted), watch the required `ci` check go red, revert, watch it go green. The order matters —
-  the gate must be observed **green on the fixed tree first**, or the red proves only that it was
-  already red.
+  reverted), with a `FATAL:` naming that package's critical advisory as having **no recorded
+  disposition**, and the manifests proved byte-identical after the revert. The advisory id is
+  deliberately not quoted here: this document's prose/JSON cross-check requires every GHSA id it
+  names to carry a disposition, and a transient control's advisory has none by construction. The
+  decisive line is recorded verbatim in
+  `.planning/phases/47-suite-trust-supply-chain/47-12-SUMMARY.md` § "Control E, local half".
+
+  The runner half — push, watch the **required `ci` check** go red, watch the merge block engage,
+  revert, watch it go green — requires an outward-facing push and **has not been run**. Nothing has
+  been pushed: `origin/master` is still `a58b9e1`. Until that changes, **this document does not
+  claim the required GitHub check has ever been observed red**, and a green `ci` badge is not
+  evidence that this gate can fail on the runner. The order will matter when it is run — the gate
+  must be observed **green on the fixed tree first**, or the red proves only that it was already
+  red.
 
 ## Contributing
 
