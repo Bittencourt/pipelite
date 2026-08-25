@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
-status: active
-last_updated: "2026-08-25T02:10:00.000Z"
-last_activity: 2026-08-25
+status: executing
+last_updated: "2026-08-25T03:03:03.395Z"
+last_activity: 2026-08-25 -- Phase 46 planning complete
 progress:
   total_phases: 9
   completed_phases: 0
-  total_plans: 0
+  total_plans: 6
   completed_plans: 0
   percent: 0
 ---
@@ -76,9 +76,11 @@ greps — the comment explaining a rule trips that rule's own grep gate (fifteen
 - `UX-02` / Phase 52: the failing assertion already exists as `test.fail()` at
   `e2e/saved-views-320.spec.ts:980`. **Delete the marker in the same commit as the fix** or the suite
   goes RED on success.
+
 - `UX-01` / Phase 52: `e2e/viewport-320.spec.ts` asserts only `scrollWidth <= clientWidth`. It must
   gain a clickability assertion, or the fix ships green over a live defect — which is what Phase 45
   did.
+
 - `DATA-02` / Phase 49: two plan 34-02 fixture assertions compare against the current create-response
   shape and must be amended in the same commit.
 
@@ -383,6 +385,6 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 
 Phase: 46 — Migration Chain & Toolchain Floor (not started)
 Plan: —
-Status: Roadmap created, awaiting `/gsd:plan-phase 46`
+Status: Ready to execute
 Progress: 0/9 phases · 0 plans
-Last activity: 2026-08-25 — v1.4 roadmap created (9 phases 46-54, 19/19 requirements mapped)
+Last activity: 2026-08-25 -- Phase 46 planning complete

@@ -116,15 +116,19 @@ from a `pg_dump --schema-only`. This mirrors v1.3's own "CI lands first" note, f
      the schema a `pg_dump --schema-only` of the working database reports — compared table-by-table and
      column-by-column, not inferred from the absence of an error. (Today the run dies `42P01` at `0006`
      and leaves **0 tables**, because the transaction rolls back.)
+
   2. The app boots and serves `/api/health` 200 against a database built that way and nothing else —
      no `db:push`, no dump restore.
+
   3. A repeatable check migrates a throwaway database from scratch and **fails** when a migration
      references a table no migration creates. Observed failing on purpose (delete the new
      `import_sessions` DDL, watch it go red) before it is trusted — this is the only check that can
      catch a recurrence, and the recurrence is how this arrived.
+
   4. The migrate command exactly as printed in the deployment docs succeeds from the host with no
      inline `DATABASE_URL` override and no port edit. Observed failing by pointing `.env.local` back at
      `5432`.
+
   5. Every `engines` floor the lockfile declares is satisfied by the container's Node at all three
      build stages, checked by reading the declared floors rather than comparing against a number
      written into the gate — so the check cannot go stale when a dependency raises its floor.
@@ -146,11 +150,22 @@ onto `@napi-rs/lzma-linux-x64-gnu`.
 **Plans**: 6 plans in 4 waves
 
 Plans:
+**Wave 1**
+
 - [ ] 46-01-PLAN.md — GATE A (static chain integrity, RED first) + repair migration 0006 by prepend + reconcile the dedup script's now-false comment · NC-5
 - [ ] 46-02-PLAN.md — `.env`/`.env.example` describe the host, compose constructs the container URL, docs reconciled, two gates re-anchored · SC-4, NC-4
 - [ ] 46-03-PLAN.md — all three Dockerfile pins to `node:24-alpine`, lockfile-derived `engines.node`, GATE C, ci.yml comment reconciled · NC-3
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 46-04-PLAN.md — `scripts/migrate-from-zero.mjs` + `npm run db:check-migrations`: from-zero build with ten-dimension catalog equivalence · NC-1, NC-2
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 46-05-PLAN.md — Route A CI wiring: the check runs on the required `ci` job; `db-test-isolation.test.ts` proxy replaced by direct assertions
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 46-06-PLAN.md — behavioural proof: rebuilt container reports Node 24, `/api/health` 200 against a migration-built database · SC-2, SC-5
 
 ### Phase 47: Suite Trust & Supply Chain
@@ -166,11 +181,14 @@ repeated full-suite runs are only meaningful against a schema that can be rebuil
      No test fails on elapsed time; `condition-evaluator.test.ts`'s linearity assertion and
      `toggle.test.ts:61`'s `beforeEach` are among them. (Baseline to beat: the linearity gate failed
      twice in Phase 44's waves, once as `25.5 < 10`; `toggle.test.ts` timed out in 2 of 5 runs.)
+
   2. The property those two tests existed to defend is still defended, and provably: reintroduce a
      backtracking `resolveFieldPath` and the replacement assertion goes red on operation count or
      algorithmic shape. A test that passes under load by asserting nothing is the failure mode here.
+
   3. Every critical and high advisory in the lockfile has a recorded disposition — upgraded, replaced,
      or accepted with a stated reason — re-measured at plan time rather than taken from the 4/22 figure.
+
   4. CI states an audit policy and that policy can fail: add a knowingly-vulnerable dependency, watch
      the check go red, revert.
 
@@ -192,12 +210,15 @@ something). These four route files have **zero** test coverage today, so tests s
   1. An API key belonging to user A cannot read, modify or delete user B's activity — asserted
      separately for GET, PUT and DELETE on `/api/v1/activities/[id]`, because the three verbs fail
      independently today and one shared test would hide two of them.
+
   2. `PUT /api/v1/activities/[id]` cannot move an activity to another owner by writing `owner_id`.
   3. `GET /api/v1/activities` returns only activities the caller may see — the row count it returns
      equals a direct SQL count scoped to that owner, on the live dataset, so a passing assertion
      cannot come from an empty result.
+
   4. `GET /api/v1/stages/:id` returns 200 to the stage's legitimate owner **without**
      `?expand=pipeline`, and still 403s a non-owner both with and without the expand.
+
   5. No route builds a SQL `IN` list from a JavaScript array. Proven by removing the `stageList`
      non-empty guard and observing the query still be correct — not by grepping for `sql\``.
 
@@ -221,13 +242,16 @@ which is why they are one phase.
   1. A request for a file URL whose record the caller may not see, or which no longer exists, returns
      no bytes — the route resolves the entity before serving. **This lands before blob deletion**: it
      closes the exposure on its own, and the URL is recoverable from the audit tombstone indefinitely.
+
   2. After a purge, the blob is gone from storage and its URL serves nothing. A storage failure during
      that deletion leaves the purge **committed** and logs a count mismatch — injected on purpose and
      observed, because the post-commit ordering is the whole point.
+
   3. Merging two records whose formula inputs disagree leaves the survivor's stored formula value equal
      to a fresh computation from its post-merge values. The test creates its own formula definition,
      since the live count is **0** — a dormant defect proven by a test that would pass either way is
      not proven.
+
   4. A `POST /api/v1/{organizations,people,deals,activities}` 201 body carries the same custom-field
      values a subsequent `GET` of that record returns, for all four entities.
 
@@ -253,12 +277,16 @@ decision is the work.
   1. The export that today returns 44,254 of 46,054 organizations for `search=a` is refused or bounded
      for a non-admin — measured against the live database at that scale, not against a fixture, and
      re-measured at plan time.
+
   2. A legitimately narrow export still completes for the same non-admin, so the fix is a bound and not
      a removal of the feature.
+
   3. A user who is refused sees why, in terms they can act on — a blocked broad export is
      distinguishable from a broken one.
+
   4. The bound can fail: widen a filter step by step until it trips, and observe the refusal at the
      boundary. A guard whose threshold nobody has crossed on purpose is not a guard.
+
   5. Whatever the decision is, the audit row still records the exports that do complete — the existing
      row makes exports attributable, not bounded, and does not close this on its own.
 
@@ -290,13 +318,16 @@ on are only trustworthy after this lands.
      the board's query returns a bounded number of rows per stage regardless of how many that stage
      holds — the **row count** is asserted, not only the wall clock, so the win cannot be a faster
      machine. (Baseline: 88.3 s, roughly linear at 5.7 ms/deal.)
+
   2. Each column states how many deals it holds beyond what it shows, and loading more brings them in.
   3. Dragging a card between stages still lands it where it was dropped, including after a load-more —
      the `@dnd-kit` sortable context has to know every item it can reorder, so this is not a drop-in
      virtualisation and the drag e2e is part of the gate.
+
   4. `/activities` unfiltered states the true pending and overdue counts (14 and 4,151 as measured;
      re-measure at plan time), computed server-side and asserted against a direct SQL count so the two
      cannot drift.
+
   5. No displayed count is derived from the rows on the page. Proven by setting the page size to 1 and
      observing every count stay the same — the assertion that would have caught this class the first
      time.
@@ -326,13 +357,17 @@ they are one phase.
      **`e2e/viewport-320.spec.ts` gains that assertion and is observed FAILING against today's
      `DialogContent` before the fix.** Its current assertion is exactly why Phase 45's 320px pass
      shipped green over a live defect.
+
   2. The duplicate-advisory create dialog — 940px tall in a 640px viewport today, with nothing to
      scroll — is both dismissible and completable at 320px: "Create anyway" is clickable.
+
   3. The `/activities` filter popover (388px tall at `top: -41` today, against Radix's computed 347px
      available height) renders inside the viewport and its contents are reachable.
+
   4. Pressing Enter on a focused button inside a modal opened over a list activates that button; the
      list behind it does not navigate and the draft survives — on all six surfaces mounting
      `useDataTableKeyboard`.
+
   5. Escape still dismisses all four overlay types and `j/k/e/d/n` still work on the list when no modal
      is open — the tempting `stopPropagation` one-liner breaks the first of these, which is why it is a
      criterion rather than a note.
@@ -365,13 +400,16 @@ directories the picker lands in.
      correctly against a real record. All **152 of 169** live definitions whose names carry spaces or
      punctuation are selectable; the count is asserted against the live definition table, not a
      fixture.
+
   2. A field name containing both quote characters is either selectable or refused with a stated
      reason — never silently mis-parsed. (No live definition hits this today, which is exactly why it
      needs an assertion rather than an observation.)
+
   3. `grep -rn 'eslint-disable-next-line react-hooks/' src/` returns nothing, and lint passes with the
      `react-hooks` rules still at `error`. The set is re-derived from the tree at plan time — the
      Suppression Register in `32-04-SUMMARY.md` is out of date: `import-wizard.tsx:91` is gone and two
      new sites have appeared.
+
   4. Each formerly-suppressed component has a test that goes red if its behaviour changes — the
      reset-password error path, the single-use token fetch, the profile form, the hydration guard in
      `relative-time.tsx`, the combobox and the webhook-response form — so removing a suppression is
@@ -399,8 +437,10 @@ shared blast radius with anything else — one transformer file.
   1. Importing a Pipedrive pipeline whose stages include terminal stages produces stages of the
      corresponding type — asserted from the transformer's output for each mapping input, table-driven,
      not from the absence of a crash.
+
   2. A stage the mapping cannot classify lands as `open` **deliberately**, and the import summary says
      so where a user can see it — a fallback stated is not a fallback hidden behind a hardcoded literal.
+
   3. The comment at `pipedrive-api-transformers.ts:164-167` either describes what the code does or is
      gone. It currently promises a `rotten_flag` / `deal_probability` mapping that was never written,
      and Phase 32's `let`→`const` change removed the last hint that the value was a placeholder.
@@ -533,6 +573,7 @@ to read, not to be scoped.
 **Plans:** 11/11 plans complete
 
 Plans:
+
 - [x] 45-01-PLAN.md — 22 message keys x 3 locales + the locale-parity contract lists that gate them
 - [x] 45-02-PLAN.md — Playwright harness: devDependency, config, e2e admin seed, authenticated storageState, ignore-file entries
 - [x] 45-03-PLAN.md — ThemeProvider mounted, three-way light/dark/system toggle in UserMenu, C-1 destructive-token repair
