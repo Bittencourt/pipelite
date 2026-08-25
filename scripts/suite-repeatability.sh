@@ -59,6 +59,18 @@
 #   failing suite passed. It never branches on vitest's exit code alone — the
 #   parsed `success` and `numPassedTests` from each report decide the verdict.
 #
+# PLATFORM ASSUMPTION — GNU COREUTILS, DELIBERATELY (IN-02)
+#   `run_project` times each iteration with `date +%s%N`. `%N` (nanoseconds) is a
+#   GNU coreutils extension: BSD/macOS `date` does not implement it and emits the
+#   literal `N`, which makes the arithmetic below fail under `set -e` with a
+#   message about an invalid number rather than about the platform. That is
+#   accepted rather than worked around, because this harness targets the Linux CI
+#   runner and the developer environment it was measured in, and a `gdate`
+#   fallback would be a second timing path nobody exercises. If this ever needs to
+#   run on macOS, install coreutils and alias `date` to `gdate` — do not silently
+#   drop the nanosecond precision, because the wall time it produces is one of the
+#   two things the summary records.
+#
 # USAGE
 #   bash scripts/suite-repeatability.sh [iterations] [output-directory]
 #   iterations       default 10   (10 idle iterations measured at ~9.4 minutes)

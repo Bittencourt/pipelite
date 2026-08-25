@@ -121,12 +121,21 @@ const MIN_POLICY_DOC_CHARS = 3000
  * NOT an assertion that this project should carry exceptions — the goal is zero. It is the
  * anti-vacuity floor for every `for (const entry of allowlist)` assertion below: an EMPTY
  * allowlist satisfies all of them perfectly, so a commit that deleted the file's contents rather
- * than fixing the advisories would report a clean pass. Measured 2026-08-25: 39 entries covering
- * `next` (28), `nodemailer` (6), `postcss` (4) and `sharp` (1).
+ * than fixing the advisories would report a clean pass.
  *
- * If the allowlist legitimately empties because every advisory was fixed, this floor is the line
- * to change — and changing it should come with deleting the entries in the same commit, which is
- * exactly the review moment the floor exists to create.
+ * SET AT 1, TWO ORDERS BELOW THE MEASUREMENT OF 39, AND THAT IS DELIBERATE (IN-01). Every other
+ * floor in this phase is set below its measurement by a small factor; this one is not, and the
+ * reason is the FAILURE DIRECTION rather than the measurement. Deleting entries makes CI STRICTER,
+ * not laxer: each deleted entry's advisory becomes undispositioned and `evaluatePolicy` reports it,
+ * so the shrinkage is caught by the gate itself rather than needing to be caught here. A tight
+ * floor would only add a second, redundant red. What this floor actually defends is the ZERO case,
+ * where every per-entry `it.each` block silently registers no tests at all — and 1 is exactly the
+ * right number for that.
+ *
+ * Measured 2026-08-25: 39 entries covering `next` (28), `nodemailer` (6), `postcss` (4) and
+ * `sharp` (1). If the allowlist legitimately empties because every advisory was fixed, this floor
+ * is the line to change — and changing it should come with deleting the entries in the same
+ * commit, which is exactly the review moment the floor exists to create.
  */
 const MIN_ALLOWLIST_ENTRIES = 1
 
