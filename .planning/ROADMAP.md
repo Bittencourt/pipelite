@@ -269,15 +269,34 @@ something). These four route files have **zero** test coverage today, so tests s
      independently today and one shared test would hide two of them.
 
   2. `PUT /api/v1/activities/[id]` cannot move an activity to another owner by writing `owner_id`.
-  3. `GET /api/v1/activities` returns only activities the caller may see — the row count it returns
-     equals a direct SQL count scoped to that owner, on the live dataset, so a passing assertion
-     cannot come from an empty result.
+  3. **AMENDED 2026-08-25 — the original was vacuous by construction.** It read: *"the row count it
+     returns equals a direct SQL count scoped to that owner, on the live dataset."* Measured:
+     `select owner_id, count(*) from activities group by 1` returns **ONE row** — all **79,022**
+     activities belong to a single admin user. Scoped count therefore **equals** unscoped count for the
+     only user who has data, so the equality is satisfied **today, by the broken route**.
+
+     **The criterion is now:** `GET /api/v1/activities` returns only activities the caller may see,
+     proven with a **discriminator** — at least two owners each holding >=1 activity — and asserted
+     with a **floor** (the caller's own count is > 0, so an empty result fails), a **ceiling** (no row
+     belongs to another owner), and a **cross-check** that the other owner's records exist and are
+     absent from this response. **If the fix grants admins a bypass, this criterion becomes permanently
+     vacuous** — so admin bypass is rejected for these routes (see CONTEXT).
 
   4. `GET /api/v1/stages/:id` returns 200 to the stage's legitimate owner **without**
      `?expand=pipeline`, and still 403s a non-owner both with and without the expand.
 
-  5. No route builds a SQL `IN` list from a JavaScript array. Proven by removing the `stageList`
-     non-empty guard and observing the query still be correct — not by grepping for `sql\``.
+  5. **AMENDED 2026-08-25 — the original named a guard that does not exist, and understated the
+     severity.** It read: *"Proven by removing the `stageList` non-empty guard."* There is no such
+     guard: `stages/route.ts:69` is `if (!pipelineId)` — absence of a filter param, not non-emptiness.
+     **QG-03 is a LIVE HTTP 500, not latent.** `parsePagination` imposes no ceiling on `offset`, so
+     `GET /api/v1/stages?offset=73` (any offset >= the global stage count) generates
+     `"pipelines"."id" IN ()` and dies `syntax error at or near ")"` / `42601`.
+
+     **The criterion is now:** no route builds a SQL `IN` list from a JavaScript array, proven
+     **behaviourally and without ablation** — `GET /api/v1/stages?offset=73` returns **500 today** and
+     must return **200 with `data: []`** after. Explicitly NOT proven by grepping for `sql\``.
+     Note `inArray(col, [])` in the installed drizzle-orm 0.45.2 emits a literal `false` rather than
+     throwing, so the empty case is safe.
 
 **Notes for planning**: `stages/[id]/route.ts:35` already carries an `ownershipWith` helper that loads
 the relation unconditionally for PUT/DELETE — the GET is the one path that does not use it, which is
