@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
 status: executing
-last_updated: "2026-08-25T15:04:04.851Z"
+last_updated: "2026-08-25T16:19:32.614Z"
 last_activity: 2026-08-25
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 20
-  completed_plans: 15
+  completed_plans: 19
   percent: 11
 ---
 
@@ -21,8 +21,11 @@ See: .planning/PROJECT.md (updated 2026-08-24)
 
 **Core value:** API-complete CRM core that handles fundamentals well
 **Current focus:** Phase 47 — Suite Trust & Supply Chain (14 plans — plan 14 was added to close D-47-06-A)
-**Plans 01-09 of 14 executed** (2026-08-25) — 9 SUMMARYs on disk. Next: plan 10.
-Phase 46 remains owed a `/gsd:verify-phase 46`.
+**Plans 01-12 and 14 of 14 executed** (2026-08-25) — 13 SUMMARYs on disk. Next: plan 13.
+**47-12 is PARTIAL, not complete** — its local half only; see the blocker below.
+Phase 46 remains owed a `/gsd:verify-phase 46`, **and its GAP 1 is still open**: `origin/master` is
+`a58b9e1` (pre-Phase-46) with **111 commits unpushed**, so `Migration chain check`,
+`Security audit policy` and `Registry signature verification` have never executed on GitHub.
 
 **47-06 closed SC-1 as amended — and found the defect class is NOT closed.** The margin moved by two
 orders of magnitude on the two assertions the criterion names, measured with 47-02's committed
@@ -286,6 +289,7 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 | Phase 47 P08 | 22min | 2 tasks | 0 files |
 | Phase 47 P06 | 51m | 2 tasks | 2 files |
 | Phase 47 P09 | 26min | 3 tasks | 7 files |
+| Phase 47 P12 | 12min | 1 tasks | 1 files |
 
 ## Decisions
 
@@ -485,6 +489,10 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 - [Phase 47]: 47-09: MIN_ADVISORIES_PARSED is 3 against a measurement of 47 — the fully-remediated residual is 8, so any floor above 8 fatals on SUCCESS; empty-document detection is carried by MIN_PACKAGES_AUDITED plus a histogram reconciliation instead
 - [Phase 47]: 47-09: D-47-01-A CLOSED — overrides.vite defended by semver.subset(range, <8.0.0), observed red with the block deleted, with the range widened to ^8.0.0, and with the subset call itself unit-tested against a union range and *
 - [Phase 47]: 47-09: SEC-05 deliberately NOT marked complete — the advisory-triage half is discharged and the policy is stated, but .github/workflows/ci.yml has no audit step, so the required check has never gone red for an advisory (47-11 and 47-12 own that)
+- [Phase 47]: 47-12: the audit policy's ability to FAIL is proven LOCALLY — security:audit exit 0 -> 1 -> 0 across install/revert of minimist@1.2.5, one FATAL naming GHSA-xvch-5gv4-984h, 1 problem(s), advisories 47->48->47, vulnerable packages 14->15->14 — The red is attributed against all four other causes of a red (registry unreachable, no installed tree, stale allowlist entry, narrowed policy) and isolated to one CI step of nine: npm audit signatures (exit 0, 1102/1102, +2 matching npm's own 'added 2 packages') and npm run typecheck (exit 0) both ran UNDER the control. The 'parsed 48 distinct advisories' line is the specific discriminator against 47-11's measured network fail-closed path, because it cannot print unless assertAuditDocument accepted a real vulnerabilities map.
+- [Phase 47]: 47-12: the runner half was NOT simulated — no push, no branch (not even locally), no PR, no gh object of any kind — 46-06's standard applied verbatim: record the gap rather than manufacture a green run. origin/master is still a58b9e1 with 111 commits unpushed, so Migration chain check / Security audit policy / Registry signature verification have still never executed on GitHub. A local red presented as a GitHub red would be the exact defect milestone v1.4 exists to remove. No throwaway branch was created even locally, because an unpushed branch is an artifact whose only purpose is a push that is not happening, and containment is stronger with zero commits.
+- [Phase 47]: 47-12: the control was installed into the REAL working tree, not a scratch lockfile — A scratch directory re-verifies the ADVISORY (done separately for assumption A7: exactly 1 critical, GHSA-xvch-5gv4-984h, range >=1.0.0 <1.2.6, slopcheck scan OK) but does not exercise this project's audit-policy.json, its 39 allowlist entries, its failOn, or its stale-entry detector. npm install --save-dev was chosen over --package-lock-only so the installed tree and lockfile agree, which is what the CI step's ordering after npm ci actually reproduces, and which is required for the npm audit signatures isolation check since that subcommand reads the installed tree.
+- [Phase 47]: 47-12 finding: minimist was ALREADY hoisted at a safe 1.2.8, so the control DOWNGRADED an existing node to 1.2.5 rather than adding one — 1.2.8 was pushed into nested copies under shadcn and tsconfig-paths, whose declared ranges the control does not satisfy — a closer analogue of how a real vulnerable dependency arrives than a naive addition. Found only by parsing both lockfiles key-by-key; git diff --numstat's 25/7 lines on a 690KB file is far too coarse to see it. Confirmed in the same pass: overrides.vite untouched, removed: [], no rolldown/tsx/esbuild among added, lockfileVersion 3 -> 3.
 
 ### Quick Tasks Completed
 
@@ -536,6 +544,7 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - **47-08 human render OWED:** an authenticated page load against image `sha256:8f07a18e` is still unperformed. It now gates **47-07's Auth.js trio and `drizzle-orm` 0.45.2** (which entered the container for the first time in this rebuild), not `next` — `next` is unchanged at 16.1.6. Needed: sign-in; `/deals` rendering real data; a drag-and-persist round trip (the only write path through the bumped `drizzle-orm`); `/organizations`; `/admin/audit` (confirms the Auth.js bump did not change the *authorization* result); a clean application console. An unauthenticated `/deals` → `/login` 307 plus a rendering login form was observed and is explicitly a PARTIAL signal, not the sign-off.
 - Phase 46 GAP **CLOSED 2026-08-25** (orchestrator, Claude-in-Chrome against the rebuilt image): authenticated `/deals` renders the real board — 3,466 deals in *Base Fria - Lead* ($1,165,182) and 288 in *Base Fria - Parceiro*; `/organizations` renders against the 46k-org table; `/api/health` returns `status:"ok"`, `db.ok:true`, `latencyMs:2`, **10/10 processors alive**; browser console carries **zero application errors** (only two MetaMask extension warnings). No credentials were entered — the operator's existing Chrome session was already authenticated.
 - D-47-06-A: npm test goes RED at >=3x oversubscription. Four assertions in three files timed out (health route.test.ts 186.8%, replay-carries-dry-run 118.7%, engine.test.ts 115.6% of testTimeout 5000ms). Same import-cost defect 47-03 fixed in two HOOKS, but in ~146 test BODIES against HALF the budget; 47-03's gate scans hooks only. Not fixed in 47-06 (measurement-only). Needs its own plan: hoist + extend the gate corpus + re-measure.
+- **47-12 — control E's REAL-RUNNER half is NOT DELIVERED; SC-4's runner half is NOT PROVED.** The local half is delivered in full and is solid: `npm run security:audit` went **exit 0 -> exit 1 -> exit 0** as `minimist@1.2.5` was installed into the real tree and reverted, with **one** `FATAL: minimist critical GHSA-xvch-5gv4-984h has NO recorded disposition` and `1 problem(s)`. The red is attributed rather than assumed — the audit document **parsed** (`parsed 48 distinct advisories across 15 vulnerable package(s); npm audited 1287 dependencies`, against 47/14/1285 on both greens), which rules out 47-11's two measured fail-closed paths; `39 of 39` allowlist entries applied rules out a stale entry; and `npm audit signatures` (exit 0, 1102/1102, +2 matching `added 2 packages`) plus `npm run typecheck` (exit 0) ran **under** the control, so the red is isolated to one CI step of nine. Containment proved by sha256 **and** `Buffer.equals` on both manifests, `minimist` declared in **0 of 32** historical `package.json` versions, 4 local branches unchanged, tree clean. **But nothing was pushed and no GitHub object was created** — `origin/master` is still `a58b9e1` (pre-Phase-46) with **111** commits unpushed, so `Migration chain check`, `Security audit policy` and `Registry signature verification` have **still never executed on GitHub**, Phase 46's GAP 1 is **still open**, no merge has ever been blocked by this policy, and SEC-05 is **partial, not complete**. Unblocked by one operator push; the four-part reproduction (green baseline first — the 46-06 trap — then throwaway-branch red with `mergeStateStatus: BLOCKED`, then revert-green, then close-unmerged teardown) is in `.planning/phases/47-suite-trust-supply-chain/deferred-items.md` § **D-47-12-A**. 47-13 must not treat SEC-05 as done.
 
 ## Session Log
 
@@ -590,5 +599,5 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 Phase: 47 (Suite Trust & Supply Chain) — EXECUTING
 Plan: 9 of 14 complete (01, 02, 03, 04, 05, 06, 07, 08, 09) — next unexecuted is 10
 Status: Executing
-Progress: [████████░░] 75%
+Progress: [██████████] 95%
 Last activity: 2026-08-25

@@ -242,12 +242,12 @@ Plans:
 
 **Wave 7** *(parallel: no `files_modified` overlap)*
 
-- [ ] 47-10-PLAN.md — the offline policy-shape gate with three PERMANENT negative controls · NC-D · SEC-05
-- [ ] 47-11-PLAN.md — both audit steps on the required `ci` job + `MIN_CI_STEPS` raised in the SAME commit · SEC-05
+- [x] 47-10-PLAN.md — the offline policy-shape gate with three PERMANENT negative controls · NC-D · SEC-05
+- [x] 47-11-PLAN.md — both audit steps on the required `ci` job + `MIN_CI_STEPS` raised in the SAME commit · SEC-05
 
 **Wave 8** *(blocked on Waves 5 and 7)*
 
-- [ ] 47-12-PLAN.md — push, close Phase 46's open item, then NC-E: the required GitHub check red with `mergeStateStatus: BLOCKED`, then green · SEC-05
+- [ ] 47-12-PLAN.md — **PARTIAL — LOCAL HALF ONLY.** NC-E observed on this machine: `npm run security:audit` exit 0 → **1** (one `FATAL` naming GHSA-xvch-5gv4-984h) → 0, attributed against the four other causes of a red, and contained (both manifests byte-identical by sha256). **NOT DELIVERED: the push, Phase 46's open item, the GitHub red, and `mergeStateStatus: BLOCKED`.** `origin/master` is still `a58b9e1` with 111 commits unpushed, so SC-4's runner half is **NOT PROVED** and SEC-05 stays **partial**. Reproduction: `deferred-items.md` § D-47-12-A · SEC-05
 
 **Wave 9** *(blocked on Wave 8)*
 
@@ -512,7 +512,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 46. Migration Chain & Toolchain Floor | 6/6 | Complete   | 2026-08-25 |
-| 47. Suite Trust & Supply Chain | 9/14 | In Progress|  |
+| 47. Suite Trust & Supply Chain | 13/14 | In Progress|  |
 | 48. REST API Authorization | 0/? | Not started | - |
 | 49. Mutation-Layer Truth After Commit | 0/? | Not started | - |
 | 50. Export Authorization | 0/? | Not started | - |

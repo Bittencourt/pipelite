@@ -90,6 +90,23 @@ activities, and custom fields. Advanced features can be built externally via the
       reverted, for the same reason 47-07 reverted it — 47-CONTEXT § "CI audit policy (SC-4)" says a
       policy whose gate has never been observed failing is a stated intention, not a policy. Owners:
       47-11 (the ci.yml step) and 47-12 (the observed red on the real GitHub check).*
+      *47-11: the `ci.yml` half is discharged as FILE CONTENT — `Security audit policy` and
+      `Registry signature verification` are steps 8 and 9 of the job whose `name: ci` IS the required
+      check-run name, with `MIN_CI_STEPS` raised 6 -> 8 in the same commit.*
+      *47-12: the "a policy whose gate has never been observed failing is a stated intention, not a
+      policy" clause is now HALF discharged. The gate HAS been observed failing — `npm run
+      security:audit` went exit 0 -> **1** -> 0 as `minimist@1.2.5` was installed into the real tree
+      and reverted, emitting exactly one `FATAL: minimist critical GHSA-xvch-5gv4-984h has NO recorded
+      disposition` and `1 problem(s)`, with advisories 47 -> 48 -> 47 and vulnerable packages
+      14 -> 15 -> 14. The red is attributed against all four other causes (unreachable registry, no
+      installed tree, stale allowlist entry, narrowed policy) and isolated to one step of nine
+      (`npm audit signatures` and `npm run typecheck` both exit 0 under the control). Containment
+      proved by sha256 + `Buffer.equals` on both manifests. **This box stays `[ ]` because it happened
+      on this machine.** Nothing was pushed; no branch, PR or GitHub object was created;
+      `origin/master` is still `a58b9e1` (pre-Phase-46) with 111 commits unpushed, so all three new
+      `ci` steps have STILL never executed on GitHub and no merge has ever been blocked by this policy.
+      Owner: the operator's push. Reproduction: `47-suite-trust-supply-chain/deferred-items.md`
+      § D-47-12-A. **47-13 must not mark this complete.***
 
 ### Performance
 
