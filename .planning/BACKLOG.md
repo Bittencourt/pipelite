@@ -30,6 +30,7 @@ Status legend — **v1.4** promoted for scoping · **recorded** real but deliber
 | ID | Item | Status |
 |---|---|---|
 | **MIG-01** | `drizzle-kit migrate` cannot build a fresh database | **v1.4** — tier 1 |
+| **MIG-02** | Required CI migration check compares names, not types/FKs/defaults | **recorded** |
 | **WR-04** | View export reachable by any authenticated non-admin | **v1.4** — tier 1 |
 | **PERF-01** | `/deals` renders every deal on a pipeline, unpaginated | **v1.4** — tier 1 |
 | **F-39-08** | Enter inside a modal navigates the list behind it | **v1.4** — tier 2 |
@@ -1195,3 +1196,39 @@ into v1.3 on 2026-08-13 and now live as Phases 32-43 above:
 
 The evidence captured with each backlog item is preserved in the v1.3 requirement text
 (`.planning/REQUIREMENTS.md`) — each category there names its originating backlog item.
+
+---
+
+## Found by the Phase 46 code review, 2026-08-25
+
+### MIG-02 — the required CI migration check compares names, not schema — **recorded**
+
+`scripts/migrate-from-zero.mjs` has two assertion sets. Set A runs everywhere including the
+required CI job; set B, the ten-dimension catalog comparison, needs a POPULATED reference
+database and CI has none by construction (`resolveReference` branch 4 prints
+`SKIPPED: reference equivalence`, and the skip is stated, not silent).
+
+Phase 46's review found that `ci.yml` described set A as "fully authoritative", which it is
+not. `loadSnapshotReference` reduces `drizzle/meta/<last>_snapshot.json` to name lists and
+discards everything else the file carries. The review-fix pass closed the cheapest part of
+the gap — column NULLABILITY is now compared, and index names are now compared in BOTH
+directions (an index the chain creates that neither the snapshot declares nor a constraint
+backs is reported) — and rewrote the `ci.yml` comment to state precisely what is and is not
+proved. This item is the remainder.
+
+**Still not proved on the required check:** column TYPES and lengths, `DEFAULT` expressions,
+foreign keys, check and unique constraints, enum labels, functions, extensions, and index
+DEFINITIONS (columns, uniqueness, method). Concretely, a from-zero build that made
+`deals.amount` `text` instead of `numeric`, dropped a foreign key, or built a declared index
+on the wrong columns passes the required check green.
+
+**Why it is cheap:** the snapshot JSON already holds `type`, `default`, `foreignKeys`,
+`uniqueConstraints`, `checkConstraints` and per-index column lists. Nothing has to be
+provisioned; `loadSnapshotReference` has to stop throwing them away. The one piece of real
+work is mapping drizzle's declared type strings (`varchar(255)`, `numeric(20, 10)`, `text[]`,
+enum names) onto `information_schema` / `format_type` output, and that mapping must fail
+LOUD on an unrecognised type rather than skipping it — an unmapped type that silently
+compares equal is the vacuity this whole milestone exists to remove.
+
+**Do not** close this by widening the `ci.yml` comment again. The comment is now accurate;
+the gap is real.

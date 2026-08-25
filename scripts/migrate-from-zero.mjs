@@ -387,12 +387,35 @@ function loadSnapshotReference() {
 
   const tables = []
   const columnPairs = []
+  const columnNullability = []
   const indexNames = []
   for (const [key, table] of Object.entries(snapshot.tables ?? {})) {
     const name = table.name ?? key.replace(/^public\./, "")
     tables.push(name)
-    for (const column of Object.keys(table.columns ?? {})) columnPairs.push(`${name}.${column}`)
+    for (const [column, spec] of Object.entries(table.columns ?? {})) {
+      columnPairs.push(`${name}.${column}`)
+      // NULLABILITY is carried in a SEPARATE list rather than folded into the pair above,
+      // so a mismatch reports as "this column is nullable and should not be" instead of
+      // as one absent column plus one unexpected column — a diagnosis that names the
+      // wrong defect. The snapshot already holds this; discarding it was WR-02's point.
+      columnNullability.push(`${name}.${column}|${spec.notNull === true ? "NOT NULL" : "NULL"}`)
+    }
     for (const index of Object.keys(table.indexes ?? {})) indexNames.push(index)
+  }
+
+  // ANTI-VACUITY for the nullability dimension specifically. If the snapshot's shape ever
+  // changes so `spec.notNull` reads `undefined` everywhere, every entry becomes "NULL",
+  // the comparison still runs, and it would go red for the wrong reason on the first run
+  // and then be "fixed" by deleting it. Both values must be present in a 293-column
+  // schema; measured 2026-08-25: 173 NOT NULL / 120 NULL.
+  const notNullCount = columnNullability.filter((v) => v.endsWith("|NOT NULL")).length
+  if (notNullCount === 0 || notNullCount === columnNullability.length) {
+    fatal(
+      `${path.basename(snapshotPath)} parsed ${notNullCount} NOT NULL columns out of ` +
+        `${columnNullability.length}. A snapshot in which EVERY column has the same ` +
+        "nullability is a parse failure, not a schema — `notNull` has moved or changed " +
+        "shape, and the nullability comparison below would be measuring nothing."
+    )
   }
 
   if (tables.length < MIN_SNAPSHOT_TABLES) {
@@ -420,6 +443,7 @@ function loadSnapshotReference() {
     journalEntries: entries.length,
     tables: tables.sort(),
     columnPairs: columnPairs.sort(),
+    columnNullability: columnNullability.sort(),
     indexNames: indexNames.sort(),
   }
 }
@@ -769,6 +793,38 @@ async function main() {
       )
     }
 
+    // NULLABILITY. WR-02: on the required CI check, set A used to compare table NAMES,
+    // column NAMES and index NAMES and nothing else — so a from-zero build that produced a
+    // column without its NOT NULL passed green, and `ci.yml` called that "fully
+    // authoritative". The snapshot carries `notNull` per column; this reads it. Types,
+    // defaults, foreign keys and index definitions are still name-only in set A and are
+    // compared only against a reference database — `ci.yml` now says so precisely, and
+    // BACKLOG MIG-02 carries the rest.
+    const builtNullabilityRows = await scratch.unsafe(
+      "select (table_name||'.'||column_name||'|'||case when is_nullable = 'NO' then 'NOT NULL' else 'NULL' end)::text as v from information_schema.columns where table_schema = 'public'"
+    )
+    const builtNullability = builtNullabilityRows.map((row) => String(row.v)).sort()
+    const nullabilityDiff = setDifference(snapshot.columnNullability, builtNullability)
+    // Reported against the columns BOTH sides agree exist, so a missing column is diagnosed
+    // once (above) rather than a second time here under a misleading heading.
+    const builtColumnSet = new Set(builtColumns)
+    const nullabilityMismatches = nullabilityDiff.missing.filter((v) =>
+      builtColumnSet.has(v.slice(0, v.lastIndexOf("|")))
+    )
+    progress(
+      `A/nullability: ${builtNullability.length} built / ` +
+        `${snapshot.columnNullability.length} declared — ` +
+        (nullabilityMismatches.length ? "DIFFERS" : "IDENTICAL")
+    )
+    if (nullabilityMismatches.length) {
+      record(
+        `${nullabilityMismatches.length} column(s) exist in the built database with the ` +
+          `WRONG nullability. A from-zero install accepts (or rejects) rows the schema ` +
+          `does not, and nothing fails until production data does:\n` +
+          sampleDifference(nullabilityMismatches, "snapshot declares").join("\n")
+      )
+    }
+
     // SUBSET, not equality: pg_indexes also reports primary-key and unique-constraint
     // indexes, which the snapshot's `indexes` map never lists. Measured: 41 declared
     // against 81 present.
@@ -777,16 +833,43 @@ async function main() {
     )
     const builtIndexNames = new Set(builtIndexRows.map((row) => String(row.v)))
     const missingIndexes = snapshot.indexNames.filter((name) => !builtIndexNames.has(name))
+
+    // THE OTHER DIRECTION. Tables and columns are checked both ways; indexes were checked
+    // one way only, so an index the chain creates and the schema no longer declares — the
+    // Phase 33 D-06 failure mode, a hand-written index surviving a later `generate` —
+    // was invisible here. Constraint-backed indexes (`*_pkey`, and the unique constraints
+    // pg_indexes reports but the snapshot's `indexes` map never lists) are excluded by
+    // consulting pg_constraint rather than by matching on a name suffix, which would also
+    // swallow a genuinely stray index that happened to end in `_pkey`.
+    const constraintIndexRows = await scratch.unsafe(
+      "select c.conindid::regclass::text as v from pg_constraint c where c.connamespace = 'public'::regnamespace and c.conindid <> 0"
+    )
+    const constraintIndexNames = new Set(constraintIndexRows.map((row) => String(row.v)))
+    const declaredIndexNames = new Set(snapshot.indexNames)
+    const extraIndexes = [...builtIndexNames]
+      .filter((name) => !declaredIndexNames.has(name) && !constraintIndexNames.has(name))
+      .sort()
+
     progress(
       `A/indexes: ${snapshot.indexNames.length - missingIndexes.length} / ` +
-        `${snapshot.indexNames.length} snapshot index names present ` +
-        `(${builtIndexNames.size} indexes in total) — ` +
-        (missingIndexes.length ? "DIFFERS" : "IDENTICAL")
+        `${snapshot.indexNames.length} snapshot index names present, ` +
+        `${extraIndexes.length} unaccounted-for ` +
+        `(${builtIndexNames.size} indexes in total, ${constraintIndexNames.size} ` +
+        `constraint-backed) — ` +
+        (missingIndexes.length || extraIndexes.length ? "DIFFERS" : "IDENTICAL")
     )
     if (missingIndexes.length) {
       record(
         `${missingIndexes.length} index name(s) the snapshot declares are absent from the ` +
-          `built database: ${missingIndexes.join(", ")}`
+          `built database:\n` + sampleDifference(missingIndexes, "absent").join("\n")
+      )
+    }
+    if (extraIndexes.length) {
+      record(
+        `${extraIndexes.length} index(es) exist in the built database that neither the ` +
+          `snapshot declares nor a constraint backs. A hand-written index in a migration ` +
+          `is dropped silently by the next \`drizzle-kit generate\` (Phase 33, D-06):\n` +
+          sampleDifference(extraIndexes, "unexpected").join("\n")
       )
     }
 

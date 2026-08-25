@@ -123,17 +123,34 @@ jobs:
       - name: Migration chain check
         # DEPLOY-01. Creates a throwaway database on the service above, migrates it from
         # zero with `drizzle-kit migrate` and asserts its CATALOG against
-        # drizzle/meta/<last>_snapshot.json — 36 tables, 293 table.column pairs, 41
-        # declared indexes — then drops it in a `finally`. It never branches on the
-        # child's exit code: `drizzle-kit migrate` prints the same success line for 0
-        # applied migrations as for 20, which is exactly how a missing CREATE TABLE
-        # shipped undetected once already.
+        # drizzle/meta/<last>_snapshot.json, then drops it in a `finally`. It never
+        # branches on the child's exit code: `drizzle-kit migrate` prints the same success
+        # line for 0 applied migrations as for 20, which is exactly how a missing
+        # CREATE TABLE shipped undetected once already.
         #
-        # The ten-dimension comparison against a POPULATED reference database prints an
-        # explicit `SKIPPED: reference equivalence` line on this runner, because there is
-        # no such database here — branch 4 of the script's documented reference-selection
-        # order. That is a STATED skip, not a silent pass: the snapshot assertions above
-        # still run and are fully authoritative here.
+        # WHAT THIS STEP PROVES, EXACTLY. There is no populated reference database on this
+        # runner, so the script prints an explicit `SKIPPED: reference equivalence` line —
+        # branch 4 of its documented reference-selection order. That is a STATED skip, not
+        # a silent pass, but it is not nothing-lost either, and an earlier version of this
+        # comment overstated it as "fully authoritative", which it is not. What actually
+        # runs here is assertion set A:
+        #
+        #   PROVED HERE     table names (both directions), column names (both directions),
+        #                   column NULLABILITY, the 41 declared index names, and index
+        #                   names the build creates that neither the snapshot declares nor
+        #                   a constraint backs (both directions).
+        #   NOT PROVED HERE column TYPES and lengths, DEFAULT expressions, foreign keys,
+        #                   check and unique constraints, enum labels, functions,
+        #                   extensions and index DEFINITIONS (columns, uniqueness, method).
+        #                   Those are the ten-dimension comparison, and it needs a
+        #                   populated reference. A from-zero build that made `deals.amount`
+        #                   text instead of numeric, or dropped a foreign key, passes this
+        #                   step.
+        #
+        # Closing that gap is BACKLOG MIG-02 — the snapshot JSON already carries `type`,
+        # `default`, `foreignKeys`, `uniqueConstraints` and per-index column lists, so it
+        # is a matter of reading them, not of provisioning anything. Until then, do not
+        # describe this step as a full schema equivalence check.
         if: ${{ !cancelled() }}
         env:
           # The service publishes 5432 on the runner's localhost. The script resolves
