@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
-status: executing
-last_updated: "2026-08-25T07:37:32.976Z"
-last_activity: 2026-08-25 -- Phase 47 planning complete
+status: verifying
+last_updated: "2026-08-25T07:59:46.837Z"
+last_activity: 2026-08-25
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 19
-  completed_plans: 6
+  completed_plans: 7
   percent: 11
 ---
 
@@ -20,8 +20,9 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-24)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 46 — Migration Chain & Toolchain Floor
-All 6 plans executed (2026-08-25). Next command: `/gsd:verify-phase 46`.
+**Current focus:** Phase 47 — Suite Trust & Supply Chain (13 plans)
+**Plan 01 of 13 executed** (2026-08-25) — wave 1, alone by design. Next: plan 02.
+Phase 46 remains owed a `/gsd:verify-phase 46`.
 
 ## Position
 
@@ -54,6 +55,28 @@ container now runs **Node v24.19.0** (it ran the EOL v20.20.2 until 46-06 rebuil
 and open `/deals`, and push so the `ci` check runs the new `Migration chain check` step.
 
 Next: `/gsd:verify-phase 46`.
+
+**Phase 47 is EXECUTING — plan 01 of 13 done.** 47-01 was the whole of wave 1 by design, because it
+moves the test runner underneath every gate the other twelve plans author. `vitest` is now **4.1.11**
+(was 4.0.18), clearing `GHSA-5xrq-8626-4rwp` — critical, CVSS 9.8, arbitrary file read via the Vitest
+UI server, vulnerable range `>=4.0.0 <4.1.0`. **The runner does not move again inside this phase.**
+
+**A new `overrides: { "vite": "^7.0.0" }` in `package.json` is load-bearing — do not delete it.**
+Every `vitest@4.1.x`, including 4.1.0, widened its `vite` dependency to `^6 || ^7 || ^8`, so an
+unconstrained install resolves `vite@8.2.2` and adds 32 lockfile keys (`rolldown` + 16 platform
+bindings, `@oxc-project/types`, `@rolldown/pluginutils`, a nested `lightningcss` set) — the transitive
+major CONTEXT places out of scope. With the override the bump added **zero** lockfile keys. npm does
+**not** persist `overrides` into `package-lock.json`, so nothing in the repo currently fails if it is
+removed; closing that is `D-47-01-A` in the phase's `deferred-items.md`.
+
+Side effect worth knowing before planning 47-07: `vite` went 7.3.1 → **7.3.6**, clearing all five of
+its GHSAs, so **`vite` is already remediated and 47-07 should not re-handle it.**
+
+**Suite baseline held exactly across the runner bump: 4739 passed / 32 skipped** (base, 169 files
+passed / 2 skipped), **RSC 8/8**, `tsc --noEmit` exit 0 with zero output, lint **0 errors** / 124
+warnings. Advisories: 4 crit / 22 high / 38 total → **3 crit / 21 high / 36 total**, 26 → 24
+critical+high packages, nothing joined the set. `npm audit fix` was **not** used and remains forbidden
+for this phase.
 
 v1.3 "Foundation & CRM Depth" SHIPPED 2026-08-24 — 14 phases (32-45), 190 plans, 42/42 requirements,
 audit `passed`, tagged `v1.3`. Archive: [roadmap](milestones/v1.3-ROADMAP.md) · [requirements](milestones/v1.3-REQUIREMENTS.md) ·
@@ -147,6 +170,7 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 | Phase 46 P04 | 25min | 2 tasks | 3 files |
 | Phase 46 P05 | 9min | 2 tasks | 2 files |
 | Phase 46 P06 | 11min | 3 tasks | 0 files |
+| Phase 47 P01 | 22min | 2 tasks | 2 files |
 
 ## Decisions
 
@@ -321,6 +345,10 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 - [Phase 46]: 46-06: the rebuilt container's Node is proved by asking the running process (v20.20.2 before -> v24.19.0 after) plus the image-ID change, never by a build log or a 'Starting' line
 - [Phase 46]: 46-06: SC-5 closed with semver.satisfies against the OBSERVED container version plus a full 832-range package-lock walk (24.19.0 -> 0 violations; 24.0.0 -> 1), not a major-number eyeball
 - [Phase 46]: 46-06: SC-2 closed against pipelite_sc2 built by drizzle-kit migrate alone — /api/health 200, db.ok true, 10/10 processors; scratch DB dropped, live pipelite intact with its 46,054 organizations
+- [Phase 47]: overrides.vite ^7.0.0 holds vite on the 7.x line; do not delete it — Every vitest 4.1.x (including 4.1.0, the minimum advisory fix) widened its vite dep to ^6||^7||^8, so an unconstrained install resolves vite 8.2.2 and adds 32 lockfile keys (rolldown + 16 platform bindings, @oxc-project/types, @rolldown/pluginutils, nested lightningcss). With the override the bump added ZERO keys.
+- [Phase 47]: npm does NOT persist the overrides block into package-lock.json — Verified: 0 matches for '"overrides"' in the lockfile, lockfileVersion 3. npm ci still reproduces vite 7.3.6 because it installs the pinned tree, but no in-repo gate fails if the override is deleted. Tracked as D-47-01-A.
+- [Phase 47]: vite is already remediated at 7.3.6 by 47-01 — 47-07 must not re-handle it — The ^7.0.0 constraint resolved vite 7.3.1 -> 7.3.6, above the highest vulnerable ceiling (7.3.4) of all five vite GHSAs, so vite left the audit document entirely.
+- [Phase 47]: rolldown/lightningcss are what vite@8 pulls, not an independent npm-audit-fix signature — vite@8.2.2 declares rolldown and lightningcss as direct dependencies. A plan seeing them in a lockfile diff should check the resolved vite major before concluding the install was untargeted.
 
 ### Quick Tasks Completed
 
@@ -414,6 +442,6 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 
 Phase: 46 (Migration Chain & Toolchain Floor) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
-Progress: [██████████] 100%
-Last activity: 2026-08-25 -- Phase 47 planning complete
+Status: Phase complete — ready for verification
+Progress: [████░░░░░░] 37%
+Last activity: 2026-08-25

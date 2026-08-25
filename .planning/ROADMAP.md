@@ -215,7 +215,7 @@ Plans:
 
 **Wave 1** *(the runner is pinned before any gate is authored against it)*
 
-- [ ] 47-01-PLAN.md — vitest to a `>=4.1.0` floor (CVSS 9.8 GHSA-5xrq-8626-4rwp) + the execution-time advisory baseline · SEC-05, QG-01
+- [x] 47-01-PLAN.md — vitest to a `>=4.1.0` floor (CVSS 9.8 GHSA-5xrq-8626-4rwp) + the execution-time advisory baseline · SEC-05, QG-01
 
 **Wave 2** *(alone in its wave — timing margins need an otherwise idle machine)*
 
@@ -512,7 +512,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 46. Migration Chain & Toolchain Floor | 6/6 | Complete   | 2026-08-25 |
-| 47. Suite Trust & Supply Chain | 0/? | Not started | - |
+| 47. Suite Trust & Supply Chain | 1/13 | In Progress|  |
 | 48. REST API Authorization | 0/? | Not started | - |
 | 49. Mutation-Layer Truth After Commit | 0/? | Not started | - |
 | 50. Export Authorization | 0/? | Not started | - |
