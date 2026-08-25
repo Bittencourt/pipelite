@@ -63,8 +63,9 @@ const MIGRATION_CHECK_SCRIPT = "scripts/migrate-from-zero.mjs"
 const MIGRATION_CHECK_COMMAND = "npm run db:check-migrations"
 
 /**
- * The workflow declares at least this many steps today (measured: 6 — checkout,
- * setup-node, install, typecheck, lint, test, plus the migration check = 7).
+ * The workflow declares at least this many steps today. Measured: 7 — checkout, setup-node,
+ * install, typecheck, lint, test, migration check. The floor sits one below the measurement,
+ * so removing a step is loud while adding one is free.
  *
  * Anti-vacuity for the per-step enumeration below. A `forEach` over an empty array
  * satisfies every negative inside it, which is precisely the shape of a gate that passes
