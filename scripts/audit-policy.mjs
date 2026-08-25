@@ -173,6 +173,36 @@ export const GHSA_PATTERN = /^GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/
  *  an expiry nobody revisits. */
 export const EXPIRES_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
+/**
+ * The longest an acceptance may run, in days from today.
+ *
+ * `AUDIT-POLICY.md` § "The expiry rule" states two horizons — 30 days where a non-breaking fix is
+ * measured available, 90 days where the only fix is a breaking major with reach evidence. 90 is the
+ * outer bound, and it is ENFORCED here rather than left to prose.
+ *
+ * Why it has to be enforced: an unbounded `expires` satisfies every other control in this file.
+ * `expires: "9999-12-31"` was verified to return `[]` from `evaluatePolicy` with every other axis
+ * clean, so the single cheapest way to silence a critical advisory forever was a one-field data
+ * edit that required no code change, broke no test, and turned no gate red — while still reading,
+ * to any human, as a reasoned 30-day acceptance. That converts acceptance back into the permanent
+ * silence this whole field exists to prevent, and it is the same shape as the threat
+ * REQUIRED_FAIL_ON is pinned against.
+ *
+ * Measured from TODAY rather than from a decision date, because the JSON records no decision date;
+ * that makes the bound strictly conservative (an entry only ever gets further inside it as time
+ * passes) and it needs no second field that could itself be edited. Both live horizons in
+ * `audit-policy.json` clear it: 2026-09-24 is 29 days out and 2026-11-23 is 89.
+ *
+ * The 30-day horizon is deliberately NOT enforced here. Which of the two applies depends on whether
+ * a non-breaking fix is measured available, which is a judgement in the entry's `reason`, not a
+ * machine-readable field — and a gate that guessed would either be wrong or would need a fourth
+ * field nobody maintains. 90 is the bound that is true of every entry regardless.
+ */
+export const MAX_EXPIRY_DAYS = 90
+
+/** `MAX_EXPIRY_DAYS` in milliseconds. Named so the message and the comparison cannot drift. */
+export const MAX_EXPIRY_MS = MAX_EXPIRY_DAYS * 86_400_000
+
 /** Where the machine-readable policy lives, relative to the repository root. Root, beside its
  *  prose, per 47-CONTEXT — and note that a root SECURITY.md is a *disclosure* policy and is a
  *  different document that must not be conflated with either of these. */
@@ -565,6 +595,18 @@ export function evaluatePolicy(auditJson, policy, now = new Date()) {
             `permanent silence: either take the fix now, or re-state the reason against today's ` +
             `evidence and set a new date. Extending the date without re-reading the evidence is ` +
             `the failure this field exists to prevent.`
+        )
+      } else if (expiresMs - nowMs > MAX_EXPIRY_MS) {
+        // The OTHER end of the same rule, and the one nothing checked. An expiry that has passed
+        // is a failure; an expiry that never arrives was not.
+        const days = Math.round((expiresMs - nowMs) / 86_400_000)
+        problems.push(
+          `${where} expires on ${expires}, which is ${days} days away — more than ` +
+            `${MAX_EXPIRY_DAYS}. ${POLICY_DOC} § "The expiry rule" caps an acceptance at 30 days ` +
+            `(a non-breaking fix is measured available) or ${MAX_EXPIRY_DAYS} days (the only fix ` +
+            `is a breaking major and the reason rests on reach evidence). A distant expiry is a ` +
+            `permanent silence wearing a decision's clothes: it satisfies every other control ` +
+            `here while never bringing the decision back.`
         )
       }
     }

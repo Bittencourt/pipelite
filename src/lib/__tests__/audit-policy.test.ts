@@ -87,6 +87,8 @@ import {
   EXPIRES_PATTERN,
   FORBIDDEN_REASONS,
   GHSA_PATTERN,
+  MAX_EXPIRY_DAYS,
+  MAX_EXPIRY_MS,
   MIN_REASON_LENGTH,
   REQUIRED_FAIL_ON,
   VALID_REACH,
@@ -421,7 +423,16 @@ function fixtureEntry(overrides: Partial<AllowlistEntry> = {}): AllowlistEntry {
     package: "widget",
     reason: SUBSTANTIVE_REASON,
     reach: "runtime",
-    expires: "2026-12-31",
+    // 30 days from NOW, which is the horizon AUDIT-POLICY.md § "The expiry rule" states for an
+    // acceptance with a measured available fix, and the horizon 33 of the 39 shipped entries carry.
+    //
+    // This was `2026-12-31` — 128 days out — until CR-02 made the maximum horizon enforceable, and
+    // then the VALID fixture that every negative control breaks in exactly one field was itself
+    // over the bound. That is real signal, not fixture noise: the file the whole allowlist policy
+    // is tested against modelled a horizon the policy document forbids, and every `toHaveLength(1)`
+    // above would have started reporting two problems. Kept inside the horizon deliberately, so the
+    // fixture models a policy this repository would accept.
+    expires: "2026-09-24",
     ...overrides,
   }
 }
@@ -499,6 +510,52 @@ describe("NC-2: an expiry that has passed is a failure", () => {
     )
     expect(problems).toHaveLength(1)
     expect(problems[0]).toContain("EXPIRED on 2026-08-25")
+  })
+
+  it("reports a problem for an expiry beyond the documented maximum horizon", () => {
+    // CR-02. THE OTHER END OF THE SAME RULE, and the end nothing checked until now. An expiry that
+    // has PASSED was a failure; an expiry that never arrives was not, so `expires: "9999-12-31"`
+    // satisfied every control in this file and returned `[]` from the shipped evaluator — verified.
+    // That made the cheapest way to silence a critical advisory forever a one-field data edit that
+    // required no code change, broke no test and turned no gate red, while still reading to a human
+    // as a reasoned 30-day acceptance.
+    const problems = evaluatePolicy(
+      SYNTHETIC_AUDIT,
+      fixturePolicy({ allowlist: [fixtureEntry({ expires: "9999-12-31" })] }),
+      NOW
+    )
+    expect(
+      problems,
+      `a permanent-silence entry produced ${problems.length} problem(s): ${problems.join(" | ")}`
+    ).toHaveLength(1)
+    expect(problems[0]).toContain(`more than ${MAX_EXPIRY_DAYS}`)
+    expect(problems[0]).toContain("9999-12-31")
+  })
+
+  it(`THE COMPLEMENT: an expiry ${MAX_EXPIRY_DAYS - 1} days out is clean`, () => {
+    // Without this, the control above would be satisfied by a rule that rejected every future date,
+    // which would make the whole allowlist mechanism unusable and would be "fixed" by deleting the
+    // rule. 2026-11-23 is not an arbitrary date: it is the horizon six SHIPPED entries actually
+    // carry, so this asserts the enforced bound admits the policy this repository ships.
+    expect(
+      evaluatePolicy(
+        SYNTHETIC_AUDIT,
+        fixturePolicy({ allowlist: [fixtureEntry({ expires: "2026-11-23" })] }),
+        NOW
+      )
+    ).toEqual([])
+  })
+
+  it("the horizon is a bound on the WHOLE range, not a check of two magic dates", () => {
+    // The boundary, walked. A rule written as `expires !== "9999-12-31"` would pass both controls
+    // above; this one steps across the cap and asserts the verdict flips exactly once.
+    const verdict = (expires: string): number =>
+      evaluatePolicy(SYNTHETIC_AUDIT, fixturePolicy({ allowlist: [fixtureEntry({ expires })] }), NOW)
+        .length
+    // NOW is 2026-08-25T12:00:00Z, so a date at midnight is half a day nearer than its whole-day
+    // count suggests: 2026-11-23 is 89.5 days out and 2026-11-24 is 90.5.
+    expect(verdict("2026-11-23"), "89.5 days must be accepted").toBe(0)
+    expect(verdict("2026-11-24"), "90.5 days must be rejected").toBe(1)
   })
 
   it("the injected clock is what decides, not the wall clock", () => {
@@ -616,6 +673,17 @@ const NC_D_CASES = [
     expected: 1,
     fragments: ["missing critical, high"],
   },
+  {
+    // CR-02. The fifth axis, and the one this register was missing: not a MALFORMED entry but a
+    // perfectly well-formed one whose expiry never arrives. Every other control here is satisfied
+    // — the id is valid, the reason is substantive, the reach is declared, `failOn` is intact —
+    // and before this was enforced `evaluatePolicy` returned `[]` for it. That is the same shape
+    // as (e): the mechanism's own configuration used as the escape hatch.
+    label: "(f) an expiry that never arrives — acceptance turned back into permanent silence",
+    broken: fixturePolicy({ allowlist: [fixtureEntry({ expires: "9999-12-31" })] }),
+    expected: 1,
+    fragments: [`more than ${MAX_EXPIRY_DAYS}`, "9999-12-31"],
+  },
 ] as const
 
 describe("NC-D: the policy checker can produce a red", () => {
@@ -632,7 +700,7 @@ describe("NC-D: the policy checker can produce a red", () => {
     }
   })
 
-  it("still carries all five cases, in order — deleting one is a red-going act", () => {
+  it("still carries all six cases, in order — deleting one is a red-going act", () => {
     // The register's own floor. `it.each` over a table that lost an entry silently registers one
     // fewer test and reports a clean run; nothing above would notice. This is the same reasoning
     // as the `MIN_ALLOWLIST_ENTRIES` floor, applied to the controls themselves.
@@ -642,6 +710,7 @@ describe("NC-D: the policy checker can produce a red", () => {
       "(c)",
       "(d)",
       "(e)",
+      "(f)",
     ])
   })
 
@@ -885,6 +954,35 @@ describe("every shipped allowlist entry, named", () => {
     ).toBeGreaterThan(Date.now())
     expect(new Date(entry.expires).getTime()).toBeGreaterThan(Date.now())
   })
+
+  it.each(SHIPPED_ENTRIES)(
+    `$label expires within the documented ${MAX_EXPIRY_DAYS}-day horizon`,
+    (entry) => {
+      // CR-02, applied to the SHIPPED data rather than only to a fixture. The assertion above says
+      // the entry has not expired; this one says it is going to. Without both, "carries an expiry"
+      // is satisfied by a date nobody alive will see, and `AUDIT-POLICY.md` § "The expiry rule"
+      // becomes prose about a rule rather than a statement of one.
+      //
+      // Measured 2026-08-25: 33 entries at 2026-09-24 (29 days) and 6 at 2026-11-23 (89 days).
+      //
+      // Written as a comparison between two TIMESTAMPS — the entry's expiry against a cap computed
+      // from the clock — and deliberately NOT as `(expiresMs - Date.now()) / 86_400_000 <= 90`.
+      // The second form is a clock-derived subtraction compared to a threshold, which is precisely
+      // the shape `suite-timing-hygiene.test.ts` forbids suite-wide, and it would make this
+      // assertion that gate's first casualty. `Date.now() + MAX_EXPIRY_MS` is a future timestamp,
+      // the same idiom as the not-yet-expired assertion above and the same shape that gate holds
+      // as KNOWN_NEGATIVE (c) and (d). The two gates stay paired rather than in contradiction.
+      const expiresMs = Date.parse(`${entry.expires}T00:00:00Z`)
+      expect(
+        expiresMs,
+        `${entry.label} expires on ${entry.expires}, which is more than ${MAX_EXPIRY_DAYS} days ` +
+          `away. ${POLICY_DOC} § "The expiry rule" caps an acceptance at 30 days (a non-breaking ` +
+          `fix is measured available) or ${MAX_EXPIRY_DAYS} days (breaking major, reach ` +
+          `evidence). SHORTEN THE HORIZON — do not raise MAX_EXPIRY_DAYS. A distant expiry is a ` +
+          `permanent silence wearing a decision's clothes.`
+      ).toBeLessThanOrEqual(Date.now() + MAX_EXPIRY_MS)
+    }
+  )
 
   it.each(SHIPPED_ENTRIES)("$label names a package", (entry) => {
     expect(entry.package.trim().length, `${entry.label} has no package`).toBeGreaterThan(0)

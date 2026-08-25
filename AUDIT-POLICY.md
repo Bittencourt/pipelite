@@ -86,6 +86,20 @@ Extending a date **without re-reading the evidence** is the failure this field e
 When an entry expires, the correct actions are: take the fix, or re-state the reason against
 today's code and set a new date.
 
+**Both ends of that rule are enforced, not stated.** An expiry that has passed fails the gate, and
+so does an expiry more than 90 days away — `MAX_EXPIRY_DAYS` in `scripts/audit-policy.mjs`, applied
+by `evaluatePolicy` and asserted per entry, offline, in `src/lib/__tests__/audit-policy.test.ts`.
+Until that bound existed, `expires: "9999-12-31"` returned no problem at all: the single cheapest
+way to silence a critical advisory forever was a one-field data edit that required no code change,
+broke no test and turned no gate red, while still reading to a human as a reasoned 30-day
+acceptance. A claim in a policy document is a liability unless something checks it, and an
+unbounded expiry is a permanent silence wearing a decision's clothes.
+
+The 30-day horizon is deliberately **not** machine-enforced: which of the two applies depends on
+whether a non-breaking fix is measured available, which is a judgement stated in the entry's
+`reason` rather than a machine-readable field. 90 is the bound that holds for every entry, so 90 is
+what the gate enforces; the 30-day case is enforced by review against the `reason`.
+
 ## Runtime vs build vs dev — a judgement per advisory, not a flag
 
 A transitive advisory reachable only from a build tool is a genuinely different risk from one in
