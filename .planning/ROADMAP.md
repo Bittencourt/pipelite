@@ -209,7 +209,49 @@ repeated full-suite runs are only meaningful against a schema that can be rebuil
 together and not to chase either per-phase. The suite has a second, independent flake source recorded
 in `BACKLOG.md` (cold `auth.setup.ts` at 30.1 s vs 1.9 s on retry) which is **not** in v1.4 scope —
 do not let it be mistaken for QG-01, and do not close QG-01 on `retries: 1`.
-**Plans**: TBD
+**Plans**: 13 plans in 9 waves
+
+Plans:
+
+**Wave 1** *(the runner is pinned before any gate is authored against it)*
+
+- [ ] 47-01-PLAN.md — vitest to a `>=4.1.0` floor (CVSS 9.8 GHSA-5xrq-8626-4rwp) + the execution-time advisory baseline · SEC-05, QG-01
+
+**Wave 2** *(alone in its wave — timing margins need an otherwise idle machine)*
+
+- [ ] 47-02-PLAN.md — `scripts/suite-repeatability.sh` + `scripts/diff-pass-sets.mjs`, and the BEFORE margin recorded at >=3x oversubscription · QG-01
+
+**Wave 3** *(parallel: no `files_modified` overlap)*
+
+- [ ] 47-03-PLAN.md — the hook-hygiene AST gate + `toggle.test.ts` and `recursion.test.ts` hoisted to static imports · NC-C (hook half) · QG-01
+- [ ] 47-04-PLAN.md — `tokenizeFieldPath` exported, the elapsed ratio replaced by counted FLOOR/CEILING/FLATNESS + the AST structural half · NC-A, NC-B · QG-01
+- [ ] 47-07-PLAN.md — every in-range advisory fix, `drizzle-orm` 0.45.2 first, plus the residual table by reach · SEC-05
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 47-05-PLAN.md — the SC-1b elapsed-time taint gate + the last two elapsed assertions deleted · NC-C (timing half, both shapes) · QG-01
+- [ ] 47-08-PLAN.md — `next` 16.1.6 -> 16.3.2 with its own gate, the phase's single Docker rebuild, and a human authenticated-render checkpoint · SEC-05
+
+**Wave 5** *(alone in its wave — the AFTER margin must be measured on an idle machine)*
+
+- [ ] 47-06-PLAN.md — the AFTER margin at the same induced load, the before/after table, and the ten-run guard · SC-1 evidence · QG-01
+
+**Wave 6** *(blocked on Wave 4)*
+
+- [ ] 47-09-PLAN.md — `scripts/audit-policy.mjs` (zero new dependencies), `audit-policy.json`, `AUDIT-POLICY.md`, `security:audit`, gate observed green · SEC-05
+
+**Wave 7** *(parallel: no `files_modified` overlap)*
+
+- [ ] 47-10-PLAN.md — the offline policy-shape gate with three PERMANENT negative controls · NC-D · SEC-05
+- [ ] 47-11-PLAN.md — both audit steps on the required `ci` job + `MIN_CI_STEPS` raised in the SAME commit · SEC-05
+
+**Wave 8** *(blocked on Waves 5 and 7)*
+
+- [ ] 47-12-PLAN.md — push, close Phase 46's open item, then NC-E: the required GitHub check red with `mergeStateStatus: BLOCKED`, then green · SEC-05
+
+**Wave 9** *(blocked on Wave 8)*
+
+- [ ] 47-13-PLAN.md — negative-control register (all nine judged for REAL output), criterion verdicts, phase gate · QG-01, SEC-05
 
 ### Phase 48: REST API Authorization
 
