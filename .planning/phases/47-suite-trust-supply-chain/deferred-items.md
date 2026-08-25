@@ -228,3 +228,44 @@ longer gates assumption A3 — it gates 47-07's runtime bumps, in the sign-in an
 page renders data, and it touches neither authorization nor any write path.
 **Owner:** the orchestrator (drives a real browser). A failure here implicates **47-07's** bumps, not
 `next`, so the action would be to identify the package and hand it back to 47-07's disposition.
+
+## D-47-08-B — RESOLVED IN PART (orchestrator, 2026-08-25, Claude-in-Chrome)
+
+The owed authenticated render against the rebuilt image was performed. **Verified:**
+
+| Surface | Result |
+|---|---|
+| Authenticated session | live — the Auth.js trio (`@auth/core` 0.41.3, `next-auth`) is serving real sessions from the rebuilt container |
+| `/deals` | renders 3,466 (*Base Fria - Lead*, $1,165,182) + 288 (*Base Fria - Parceiro*); pipeline selector populated `BDR - Base Fria` |
+| `/organizations` | renders against the ~46k-org table |
+| `/admin/audit` | 214 entries, oldest Aug 16 2026, retention UI intact — the Auth.js bump did NOT change the authorization result |
+| Browser console | **zero application errors** (only MetaMask extension `MaxListenersExceededWarning` noise) |
+
+**STILL OWED — the stage-change write path was NOT exercised through a real gesture.**
+`left_click_drag` did not start the drag: `deals.position` stayed 5000 and `updated_at` stayed
+`2026-08-08 19:48:13.615` for `Robin Food` (`64f321e4-9812-45ce-814d-5ee05ed24bde`). That is
+`@dnd-kit`'s PointerSensor activation constraint correctly refusing a synthetic move-and-release
+(plan 47-08 predicted exactly this). The card chevron did not open a stage menu either — after
+clicking it, `Move` / `Stage` / `Edit` / `Delete` were all absent from the extracted DOM.
+
+So `drizzle-orm@0.45.2`'s write path is covered by the 4,845-test suite but **not** by a real
+pointer gesture. Anyone with a mouse can close this in ten seconds: drag a card between columns on
+`/deals`, reload, confirm it stayed.
+
+**Side-effect check performed before touching anything:** 0 active workflows; the single outbound
+webhook (`https://pipelite.pedrobittencourt.net/admin/webhooks`) subscribes only to `deal.deleted`
+and `person.created`, so a stage move could not fire anything external.
+
+**Two of my own earlier claims, corrected:**
+- I reported a "frozen renderer" on `/deals` and `/admin/audit`. **False.** `get_page_text` returned
+  full content from a page whose `Page.captureScreenshot` had just timed out three times — the pages
+  were alive and the screenshot transport is what is intermittently failing. Not a product defect.
+- I called that a live PERF-01 symptom. **Premature** — one flaky screenshot is not a reproduction.
+
+## Observation for Phase 51 (PERF-01) — measurement, not a conclusion
+
+`get_page_text` on `/deals` returned **51,936 bytes / 2,523 lines containing 832 card price markers**,
+against roughly **8 cards visible** in the viewport. Consistent with the board materialising far more
+of the column than it displays. The server is not the bottleneck: `/api/health` answered **200 in
+5.5 ms** while the client was struggling, and the pipeline holds **3,754 deals**
+(stage `ad4d9fb5-92c7-4170-8e93-2163153a99d9`). Phase 51 owns the real measurement.
