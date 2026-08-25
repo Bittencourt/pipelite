@@ -3,6 +3,9 @@
 **Gathered:** 2026-08-25
 **Status:** Ready for planning
 **Mode:** Smart discuss (autonomous)
+**Amended:** 2026-08-25 — corrected by 48-RESEARCH.md. Two ROADMAP success criteria were unusable as
+written and have been amended; the exploit was reproduced end-to-end; scope decisions below are now
+binding.
 
 <domain>
 ## Phase Boundary
@@ -74,6 +77,61 @@ through the public REST API today.
   test passes while the route is broken.
 - Prefer the live database over fabricated fixtures where SC-3 demands the live dataset, but tests must
   not mutate real records: create and clean up their own, or operate in a transaction that rolls back.
+
+### AMENDED by research — three corrections
+
+**C1 — QG-03 is a LIVE HTTP 500, not latent, and SC-5's proof method does not exist.**
+There is no `stageList` non-empty guard; `stages/route.ts:69` is `if (!pipelineId)` — absence of a
+filter param, not non-emptiness. `parsePagination` imposes no ceiling on `offset`, so
+`GET /api/v1/stages?offset=73` (any offset >= the global stage count) emits `"pipelines"."id" IN ()`
+and dies `42601 syntax error at or near ")"`. **Proof is behavioural and needs no ablation: that
+request is 500 today and must be 200 with `data: []` after.** `inArray(col, [])` in the installed
+drizzle-orm 0.45.2 emits a literal `false` rather than throwing, so the empty case is safe.
+
+**C2 — SC-3 was vacuous by construction.** `select owner_id, count(*) from activities group by 1`
+returns **one row**: all **79,022** activities belong to a single admin user. Scoped count equals
+unscoped count for the only user with data, so the original equality is satisfied **by the broken
+route, today**. The amended criterion requires a **discriminator** (>=2 owners with >=1 activity
+each), a **floor** (own count > 0 — an empty response fails), a **ceiling** (no foreign row), and a
+**cross-check** that the other owner's records exist and are absent.
+
+**C3 — a vacuity trap inside SC-4.** The `non-owner + no expand -> 403` cell is 403 today for the
+*wrong reason* (the relation is never loaded), so it passes identically before and after the fix.
+**Only `owner + no expand -> 200` is a defect proof.** Assert all four cells, but do not present the
+403-without-expand cell as evidence of anything.
+
+### THE TENTH VACUOUS GATE — already shipped, and it indicts the repo's whole test suite
+
+Research deleted **all three** `eq(organizations.ownerId, context.userId)` predicates — GET, PUT and
+DELETE — from `organizations/[id]/route.ts` and ran the full base suite:
+**`172 passed | 2 skipped`, `5237 passed | 32 skipped`. Nothing went red.** There is a test named
+*"returns 404 ... when the organization is not the caller's"* and it does not detect the check being
+removed. **Nothing in this repo catches deleting an authorization check from a REST route.**
+
+That is this phase's real subject. Fixing four routes while leaving that undetectable means the next
+one regresses silently. **The route-level authorization regression gate (Q10) is therefore IN SCOPE**,
+and its own falsification is the phase's most important negative control: delete an ownership
+predicate, watch the gate go red, restore.
+
+### Resolved open questions — decided, do not re-litigate
+
+- **Owner-only, NO admin bypass, on these routes.** The measurement forces it: the only user holding
+  activities is an admin, so an admin bypass makes SC-3 permanently vacuous. Admin access to other
+  users' records belongs on admin endpoints, not the general `/api/v1` surface.
+- **A foreign `owner_id` in a PUT is REJECTED, not silently ignored.** Silently dropping the field
+  leaves the caller believing the write succeeded as sent. A security boundary should fail loudly.
+- **SC-3 runs against a database with fixtures the test creates and removes** — not against the live
+  distribution, which cannot discriminate. Two owners, each with >=1 activity, created and cleaned up.
+  Never mutate real records.
+- **Scope: IN — `POST /api/v1/activities:164`** (plants an activity on another user). Same file, same
+  requirement, same defect class; shipping a route where you can still write another user's data would
+  not satisfy SEC-01's own wording.
+- **Scope: IN — `stages/route.ts` paginates BEFORE it authorizes.** Measured: `?limit=5` returned
+  `data: []` with `meta.total: 1` for the stage's own owner. Same file as QG-03 and a live correctness
+  bug for legitimate owners.
+- **Scope: OUT — `workflows/[id]/runs` and `runs/[runId]` unscoped reads.** Real, and recorded as a
+  backlog item with the measured evidence, but a different subsystem; folding it in would widen a
+  security fix past what can be verified in one phase. **Record it; do not silently drop it.**
 
 ### Claude's Discretion
 - Whether the ownership check lives inline per route, in a shared helper, or in middleware — provided
