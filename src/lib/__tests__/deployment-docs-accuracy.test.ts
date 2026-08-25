@@ -458,3 +458,207 @@ describe("a dump cannot be committed by accident", () => {
     expect(entries).toContain("*.dump")
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 6. THE HOST-PERSPECTIVE DOCS PRINT THE HOST PORT (DEPLOY-02).
+//
+// A reader who follows the setup steps runs the migrate command FROM THE HOST. drizzle-kit
+// resolves `path.resolve(cwd, ".env")` and nothing else — the string `.env.local` does not occur
+// anywhere in `drizzle-kit/bin.cjs` — so the value in `.env` is the one that is used, and
+// `docker-compose.yml` publishes Postgres at `5433:5432`. Every document that printed
+// `localhost:5432` was therefore printing a port nothing listens on, and the cost was an inline
+// `DATABASE_URL=…` override pasted into every phase since 33.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * THE ASSIGNMENT MATCHER. Line-anchored, and the anchoring is LOAD-BEARING.
+ *
+ * A whole-file `toContain("localhost:5432")` cannot work here, because the documents this gate
+ * governs must be free to NAME the container-side form in prose. `.env.example`'s header
+ * deliberately spells out `@postgres:5432` in a `#`-prefixed example, precisely so the next
+ * reader does not "fix" the host url into the container one; a whole-file scan would read that
+ * warning as the defect it warns about. Per the standing house rule
+ * (`compose-uploads-persistence.test.ts:299-306` and `select-wiring.test.ts` note (a)), the
+ * answer to a raw-text collision is to make the scan PRECISE, never to weaken it.
+ *
+ * Anchoring at start-of-line after optional whitespace is what makes it precise. It excludes:
+ *   - `#   DATABASE_URL="…@postgres:5432/…"`  — a commented example is prose, not a setting
+ *   - `- DATABASE_URL=${DATABASE_URL}`        — a YAML sequence entry
+ *   - `| \`DATABASE_URL\` | connection string |` — a reference table row
+ *   - `Set DATABASE_URL to your connection string` — prose
+ * and it still matches the indented `   DATABASE_URL=…` inside a fenced setup block, which is the
+ * form all four subject documents actually use.
+ */
+const DATABASE_URL_ASSIGNMENT_RE = /^\s*(?:export\s+)?DATABASE_URL\s*=/
+
+/** The port `docker-compose.yml` publishes Postgres on, from the host (`5433:5432`). */
+const HOST_PORT = "localhost:5433"
+/** The port nothing listens on from the host — the defect DEPLOY-02 removes. */
+const WRONG_HOST_PORT = "localhost:5432"
+/** The in-network form. Correct inside the compose network, unresolvable outside it. */
+const CONTAINER_HOSTNAME = "@postgres:5432"
+
+/**
+ * The documents that describe THIS repository's own `docker compose` stack, where the reader is
+ * standing on the host. `docker-compose.yml` maps `5433:5432`, so from the host the port is 5433.
+ *
+ *   - `.env.example`               — the ONLY one of the three env files that is tracked
+ *                                    (`.gitignore:34-35` ignores `.env` and `.env.local`), so it
+ *                                    is the single file a self-hoster who clones this repo sees.
+ *   - `CONTRIBUTING.md`            — root-level; step 5 of its Getting Started block. It is a
+ *                                    separate FILE from the one below, not a symlink, with its
+ *                                    own copy of the same setup snippet.
+ *   - `README.md`                  — the "Environment Variables" block under Manual Setup.
+ *   - `docs/development/contributing.md` — step 5 of the developer setup.
+ */
+const HOST_PERSPECTIVE_DOCS = [
+  ".env.example",
+  "CONTRIBUTING.md",
+  "README.md",
+  "docs/development/contributing.md",
+] as const
+
+/**
+ * DELIBERATELY EXCLUDED, and this list exists so the next reader finds the reasoning instead of
+ * re-deriving it — or, worse, "fixing" these two to 5433 and breaking them.
+ *
+ *   - `docs/admin/configuration.md`           — its `localhost:5432` example is the "Local
+ *                                               PostgreSQL" case: a Postgres the operator
+ *                                               installed themselves, listening on its own
+ *                                               package default. The same file also legitimately
+ *                                               shows Neon, Supabase and a generic remote host.
+ *   - `docs/admin/deployment/bare-metal.md`   — the whole document is an operator installing
+ *                                               Postgres directly on the machine. There is no
+ *                                               compose port mapping anywhere in that path.
+ *
+ * Both are asserted below to STILL print `localhost:5432`, so the exclusion is a live control
+ * rather than a comment: a future sweep that "fixes all the ports" turns this red.
+ */
+const OPERATOR_POSTGRES_DOCS = [
+  "docs/admin/configuration.md",
+  "docs/admin/deployment/bare-metal.md",
+] as const
+
+describe("the DATABASE_URL assignment matcher, unit-tested against fixtures FIRST", () => {
+  /**
+   * Same reasoning as the phantom-service matcher above: a matcher that matches nothing satisfies
+   * every negative assertion built on it. The "at least one assignment found" floor per file is
+   * the second half of that defence, and these fixtures are the first.
+   */
+  const KNOWN_POSITIVE = [
+    // The fenced-setup-block form used by CONTRIBUTING.md and docs/development/contributing.md.
+    "   DATABASE_URL=postgresql://u:p@localhost:5433/pipelite",
+    // The quoted form used by .env.example and README.md's env block.
+    'DATABASE_URL="postgresql://pipelite:change-me@localhost:5433/pipelite"',
+    // A shell-export form, in case a future document reaches for one.
+    'export DATABASE_URL="postgresql://u:p@localhost:5433/pipelite"',
+  ] as const
+
+  const KNOWN_NEGATIVE = [
+    // THE IMPORTANT ONE. `.env.example`'s rewritten header names the container form on purpose,
+    // to stop the next reader "fixing" the host url into it. A commented example is prose.
+    '#   DATABASE_URL="postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@postgres:5432/<POSTGRES_DB>"',
+    // A YAML sequence entry — docker-compose.yml's own line, which is container-perspective.
+    "      - DATABASE_URL=${DATABASE_URL}",
+    // Prose. docs/admin/troubleshooting.md is full of sentences naming the variable.
+    "4. **Wrong host/port**: DATABASE_URL points to wrong server or port",
+    // A reference-table row (docs/development/contributing.md:68).
+    "| `DATABASE_URL` | PostgreSQL connection string | Yes |",
+  ] as const
+
+  it.each(KNOWN_POSITIVE)("MUST match an assignment: %s", (fixture) => {
+    expect(DATABASE_URL_ASSIGNMENT_RE.test(fixture)).toBe(true)
+  })
+
+  it.each(KNOWN_NEGATIVE)("MUST NOT match: %s", (fixture) => {
+    expect(DATABASE_URL_ASSIGNMENT_RE.test(fixture)).toBe(false)
+  })
+
+  it("keeps the two doc sets disjoint", () => {
+    // A file in both lists would be asserted to print 5433 and 5432 at once — unsatisfiable, and
+    // the kind of contradiction that gets "resolved" by deleting an assertion.
+    const overlap = HOST_PERSPECTIVE_DOCS.filter((f) =>
+      (OPERATOR_POSTGRES_DOCS as readonly string[]).includes(f),
+    )
+    expect(overlap).toEqual([])
+  })
+})
+
+describe("host-perspective docs print the host port, not the container port", () => {
+  it.each(HOST_PERSPECTIVE_DOCS)("%s assigns DATABASE_URL at least once", (file) => {
+    // THE ANTI-VACUITY FLOOR. A file whose assignments the matcher failed to find satisfies every
+    // negative assertion below it, and would report a clean pass for the wrong reason.
+    expect(scanLines([file], DATABASE_URL_ASSIGNMENT_RE).length).toBeGreaterThan(0)
+  })
+
+  it.each(HOST_PERSPECTIVE_DOCS)("%s assigns only the host port 5433", (file) => {
+    const offenders = scanLines([file], DATABASE_URL_ASSIGNMENT_RE).filter(
+      (hit) => !hit.includes(HOST_PORT),
+    )
+    expect(
+      offenders,
+      `${file} assigns DATABASE_URL without the host port ${HOST_PORT}. ` +
+        `docker-compose.yml publishes Postgres at 5433:5432, and drizzle-kit run from the host ` +
+        `reads .env — so a reader who pastes this cannot connect. Offending lines: ` +
+        `${offenders.join(" | ")}`,
+    ).toEqual([])
+  })
+
+  it.each(HOST_PERSPECTIVE_DOCS)(`%s never assigns ${WRONG_HOST_PORT}`, (file) => {
+    const offenders = scanLines([file], DATABASE_URL_ASSIGNMENT_RE).filter((hit) =>
+      hit.includes(WRONG_HOST_PORT),
+    )
+    expect(
+      offenders,
+      `${file} assigns DATABASE_URL at ${WRONG_HOST_PORT}, where nothing listens on this host: ` +
+        `${offenders.join(" | ")}`,
+    ).toEqual([])
+  })
+
+  it.each(HOST_PERSPECTIVE_DOCS)("%s never assigns the in-network hostname", (file) => {
+    // `postgres` resolves only inside the compose network. From the host it is
+    // `getaddrinfo EAI_AGAIN postgres` — an error that names a HOSTNAME rather than a port, which
+    // is what previously made a reader conclude a port fix "had not taken".
+    const offenders = scanLines([file], DATABASE_URL_ASSIGNMENT_RE).filter((hit) =>
+      hit.includes(CONTAINER_HOSTNAME),
+    )
+    expect(
+      offenders,
+      `${file} assigns DATABASE_URL at ${CONTAINER_HOSTNAME}, which does not resolve outside the ` +
+        `compose network: ${offenders.join(" | ")}`,
+    ).toEqual([])
+  })
+
+  it.each(OPERATOR_POSTGRES_DOCS)("%s deliberately still prints 5432", (file) => {
+    // A live control on the exclusion list above, not a comment. These describe a Postgres the
+    // operator installed themselves on its own default port; rewriting them to 5433 would be a
+    // regression dressed as consistency.
+    const hits = scanLines([file], DATABASE_URL_ASSIGNMENT_RE).filter((hit) =>
+      hit.includes(WRONG_HOST_PORT),
+    )
+    expect(hits.length, `${file} no longer documents a local operator-run Postgres`).toBeGreaterThan(0)
+  })
+})
+
+describe("no document tells a reader to create the one file drizzle-kit never reads", () => {
+  it("README.md does not mention .env.local", () => {
+    // README.md:63-64 used to say `cp .env.example .env.local` / "Edit .env.local …". drizzle-kit's
+    // bundled dotenv resolves `path.resolve(cwd, ".env")` and nothing else, so a reader who
+    // followed those two lines produced a file the migrate command never opens — and then hit
+    // `getaddrinfo EAI_AGAIN postgres` from the stale `.env` with no way to connect the two facts.
+    const hits = scanFixed(["README.md"], ".env.local")
+    expect(hits, `README.md still names .env.local: ${hits.join(" | ")}`).toEqual([])
+  })
+
+  it("keeps .env and .env.local out of git", () => {
+    // A standing control on this plan's own edits. `.env` on a developer machine holds a live
+    // AUTH_SECRET and SMTP_PASSWORD; this phase edits it, and the one unrecoverable mistake would
+    // be making it committable. This repo has leaked a credential exactly once, by force-adding a
+    // directory, which is why the guard is a test and not a convention.
+    const entries = read(".gitignore")
+      .split("\n")
+      .map((l) => l.trim())
+    expect(entries).toContain(".env")
+    expect(entries).toContain(".env.local")
+  })
+})

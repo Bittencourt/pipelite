@@ -207,8 +207,45 @@ describe("uploads persistence: docker-compose.yml is a real compose file (anti-v
   it("read the app service, not an empty list", () => {
     // If the UPLOAD_DIR assertions below were being made against the wrong service or against a
     // list the parser returned empty, these two known-present entries would be missing too.
-    expect(appEnvironment()).toContain("DATABASE_URL=${DATABASE_URL}")
+    //
+    // These two anchors were chosen because they are INERT with respect to every change this
+    // gate measures. The third anchor here used to be the interpolated DATABASE_URL entry — the
+    // exact compose line phase 46 / DEPLOY-02 had to change. Anchor and subject were therefore
+    // the same string, so the anchor could not distinguish "the parser returned nothing" from
+    // "the file was correctly edited", and a correct fix turned it red. It was RE-ANCHORED, never
+    // deleted: an anti-vacuity anchor whose subject is under active change is worse than no
+    // anchor at all. DATABASE_URL is now asserted positively, on its own terms, in the `it` below.
+    // (The old literal is deliberately not reproduced anywhere in this file — the standing house
+    // rule on a raw-text collision is to reword the prose, and an executor grepping for that
+    // literal to prove the anchor is gone must find zero hits.)
     expect(appEnvironment()).toContain("SENTRY_DSN=${SENTRY_DSN}")
+    expect(appEnvironment()).toContain("UPLOAD_DIR=/app/uploads")
+  })
+
+  it("constructs the app's DATABASE_URL itself, naming @postgres:5432", () => {
+    // DEPLOY-02. The container's connection string is BUILT HERE from the POSTGRES_* variables,
+    // never inherited from `${DATABASE_URL}`, because `.env` now carries the HOST url
+    // (localhost:5433, the port docker-compose.yml publishes at `5433:5432`). drizzle-kit on the
+    // host reads ONLY `.env` — its bundled dotenv resolves `path.resolve(cwd, ".env")` and the
+    // string `.env.local` does not occur anywhere in `drizzle-kit/bin.cjs` — so `.env` must hold
+    // the host url or every documented host-side `npm run db:migrate` fails with
+    // `getaddrinfo EAI_AGAIN postgres`. Re-pointing this line back at an interpolation would
+    // therefore either re-break the host command or push `@postgres:5432` back into `.env`; both
+    // re-open the papercut every phase since 33 has paid with an inline `DATABASE_URL=` override.
+    // Read through the YAML-parsed accessor rather than a regex over the compose text: a regex
+    // over YAML passes on a malformed file and cannot tell which service a block belongs to.
+    const entries = appEnvironment().filter((entry) => /^DATABASE_URL=/.test(entry))
+    expect(
+      entries,
+      `expected exactly one \`DATABASE_URL=\` entry in services.app.environment; ` +
+        `saw: ${appEnvironment().join(", ") || "(empty environment list)"}`,
+    ).toHaveLength(1)
+    const value = entries[0].slice("DATABASE_URL=".length)
+    expect(value.startsWith("postgresql://")).toBe(true)
+    expect(value).toContain("@postgres:5432")
+    // `postgres` is the compose service name; it resolves only inside this network. An
+    // interpolated `${DATABASE_URL}` here is the exact regression this assertion exists to catch.
+    expect(value).not.toContain("${DATABASE_URL}")
   })
 })
 
