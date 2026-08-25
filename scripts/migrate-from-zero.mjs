@@ -32,19 +32,42 @@
  *   Ten catalog queries through the `postgres` driver (already a direct dependency) are
  *   stronger, readable, and run unchanged on the host, in Docker and in CI.
  *
- * IT IS FENCED THREE WAYS
+ * HOW IT IS FENCED — AND WHICH FENCE IS ACTUALLY LOAD-BEARING
  *   This script executes CREATE DATABASE / DROP DATABASE against a cluster that also
  *   hosts the operator's real records. It is fenced the way
  *   scripts/dedup-db-test-setup.sh:65-73 and :107-130 are fenced, translated to a
- *   generated name:
- *     1. the scratch name must match /^pipelite_migchk_[a-z0-9_]+$/ — re-checked
- *        immediately before every interpolation, because a database identifier cannot be
- *        a bound parameter;
- *     2. it must equal neither REFERENCE_DB nor the literal `pipelite`;
- *     3. every CREATE/DROP is issued on its own connection to the `postgres` maintenance
- *        database (neither statement can run inside a transaction), and on the scratch
- *        connection itself `select current_database()` must equal the scratch name before
- *        a single assertion runs.
+ *   generated name. An earlier version of this header claimed three INDEPENDENT fences.
+ *   That was not true, and a false claim of defence-in-depth around DROP DATABASE is
+ *   worse than one honest control, so here is the real arrangement:
+ *
+ *     THE PATTERN IS THE FENCE. `assertScratchName` requires the name to match
+ *     /^pipelite_migchk_[a-z0-9_]+$/, re-checked immediately before EVERY interpolation
+ *     because a database identifier cannot be a bound parameter. Given a name that
+ *     matches, it necessarily begins `pipelite_migchk_`, so the two checks that follow it
+ *     — `name === referenceName`, and `FORBIDDEN_SCRATCH_NAMES.includes(name)` — are
+ *     SUBSUMED by it for every name of that shape. They are kept because they are free
+ *     and because they are the checks that would still hold if the scratch name ever
+ *     became configurable (`--scratch-name`, an env var), which is exactly the change
+ *     that would otherwise remove the only real control while the header still said
+ *     "fenced three ways". They are not independent today. Do not read them as depth.
+ *
+ *     THE NAMES ARE NOT ALL GENERATED. `sweepLeakedScratchDatabases` feeds names read
+ *     from `pg_database` — not built from this file's template — through the same
+ *     function before dropping them. That is the call site the pattern check exists for,
+ *     and it is why the check is a function rather than a comment.
+ *
+ *     PROVED, NOT ASSERTED. `assertScratchName` and its two constants are exported and
+ *     exercised directly by src/lib/__tests__/migrate-from-zero-fences.test.ts, which
+ *     asserts that `pipelite`, `postgres`, `template0`, `template1`, the reference name
+ *     and a quote-injection payload each THROW. Three branches that no test could reach
+ *     are indistinguishable from three branches that do not work.
+ *
+ *     IN-SESSION CONFIRMATION, which is genuinely independent of all of the above: every
+ *     CREATE/DROP is issued on its own connection to the `postgres` maintenance database
+ *     (neither statement can run inside a transaction), and on the scratch connection
+ *     itself `select current_database()` must equal the scratch name before a single
+ *     assertion runs.
+ *
  *   The reference database is opened READ ONLY and only ever receives SELECT.
  *
  * HOW IT REACHES THE SERVER
@@ -87,10 +110,10 @@ const MIN_SNAPSHOT_TABLES = 36 // measured: exactly 36
 const MIN_SNAPSHOT_COLUMNS = 280 // measured: 293 table.column pairs
 const MIN_SNAPSHOT_INDEXES = 30 // measured: 41 declared index names
 
-const SCRATCH_PATTERN = /^pipelite_migchk_[a-z0-9_]+$/
-const FORBIDDEN_SCRATCH_NAMES = ["pipelite", "postgres", "template0", "template1"]
+export const SCRATCH_PATTERN = /^pipelite_migchk_[a-z0-9_]+$/
+export const FORBIDDEN_SCRATCH_NAMES = ["pipelite", "postgres", "template0", "template1"]
 
-class Fatal extends Error {}
+export class Fatal extends Error {}
 
 function fatal(message) {
   throw new Fatal(message)
@@ -171,10 +194,15 @@ function connect(url) {
 }
 
 // ---------------------------------------------------------------------------
-// Fences 1 and 2 — re-checked immediately before every interpolation, because a database
+// The name check — re-run immediately before every interpolation, because a database
 // identifier cannot be parameterised. T-46-04-01, T-46-04-02.
+//
+// EXPORTED so src/lib/__tests__/migrate-from-zero-fences.test.ts can call it with
+// `pipelite`, `postgres`, the reference name and an injection payload and assert each
+// throws. See the fencing note in the file header for which of the three checks below is
+// load-bearing and which are subsumed: they are NOT independent, and the header says so.
 // ---------------------------------------------------------------------------
-function assertScratchName(name, referenceName) {
+export function assertScratchName(name, referenceName) {
   if (!SCRATCH_PATTERN.test(name)) {
     fatal(
       `refusing to touch "${name}": a scratch database name must match ` +
@@ -833,37 +861,59 @@ async function main() {
 // Signal handling exists so an operator's Ctrl-C does not leak a database: without it the
 // process dies before `finally` runs. The handler lets main's own finally do the work by
 // closing the event loop path it is already on.
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => {
-    if (interrupted) {
-      // The one path that bypasses main's `finally`. It is kept — an operator who presses
-      // Ctrl-C twice is asking to leave NOW and must not be made to wait on a DROP against
-      // an unresponsive server — but it no longer leaves silently. The statement that
-      // removes the database is printed, and the sweep at the top of the next run reaps it
-      // without being asked.
-      if (scratchDatabaseName && !scratchRemoved) {
-        console.error(
-          `\n-> second ${signal} — exiting immediately. The scratch database was NOT removed:` +
-            `\n   DROP DATABASE IF EXISTS "${scratchDatabaseName}" WITH (FORCE);` +
-            `\n   (the next run of this script sweeps leftover pipelite_migchk_* databases)`
-        )
+function registerSignalHandlers() {
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.on(signal, () => {
+      if (interrupted) {
+        // The one path that bypasses main's `finally`. It is kept — an operator who
+        // presses Ctrl-C twice is asking to leave NOW and must not be made to wait on a
+        // DROP against an unresponsive server — but it no longer leaves silently. The
+        // statement that removes the database is printed, and the sweep at the top of the
+        // next run reaps it without being asked.
+        if (scratchDatabaseName && !scratchRemoved) {
+          console.error(
+            `\n-> second ${signal} — exiting immediately. The scratch database was NOT ` +
+              `removed:\n   DROP DATABASE IF EXISTS "${scratchDatabaseName}" WITH (FORCE);` +
+              `\n   (the next run of this script sweeps leftover pipelite_migchk_* databases)`
+          )
+        }
+        process.exit(130)
       }
-      process.exit(130)
-    }
-    interrupted = true
-    console.error(`\n-> ${signal} received — removing the scratch database before exiting`)
-    process.exitCode = 130
-    if (activeChild) activeChild.kill("SIGTERM")
-  })
+      interrupted = true
+      console.error(`\n-> ${signal} received — removing the scratch database before exiting`)
+      process.exitCode = 130
+      if (activeChild) activeChild.kill("SIGTERM")
+    })
+  }
 }
 
-try {
-  await main()
-} catch (error) {
-  if (error instanceof Fatal) {
-    console.error(`FATAL: ${error.message}`)
-  } else {
-    console.error(`FATAL: ${error?.stack ?? error}`)
+// ---------------------------------------------------------------------------
+// Invocation guard.
+//
+// `import.meta.main` is TRUE only when node was pointed at this file, and vitest's module
+// runner sets it FALSE (measured, both). That is what lets the fence unit test import
+// `assertScratchName` without provisioning a database. Node has defined it since 24.2 and
+// package.json's engines floor is >= 24.12, so `undefined` means a runtime this script has
+// never been tested under — and a check that silently does nothing is strictly worse than
+// a check that fails, so that case is FATAL rather than a quiet return.
+// ---------------------------------------------------------------------------
+if (import.meta.main === true) {
+  registerSignalHandlers()
+  try {
+    await main()
+  } catch (error) {
+    if (error instanceof Fatal) {
+      console.error(`FATAL: ${error.message}`)
+    } else {
+      console.error(`FATAL: ${error?.stack ?? error}`)
+    }
+    process.exitCode = interrupted ? 130 : 1
   }
-  process.exitCode = interrupted ? 130 : 1
+} else if (import.meta.main !== false) {
+  console.error(
+    "FATAL: this runtime does not define import.meta.main, so migrate-from-zero.mjs cannot " +
+      "tell whether it was invoked or imported and refuses to guess. package.json requires " +
+      `node >= 24.12.0; this is ${process.version}.`
+  )
+  process.exitCode = 1
 }
