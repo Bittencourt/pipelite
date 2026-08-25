@@ -193,6 +193,31 @@ describe("log — LOG_LEVEL gating", () => {
     expect(callCounts()).toEqual({ log: 1, warn: 1, error: 1, debug: 0 })
   })
 
+  it.each(["toString", "constructor", "valueOf", "hasOwnProperty", "__proto__"])(
+    "LOG_LEVEL=%s is unrecognised too, and falls back to info — not to everything",
+    (inherited) => {
+      // IN-03. `(raw as Level) in ORDER` consulted the PROTOTYPE CHAIN, so each of these made
+      // `threshold()` return a Function; `ORDER[level] < threshold()` was then always false and
+      // EVERY level including `debug` was emitted — the exact opposite of the documented "an
+      // unrecognised value falls back to `info`", reached by an unrecognised value, which is the
+      // one case that fallback exists for. It failed open (verbose) rather than silent, so the
+      // impact was low, but "an unrecognised value" has to mean all of them.
+      //
+      // Same one-token root cause as WR-01 in scripts/audit-policy.mjs, and the same fix.
+      process.env.LOG_LEVEL = inherited
+      log.debug("s", "d")
+      log.info("s", "i")
+      log.warn("s", "w")
+      log.error("s", "e")
+
+      expect(
+        callCounts(),
+        `LOG_LEVEL=${inherited} is not a level; it must behave exactly like any other typo. A ` +
+          `debug call here means the level lookup is reading Object.prototype.`
+      ).toEqual({ log: 1, warn: 1, error: 1, debug: 0 })
+    }
+  )
+
   it("reads LOG_LEVEL on every call rather than memoising it at module load", async () => {
     log.info("s", "first")
     expect(callCounts().log).toBe(1)

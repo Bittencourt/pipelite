@@ -39,11 +39,19 @@ const ORDER: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 
  *
  * An unrecognised value falls back to `info` instead of throwing: a typo in an operator's `.env`
  * must not take the application down.
+ *
+ * `Object.hasOwn`, not `in` (IN-03, the same one-token root cause as WR-01 in
+ * `scripts/audit-policy.mjs`). `in` consults the prototype chain, so `LOG_LEVEL=toString` — or
+ * `constructor`, `valueOf`, `hasOwnProperty` — made this return a Function rather than a number,
+ * `ORDER[level] < threshold()` was then always false, and EVERY level including `debug` was
+ * emitted. The exact opposite of the fallback documented above, and reached by an unrecognised
+ * value, which is the case the fallback exists for. It failed open (verbose) rather than silent, so
+ * the impact was low; the fix is one token.
  */
 function threshold(): number {
   const raw = typeof process !== "undefined" ? process.env["LOG_LEVEL"] : undefined
   if (raw === "silent") return Number.POSITIVE_INFINITY
-  return ORDER[(raw as Level) in ORDER ? (raw as Level) : "info"]
+  return ORDER[Object.hasOwn(ORDER, raw as string) ? (raw as Level) : "info"]
 }
 
 /** Deepest `cause` link that is followed. Bounds both long and CYCLIC cause chains. */
