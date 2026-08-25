@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   resolveFieldPath,
+  tokenizeFieldPath,
   evaluateOperator,
   evaluateCondition,
 } from "./condition-evaluator"
@@ -587,52 +588,415 @@ describe("resolveFieldPath — parsing is linear, not backtracking (T-34-20)", (
     }
   })
 
-  // A ReDoS regression shows up as super-linear growth, so assert on the SCALING
-  // ratio rather than an absolute wall-clock budget. An absolute threshold is
-  // flaky: it passes on an idle machine and fails under parallel suite load
-  // (observed at 125ms against a 100ms limit).
-  //
-  // The ratio is NOT automatically load-independent, and an earlier version of this
-  // test claimed it was. It compared a 4x input span against a 10x threshold, which
-  // fails under vitest's own parallel workers — measured at 11.9x, 13.34x and 15.6x
-  // on three separate occasions while passing in isolation every time. The reason is
-  // arithmetic, not luck: 4x input predicts 4x for linear and 16x for quadratic, so a
-  // 10x threshold sits only 2.5x above the linear prediction, and observed jitter
-  // exceeded that. At 15.6x, ordinary scheduler noise was landing ABOVE quadratic's
-  // own prediction — the signal and the noise had no separation left.
-  //
-  // Widening the input span fixes it by pushing the two predictions apart. 16x input
-  // predicts 16x for linear and 256x for quadratic. Both windows are also large
-  // enough that real work dominates the ~0.9ms of fixed overhead that made the old
-  // 4000-element measurement mostly constant.
-  //
-  // Measured on this machine 2026-08-17: 13.8x idle, 21.0x with the full 85-file
-  // suite running concurrently. The 80x threshold therefore keeps ~3.8x of headroom
-  // over the worst observed load figure while staying ~3.2x below the quadratic
-  // prediction it exists to catch.
-  it("scales linearly, not quadratically, with path length", () => {
-    const ctx = realCtx()
-    const time = (n: number) => {
-      const paths = pathologicalPaths(n)
-      // Best-of-5 to damp scheduler noise and JIT warm-up.
-      let best = Infinity
-      for (let run = 0; run < 5; run++) {
-        const start = performance.now()
-        for (const path of paths) resolveFieldPath(ctx, path)
-        best = Math.min(best, performance.now() - start)
-      }
-      return best
+  /**
+   * THE COUNTED HALF (QG-01 SC-2, phase 47 plan 04).
+   *
+   * WHAT USED TO BE HERE, AND WHY IT IS NOT COMING BACK. Until this plan the
+   * property above was defended by dividing two best-of-5 elapsed-clock windows
+   * measured across a 16x input span and comparing the quotient to a threshold of
+   * 80, under a 23-line comment arguing that a RATIO of elapsed times is
+   * load-independent in a way an absolute budget is not. It is not. Measured at 3x
+   * CPU oversubscription with a CORRECT implementation the quotient reached **52.5
+   * against its 80 threshold — 79.9% of budget consumed by scheduler contention
+   * alone** (47-02-SUMMARY.md), one contention step from a red that would have
+   * said nothing whatever about the parser.
+   *
+   * THE OLD ASSERTION IS DESCRIBED HERE BUT NEVER SPELLED. Its exact tokens —
+   * the clock-reading call, the matcher and its threshold, the quotient
+   * expression — are deliberately absent from this file, and the plan's
+   * acceptance check counts each of them and requires ZERO. Two reasons. First,
+   * prose that spells a banned construct is indistinguishable from the construct
+   * to every scanner in this repository, and plan 47-05 adds a suite-wide gate
+   * that counts clock-call sites: the deletion below removes the last two in the
+   * repository, and a comment that named them would silently keep the count
+   * alive. Second, and this is the Pitfall-9 shape Phase 46 hit twice, prose
+   * arguing FOR an elapsed ratio sitting next to a counted gate is what gets the
+   * counted gate "fixed" back into a ratio later. Same convention, same reason, as
+   * `src/types/__tests__/no-standing-suppressions.test.ts` note (b).
+   *
+   * 47-CONTEXT rejects that mechanism OUTRIGHT rather than tuning it, and rejects
+   * each way of hiding it by name: marking this file serial-only (keeps a timing
+   * assertion alive behind a config flag the next parallelisation removes),
+   * `retries: 1` (converts a reproducible failure into an invisible one) and a
+   * larger threshold (makes the symptom rarer without touching the cause). So the
+   * replacement asserts OPERATION COUNTS and ALGORITHMIC SHAPE — deterministic
+   * integers that do not move when the machine is busy. There is deliberately no
+   * clock reading anywhere in this file any more.
+   *
+   * WHY A FLOOR AND NOT ONLY A CEILING — the single most important thing here.
+   * Catastrophic backtracking happens INSIDE one native `RegExp.prototype.exec`
+   * call, so no JS-level counter can observe it. Measured: a regex-backtracking
+   * `tokenizeFieldPath` reads **ZERO** counted characters at every input size and
+   * therefore PASSES any ceiling, while a hand-written restart-on-failure parser
+   * reads 1307 counted characters per input character and fails one. A
+   * ceiling-only gate would have shipped green over the worse of the two. The
+   * floor catches the regex as an ABSENCE of work; the AST describe below catches
+   * it as a SHAPE. Both are required and neither substitutes for the other —
+   * negative controls A and B in 47-04-SUMMARY.md record both reds verbatim.
+   */
+  describe("cost is asserted as counted operations, never as elapsed time", () => {
+    /** Everything the counting facade observed about one parse. */
+    interface ParseOps {
+      /**
+       * Characters read THROUGH the counted seam — every `path[i]` plus every
+       * span a re-implemented method scanned.
+       */
+      chars: number
+      /** Calls into a re-implemented string method. */
+      calls: number
+      /**
+       * Primitive coercions. Counted SEPARATELY on purpose: a non-zero coercion
+       * count next to a zero character count is the signature of a parse that
+       * happened inside a native call, which is what makes control A legible
+       * instead of mysterious.
+       */
+      coercions: number
     }
 
-    time(2000) // warm-up, discarded
-    // The floor is kept from the original test and still earns its place: it cannot bind in
-    // practice (n=8000 measures ~0.95ms here, twenty times the floor), but without it a single
-    // near-zero reading under an extreme scheduler stall would make the ratio Infinity and fail
-    // the test spuriously. Raised from the original 0.5 to 0.05 because 0.5 was half of a real
-    // measurement at the OLD n=4000 and would have distorted the ratio at this larger n.
-    const small = Math.max(time(8000), 0.05)
-    const large = time(128000) // 16x the input
+    /**
+     * A `Proxy` over a boxed `String` that counts every character the parser
+     * actually looks at.
+     *
+     * `length` is passthrough; numeric index reads are counted one apiece; and
+     * `indexOf` / `slice` / `substring` / `charAt` / `split` / `trim` are
+     * re-implemented over the raw string so the spans THEY scan are counted too —
+     * otherwise a parser could hide an arbitrary amount of work behind one native
+     * call. `valueOf` / `toString` / `Symbol.toPrimitive` hand back the raw
+     * primitive and bump `coercions`: that is the escape hatch, and the floor is
+     * what turns taking it into a failure.
+     *
+     * The facade lives here and NOT in production code, deliberately. A
+     * per-character `counter++` in `tokenizeFieldPath` would be real shipped cost
+     * in the workflow hot path.
+     */
+    function makeCountingPath(raw: string): { path: string; ops: ParseOps } {
+      const ops: ParseOps = { chars: 0, calls: 0, coercions: 0 }
+      const facade = new Proxy(new String(raw), {
+        get(target, key, receiver) {
+          if (typeof key === "string") {
+            // A numeric index read. Discriminated on the first char code rather
+            // than with a regex: this trap runs ~1.5 times per input character,
+            // and a regex test per read would cost more than the parse it
+            // measures.
+            const firstCode = key.charCodeAt(0)
+            if (firstCode >= 48 && firstCode <= 57) {
+              ops.chars++
+              return raw[Number(key)]
+            }
+            if (key === "length") return raw.length
+            if (key === "indexOf") {
+              return (needle: string, from = 0) => {
+                ops.calls++
+                for (let k = Math.max(0, from); k < raw.length; k++) {
+                  ops.chars++
+                  if (raw[k] === needle) return k
+                }
+                return -1
+              }
+            }
+            if (key === "slice" || key === "substring") {
+              return (start = 0, end = raw.length) => {
+                ops.calls++
+                ops.chars += Math.max(
+                  0,
+                  Math.min(raw.length, end) - Math.max(0, start)
+                )
+                return raw.slice(start, end)
+              }
+            }
+            if (key === "charAt") {
+              return (index: number) => {
+                ops.calls++
+                ops.chars++
+                return raw.charAt(index)
+              }
+            }
+            if (key === "split") {
+              return (separator: string) => {
+                ops.calls++
+                ops.chars += raw.length
+                return raw.split(separator)
+              }
+            }
+            if (key === "trim") {
+              return () => {
+                ops.calls++
+                ops.chars += raw.length
+                return raw.trim()
+              }
+            }
+            if (key === "valueOf" || key === "toString") {
+              return () => {
+                ops.coercions++
+                return raw
+              }
+            }
+          }
+          if (key === Symbol.toPrimitive) {
+            return () => {
+              ops.coercions++
+              return raw
+            }
+          }
+          return Reflect.get(target, key, receiver)
+        },
+      })
+      return { path: facade as unknown as string, ops }
+    }
 
-    expect(large / small).toBeLessThan(80)
+    /** One parse through the counted seam. */
+    function countParse(path: string) {
+      const { path: facade, ops } = makeCountingPath(path)
+      const result = tokenizeFieldPath(facade)
+      return { ops, result }
+    }
+
+    /** The aggregate of several parses, which is the unit the floor applies to. */
+    function countAggregate(paths: string[]) {
+      let chars = 0
+      let calls = 0
+      let coercions = 0
+      let inputChars = 0
+      for (const path of paths) {
+        inputChars += path.length
+        const { ops } = countParse(path)
+        chars += ops.chars
+        calls += ops.calls
+        coercions += ops.coercions
+      }
+      return { inputChars, chars, calls, coercions, opsPerChar: chars / inputChars }
+    }
+
+    /**
+     * Index of the quote storm inside `pathologicalPaths`. It is the one input
+     * the parser is SUPPOSED to reject almost immediately (the opening bracket is
+     * followed by `""`, an empty key), so it is held out of the aggregate and
+     * asserted separately as an early-rejection bound. Pinned by the shape
+     * assertion below so a reordering of the generator cannot silently drag it
+     * back into the floor.
+     */
+    const QUOTE_STORM_INDEX = 3
+
+    /**
+     * A well-formed long bracket path, added so the traversal set still has four
+     * members after the quote storm is held out — and so the aggregate contains
+     * one input that is fully VALID, not only malformed ones.
+     */
+    const wellFormedLongPath = (n: number) =>
+      "trigger.data.customFields" + '["Código Mãe"]'.repeat(n)
+
+    /** The paths the parser must walk end to end. The floor applies to their sum. */
+    const traversalPaths = (n: number) => [
+      ...pathologicalPaths(n).filter((_, index) => index !== QUOTE_STORM_INDEX),
+      wellFormedLongPath(n),
+    ]
+
+    const quoteStormPath = (n: number) => pathologicalPaths(n)[QUOTE_STORM_INDEX]
+
+    /** `n` for the aggregate floor/ceiling/coercion assertions. */
+    const AGGREGATE_N = 2000
+    /** The flatness span: 500 -> 8000 is 16x the input. */
+    const FLATNESS_SMALL_N = 500
+    const FLATNESS_LARGE_N = 8000
+    /**
+     * `n` and repeat count for the determinism assertion. Measured: 20 repeats of
+     * the n=500 aggregate produce ONE distinct integer, 23 730. n stays small here
+     * because the claim is about variance, not scale, and the whole block has to
+     * stay in the same time order as the assertion it replaced (196 ms).
+     */
+    const DETERMINISM_N = 500
+    const DETERMINISM_REPEATS = 20
+
+    /**
+     * FLOOR, in counted characters per input character, over the aggregate.
+     * Measured on this tree 2026-08-25: **1.518 counted/char — 94 230 counted
+     * characters over 62 073 input characters at n=2000**. 1 is the floor because
+     * "the parser looked at every character at least once" is the property, and it
+     * is what a regex rewrite fails: control A reads 0.
+     *
+     * IF THIS GOES RED: re-measure and record the new number in this comment. Do
+     * not lower the floor without writing the measurement beside it — a count at
+     * or near zero means the work moved inside a native call the facade cannot
+     * see, which is the ReDoS shape the gate exists to catch, not a stale bound.
+     */
+    const MIN_COUNTED_PER_CHAR = 1
+
+    /**
+     * CEILING, same aggregate and same units. Measured 1.518 on this tree, so 6
+     * leaves 4.0x of headroom for ordinary parser changes while sitting two
+     * orders of magnitude below the restart-on-failure backtracker that control B
+     * installs (measured 178.9 at n=200 and 1306.9 at n=1600). Any K in [3, 20]
+     * separates the two; 6 is research's recommendation.
+     *
+     * IF THIS GOES RED: the parser started re-scanning. Find the loop that no
+     * longer advances monotonically. Raise this only with a fresh measurement
+     * recorded here and a reason the extra work is necessary.
+     */
+    const MAX_COUNTED_PER_CHAR = 6
+
+    /**
+     * FLATNESS. Linear cost means ops/char is constant in n; quadratic cost means
+     * it grows with n. Measured across the 15.9x span below (15 573 -> 248 073
+     * input characters): ops/char 1.5238 -> 1.5166, **growth 0.995 — it
+     * DECREASES**. 1.25 is therefore loose by design and still catches a mildly
+     * super-linear regression that K=6 would let through. Control B grows 7.3x
+     * across an 8x span.
+     */
+    const MAX_FLATNESS_GROWTH = 1.25
+
+    /**
+     * The quote storm is rejected after the opening bracket's empty key, so its
+     * cost is a constant, not a function of n. Measured 43 counted characters at
+     * both n=2000 and n=64000 — a 32x input span with an identical count. 200
+     * leaves room for a parser that validates a little more before rejecting.
+     */
+    const MAX_EARLY_REJECTION_COUNTED = 200
+
+    it("the facade counts reads, spans and coercions — proven on a known input FIRST", () => {
+      // This gates everything below it. A facade that counted nothing would make
+      // the ceiling, the flatness bound and the coercion assertion pass forever
+      // while the floor became the only live assertion in the block; a facade
+      // that never counted a coercion would make `coercions === 0` unfalsifiable.
+      const raw = "abcdefghij"
+
+      const indexed = makeCountingPath(raw)
+      let readBack = ""
+      for (let i = 0; i < indexed.path.length; i++) readBack += indexed.path[i]
+      expect(readBack, "index reads must return the real characters").toBe(raw)
+      expect(indexed.ops.chars).toBe(10)
+      expect(indexed.ops.coercions).toBe(0)
+
+      const scanned = makeCountingPath(raw)
+      expect(scanned.path.indexOf("j")).toBe(9)
+      expect(scanned.ops.chars, "indexOf must count the span it walked").toBe(10)
+      expect(scanned.ops.calls).toBe(1)
+
+      const sliced = makeCountingPath(raw)
+      expect(sliced.path.slice(2, 6)).toBe("cdef")
+      expect(sliced.ops.chars, "slice must count the span it copied").toBe(4)
+
+      const split = makeCountingPath(raw)
+      expect(split.path.split("")).toHaveLength(10)
+      expect(split.ops.chars, "split must count the whole string").toBe(10)
+
+      // THE COMPLEMENT of the coercion assertion further down. A native scan
+      // takes exactly this exit — one coercion, zero characters — and control A
+      // is measured through it. Without this case, `coercions === 0` would be
+      // satisfied by a counter that had simply stopped incrementing.
+      const coerced = makeCountingPath(raw)
+      expect(String(coerced.path)).toBe(raw)
+      expect(coerced.ops.coercions).toBeGreaterThan(0)
+      expect(coerced.ops.chars).toBe(0)
+    })
+
+    it("the counted set is the pathological set, minus the input that is correctly rejected", () => {
+      // Anti-vacuity for the input generator itself. Measured per path at n=2000:
+      // bracket repeat 1.203 counted/char, unterminated bracket 1.003, dot chain
+      // 3.499, well-formed 1.716 — and the QUOTE STORM 0.021 (43 counted over
+      // 2016 characters), because it is correctly rejected at the empty key after
+      // ~15 characters. Applying the floor to that path would make the
+      // gate demand the parser waste work, so it is held out here and bounded
+      // separately. If this assertion is red, the hold-out is pointing at the
+      // wrong element and the aggregate floor is measuring the wrong thing.
+      expect(quoteStormPath(4)).toBe('trigger.data[""""""]')
+      expect(tokenizeFieldPath(quoteStormPath(4))).toBeNull()
+
+      const traversal = traversalPaths(4)
+      expect(traversal).toHaveLength(4)
+      for (const path of traversal) {
+        expect(path, "a traversal path must not be an empty-key rejection").not.toContain('""')
+      }
+
+      // The flatness span is a real span, measured rather than asserted by the
+      // choice of two numbers.
+      const smallChars = traversalPaths(FLATNESS_SMALL_N).join("").length
+      const largeChars = traversalPaths(FLATNESS_LARGE_N).join("").length
+      expect(largeChars).toBeGreaterThanOrEqual(15 * smallChars)
+    })
+
+    it(`FLOOR: reads at least ${MIN_COUNTED_PER_CHAR} counted character per input character`, () => {
+      const aggregate = countAggregate(traversalPaths(AGGREGATE_N))
+      expect(
+        aggregate.chars,
+        `read ${aggregate.chars} counted characters over ${aggregate.inputChars} input ` +
+          `characters (${aggregate.opsPerChar.toFixed(3)}/char). A count at or near ZERO means ` +
+          `the parse moved inside a native call the facade cannot see — a regex or a bulk ` +
+          `scanner — which is the ReDoS shape this gate exists to catch. Re-measure and record ` +
+          `the number in MIN_COUNTED_PER_CHAR's comment; never lower the floor to go green.`
+      ).toBeGreaterThanOrEqual(MIN_COUNTED_PER_CHAR * aggregate.inputChars)
+    })
+
+    it(`CEILING: reads at most ${MAX_COUNTED_PER_CHAR} counted characters per input character`, () => {
+      const aggregate = countAggregate(traversalPaths(AGGREGATE_N))
+      expect(
+        aggregate.opsPerChar,
+        `read ${aggregate.opsPerChar.toFixed(3)} counted characters per input character over ` +
+          `${aggregate.inputChars} input characters. The parser started re-scanning: find the ` +
+          `loop whose cursor no longer advances monotonically. Raise MAX_COUNTED_PER_CHAR only ` +
+          `with a fresh measurement recorded beside it and a reason the extra work is necessary.`
+      ).toBeLessThanOrEqual(MAX_COUNTED_PER_CHAR)
+    })
+
+    it("FLATNESS: ops per character does not grow across a 16x input span", () => {
+      const small = countAggregate(traversalPaths(FLATNESS_SMALL_N))
+      const large = countAggregate(traversalPaths(FLATNESS_LARGE_N))
+      const growth = large.opsPerChar / small.opsPerChar
+      expect(
+        growth,
+        `ops/char went ${small.opsPerChar.toFixed(3)} -> ${large.opsPerChar.toFixed(3)} ` +
+          `(${growth.toFixed(3)}x) as the input went ${small.inputChars} -> ` +
+          `${large.inputChars} characters. Linear cost keeps this near 1.0; quadratic cost ` +
+          `makes it grow with n. A restart-on-failure parser measured 7.3x across an 8x span.`
+      ).toBeLessThanOrEqual(MAX_FLATNESS_GROWTH)
+    })
+
+    it("EARLY REJECTION: the quote storm costs a constant, independent of n", () => {
+      // Worth having in its own right: it says the parser bails out of an invalid
+      // key immediately instead of tokenising 64 000 quotes first. Asserted at two
+      // values of n so "independent of n" is a measurement rather than a claim.
+      const counts: number[] = []
+      for (const n of [2000, 64000]) {
+        const { ops, result } = countParse(quoteStormPath(n))
+        expect(result, "the quote storm must still be rejected").toBeNull()
+        counts.push(ops.chars)
+      }
+      expect(
+        counts,
+        `the quote storm cost ${counts.join(" then ")} counted characters at n=2000 and ` +
+          `n=64000. These must be equal AND bounded: a cost that tracks n means the parser is ` +
+          `walking the quotes before rejecting the empty key.`
+      ).toEqual([counts[0], counts[0]])
+      expect(counts[0]).toBeLessThanOrEqual(MAX_EARLY_REJECTION_COUNTED)
+    })
+
+    it(`DETERMINISM: ${DETERMINISM_REPEATS} repeats give exactly ONE integer`, () => {
+      // This is the load-independence claim, asserted instead of described. The
+      // assertion this block replaced could not make it: two elapsed windows never
+      // produce the same number twice.
+      const paths = traversalPaths(DETERMINISM_N)
+      const distinct = new Set<number>()
+      for (let repeat = 0; repeat < DETERMINISM_REPEATS; repeat++) {
+        distinct.add(countAggregate(paths).chars)
+      }
+      expect(
+        [...distinct],
+        `${DETERMINISM_REPEATS} identical parses produced ${distinct.size} distinct counts ` +
+          `(${[...distinct].join(", ")}). A counted gate whose count moves between runs is a ` +
+          `timing assertion wearing a different hat.`
+      ).toHaveLength(1)
+    })
+
+    it("COERCIONS: the parser never coerces the path to a primitive", () => {
+      // Zero here plus a non-zero character count is the forward scan. Non-zero
+      // here plus a ZERO character count is the regex — control A measured
+      // exactly that. The facade self-test above proves this counter can move.
+      const aggregate = countAggregate(traversalPaths(AGGREGATE_N))
+      expect(
+        aggregate.coercions,
+        `the path was coerced to a primitive ${aggregate.coercions} times while ` +
+          `${aggregate.chars} characters were counted. A coercion hands the whole string to a ` +
+          `native call in one step, and everything that call does is invisible to this gate.`
+      ).toBe(0)
+    })
   })
 })

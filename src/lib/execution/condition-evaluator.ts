@@ -36,8 +36,14 @@ const FORBIDDEN_SEGMENTS = new Set(["__proto__", "constructor", "prototype"])
  *
  * Implemented as a single forward scan with no backtracking and no regex, so
  * cost is linear in path length even for adversarial input (T-34-20).
+ *
+ * Exported ONLY so the counted-ops gate in the sibling test file can measure this
+ * scan directly through a counting string facade — `resolveFieldPath` rejects a
+ * boxed-String proxy at its `typeof path !== "string"` guard, correctly, and that
+ * guard must not be weakened. `resolveFieldPath` remains the only production
+ * caller; the AST half of that gate asserts the delegation still exists.
  */
-function tokenizeFieldPath(path: string): string[] | null {
+export function tokenizeFieldPath(path: string): string[] | null {
   const segments: string[] = []
   const len = path.length
   let i = 0
