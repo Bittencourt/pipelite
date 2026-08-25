@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
 status: executing
-last_updated: "2026-08-25T16:19:32.614Z"
+last_updated: "2026-08-25T16:42:38.831Z"
 last_activity: 2026-08-25
 progress:
   total_phases: 9
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 20
-  completed_plans: 19
-  percent: 11
+  completed_plans: 20
+  percent: 22
 ---
 
 # Session State
@@ -20,12 +20,35 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-24)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 47 — Suite Trust & Supply Chain (14 plans — plan 14 was added to close D-47-06-A)
-**Plans 01-12 and 14 of 14 executed** (2026-08-25) — 13 SUMMARYs on disk. Next: plan 13.
+**Current focus:** Phase 47 — Suite Trust & Supply Chain — **ALL 14 PLANS EXECUTED** (2026-08-25).
+Next: `/gsd:verify-phase 47` (and Phase 46 is still owed its own `/gsd:verify-phase 46`).
+**QG-01 is COMPLETE. SEC-05 stays PARTIAL and its box stays `[ ]`.**
 **47-12 is PARTIAL, not complete** — its local half only; see the blocker below.
+**47-13 signed the phase off by auditing its evidence.** Nine negative controls judged: eight
+DELIVERED with verbatim tool output, control E DELIVERED LOCALLY and **NOT DELIVERED on the real
+runner**. Three re-falsified fresh at sign-off (A regex → FLOOR reads 0 counted chars over 62 073
+while the **CEILING passes**; C-hook → `toggle.test.ts:103` named; D → a shipped reason set to
+`dev-only` drove `npm run security:audit` exit 0 → **1** → 0, a SECOND local mechanism distinct
+from 47-12's). **No eighth vacuous gate found** — all four vacuity tests applied, all six gates
+answer the WR-11 rename question with a RED, both self-sweeping gates take exactly ONE mitigation.
+One floor named as brittle rather than softened: `MIN_NON_TEST_PERFORMANCE_NOW = 2` sits AT its
+measurement over `src/app/api/health/route.ts` (Phase 42), a false-RED risk, not vacuity.
+Verdicts: SC-1 **PROVED**, SC-1b **PROVED**, SC-2 **PROVED**, SC-3 **PROVED**, SC-4 **PARTIALLY
+PROVED**. Phase gate: **5164 passed / 32 skipped** (172 files + 2 skipped), RSC 8/8, typecheck 0,
+lint **0 errors** / 124 warnings, `security:audit` exit 0, `db:check-migrations` exit 0,
+`/api/health` 200 with **10/10** processors, image `8f07a18eddad`, tree clean. The +425 suite
+delta is reconciled plan by plan and lands on 5164 **exactly**.
 Phase 46 remains owed a `/gsd:verify-phase 46`, **and its GAP 1 is still open**: `origin/master` is
-`a58b9e1` (pre-Phase-46) with **111 commits unpushed**, so `Migration chain check`,
-`Security audit policy` and `Registry signature verification` have never executed on GitHub.
+`a58b9e1` (pre-Phase-46) with **114 commits unpushed** (re-measured at sign-off with
+`git rev-list --count`), so `Migration chain check`, `Security audit policy` and
+`Registry signature verification` have never executed on GitHub. **One operator push closes both
+Phase 46 GAP 1 and D-47-12-A, and SEC-05 with them.**
+**Carried forward with owners:** D-47-12-A (operator), D-47-08-A (the platform-blind `engines` gate
+blocking `next` 16.3.2 — de-risked; a platform-aware filter takes violations to 0 on both trees and
+NC-3 still fires), D-47-08-B (the stage-change write path: suite-covered, not gesture-covered —
+`@dnd-kit`'s activation constraint refused a synthetic drag), and **SEC-47-A**
+(`src/lib/email/client.ts:20` sets `tls: { rejectUnauthorized: false }` unconditionally — a larger
+exposure than any advisory formally accepted in this phase).
 
 **47-06 closed SC-1 as amended — and found the defect class is NOT closed.** The margin moved by two
 orders of magnitude on the two assertions the criterion names, measured with 47-02's committed
@@ -290,6 +313,7 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 | Phase 47 P06 | 51m | 2 tasks | 2 files |
 | Phase 47 P09 | 26min | 3 tasks | 7 files |
 | Phase 47 P12 | 12min | 1 tasks | 1 files |
+| Phase 47 P13 | 21min | 2 tasks | 0 files |
 
 ## Decisions
 
@@ -592,12 +616,13 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 
 ## Current Position
 
+- 2026-08-25: 47-13 complete -- PHASE 47 SIGNED OFF BY AUDITING ITS OWN EVIDENCE, not by re-asserting intent. Nine negative controls judged on the 46-06 standard (does the SUMMARY carry a verbatim assertion diff / exit code / FATAL line, or a description of what was expected): EIGHT DELIVERED, control E DELIVERED LOCALLY and NOT DELIVERED on the real runner. THREE re-falsified fresh rather than quoted, where the plan asked for one: (A) a regex tokenizeFieldPath -> 9 of 91 red, FLOOR reads `0 counted characters over 62073 input characters` while the CEILING PASSES in isolation (`1 passed | 90 skipped`), independently confirming 47-04's central finding, and the WR-11 permitted-token floor also fired because `.indexOf` vanished; (C-hook) an async beforeEach with await import -> the extended 75-test gate names `toggle.test.ts:103`, proving 47-14's extension did not weaken 47-03's control; (D) a shipped reason set to `dev-only` -> 4 red exactly reproducing 47-10's D-1, AND the shipped gate over the network at exit 0 -> 1 -> 0, a SECOND local mechanism for SC-4 distinct from 47-12's tree-breaking one. NO EIGHTH VACUOUS GATE FOUND: all nine controls carry a recorded green-before-red, every floor sits below its measurement and was observed firing, all six gates answer the WR-11 rename question with a RED, no assertion is satisfied by two empty sets, and both self-sweeping gate files take EXACTLY ONE mitigation (fixtures as source strings, EXCLUDED_PATHS asserted not to contain the gate path, with live controls). One floor named as brittle rather than quietly softened: MIN_NON_TEST_PERFORMANCE_NOW = 2 sits AT its measurement over src/app/api/health/route.ts (Phase 42) -- a false-RED risk, not vacuity, and the matcher it protects is independently fixture-proven. VERDICTS: SC-1 PROVED (margin, never the ten-run diff -- toggle 4958ms=49.6% -> 74.7ms=0.7% (133x), recursion 3530ms=35.3% -> 37.2ms=0.4% (269x), route.test.ts:67 9339ms=186.8% -> 116.97ms=2.3% (42.7x), replay:97 5934ms=118.7% -> 22.32ms=0.4% (224x), engine:215 5782ms=115.6% -> 73.27ms=1.5% (68.2x), elapsed assertions 3 -> 0; and the phase's strongest single result, 47-06's 3-of-6 loaded runs RED -> 47-14's 6/6 GREEN at a sampled median 3.50x -- the suite no longer cries wolf); SC-1b PROVED; SC-2 PROVED (stated plainly: the CEILING ALONE would have passed control A); SC-3 PROVED (39/39 dispositions, re-measured green again here); SC-4 PARTIALLY PROVED -- the policy can fail, proven LOCALLY TWICE, never on GitHub's runner and never blocking a merge. PHASE GATE: 5164 passed / 32 skipped (172 files + 2 skipped), RSC 8/8, typecheck 0, lint 0 errors / 124 warnings, security:audit exit 0 (47 advisories, 14 packages, 1285 deps), db:check-migrations exit 0 (Phase 46's gate unbroken), /api/health 200 with db.ok true and 10/10 processors, image 8f07a18eddad, tree clean by `git diff --exit-code` (never `git status --porcelain`, which renders as the token `ok` under rtk). The +425 suite delta reconciled plan by plan -- 4739 +39 +21 +46 +52 +228 +3 +36 = 5164 EXACTLY, every intermediate figure quoted from a SUMMARY. SEC-05 deliberately NOT marked complete and `requirements mark-complete SEC-05` NOT invoked; the box was re-read as `[ ]` afterwards. Fifteen corrections this phase made to its own planning documents are collected in the SUMMARY. Carried forward: D-47-12-A (operator push), D-47-08-A, D-47-08-B, SEC-47-A.
 - 2026-08-25: 47-09 complete -- SEC-05's decision half is discharged. AUDIT-POLICY.md (27,542 chars) at the repo root states the policy in prose including the three-trees limitation verbatim ("It is NOT evaluated against the production image"); audit-policy.json carries failOn [critical,high] plus 39 allowlist entries, EXACTLY 1:1 against a fresh npm audit's critical/high advisory set (two-way set difference empty), each with an evidenced reason (654-1377 chars), a reach (35 runtime / 4 build / 0 dev -- no dev-only acceptance was available) and an expiry (33 at 2026-09-24, 6 at 2026-11-23, with the two-horizon rule written down). scripts/audit-policy.mjs is 812 lines with ZERO dependencies, never branches on npm audit's exit code (which was 1 on every green run and is printed on line 2), and floors what it parses -- MIN_PACKAGES_AUDITED plus a histogram reconciliation that catches the emptied-vulnerabilities and deleted-total shapes 47-01 measured. `npm run security:audit` GREEN at exit 0, which is the precondition 47-12's red control depends on. ELEVEN falsifications observed red and recorded verbatim (7 doctored documents, an emptied failOn, a dev-only reason, a back-dated expiry, a deleted entry, a stale entry, a removed prose id, overrides.vite deleted and widened). D-47-01-A CLOSED. SEC-05 deliberately NOT marked complete: ci.yml still has no audit step. New SEC-47-A in BACKLOG.md -- src/lib/email/client.ts:20's unconditional tls.rejectUnauthorized:false. Suite 4845 -> 4897/32, RSC 8/8, tsc 0, lint 0 errors.
 - 2026-08-25: 47-07 complete -- in-range advisory fixes: crit+high 24 -> 4, critical 3 -> 0, total 36 -> 14; drizzle-orm 0.45.2 (SQL injection), Auth.js trio (all 3 criticals), fast-xml-parser removed; residual 4 handed to 47-08/47-09; 15 runtime packages moved so 47-08's rebuild is load-bearing
 - 2026-08-25: 47-06 complete -- SC-1 AFTER margin measured with 47-02's committed instrument at a HARSHER load than the BEFORE half (runnable medians 3.75x/4.25x vs 3.50x, peaks 9.00x/7.75x): toggle 49.6% -> 0.7% of hookTimeout (margin 2.02x -> 133.84x), recursion 35.3% -> 0.4% (2.83x -> 268.94x); linearity row closed as a CATEGORY CHANGE proven by the BEFORE instrument's own FATAL plus both sides measured at the same load (deleted ratio 11.44-55.85, 4.88x spread; counted replacement ONE integer 23730 across 400 repeats); SC-1b 0 and 0 from the gates; ten-run 10/10 IDENTICAL at 4853 with the +106 delta reconciled exactly and labelled a guard; differ floor re-proven red. BLOCKER D-47-06-A opened: npm test goes RED at >=3x, four assertions timed out in three files (up to 186.8% of testTimeout), the same import-cost defect in ~146 test BODIES against half the budget, ungated because 47-03's gate scans hooks only.
 
-Phase: 47 (Suite Trust & Supply Chain) — EXECUTING
-Plan: 9 of 14 complete (01, 02, 03, 04, 05, 06, 07, 08, 09) — next unexecuted is 10
+Phase: 47 (Suite Trust & Supply Chain) — ALL PLANS EXECUTED, AWAITING /gsd:verify-phase 47
+Plan: 14 of 14 complete (01-14) — QG-01 complete, SEC-05 PARTIAL (SC-4 runner half NOT PROVED)
 Status: Executing
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 Last activity: 2026-08-25

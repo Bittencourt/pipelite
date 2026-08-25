@@ -107,6 +107,15 @@ activities, and custom fields. Advanced features can be built externally via the
       `ci` steps have STILL never executed on GitHub and no merge has ever been blocked by this policy.
       Owner: the operator's push. Reproduction: `47-suite-trust-supply-chain/deferred-items.md`
       § D-47-12-A. **47-13 must not mark this complete.***
+      *47-13 (phase close-out): honoured — `requirements mark-complete SEC-05` was NOT invoked,
+      and the box was re-read as `[ ]` after the state updates. SC-3 is **PROVED** (39/39 dispositions,
+      re-measured green again at sign-off: 47 advisories / 14 packages / 1285 deps, exit 0). SC-4 is
+      **PARTIALLY PROVED**: the gate was falsified a SECOND time at sign-off by a DIFFERENT mechanism —
+      a shipped `reason` set to `dev-only` drove `npm run security:audit` exit 0 -> **1** -> 0 with
+      `FATAL: audit-policy.json allowlist[0] (GHSA-ggv3-7p47-pfv8) gives "dev-only" as its reason` —
+      which strengthens "can fail" and moves the runner half not at all. Measured at sign-off:
+      `origin/master` = `a58b9e1`, **114** commits unpushed (`git rev-list --count`, never `wc -l`).
+      Owner remains the operator. See `47-13-SUMMARY.md` Part 3 § SC-4.*
 
 ### Performance
 

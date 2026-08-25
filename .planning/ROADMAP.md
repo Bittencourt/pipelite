@@ -70,7 +70,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 ### v1.4 Debt Paydown (Phases 46-54) — ACTIVE
 
 - [x] **Phase 46: Migration Chain & Toolchain Floor** - A clone of this repo builds its own database, and the documented commands work from the host (completed 2026-08-25)
-- [ ] **Phase 47: Suite Trust & Supply Chain** - A red run means a defect, and the project has a stated position on its own advisories
+- [x] **Phase 47: Suite Trust & Supply Chain** - A red run means a defect, and the project has a stated position on its own advisories (all 14 plans executed 2026-08-25; **QG-01 complete, SEC-05 PARTIAL** — SC-4+s runner half is NOT PROVED, see 47-13-SUMMARY and D-47-12-A)
 - [ ] **Phase 48: REST API Authorization** - Every `/api/v1` route that touches a record authorizes the caller against that record
 - [ ] **Phase 49: Mutation-Layer Truth After Commit** - A purge removes the bytes, a merge leaves the survivor consistent, a create response matches a read
 - [ ] **Phase 50: Export Authorization** - A non-admin cannot walk the customer table out through a filter that narrows nothing
@@ -209,7 +209,7 @@ repeated full-suite runs are only meaningful against a schema that can be rebuil
 together and not to chase either per-phase. The suite has a second, independent flake source recorded
 in `BACKLOG.md` (cold `auth.setup.ts` at 30.1 s vs 1.9 s on retry) which is **not** in v1.4 scope —
 do not let it be mistaken for QG-01, and do not close QG-01 on `retries: 1`.
-**Plans**: 13 plans in 9 waves
+**Plans**: 14 plans in 9 waves (plan 14 added mid-phase to close D-47-06-A)
 
 Plans:
 
@@ -247,11 +247,13 @@ Plans:
 
 **Wave 8** *(blocked on Waves 5 and 7)*
 
-- [ ] 47-12-PLAN.md — **PARTIAL — LOCAL HALF ONLY.** NC-E observed on this machine: `npm run security:audit` exit 0 → **1** (one `FATAL` naming GHSA-xvch-5gv4-984h) → 0, attributed against the four other causes of a red, and contained (both manifests byte-identical by sha256). **NOT DELIVERED: the push, Phase 46's open item, the GitHub red, and `mergeStateStatus: BLOCKED`.** `origin/master` is still `a58b9e1` with 111 commits unpushed, so SC-4's runner half is **NOT PROVED** and SEC-05 stays **partial**. Reproduction: `deferred-items.md` § D-47-12-A · SEC-05
+- [x] 47-12-PLAN.md — **PARTIAL — LOCAL HALF ONLY.** NC-E observed on this machine: `npm run security:audit` exit 0 → **1** (one `FATAL` naming GHSA-xvch-5gv4-984h) → 0, attributed against the four other causes of a red, and contained (both manifests byte-identical by sha256). **NOT DELIVERED: the push, Phase 46's open item, the GitHub red, and `mergeStateStatus: BLOCKED`.** `origin/master` is still `a58b9e1` with 111 commits unpushed, so SC-4's runner half is **NOT PROVED** and SEC-05 stays **partial**. Reproduction: `deferred-items.md` § D-47-12-A · SEC-05
 
 **Wave 9** *(blocked on Wave 8)*
 
-- [ ] 47-13-PLAN.md — negative-control register (all nine judged for REAL output), criterion verdicts, phase gate · QG-01, SEC-05
+- [x] 47-13-PLAN.md — negative-control register (all nine judged for REAL output), criterion verdicts, phase gate · QG-01, SEC-05
+
+**Phase outcome, from 47-13-SUMMARY.md.** Eight of nine negative controls DELIVERED with verbatim output; control E DELIVERED LOCALLY and **NOT DELIVERED on the real runner**. Three controls re-falsified fresh at sign-off (A, C-hook, D). **No eighth vacuous gate found.** Verdicts: SC-1 **PROVED** (margin 49.6% → 0.7% and 35.3% → 0.4%; 47-06+s 3/6 RED loaded runs → 47-14+s **6/6 GREEN** at a sampled median 3.50x), SC-1b **PROVED** (0 elapsed assertions), SC-2 **PROVED** (the CEILING alone would have passed control A), SC-3 **PROVED** (39/39 dispositions), SC-4 **PARTIALLY PROVED**. Gate: **5164 passed / 32 skipped**, RSC 8/8, typecheck 0, lint **0 errors** / 124 warnings, `security:audit` exit 0, `db:check-migrations` exit 0, `/api/health` 200 with 10/10 processors. `origin/master` is `a58b9e1` with **114 commits unpushed** — Phase 46 GAP 1 and D-47-12-A both remain open, and both close with one operator push.
 
 ### Phase 48: REST API Authorization
 
@@ -512,7 +514,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 46. Migration Chain & Toolchain Floor | 6/6 | Complete   | 2026-08-25 |
-| 47. Suite Trust & Supply Chain | 13/14 | In Progress|  |
+| 47. Suite Trust & Supply Chain | 14/14 | Complete   | 2026-08-25 |
 | 48. REST API Authorization | 0/? | Not started | - |
 | 49. Mutation-Layer Truth After Commit | 0/? | Not started | - |
 | 50. Export Authorization | 0/? | Not started | - |
