@@ -27,10 +27,16 @@
  * Taint a value if it is a clock call (`Date.now()`, `performance.now()`) or is derived from one,
  * and propagate through variable bindings to a fixpoint. FLAG an `expect(...)` whose argument is:
  *   - a SUBTRACTION whose LEFT operand is tainted (an elapsed delta), or
- *   - a DIVISION of two already-tainted values (an elapsed ratio).
- * Do NOT flag a clock call that is an operand of an ADDITION producing a future timestamp.
+ *   - a DIVISION of two already-tainted values (an elapsed ratio), or
+ *   - ANY expression that still CARRIES taint, when the matcher is a threshold matcher — the
+ *     bound-delta form. Applied to the matcher's own argument too, so swapping the operands does
+ *     not evade it.
+ * Do NOT flag a clock call that is an operand of an ADDITION producing a future timestamp, and do
+ * not flag a BARE clock READ: `expect(x).toBeGreaterThan(Date.now())` is a future-timestamp
+ * comparison, not an elapsed measurement.
  *
- * That single distinction is the whole rule (47-RESEARCH §4:587-590). It was derived by running an
+ * The addition distinction is the whole of the rest of the rule (47-RESEARCH §4:587-590). It was
+ * derived by running an
  * over-broad version across the suite and triaging its output by hand. Getting the addition case
  * wrong is not an abstract risk: `src/app/admin/users/actions.test.ts:59` and the audit-policy
  * expiry assertion plan 47-10 ships are BOTH future-timestamp comparisons, and a rule that taints
@@ -84,15 +90,41 @@
  * rather than discovered; `db-test-isolation.test.ts:374-386` makes the same argument for keeping
  * both the parsed and the raw forms in the tree.
  *
- * The rule is also deliberately narrow in one more way. A delta divided by a CONSTANT —
- * `expect(elapsed / 1000).toBeLessThan(5)` — is neither a subtraction nor a division of two tainted
- * values, so it is not flagged. That is the letter of the rule above, and the rule's letter is what
- * keeps it from colliding with the future-timestamp assertions in two other files. If that shape
- * ever appears, widen the rule DELIBERATELY, add the fixture, and re-run the whole triage — do not
- * widen it speculatively, because every widening here is a chance to break a correct assertion
- * somewhere else.
+ * ── THE CR-01 WIDENING, AND WHY IT WAS TAKEN DELIBERATELY ────────────────────────────────────
  *
- * Clock reads reached through an unusual receiver (`globalThis.Date.now()`) are likewise not matched.
+ * Version 2 of this gate — the one this file shipped with — bailed out of its hit loop on anything
+ * that was not syntactically a subtraction or a division, BEFORE consulting the taint state on the
+ * `expect()` argument. So the fixpoint was only ever asked about the operands of an expression the
+ * gate had already decided to look at. Running the shipped matcher over nine shapes:
+ *
+ *     MISSED   const elapsed = Date.now() - start; expect(elapsed).toBeLessThan(5000)
+ *     FLAGGED  expect(Date.now() - start).toBeLessThan(5000)         <- the only form caught
+ *     MISSED   const ratio = b / a; expect(ratio).toBeLessThan(80)
+ *     MISSED   expect(elapsedHelper()).toBeLessThan(5000)
+ *     MISSED   expect(Math.round(Date.now() - start)).toBeLessThan(5000)
+ *     MISSED   expect((Date.now() - start) / 1000).toBeLessThan(5)
+ *     MISSED   expect(5000).toBeGreaterThan(Date.now() - start)
+ *     FLAGGED  expect(end - t0).toBeLessThan(5000)
+ *     MISSED   const q = time(128000) / Math.max(time(8000), 0.05); expect(q).toBeLessThan(80)
+ *
+ * The last one is `condition-evaluator.test.ts:636` — the assertion QG-01 exists to delete — with
+ * the quotient bound one step further. The gate would have missed the defect it was written for if
+ * it had been written one binding differently, which is the definition of a vacuous gate and the
+ * thing this file's own header accuses seven other gates of.
+ *
+ * Worse than an ordinary false negative, because of the feedback loop: when this gate goes red the
+ * message below tells the author to delete the assertion, and the cheapest edit that turns it green
+ * was `const elapsed = …; expect(elapsed)…` — which leaves the defect in place and silences the
+ * gate permanently.
+ *
+ * So the widening was taken, with the fixtures the header demands: every one of the seven missed
+ * shapes above is now a KNOWN_POSITIVE fixture (vii)-(xiii), the whole corpus was re-swept after
+ * the widening, and the four future-timestamp KNOWN_NEGATIVEs were re-verified green. The
+ * `/ 1000` shape the previous header held out as deliberately narrow is now caught too: it was held
+ * out to avoid colliding with those negatives, and the taint half is restricted to THRESHOLD
+ * matchers, which is what actually keeps them apart.
+ *
+ * Clock reads reached through an unusual receiver (`globalThis.Date.now()`) are still not matched.
  * Zero instances exist; the qualified-name form is what the corpus uses.
  *
  * ── WHERE THE BOUNDARY SITS FOR AN EXACT-EQUALITY DELTA — DECIDED, NOT DISCOVERED ─────────────
@@ -357,8 +389,14 @@ export interface TimingHit {
   file: string
   /** 1-based line of the `expect(` call. */
   line: number
-  /** `delta` for a subtraction with a tainted left operand, `ratio` for a tainted division. */
-  kind: "delta" | "ratio"
+  /**
+   * `delta` for a subtraction with a tainted left operand, `ratio` for a tainted division, and
+   * `tainted` for the CR-01 shape: a clock-derived value that reached the assertion through a
+   * binding, a helper's return, or a wrapper call, so the gate can prove it carries a clock
+   * reading but cannot say which of the two arithmetic shapes produced it. It does not need to —
+   * the fix is the same in every case.
+   */
+  kind: "delta" | "ratio" | "tainted"
   /** The matcher applied to the `expect()`, past `.not`/`.resolves`/`.rejects`. `null` if none. */
   matcher: string | null
   /** That matcher's class — the half of the boundary decision that is not about taint. */
@@ -438,6 +476,51 @@ function isFakeClockCall(node: ts.Node): boolean {
   )
 }
 
+/**
+ * Whether an expression is built ENTIRELY out of numeric literals and arithmetic — `1_000`,
+ * `7 * 24 * 60 * 60 * 1000`, `-(5 + 5)`.
+ *
+ * This is the other half of the future-timestamp rule, and it was added by CR-01's re-triage rather
+ * than guessed at. `now + N` produces a future timestamp and taint stops there; `now - N` produces a
+ * PAST timestamp for exactly the same reason, and the corpus holds two real assertions of that
+ * shape (`get-activities-where.test.ts:223`, `view-filters.test.ts:367`, both pinned below as
+ * KNOWN_NEGATIVE (g) and (h)). Neither is an elapsed measurement and neither can fail from
+ * contention: both are containment checks against the window the subject ran in, and both of their
+ * bounds get LOOSER as the machine gets busier.
+ *
+ * A LITERAL constant, specifically. `Date.now() - start` keeps its taint because `start` is a name,
+ * not a number — so widening this to "any non-tainted right operand" would delete the detection of
+ * a real elapsed delta measured against a value the taint pass cannot see, which is the one thing
+ * this carve-out must not do.
+ */
+function isNumericConstant(node: ts.Node): boolean {
+  const expression = unwrapWrappers(node)
+  if (ts.isNumericLiteral(expression)) return true
+  if (ts.isPrefixUnaryExpression(expression)) {
+    return (
+      (expression.operator === ts.SyntaxKind.MinusToken ||
+        expression.operator === ts.SyntaxKind.PlusToken) &&
+      isNumericConstant(expression.operand)
+    )
+  }
+  if (ts.isBinaryExpression(expression)) {
+    const arithmetic = new Set<ts.SyntaxKind>([
+      ts.SyntaxKind.PlusToken,
+      ts.SyntaxKind.MinusToken,
+      ts.SyntaxKind.AsteriskToken,
+      ts.SyntaxKind.SlashToken,
+      ts.SyntaxKind.PercentToken,
+      ts.SyntaxKind.AsteriskAsteriskToken,
+    ])
+    return (
+      arithmetic.has(expression.operatorToken.kind) &&
+      isNumericConstant(expression.left) &&
+      isNumericConstant(expression.right)
+    )
+  }
+  return false
+}
+
 function unwrapWrappers(node: ts.Node): ts.Node {
   let current = node
   while (
@@ -501,13 +584,21 @@ export function scanSource(
   /**
    * A value is tainted if it is a clock reading or still carries one. The PlusToken case is the
    * whole discriminating rule: an addition over a clock reading produces a FUTURE TIMESTAMP, which
-   * is not an elapsed measurement, and taint stops there.
+   * is not an elapsed measurement, and taint stops there. Subtracting a LITERAL CONSTANT is the
+   * mirror image — a PAST timestamp — and taint stops there too; see `isNumericConstant`.
    */
   const isTainted = (node: ts.Node | undefined): boolean => {
     if (node === undefined) return false
     if (clockCallName(node) !== null) return true
     if (ts.isIdentifier(node)) return taintedNames.has(node.text)
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+      return false
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.MinusToken &&
+      isNumericConstant(node.right)
+    ) {
       return false
     }
     if (
@@ -574,17 +665,90 @@ export function scanSource(
     if (taintIterations >= maxIterations) break
   }
 
-  /** The matcher applied to an `expect()` call, traversing past `.not` / `.resolves` / `.rejects`. */
-  const matcherOf = (expectCall: ts.CallExpression): string | null => {
+  /**
+   * The `.toBeLessThan` property access of an `expect()` chain, traversing past `.not` /
+   * `.resolves` / `.rejects`. Returned as the NODE rather than the name so the reversed-operand
+   * rule below can reach the matcher's own arguments — see `matcherArgumentsOf`.
+   */
+  const matcherAccessOf = (expectCall: ts.CallExpression): ts.PropertyAccessExpression | null => {
     let node: ts.Node = expectCall
     let parent: ts.Node | undefined = node.parent
     while (parent !== undefined && ts.isPropertyAccessExpression(parent) && parent.expression === node) {
-      const name = parent.name.text
-      if (!MATCHER_MODIFIERS.has(name)) return name
+      if (!MATCHER_MODIFIERS.has(parent.name.text)) return parent
       node = parent
       parent = parent.parent
     }
     return null
+  }
+
+  /** The matcher applied to an `expect()` call, traversing past `.not` / `.resolves` / `.rejects`. */
+  const matcherOf = (expectCall: ts.CallExpression): string | null =>
+    matcherAccessOf(expectCall)?.name.text ?? null
+
+  /**
+   * The arguments passed to that matcher — the EXPECTED side of the comparison.
+   *
+   * `expect(5000).toBeGreaterThan(Date.now() - start)` is `expect(Date.now() - start)
+   * .toBeLessThan(5000)` with the operands swapped, and reading only `expect()`'s own argument
+   * makes the swap a free evasion of this whole gate.
+   */
+  const matcherArgumentsOf = (expectCall: ts.CallExpression): readonly ts.Expression[] => {
+    const access = matcherAccessOf(expectCall)
+    if (access === null) return []
+    const call = access.parent
+    if (call === undefined || !ts.isCallExpression(call) || call.expression !== access) return []
+    return call.arguments
+  }
+
+  /**
+   * The two ARITHMETIC shapes, applied to one expression: a subtraction whose left operand carries
+   * a clock reading, or a division of two values that both do. This is the original v2 rule,
+   * extracted so it can be applied to the expected side of a comparison as well as to `expect()`'s
+   * own argument.
+   */
+  const arithmeticKindOf = (node: ts.Node): TimingHit["kind"] | null => {
+    const expression = unwrapWrappers(node)
+    if (!ts.isBinaryExpression(expression)) return null
+    if (
+      expression.operatorToken.kind === ts.SyntaxKind.MinusToken &&
+      isTainted(expression.left) &&
+      // `before - 1_000` is a past timestamp, not an elapsed measurement — the mirror of the
+      // addition rule. See `isNumericConstant` and KNOWN_NEGATIVE (g)/(h).
+      !isNumericConstant(expression.right)
+    ) {
+      return "delta"
+    }
+    if (
+      expression.operatorToken.kind === ts.SyntaxKind.SlashToken &&
+      isTainted(expression.left) &&
+      isTainted(expression.right)
+    ) {
+      return "ratio"
+    }
+    return null
+  }
+
+  /**
+   * CR-01. Whether an expression CARRIES clock-derived taint without being one of the two
+   * arithmetic shapes above.
+   *
+   * This is the rule the v2 gate was missing, and its absence was the gate's own vacuity: the taint
+   * fixpoint existed so the gate could "see through a variable binding", and then the hit loop
+   * bailed on anything that was not syntactically a subtraction or a division, so the fixpoint was
+   * only ever consulted on the OPERANDS of an expression the gate had already decided to look at.
+   * `const elapsed = Date.now() - start; expect(elapsed).toBeLessThan(N)` — the most idiomatic form
+   * of the exact defect this file forbids — was missed, and binding the delta to a name was
+   * therefore the cheapest way to turn this gate green while leaving the defect in place.
+   *
+   * A BARE clock READ is excluded on purpose. `Date.now()` is tainted by definition, and
+   * `expect(x).toBeGreaterThan(Date.now())` is the future-timestamp comparison that KNOWN_NEGATIVE
+   * (c) and (d) pin — including the allowlist-expiry assertion in `audit-policy.test.ts`, which
+   * this gate must never fight. Reading a clock is not asserting on an elapsed measurement.
+   */
+  const carriesTaint = (node: ts.Node): boolean => {
+    const expression = unwrapWrappers(node)
+    if (clockCallName(expression) !== null) return false
+    return isTainted(expression)
   }
 
   const hits: TimingHit[] = []
@@ -592,23 +756,35 @@ export function scanSource(
     if (!isExpectCall(node)) continue
     const argument = node.arguments[0]
     if (argument === undefined) continue
-    const expression = unwrapWrappers(argument)
-    if (!ts.isBinaryExpression(expression)) continue
-
-    let kind: TimingHit["kind"] | null = null
-    if (expression.operatorToken.kind === ts.SyntaxKind.MinusToken && isTainted(expression.left)) {
-      kind = "delta"
-    } else if (
-      expression.operatorToken.kind === ts.SyntaxKind.SlashToken &&
-      isTainted(expression.left) &&
-      isTainted(expression.right)
-    ) {
-      kind = "ratio"
-    }
-    if (kind === null) continue
 
     const matcher = matcherOf(node)
     const matcherClass = classifyMatcher(matcher)
+
+    let kind: TimingHit["kind"] | null = arithmeticKindOf(argument)
+
+    // CR-01, and the reason this half is restricted to THRESHOLD matchers. A threshold over a
+    // clock-derived value is the margin this gate exists to delete, whatever route the value took
+    // to get there. Widening the taint half to exact-equality matchers as well would make
+    // KNOWN_NEGATIVE (b) — `expect(expiresAt.getTime() - now).toBe(expectedMs)`, algebraically
+    // exact, seven days of margin — this gate's first casualty, and the cheapest way to resolve two
+    // gates in contradiction is to delete one of them. The arithmetic half above keeps its original
+    // exact/fake-clock boundary; only the new taint half is narrowed.
+    if (kind === null && matcherClass === "threshold" && carriesTaint(argument)) {
+      kind = "tainted"
+    }
+
+    // The reversed comparison: `expect(5000).toBeGreaterThan(Date.now() - start)`.
+    if (kind === null && matcherClass === "threshold") {
+      for (const expected of matcherArgumentsOf(node)) {
+        const reversed = arithmeticKindOf(expected) ?? (carriesTaint(expected) ? "tainted" : null)
+        if (reversed !== null) {
+          kind = reversed
+          break
+        }
+      }
+    }
+
+    if (kind === null) continue
     // The only permitted shape: an exact equality over a delta, in a file that installs a fake
     // clock. A threshold is always a margin, and an exact equality over a real clock can only ever
     // be accidentally true.
@@ -792,11 +968,110 @@ const KNOWN_POSITIVE = [
     expected: ["2:delta:exact"],
     needsFixpoint: false,
   },
+
+  // ── CR-01: the seven shapes the v2 hit loop MISSED, each pinned by an extracted value ────────
+  // Every one of these was verified MISSED against the shipped v2 matcher before the widening, and
+  // FLAGGED after it. They are the reason the taint state is now consulted on the argument itself.
+  {
+    label: "(vii) a bound elapsed DELTA — the most idiomatic form of the defect, and v2 missed it",
+    // THE ONE THAT MATTERS MOST. This is what a developer writes when the gate goes red on the
+    // inline form: bind the delta to a name. Under v2 that was a silent, permanent evasion.
+    source: lines(
+      `const start = Date.now()`,
+      `const elapsed = Date.now() - start`,
+      `expect(elapsed).toBeLessThan(5000)`
+    ),
+    expected: ["3:tainted:threshold"],
+    needsFixpoint: false,
+  },
+  {
+    label: "(viii) a bound elapsed RATIO — fixture (v) with the quotient bound one step further",
+    source: lines(
+      `const a = Date.now() - t0`,
+      `const b = Date.now() - t1`,
+      `const ratio = b / a`,
+      `expect(ratio).toBeLessThan(80)`
+    ),
+    expected: ["4:tainted:threshold"],
+    needsFixpoint: false,
+  },
+  {
+    label: "(ix) a delta returned by a HELPER, with nothing at all inline in the assertion",
+    source: lines(
+      `function elapsedHelper() {`,
+      `  const started = Date.now()`,
+      `  work()`,
+      `  return Date.now() - started`,
+      `}`,
+      `expect(elapsedHelper()).toBeLessThan(5000)`
+    ),
+    expected: ["6:tainted:threshold"],
+    needsFixpoint: false,
+  },
+  {
+    label: "(x) a delta wrapped in a rounding call — inline, but not syntactically a subtraction",
+    source: lines(
+      `const start = Date.now()`,
+      `expect(Math.round(Date.now() - start)).toBeLessThan(5000)`
+    ),
+    expected: ["2:tainted:threshold"],
+    needsFixpoint: false,
+  },
+  {
+    label: "(xi) a delta divided by a CONSTANT — the shape the previous header held out",
+    // Held out by v2's header as deliberately narrow, on the grounds that widening might collide
+    // with the future-timestamp negatives. Restricting the taint half to threshold matchers is what
+    // actually keeps them apart, so this shape is now caught: `elapsed / 1000` compared to a
+    // threshold is the same margin as `elapsed` compared to a threshold, in different units.
+    source: lines(
+      `const start = Date.now()`,
+      `expect((Date.now() - start) / 1000).toBeLessThan(5)`
+    ),
+    expected: ["2:tainted:threshold"],
+    needsFixpoint: false,
+  },
+  {
+    label: "(xii) the REVERSED comparison — the delta is the matcher's argument, not expect()'s",
+    // `expect(5000).toBeGreaterThan(delta)` is `expect(delta).toBeLessThan(5000)` with the operands
+    // swapped. A gate that reads only `expect()`'s own argument makes the swap a free evasion.
+    source: lines(
+      `const start = Date.now()`,
+      `expect(5000).toBeGreaterThan(Date.now() - start)`
+    ),
+    expected: ["2:delta:threshold"],
+    needsFixpoint: false,
+  },
+  {
+    label: "(xiii) THE ORIGINAL QG-01 DEFECT, bound one step further than fixture (i)",
+    // condition-evaluator.test.ts:636 as it stood, with the quotient assigned to a local before the
+    // assertion. v2 MISSED this: the gate written to delete that assertion would not have seen it
+    // if it had been written this way. Nothing else in this file proves that, because fixture (i)
+    // puts the division inside expect() where v2's binary-expression bail could still reach it.
+    source: lines(
+      `const time = (n: number) => {`,
+      `  let best = Infinity`,
+      `  for (let run = 0; run < 5; run++) {`,
+      `    const started = Date.now()`,
+      `    for (const item of inputs(n)) resolveFieldPath(ctx, item)`,
+      `    best = Math.min(best, Date.now() - started)`,
+      `  }`,
+      `  return best`,
+      `}`,
+      `const q = time(128000) / Math.max(time(8000), 0.05)`,
+      `expect(q).toBeLessThan(80)`
+    ),
+    expected: ["11:tainted:threshold"],
+    needsFixpoint: true,
+  },
 ] as const
 
 /**
- * Six shapes that are real code in this repository (or, for (d), real code plan 47-10 ships) and
+ * Eight shapes that are real code in this repository (or, for (d), real code plan 47-10 ships) and
  * that MUST stay green. These are what make the rule carry the triage instead of a path exclusion.
+ *
+ * (g) and (h) were added by CR-01's re-triage: the widened rule flagged them in the live corpus,
+ * they were read rather than excluded, and the RULE was corrected — which is this file's own stated
+ * doctrine applied to itself for the first time.
  */
 const KNOWN_NEGATIVE = [
   {
@@ -855,6 +1130,37 @@ const KNOWN_NEGATIVE = [
     source: lines(`await new Promise((resolve) => setTimeout(resolve, 1))`),
     expectsClockCalls: false,
   },
+
+  // ── the two shapes CR-01's widening surfaced in the live corpus, triaged and pinned ──────────
+  // Both are real assertions in the tree today. The widened rule flagged them, they were read, and
+  // they are NOT elapsed-time assertions: each sandwiches the subject between two clock readings
+  // and asserts the value the subject produced falls inside that window. Contention makes `before`
+  // no larger and `after` no smaller, so BOTH bounds get looser under load — the opposite of a
+  // margin. `before - 1_000` is a PAST timestamp, exactly as `after + 1_000` is a future one.
+  {
+    label: "(g) a past-timestamp window bound — get-activities-where.test.ts:223",
+    source: lines(
+      `const before = Date.now()`,
+      `const { sql, params } = await whereFor({ status: "pending" })`,
+      `const after = Date.now()`,
+      `const cutoff = boundInstant(params, 0)`,
+      `expect(cutoff).toBeGreaterThanOrEqual(before - 1_000)`,
+      `expect(cutoff).toBeLessThanOrEqual(after + 1_000)`
+    ),
+    expectsClockCalls: true,
+  },
+  {
+    label: "(h) the same window, on a parsed bound parameter — view-filters.test.ts:367",
+    source: lines(
+      `const before = Date.now()`,
+      `const { params } = await activitiesWhere({ status: "overdue" })`,
+      `const after = Date.now()`,
+      `const boundMs = Date.parse(params[0] as string)`,
+      `expect(boundMs).toBeGreaterThanOrEqual(before - 1_000)`,
+      `expect(boundMs).toBeLessThanOrEqual(after + 1_000)`
+    ),
+    expectsClockCalls: true,
+  },
 ] as const
 
 describe("the delta/ratio matcher, unit-tested against fixtures FIRST", () => {
@@ -906,29 +1212,33 @@ describe("the delta/ratio matcher, unit-tested against fixtures FIRST", () => {
     // QG-01 names. Asserting "the fixpoint exists" by reading the code proves nothing; this runs the
     // matcher with the loop capped at a single pass and asserts the miss, then uncapped and asserts
     // the find. If the loop is ever flattened, this goes red with the reason written on it.
-    const fixture = KNOWN_POSITIVE.find((candidate) => candidate.needsFixpoint)
-    expect(fixture, "no KNOWN_POSITIVE fixture is marked as needing the fixpoint").toBeDefined()
-    if (fixture === undefined) return
+    const fixtures = KNOWN_POSITIVE.filter((candidate) => candidate.needsFixpoint)
+    expect(
+      fixtures.length,
+      "no KNOWN_POSITIVE fixture is marked as needing the fixpoint"
+    ).toBeGreaterThan(0)
 
-    const singlePass = scanSource("known-positive.ts", fixture.source, 1)
-    expect(
-      singlePass.hits.map(formatHit),
-      "a single taint pass already sees the bound-variable ratio, so this control no longer " +
-        "distinguishes a fixpoint from an inline matcher. Rebuild the fixture so its taint chain " +
-        "needs more than one pass — do not delete the control."
-    ).toEqual([])
+    for (const fixture of fixtures) {
+      const singlePass = scanSource("known-positive.ts", fixture.source, 1)
+      expect(
+        singlePass.hits.map(formatHit),
+        `a single taint pass already sees "${fixture.label}", so this control no longer ` +
+          `distinguishes a fixpoint from an inline matcher. Rebuild the fixture so its taint ` +
+          `chain needs more than one pass — do not delete the control.`
+      ).toEqual([])
 
-    const fixpoint = scanSource("known-positive.ts", fixture.source)
-    expect(
-      fixpoint.hits.map((hit) => `${hit.line}:${hit.kind}:${hit.matcherClass}`),
-      "the fixpoint no longer finds the bound-variable ratio. Taint must propagate through " +
-        "variable bindings and function returns until nothing new is tainted."
-    ).toEqual([...fixture.expected])
-    expect(
-      fixpoint.taintIterations,
-      `the fixpoint converged in ${fixpoint.taintIterations} pass(es); measured 3 when this gate ` +
-        `was written (2 productive, 1 to confirm). One pass cannot see this fixture.`
-    ).toBeGreaterThan(MIN_FIXPOINT_ITERATIONS - 1)
+      const fixpoint = scanSource("known-positive.ts", fixture.source)
+      expect(
+        fixpoint.hits.map((hit) => `${hit.line}:${hit.kind}:${hit.matcherClass}`),
+        `the fixpoint no longer finds "${fixture.label}". Taint must propagate through variable ` +
+          `bindings and function returns until nothing new is tainted.`
+      ).toEqual([...fixture.expected])
+      expect(
+        fixpoint.taintIterations,
+        `the fixpoint converged in ${fixpoint.taintIterations} pass(es); measured 3 when this ` +
+          `gate was written (2 productive, 1 to confirm). One pass cannot see this fixture.`
+      ).toBeGreaterThan(MIN_FIXPOINT_ITERATIONS - 1)
+    }
   })
 
   it("reports the taint chain it followed, not just a verdict", () => {
@@ -981,6 +1291,41 @@ describe("the delta/ratio matcher, unit-tested against fixtures FIRST", () => {
     // The complement. Without it, a taint pass that propagated NOTHING would satisfy the assertion
     // above and every KNOWN_NEGATIVE at once.
     expect(elapsed.taintedNames.sort()).toEqual(["elapsed", "started"])
+  })
+
+  it("does not taint through a subtraction of a LITERAL constant either — the mirror rule", () => {
+    // CR-01's re-triage added this branch, so it gets the same treatment the addition rule got:
+    // asserted on the taint state directly, with a complement, rather than only through a hit list.
+    // `before - 1_000` is a PAST timestamp; two real assertions in this repository compute one, and
+    // both are KNOWN_NEGATIVE fixtures below.
+    const past = scanSource(
+      "past-timestamp.ts",
+      lines(
+        `const before = Date.now()`,
+        `const floor = before - 1_000`,
+        `const week = before - 7 * 24 * 60 * 60 * 1000`
+      )
+    )
+    expect(past.taintedNames).toContain("before")
+    expect(
+      past.taintedNames,
+      "subtracting a literal constant from a clock reading produces a PAST TIMESTAMP, not an " +
+        "elapsed measurement. Tainting it makes the two window-containment assertions in this " +
+        "repository hits — and both of their bounds get LOOSER under load, not tighter."
+    ).not.toContain("floor")
+    expect(past.taintedNames).not.toContain("week")
+
+    // THE COMPLEMENT, and the one thing this carve-out must not do: a subtraction whose right
+    // operand is a NAME is still an elapsed delta, even when the taint pass cannot see where that
+    // name came from. Without this, "de-taint a constant offset" could be widened to "de-taint any
+    // non-tainted right operand" and delete the gate's central detection.
+    const stillADelta = scanSource(
+      "named-operand.ts",
+      lines(`const start = readStartFromDb()`, `expect(Date.now() - start).toBeLessThan(5000)`)
+    )
+    expect(stillADelta.hits.map((hit) => `${hit.kind}:${hit.matcherClass}`)).toEqual([
+      "delta:threshold",
+    ])
   })
 })
 
