@@ -909,7 +909,12 @@ only the three planning documents.
 
 Commit claimed, verified in `git log --oneline --all`:
 
-- `7795515` — FOUND (`docs(46-06): complete the behavioural sign-off plan`)
+- **`af75359`** — `docs(46-06): complete the behavioural sign-off plan`. Carries all three files.
+
+*(The first write of this section named `7795515`, the pre-amend hash. Amending to fold this
+self-check into the same commit necessarily rewrote it to `af75359`; the correction is recorded here
+rather than left as a stale pointer, and lands in the small follow-up commit `docs(46-06): correct the
+self-check commit hash after the amend`.)*
 
 ```
 $ git diff --name-only HEAD~1 HEAD
