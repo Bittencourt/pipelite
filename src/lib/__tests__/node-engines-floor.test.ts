@@ -281,6 +281,14 @@ describe("the lockfile walk and the Dockerfile scan are not vacuous", () => {
 // 3. NC-3 — THE PERMANENT NEGATIVE CONTROL. DO NOT DELETE.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Upper bound on the number of ranges an EOL Node may violate before the control itself is
+ * suspect. Measured 2026-08-25: exactly 1 violation at 20.20.2, out of 834 declared ranges.
+ * Five leaves room for several ordinary dependency bumps while staying three orders of
+ * magnitude below "the checker thinks everything is violated".
+ */
+const MAX_EXPECTED_VIOLATIONS = 5
+
 describe("NC-3: the checker can produce a red", () => {
   /**
    * `node:20-alpine` resolved to v20.20.2 — the runtime this repository shipped until phase 46.
@@ -292,13 +300,33 @@ describe("NC-3: the checker can produce a red", () => {
    * rather than being a function that has simply never disagreed with anything. It also records
    * WHICH constraint was binding when the pin moved, so the next reader can see what changed.
    *
-   * It is deliberately an exact-array equality, not a `.length > 0`: a checker that reported every
-   * range as violated would also be broken, and would also pass a mere "found something" check.
+   * WHY IT IS NOT AN EXACT-ARRAY EQUALITY ANY MORE. It was, and that made it a control that would
+   * go red for a reason that says nothing about the pin. This file's own reasoning (:11-17) records
+   * that the binding constraint changed package AND major in ten days without a line of this
+   * repository changing; the next dependency bump adding any package with an `engines.node` floor
+   * above 20.20.2 is an ordinary event, and it would have produced
+   * "expected [a, b] to equal [@napi-rs/lzma-linux-x64-gnu]" with no hint that the correct action
+   * is to edit the control rather than the pin — next to a file that instructs the reader "Never
+   * lower the assertion". A control that misdirects the person it wakes up is worse than a looser
+   * one.
+   *
+   * So the exactness is kept exactly where it is load-bearing — the named package MUST still be
+   * reported — and relaxed where it is not. The "reported every range as violated" failure mode
+   * that motivated the equality is ruled out by the upper bound here AND by the complement below
+   * (`nodeFloorViolations("24.12.0")` is `[]`), which no constant-array implementation can satisfy.
    */
-  it("reports exactly one violation for 20.20.2, naming the constraint that was binding", () => {
-    expect(nodeFloorViolations("20.20.2").map((violation) => violation.pkg)).toEqual([
-      "@napi-rs/lzma-linux-x64-gnu",
-    ])
+  it("reports the binding violation for 20.20.2, and not the whole lockfile", () => {
+    const pkgs = nodeFloorViolations("20.20.2").map((violation) => violation.pkg)
+    expect(
+      pkgs,
+      "20.20.2 must still violate the constraint that forced the pin off node:20-alpine"
+    ).toContain("@napi-rs/lzma-linux-x64-gnu")
+    expect(
+      pkgs.length,
+      `if this grew, a NEW dependency raised the floor — update this control, NOT the pin, and ` +
+        `record what changed. If it is near ${MIN_DECLARED_RANGES}, the checker is reporting ` +
+        `every range as violated and is broken. Violations: ${pkgs.join(", ")}`
+    ).toBeLessThanOrEqual(MAX_EXPECTED_VIOLATIONS)
   })
 
   it("reports none for 24.12.0, so the control distinguishes the two cases", () => {
@@ -307,12 +335,16 @@ describe("NC-3: the checker can produce a red", () => {
     expect(nodeFloorViolations("24.12.0")).toEqual([])
   })
 
-  it("reports one for 24.0.0 — a major-only pin is not sufficient proof", () => {
+  it("reports a violation for 24.0.0 — a major-only pin is not sufficient proof", () => {
     // `^24.12` is not satisfied by `24.0.0`. This is why the declared floor is patch-level and why
-    // the tag major alone is never the binding assertion.
-    expect(nodeFloorViolations("24.0.0").map((violation) => violation.pkg)).toEqual([
-      "@napi-rs/lzma-linux-x64-gnu",
-    ])
+    // the tag major alone is never the binding assertion. Same relaxation as above, same reason.
+    const pkgs = nodeFloorViolations("24.0.0").map((violation) => violation.pkg)
+    expect(pkgs, "24.0.0 must still fail lzma's ^24.12 term").toContain(
+      "@napi-rs/lzma-linux-x64-gnu"
+    )
+    expect(pkgs.length, `violations: ${pkgs.join(", ")}`).toBeLessThanOrEqual(
+      MAX_EXPECTED_VIOLATIONS
+    )
   })
 })
 
