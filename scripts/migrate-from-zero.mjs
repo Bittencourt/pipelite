@@ -559,6 +559,9 @@ function runDrizzleMigrate(scratchUrl) {
   if (!existsSync(bin)) {
     fatal(`${bin} does not exist. Install dependencies first:\n  npm install`)
   }
+  // Checked HERE as well as at the call site: an interrupt that lands between the two
+  // must not start a 20-migration run the operator has already asked to stop.
+  if (interrupted) return { code: -1, signal: "SIGINT", skipped: true }
   return new Promise((resolve, reject) => {
     // DATABASE_URL travels in the child's ENVIRONMENT, never on its argv: a connection
     // string on a command line is visible in `ps`, in shell history and in CI logs.
@@ -811,12 +814,22 @@ async function main() {
     await admin.unsafe(`CREATE DATABASE "${scratchName}"`)
     progress(`created ${scratchName}`)
 
+    // BEFORE the spawn, not after it. The handler's `if (activeChild)` kill is a no-op
+    // while activeChild is still null, so a Ctrl-C arriving during the DROP or the CREATE
+    // above used to stop nothing: the script went on to spawn drizzle-kit and run all 20
+    // migrations to completion before honouring the signal. On a slow cluster that is tens
+    // of seconds of work the operator explicitly asked to abandon.
+    if (interrupted) {
+      fatal("interrupted before the migrate started — abandoning the run")
+    }
+
     progress("running `drizzle-kit migrate` against the scratch database — output verbatim:")
     const migrate = await runDrizzleMigrate(scratchUrl)
+    if (migrate.skipped) progress("the migrate was never started — a signal arrived first")
     // RECORDED, never branched on. An exit-code-shaped check is vacuous for the silent
     // class by construction: that is precisely the defect this gate exists to catch.
     progress(`migrate exit code: ${migrate.code}${migrate.signal ? ` (${migrate.signal})` : ""}`)
-    if (interrupted) fatal("interrupted — abandoning the run, the scratch database goes with it")
+    if (interrupted) fatal("interrupted — abandoning the run")
 
     scratch = connect(scratchUrl)
 
