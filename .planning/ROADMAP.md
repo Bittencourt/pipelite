@@ -229,7 +229,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 47-05-PLAN.md — the SC-1b elapsed-time taint gate + the last two elapsed assertions deleted · NC-C (timing half, both shapes) · QG-01
+- [x] 47-05-PLAN.md — the SC-1b elapsed-time taint gate + the last two elapsed assertions deleted · NC-C (timing half, both shapes) · QG-01
 - [ ] 47-08-PLAN.md — `next` 16.1.6 -> 16.3.2 with its own gate, the phase's single Docker rebuild, and a human authenticated-render checkpoint · SEC-05
 
 **Wave 5** *(alone in its wave — the AFTER margin must be measured on an idle machine)*
@@ -512,7 +512,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 46. Migration Chain & Toolchain Floor | 6/6 | Complete   | 2026-08-25 |
-| 47. Suite Trust & Supply Chain | 5/13 | In Progress|  |
+| 47. Suite Trust & Supply Chain | 6/13 | In Progress|  |
 | 48. REST API Authorization | 0/? | Not started | - |
 | 49. Mutation-Layer Truth After Commit | 0/? | Not started | - |
 | 50. Export Authorization | 0/? | Not started | - |

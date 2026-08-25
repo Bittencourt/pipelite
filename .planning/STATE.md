@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
-status: verifying
-last_updated: "2026-08-25T09:54:38.941Z"
+status: executing
+last_updated: "2026-08-25T10:31:20.676Z"
 last_activity: 2026-08-25
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 19
-  completed_plans: 11
+  completed_plans: 12
   percent: 11
 ---
 
@@ -21,9 +21,26 @@ See: .planning/PROJECT.md (updated 2026-08-24)
 
 **Core value:** API-complete CRM core that handles fundamentals well
 **Current focus:** Phase 47 — Suite Trust & Supply Chain (13 plans)
-**Plan 02 of 13 executed** (2026-08-25) — wave 2, alone by design (it measures timing margins, so the
-machine had to be idle). Next: plan 03.
+**Plans 01-05 and 07 of 13 executed** (2026-08-25) — 6 SUMMARYs on disk. Next: plan 06 (the SC-1
+AFTER margin, which must be run on an otherwise idle machine with the same instrument 47-02 used).
 Phase 46 remains owed a `/gsd:verify-phase 46`.
+
+**47-05 closed SC-1b.** The suite now contains **zero** `expect()` over a clock-derived elapsed delta
+or ratio, enforced by `src/lib/__tests__/suite-timing-hygiene.test.ts` — a parsed-AST def-use taint
+sweep to a **fixpoint** over all 177 test files, with 12 fixtures, four floors and zero path
+exclusions. Negative control **C (timing half) is delivered**: observed red on both the inline delta
+and the bound-variable ratio, with the v1 inline-matcher ablation measured at **0** on a real file
+that provably contained a live ratio assertion. Baseline moved to **4845 passed / 32 skipped**, RSC
+8/8, typecheck 0, lint **0 errors** / 124 warnings.
+
+**QG-01 stays Pending in REQUIREMENTS.md, deliberately.** SC-2 (47-04) and SC-1b (47-05) are closed,
+but SC-1's AFTER margin is 47-06's and SEC-05 is 47-08 to 47-13's. Checking QG-01 off now would be a
+false claim about the phase.
+
+**For 47-10:** the audit-policy expiry assertion must keep the shape
+`expect(new Date(x).getTime()).toBeGreaterThan(Date.now())`. It is already a passing KNOWN_NEGATIVE
+fixture in the timing gate. Rewriting it as a subtraction against a threshold WOULD be flagged —
+correctly, since that is a clock delta against a margin.
 
 **47-02 recorded the SC-1 BEFORE margin.** At a sampled 3.00x-5.75x CPU oversubscription
 (runnable/cores from `/proc/loadavg`, cross-checked against 2.7x-3.4x wall-time inflation):
@@ -212,6 +229,7 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 | Phase 47 P01 | 22min | 2 tasks | 2 files |
 | Phase 47 P02 | 57min | 2 tasks | 8 files |
 | Phase 47 P07 | 20min | 2 tasks | 2 files |
+| Phase 47 P05 | 34min | 3 tasks | 3 files |
 
 ## Decisions
 
@@ -402,6 +420,9 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 - [Phase 47]: 47-07: the residual crit+high set is exactly 4 (next, nodemailer, nested postcss, sharp) and ZERO are DEV-only per the --omit=dev reconciliation — so 47-09 has no dev-only acceptance available for any of them
 - [Phase 47]: 47-07: 15 RUNTIME-reachable packages moved version, so 47-08's rebuild is now LOAD-BEARING — the running container has neither the SQL-injection fix nor the three critical auth fixes
 - [Phase 47]: 47-07: next/image is never imported anywhere in src/ (0 files, 0 Image component usages) and next.config.ts declares no images block — sharp's reach is measurably narrow, which 47-08 should record
+- [Phase 47]: 47-05: SC-1b enforced by a parsed-AST taint sweep to a FIXPOINT — the fixpoint's necessity is proven by ABLATION (capped at one pass it misses the bound-variable ratio; a v1-style inline matcher measured 0 on a real file containing one)
+- [Phase 47]: 47-05: the timing gate's clock-call floor is Date.now ONLY, scoped to test files. performance.now is proven by fixture AND by a live control over src/app/api/health/route.ts (2 call sites, 0 expect) — reads a clock is not asserts on a clock delta
+- [Phase 47]: 47-05: a fourth AST gate should SHARE one corpus parse. Measured: typescript costs ~525 ms per worker PROCESS and 0.2 ms on re-import, so the import does not scale with gate count; the ~850 ms corpus parse does
 
 ### Quick Tasks Completed
 
@@ -492,10 +513,11 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - 2026-08-17: Phase 37 COMPLETE (15 plans, 6 waves) — Trash & Restore. `/trash` with four scoped tabs, `/admin/trash` retention (1..365, default 30, seeded as data, fail-closed with NO `?? 30`), restore + ordered transactional purge for all four CRM entities, three REST endpoints, and a daily pruner PROVEN running in the container (`[trash-prune] Starting with initial delay of 60s, ticking daily`, all six processors announcing from the merged-master build). Suite 1549 -> 1703 passing, typecheck 0, lint 0 errors throughout. Verified 4/4 success criteria plus a live browser walkthrough (8/10 UAT steps, both "deleted by" strings, manual tab activation, restore with children intact, purge detaching a live child with both audit rows). Code review: 1 critical + 9 warnings, all in-scope findings fixed; CR-01 deliberately scoped to correcting a false comment. The 320px check found and fixed a real tablist overflow defect. Autonomous run STOPPED here by user — phases 38-43 remain.
 
 ## Current Position
+
 - 2026-08-25: 47-07 complete -- in-range advisory fixes: crit+high 24 -> 4, critical 3 -> 0, total 36 -> 14; drizzle-orm 0.45.2 (SQL injection), Auth.js trio (all 3 criticals), fast-xml-parser removed; residual 4 handed to 47-08/47-09; 15 runtime packages moved so 47-08's rebuild is load-bearing
 
 Phase: 47 (Suite Trust & Supply Chain) — EXECUTING
-Plan: 5 of 13 complete (01, 02, 03, 04, 07)
-Status: Phase 46 complete — ready for verification; Phase 47 in progress
-Progress: [██████░░░░] 58%
+Plan: 6 of 13 complete (01, 02, 03, 04, 07)
+Status: Ready to execute
+Progress: [██████░░░░] 63%
 Last activity: 2026-08-25
