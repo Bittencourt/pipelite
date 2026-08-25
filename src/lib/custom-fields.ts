@@ -196,7 +196,7 @@ function diffChangedFields(
  * edit auditable at all: the audit subscriber is fed exclusively by the bus, and this is the
  * dominant edit surface on this dataset (169 live field definitions).
  *
- * The decision is recorded in `.planning/phases/36-audit-log/36-CONTEXT.md`
+ * The decision is recorded in `.planning/milestones/v1.3-phases/36-audit-log/36-CONTEXT.md`
  * § Post-Research Addendum. Its accepted consequence is a real, deliberate behaviour change:
  * custom-field-only saves now fire webhooks and workflow triggers for the FIRST time. Existing
  * workflows may begin reacting to saves they previously never saw. This is planned, not

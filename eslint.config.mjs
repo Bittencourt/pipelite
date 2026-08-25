@@ -63,7 +63,7 @@ const eslintConfig = defineConfig([
     //     degrade the CLI and serve no observability goal; nothing ships a seed script's
     //     stdout anywhere.
     //   - `.planning/**`: phase-38 UAT evidence scripts (9 sites). All 29 files in
-    //     `.planning/phases/38-bulk-operations/38-20-uat-evidence/` are UNTRACKED — `git
+    //     `.planning/milestones/v1.3-phases/38-bulk-operations/38-20-uat-evidence/` are UNTRACKED — `git
     //     ls-files` returns 0 — so they are not in the repository, never reach CI, and are
     //     absent from every agent worktree. Same rationale as the `.claude/**` ignore above:
     //     a transient copy must not fail the repo's lint gate for reasons unrelated to the
