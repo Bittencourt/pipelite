@@ -1643,17 +1643,35 @@ describe("the gate sweeps itself, and the fixtures are strings", () => {
     }
   })
 
-  it("imports typescript exactly once and walks the corpus exactly once", () => {
-    // 47-05's cost model, asserted rather than trusted: `typescript` is ~525 ms on first import per
-    // PROCESS and 0.2 ms afterwards, so a second import costs nothing — but a second corpus walk
-    // costs ~850 ms per gate over ~320 000 AST nodes. This keeps a future fifth scope sharing the
-    // one parse instead of starting a second sweep.
+  it("declares exactly one typescript import, one CORPUS constant and one file-system walk", () => {
+    // NOT A COST ASSERTION, and it used to claim to be one (WR-11). Its name and doc-comment said
+    // "walks the corpus exactly once" and quoted a cost model (~850 ms per gate over ~320 000 AST
+    // nodes), while what it actually asserts is that three specific SOURCE LINES each occur once —
+    // and the carve-out controls below call `scanFile(...)` a further ~13 times by design, several
+    // inside `it.each` blocks. A new gate could add an arbitrary number of those and this would
+    // stay green; conversely a prettier change that moved that line, or a rename of `CORPUS`,
+    // takes it red for no reason at all. A text-shaped proxy standing in for a structural claim is
+    // exactly the substitution this file's own "WHY THIS GATE PARSES AND NEVER GREPS" section
+    // rejects at length.
+    //
+    // So the claim is narrowed to what the text can actually carry: there is ONE shared corpus
+    // constant and ONE file-system walk, so a fifth scope EXTENDS them rather than declaring a
+    // second pair. The re-parsing of ~13 individual files below is deliberate and cheap, and this
+    // says nothing about it. The cost model stays true and stays recorded — `typescript` is
+    // ~525 ms on first import per PROCESS and 0.2 ms afterwards; a second full corpus walk is
+    // ~850 ms — it is simply not what these three regexes measure.
     const raw = readRepoFile(GATE_PATH)
     const typescriptImports = raw.split("\n").filter((line) => /^import ts from "typescript"$/.test(line))
     expect(typescriptImports.length, "exactly one `import ts from \"typescript\"` is expected").toBe(1)
 
-    const corpusWalks = raw.split("\n").filter((line) => /^const CORPUS = TEST_FILES\.map\(/.test(line))
-    expect(corpusWalks.length, "exactly one corpus walk is expected").toBe(1)
+    const corpusDeclarations = raw
+      .split("\n")
+      .filter((line) => /^const CORPUS = TEST_FILES\.map\(/.test(line))
+    expect(
+      corpusDeclarations.length,
+      "exactly one CORPUS constant is expected, so a fifth scope extends it rather than declaring " +
+        "a second one. This does NOT bound how many individual files the controls below re-parse."
+    ).toBe(1)
 
     const fileWalks = raw.split("\n").filter((line) => /^const TEST_FILES = walkTestFiles\(/.test(line))
     expect(fileWalks.length, "exactly one file-system walk is expected").toBe(1)
