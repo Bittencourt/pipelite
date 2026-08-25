@@ -367,6 +367,20 @@ function loadSnapshotReference() {
 let activeChild = null
 /** Set by the SIGINT/SIGTERM handlers at the bottom of this file. */
 let interrupted = false
+/**
+ * The scratch database this run owns, from the moment it may exist on the server.
+ * Module scope because the SECOND interrupt takes `process.exit(130)`, which bypasses
+ * main's `finally` — that path has to be able to name what it is leaving behind.
+ */
+let scratchDatabaseName = null
+/**
+ * True only after a `DROP DATABASE` that actually RETURNED. The exit messages read this
+ * instead of asserting an outcome nothing observed: the `finally` swallows a failed DROP
+ * behind a `WARNING:`, and the interrupted branch used to print "the scratch database was
+ * removed on the way out" unconditionally, immediately after it — two contradicting lines
+ * in one output with the reassuring one last.
+ */
+let scratchRemoved = false
 
 function runDrizzleMigrate(scratchUrl) {
   const bin = path.resolve(process.cwd(), "node_modules", ".bin", "drizzle-kit")
@@ -406,6 +420,60 @@ function runDrizzleMigrate(scratchUrl) {
       resolve({ code: code ?? -1, signal })
     })
   })
+}
+
+// ---------------------------------------------------------------------------
+// Reaping databases leaked by earlier runs.
+//
+// Every run generates a fresh unique name, so the pre-emptive `DROP DATABASE IF EXISTS`
+// in main only ever targets THIS run's name — nothing ever reaped a previously leaked one,
+// and they accumulate silently on the same cluster that holds the operator's records. They
+// are leaked by exactly one path: a SECOND interrupt, which takes `process.exit(130)` and
+// bypasses main's `finally` entirely. That path is documented rather than removed (an
+// operator pressing Ctrl-C twice means it), so this sweep is what makes it recoverable.
+//
+// It is also the first call site that hands `assertScratchName` a name this script did NOT
+// build from its own constant template — see the fencing note in the file header.
+// ---------------------------------------------------------------------------
+
+/**
+ * How old a leaked database must look before it is swept, in milliseconds.
+ *
+ * LOAD-BEARING, not politeness. Two instances of this script can legitimately run against
+ * one cluster (a developer and CI on the same host, two worktrees, `npm run` twice). An
+ * unconditional sweep would `DROP ... WITH (FORCE)` the OTHER run's scratch database out
+ * from under it mid-migrate — turning a leak-cleanup into a much worse failure, and one
+ * that would look like a flaky migration chain. The generated name carries `Date.now()`,
+ * so anything younger than this is presumed live; the connection check below is the second
+ * half of the same guard.
+ */
+const SWEEP_MIN_AGE_MS = 60 * 60 * 1000 // 1 hour
+
+async function sweepLeakedScratchDatabases(admin, referenceName, currentName) {
+  // `\\_` escapes LIKE's single-character wildcard: unescaped, `_` matches ANY character
+  // and the pattern would reach names this script does not own.
+  const rows = await admin.unsafe(
+    "select datname::text as v, " +
+      "(select count(*)::int from pg_stat_activity a where a.datname = d.datname) as backends " +
+      "from pg_database d where datname like 'pipelite\\_migchk\\_%' order by datname"
+  )
+  const now = Date.now()
+  for (const row of rows) {
+    const name = String(row.v)
+    if (name === currentName) continue
+
+    // `pipelite_migchk_<pid>_<millis>`. An unparseable tail is left alone rather than
+    // guessed at — this script removes only what it can prove it owns.
+    const stamp = Number(/_(\d+)$/.exec(name)?.[1])
+    if (!Number.isFinite(stamp) || now - stamp < SWEEP_MIN_AGE_MS) continue
+    if (row.backends > 0) continue
+
+    // The name came from the catalog, NOT from this script's template. This is the call
+    // site the fences exist for.
+    assertScratchName(name, referenceName)
+    await admin.unsafe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`)
+    progress(`swept ${name}, leaked by an earlier interrupted run`)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -550,10 +618,16 @@ async function main() {
   let reference = null
 
   try {
+    await sweepLeakedScratchDatabases(admin, REFERENCE_DB, scratchName)
+
     // A previously leaked database must not be able to poison this run.
     assertScratchName(scratchName, REFERENCE_DB)
     await admin.unsafe(`DROP DATABASE IF EXISTS "${scratchName}" WITH (FORCE)`)
 
+    // Set BEFORE the CREATE, not after: an interrupt landing mid-CREATE can leave the
+    // database behind, and a name printed for a database that turned out not to exist
+    // costs nothing (the statement suggested is `IF EXISTS`).
+    scratchDatabaseName = scratchName
     assertScratchName(scratchName, REFERENCE_DB)
     await admin.unsafe(`CREATE DATABASE "${scratchName}"`)
     progress(`created ${scratchName}`)
@@ -708,10 +782,12 @@ async function main() {
     try {
       assertScratchName(scratchName, REFERENCE_DB)
       await admin.unsafe(`DROP DATABASE IF EXISTS "${scratchName}" WITH (FORCE)`)
+      scratchRemoved = true
       progress(`removed ${scratchName}`)
     } catch (error) {
       console.error(
-        `WARNING: could not remove the scratch database ${scratchName}: ${error.message}`
+        `WARNING: could not remove the scratch database ${scratchName}: ${error.message}. ` +
+          `Remove it with: DROP DATABASE IF EXISTS "${scratchName}" WITH (FORCE);`
       )
     }
     await admin.end().catch(() => {})
@@ -720,8 +796,16 @@ async function main() {
   if (interrupted) {
     console.error("")
     console.error(
-      "FATAL: interrupted before this run could reach a verdict. The scratch database was " +
-        "removed on the way out; nothing was proved."
+      "FATAL: interrupted before this run could reach a verdict; nothing was proved."
+    )
+    // Conditional on what was OBSERVED. This used to assert the removal unconditionally,
+    // directly after a `finally` that only prints a `WARNING:` when the DROP fails — so the
+    // two lines could contradict each other in one output, with the reassuring one last.
+    console.error(
+      scratchRemoved
+        ? `The scratch database ${scratchName} was removed on the way out.`
+        : `The scratch database ${scratchName} may still exist — remove it with: ` +
+          `DROP DATABASE IF EXISTS "${scratchName}" WITH (FORCE);`
     )
     process.exitCode = 130
     return
@@ -751,7 +835,21 @@ async function main() {
 // closing the event loop path it is already on.
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {
-    if (interrupted) process.exit(130)
+    if (interrupted) {
+      // The one path that bypasses main's `finally`. It is kept — an operator who presses
+      // Ctrl-C twice is asking to leave NOW and must not be made to wait on a DROP against
+      // an unresponsive server — but it no longer leaves silently. The statement that
+      // removes the database is printed, and the sweep at the top of the next run reaps it
+      // without being asked.
+      if (scratchDatabaseName && !scratchRemoved) {
+        console.error(
+          `\n-> second ${signal} — exiting immediately. The scratch database was NOT removed:` +
+            `\n   DROP DATABASE IF EXISTS "${scratchDatabaseName}" WITH (FORCE);` +
+            `\n   (the next run of this script sweeps leftover pipelite_migchk_* databases)`
+        )
+      }
+      process.exit(130)
+    }
     interrupted = true
     console.error(`\n-> ${signal} received — removing the scratch database before exiting`)
     process.exitCode = 130
