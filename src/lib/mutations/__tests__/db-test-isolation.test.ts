@@ -41,6 +41,16 @@
  * suite that needs a database and is reachable from `ci` does not break a feature, it
  * makes every pull request in the repository unmergeable.
  *
+ * ── WHY THERE IS ALSO A SEC-05 SECTION IN HERE (PHASE 47) ────────────────────────────
+ *
+ * Phase 47 put two supply-chain gates on the same required job — the `security:audit` npm script
+ * and `npm audit signatures` — and asserts their presence and their `if:` condition at the bottom
+ * of this file. Those assertions are NOT about database isolation, and the section says so in its own
+ * words. They are here because `MIN_CI_STEPS` is here: that floor is the anti-vacuity guard for
+ * every per-step assertion about this workflow, and a per-step assertion in one file whose floor
+ * lives in another is a floor that will be raised without the assertions it protects, or the
+ * reverse. The two must move in one commit, so they live in one file.
+ *
  * It deliberately does NOT import anything from the db project, does not read
  * E2E_DATABASE_URL, and opens no connection. Its whole subject is file content.
  */
@@ -63,16 +73,37 @@ const MIGRATION_CHECK_SCRIPT = "scripts/migrate-from-zero.mjs"
 const MIGRATION_CHECK_COMMAND = "npm run db:check-migrations"
 
 /**
- * The workflow declares at least this many steps today. Measured: 7 — checkout, setup-node,
- * install, typecheck, lint, test, migration check. The floor sits one below the measurement,
- * so removing a step is loud while adding one is free.
+ * The npm script the audit policy gate is exposed under (SEC-05).
+ *
+ * The NAME, not the command. `npmRunCommand` below joins it, so the string
+ * `npm run <this>` is never typed out in this file — see the reasoning there (S5).
+ */
+const AUDIT_SCRIPT_NAME = "security:audit"
+
+/**
+ * Registry signature and attestation verification — npm's own subcommand, so there is no npm
+ * script to read this one out of and it is written here as a literal, which is what makes the
+ * `npmRunCommand` indirection above worth explaining rather than leaving as a curiosity.
+ */
+const SIGNATURE_CHECK_COMMAND = "npm audit signatures"
+
+/**
+ * The workflow declares at least this many steps today. Measured: 9 — checkout, setup-node,
+ * install, typecheck, lint, test, migration check, security audit policy, registry signature
+ * verification. The floor sits one below the measurement, so removing a step is loud while
+ * adding one is free.
  *
  * Anti-vacuity for the per-step enumeration below. A `forEach` over an empty array
  * satisfies every negative inside it, which is precisely the shape of a gate that passes
  * BECAUSE it is broken; this floor is the tripwire for a parser that stopped finding
  * steps at all.
+ *
+ * The measurement was 7 and the floor 6 until phase 47 added the two supply-chain steps
+ * (SEC-05). Both numbers move in the SAME commit as the workflow edit, deliberately: a floor
+ * whose prose enumerates a step list the workflow no longer has is the exact half-state phase 46
+ * was burned by, and it is worse than no comment at all because the next reader trusts it.
  */
-const MIN_CI_STEPS = 6
+const MIN_CI_STEPS = 8
 
 /**
  * The entries of a `[...]` array literal assigned to `test.<key>` in a vitest config.
@@ -170,6 +201,56 @@ function ciSteps(): WorkflowStep[] {
 /** A short, stable label for a step in a failure message: its name, its action, or its index. */
 function stepLabel(step: WorkflowStep, index: number): string {
   return step.name ?? step.uses ?? `step #${index}`
+}
+
+/**
+ * `npm run <scriptName>`, with the script's PRESENCE in package.json asserted on the way through.
+ *
+ * S5, and the same relational rule `composePostgresImage` above follows for the Postgres tag. The
+ * joined literal is deliberately not written anywhere in this file: a workflow step and the npm
+ * script it invokes are two halves of one fact, and typing the joined string here would let
+ * package.json drop or rename the script while this gate stayed green against a step that then
+ * fails on the runner — which is the one place a red is expensive.
+ *
+ * It THROWS, naming every script it did parse, rather than returning a command nothing declares:
+ * "no step of the workflow invokes the audit script" and "package.json no longer declares that
+ * script at all" are different repairs, and a reader should not have to guess which one they are
+ * looking at.
+ *
+ * The joined string appears NOWHERE in this file, prose included, so a search for it lands on the
+ * workflow and on package.json — the two places that own it — and on nothing else.
+ */
+function npmRunCommand(scriptName: string): string {
+  const scripts = packageScripts()
+  if (typeof scripts[scriptName] !== "string") {
+    throw new Error(
+      `${PACKAGE_JSON} declares no "${scriptName}" script, so no step of the required check could ` +
+        `run it. Scripts parsed: ${Object.keys(scripts).join(", ") || "(none)"}`
+    )
+  }
+  return `npm run ${scriptName}`
+}
+
+/**
+ * The single step of job `ci` whose `run` contains `command`, or a failure naming every step label
+ * the reader parsed.
+ *
+ * Extracted from the migration-check assertion's shape rather than generalising it away: the
+ * failure MESSAGE is the load-bearing part. "No step runs X" is indistinguishable from "the reader
+ * parsed nothing at all" unless the message lists what it DID parse, and that distinction is the
+ * entire reason this file reads parsed YAML instead of grepping the workflow. `ciSteps()` throws on
+ * an empty steps array before this is ever reached, and `MIN_CI_STEPS` floors the count below, so
+ * there are two independent guards against the vacuous case.
+ */
+function soleStepRunning(command: string): WorkflowStep {
+  const steps = ciSteps()
+  const matches = steps.filter((step) => (step.run ?? "").includes(command))
+  expect(
+    matches.map((step, index) => stepLabel(step, index)),
+    `job \`ci\` must run \`${command}\` in exactly one step. Steps parsed: ` +
+      `${steps.map((step, index) => stepLabel(step, index)).join(", ")}`
+  ).toHaveLength(1)
+  return matches[0]
 }
 
 /**
@@ -452,6 +533,76 @@ describe("the required CI check never mentions the db project", () => {
         "vitest.db.config"
       )
     })
+  })
+})
+
+describe("the required CI check carries the supply-chain gates (SEC-05)", () => {
+  // ───────────────────────────────────────────────────────────────────────────────────────
+  // WHY SEC-05's ASSERTIONS LIVE IN A FILE ABOUT DATABASE ISOLATION.
+  //
+  // They are not about database isolation, and pretending otherwise would be worse than
+  // saying so. They are here because this file already owns the parsed `ci.yml` readers
+  // (`ciJob`, `ciSteps`, `stepLabel`) and, more importantly, it owns `MIN_CI_STEPS` — the
+  // floor that is the anti-vacuity guard for EVERY per-step assertion about this workflow,
+  // including these. Splitting them into a second file would either duplicate the readers or
+  // leave the new assertions with no floor beneath them, and a per-step assertion over a step
+  // list nobody floored is the shape of a gate that passes because it broke.
+  //
+  // The other reason is mechanical: the floor and the step list must move in one commit, and a
+  // constant cannot be raised in one file to describe steps asserted in another without the two
+  // drifting the first time someone edits only one of them.
+  //
+  // These read PARSED `run:` and `if:` values. A commented-out step cannot satisfy them, and a
+  // comment cannot collide with them — which is the complement of the raw-text negatives above,
+  // and the reason both forms exist.
+  // ───────────────────────────────────────────────────────────────────────────────────────
+
+  it("gates the audit policy on the check that can actually block a merge", () => {
+    // SEC-05, and the whole reason this step is HERE rather than in a workflow of its own: `ci`
+    // is the check-run name the master ruleset requires. A new workflow file publishes a name the
+    // ruleset does not know, so it could go red for weeks without stopping a single merge — Phase
+    // 46's Route A reasoning applied a second time, and the argument the `services:` header above
+    // makes at length.
+    const command = npmRunCommand(AUDIT_SCRIPT_NAME)
+    const step = soleStepRunning(command)
+
+    expect(
+      step.if,
+      `the \`${command}\` step must carry the same \`!cancelled()\` condition as Lint and Test, ` +
+        `so a security finding never hides a type error and a type error never hides a security ` +
+        `finding — all gates report in one run`
+    ).toBe("${{ !cancelled() }}")
+  })
+
+  it("verifies registry signatures — the tamper half of SEC-05, and its own step", () => {
+    // Advisory data describes KNOWN vulnerabilities in the versions a lockfile names. It says
+    // nothing at all about whether the tarball the registry served is the one its publisher
+    // signed, and `npm audit signatures` is the only check in this repository that looks at that.
+    // Two different questions, so two steps: folding them together would mean one failure mode
+    // could mask the other, and would hide which of the two actually went red.
+    const step = soleStepRunning(SIGNATURE_CHECK_COMMAND)
+
+    expect(
+      step.if,
+      `the \`${SIGNATURE_CHECK_COMMAND}\` step must carry the same \`!cancelled()\` condition as ` +
+        `Lint and Test, so all gates report in a single run`
+    ).toBe("${{ !cancelled() }}")
+  })
+
+  it("keeps both supply-chain gates on the SAME job as the incumbent gates", () => {
+    // ANTI-VACUITY for the two assertions above. Both of them are satisfied by a step sitting in
+    // any job this file's readers happen to resolve as `ci`; neither says the step shares a job
+    // with the checks a maintainer already trusts. This does: the audit steps and `npm test` are
+    // in one step list, so a future refactor that lifts the security steps into a job of their own
+    // — and out of the required check — fails here rather than silently un-gating SEC-05.
+    const runs = ciSteps().map((step) => step.run ?? "")
+
+    for (const command of [npmRunCommand(AUDIT_SCRIPT_NAME), SIGNATURE_CHECK_COMMAND, "npm test"]) {
+      expect(
+        runs.filter((run) => run.includes(command)).length,
+        `job \`ci\` must run \`${command}\`. Runs parsed: ${JSON.stringify(runs)}`
+      ).toBe(1)
+    }
   })
 })
 
