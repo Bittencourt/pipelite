@@ -33,9 +33,16 @@ activities, and custom fields. Advanced features can be built externally via the
       *Source: `999.20`. `.env.local:1` points at `localhost:5432`; Postgres publishes on **5433**.
       Every phase since 33 that ran a migration paid a manual workaround.*
 - [x] **DEPLOY-03**: The container's base image satisfies the toolchain's declared engines floor and
-      cannot silently drift below it. *Source: `999.14`. `node:20-alpine` is pinned at all three build
-      stages; `vite@7` declares `^20.19.0 || >=22.12.0`. Latent, not broken — CI pins Node 24
-      independently, which is why nothing has failed.*
+      cannot silently drift below it. *Source: `999.14`, whose framing was **falsified in both halves**
+      by Phase 46 research (RESEARCH C3) and is corrected here so the register is not left carrying a
+      known-false claim. 999.14 said "`vite@7` declares `^20.19.0 || >=22.12.0`. Latent, not broken."
+      Measured 2026-08-24: **Node 20 reached EOL 2026-04-30**, so this was live, not latent; and the
+      binding floor had already moved off vite onto `@napi-rs/lzma-linux-x64-gnu`
+      (`^22.20 || ^24.12 || >=25`), which reaches alpine because it declares no `libc` field.
+      Resolved in Phase 46: all three `node:20-alpine` pins moved to `node:24-alpine`, `package.json`
+      declares `engines.node >= 24.12.0` derived from the lockfile rather than hand-written, and
+      `node-engines-floor.test.ts` re-derives the floor from all 832 declared lockfile ranges so a
+      dependency raising its floor makes the gate go red instead of stale.*
 
 ### Security — every route authorizes, and a delete deletes
 
