@@ -105,10 +105,23 @@ import postgres from "postgres"
 // against this tree; each floor sits BELOW the measurement so ordinary growth does not
 // trip it, but a parse that silently yields nothing does.
 // ---------------------------------------------------------------------------
-const MIN_JOURNAL_ENTRIES = 20 // measured: exactly 20 (0000..0019)
-const MIN_SNAPSHOT_TABLES = 36 // measured: exactly 36
+// A floor set AT the measurement breaks the rule two lines up: legitimate SHRINKAGE —
+// dropping a deprecated table, which produces a new migration and a new snapshot — then
+// fatals with a message that misdiagnoses it as a parse failure, and the next person under
+// time pressure "fixes" it by lowering the number without understanding what it was for.
+// That is the exact failure mode the floor mechanism exists to prevent, arriving through
+// the floor mechanism. All four sit below their measurement.
+const MIN_JOURNAL_ENTRIES = 15 // measured: 20 (0000..0019)
+const MIN_SNAPSHOT_TABLES = 30 // measured: 36
 const MIN_SNAPSHOT_COLUMNS = 280 // measured: 293 table.column pairs
 const MIN_SNAPSHOT_INDEXES = 30 // measured: 41 declared index names
+
+/** Appended to every floor failure. The floors are tripwires, not schema-size assertions,
+ *  and the difference decides whether the next reader fixes the parse or lowers the bar. */
+const FLOOR_ADVICE =
+  " This is a tripwire for a parse that yielded nothing, not an assertion about how big " +
+  "the schema should be. If the schema legitimately shrank, lower the floor AND record " +
+  "the new measurement in the comment beside it."
 
 export const SCRATCH_PATTERN = /^pipelite_migchk_[a-z0-9_]+$/
 export const FORBIDDEN_SCRATCH_NAMES = ["pipelite", "postgres", "template0", "template1"]
@@ -443,7 +456,8 @@ function loadSnapshotReference() {
     fatal(
       `drizzle/meta/_journal.json parsed ${entries.length} entries, floor is ` +
         `${MIN_JOURNAL_ENTRIES} (measured 20). Either the journal shrank or this script ` +
-        "stopped being able to read it — both make every assertion below vacuous."
+        "stopped being able to read it — both make every assertion below vacuous." +
+        FLOOR_ADVICE
     )
   }
   const last = entries[entries.length - 1]
@@ -491,19 +505,20 @@ function loadSnapshotReference() {
     fatal(
       `${path.basename(snapshotPath)} parsed ${tables.length} tables, floor is ` +
         `${MIN_SNAPSHOT_TABLES} (measured 36). A snapshot that parses to nothing compares ` +
-        "equal to an empty database."
+        "equal to an empty database." +
+        FLOOR_ADVICE
     )
   }
   if (columnPairs.length < MIN_SNAPSHOT_COLUMNS) {
     fatal(
       `${path.basename(snapshotPath)} parsed ${columnPairs.length} table.column pairs, ` +
-        `floor is ${MIN_SNAPSHOT_COLUMNS} (measured 293).`
+        `floor is ${MIN_SNAPSHOT_COLUMNS} (measured 293).` + FLOOR_ADVICE
     )
   }
   if (indexNames.length < MIN_SNAPSHOT_INDEXES) {
     fatal(
       `${path.basename(snapshotPath)} parsed ${indexNames.length} declared index names, ` +
-        `floor is ${MIN_SNAPSHOT_INDEXES} (measured 41).`
+        `floor is ${MIN_SNAPSHOT_INDEXES} (measured 41).` + FLOOR_ADVICE
     )
   }
 
