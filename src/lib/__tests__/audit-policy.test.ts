@@ -38,6 +38,24 @@
  * NC-2 is the one that needs the injectable clock. `evaluatePolicy`'s third parameter exists
  * precisely so the expiry semantics can be asserted deterministically without faking timers and
  * without writing a back-dated entry into the shipped file to prove the mechanism works.
+ *
+ * ── THE TWO ANCHORS, AND WHY THEY ARE ANCHORED THE WAY THEY ARE ────────────────────────────────
+ *
+ * `failOn` is asserted with an ARRAY EQUALITY, never with a containment matcher. An emptied
+ * `failOn` satisfies every other assertion in this file perfectly — the evaluator's offender loop
+ * skips every advisory whose severity is not listed — so containment would let the gate's own
+ * configuration become the escape hatch. `FORBIDDEN_REASONS` is asserted BY VALUE, never by
+ * length, so quietly dropping `"dev-only"` from the forbidden set is exactly as loud as deleting
+ * the check that reads it. Both anchors are themselves asserted from this file's own source below,
+ * so weakening either one is a red-going act rather than a diff nobody reads.
+ *
+ * ── IF AN EXPIRY ASSERTION GOES RED ────────────────────────────────────────────────────────────
+ *
+ * RE-DECIDE the acceptance, or take the fix. Do NOT extend the date to make the suite green: the
+ * expiry is the only thing in this repository that brings a suppression decision back for review,
+ * and a date edited to restore a green run is a decision that was never revisited. 33 of the 39
+ * shipped entries expire on one day, and the `it.each` form below is what makes that day report
+ * thirty-three named failures instead of the first one a `for` loop happened to reach.
  */
 import { readFileSync } from "node:fs"
 import path from "node:path"
@@ -64,6 +82,8 @@ const POLICY_JSON = "audit-policy.json"
 const POLICY_DOC = "AUDIT-POLICY.md"
 const PACKAGE_JSON = "package.json"
 const AUDIT_SCRIPT = "scripts/audit-policy.mjs"
+const LOCKFILE = "package-lock.json"
+const SELF_PATH = "src/lib/__tests__/audit-policy.test.ts"
 
 /**
  * Minimum size of the prose policy. A pointer-shaped stub cannot carry the three dispositions,
@@ -113,6 +133,129 @@ function packageScripts(): Record<string, string> {
   return parsed.scripts ?? {}
 }
 
+/**
+ * Every GHSA id the prose policy names, in the order it names them.
+ *
+ * `GHSA_PATTERN` is anchored (`^…$`) because it validates a whole field, so it cannot be used to
+ * SCAN prose. This is the same shape unanchored and global, and the two are pinned to each other
+ * in the matcher self-test below — a scanner that drifted from the validator would report a clean
+ * cross-reference over a set it built with different rules.
+ */
+const GHSA_TOKEN = /GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}/g
+
+function docGhsaIds(): string[] {
+  return [...new Set(read(POLICY_DOC).match(GHSA_TOKEN) ?? [])]
+}
+
+/**
+ * Floor on the number of distinct GHSA ids the prose scan finds. Measured 2026-08-25: **40** (the
+ * 39 allowlisted plus one remediated id the document cites as evidence).
+ *
+ * This is the WR-11 half — Phase 46's seventh anti-gate was a scan that floored its verb but not
+ * its search token, so renaming the token turned it green BECAUSE it broke. Every cross-reference
+ * below is a set difference, and a set difference against an empty set is empty. Floored well
+ * below the measurement so legitimate remediation does not trip it; if the number ever falls to
+ * zero, `GHSA_TOKEN` stopped matching its own format and this floor is what says so.
+ */
+const MIN_DOC_GHSA_IDS = 4
+
+/**
+ * GHSA ids the prose names but the allowlist deliberately does NOT carry, with the reason.
+ *
+ * An exclusion list is a LIVE CONTROL, not a comment (`deployment-docs-accuracy.test.ts:537-556`):
+ * each entry below is asserted to still be present in the document, still absent from the
+ * allowlist, and still marked as remediated on the line that names it. So an id that quietly
+ * migrated from "we fixed this" to "we accepted this" cannot hide in this register — it goes red
+ * here instead of silently leaving the reverse cross-reference.
+ */
+const REMEDIATED_IN_DOC = [
+  {
+    ghsa: "GHSA-5xrq-8626-4rwp",
+    package: "vitest",
+    marker: "cleared",
+    why: "fixed by the 47-01 upgrade to vitest 4.1.11; cited in the prose as the evidence that a suppression-by-default policy hides real risk (critical, CVSS 9.8), not as an acceptance",
+  },
+] as const
+
+/** Packages whose absence from the lockfile is the point: 47-09 chose an in-repo evaluator over
+ *  every off-the-shelf one, and `audit-ci` reaches `event-stream@4.0.1`, the 2018 backdoor. A
+ *  decision nothing asserts is a preference. */
+const REJECTED_TOOLING = ["audit-ci", "better-npm-audit", "event-stream"] as const
+
+/** Floor on the lockfile parse. Measured 2026-08-25: 1286 `packages` keys. */
+const MIN_LOCKFILE_PACKAGES = 500
+
+function lockfilePackageNames(): Set<string> {
+  const parsed = JSON.parse(read(LOCKFILE)) as { packages?: Record<string, unknown> }
+  return new Set(
+    Object.keys(parsed.packages ?? {})
+      .map((key) => key.replace(/^.*node_modules\//, ""))
+      .filter((name) => name.length > 0)
+  )
+}
+
+/**
+ * The two tokens the self-source scan searches for, assembled at runtime.
+ *
+ * S1(e), the gate-must-not-collide-with-itself form: this file scans its own text for a line that
+ * mentions the policy's severity list together with a containment matcher, and it IS a file full
+ * of both. Split literals are how `no-standing-suppressions.test.ts:19-25` solved the identical
+ * problem. Do not inline them — the scan would then find its own assertion and report a defect
+ * that is only the scan reading itself.
+ */
+const FAIL_ON_TOKEN = ["fail", "On"].join("")
+const CONTAINMENT_MATCHER = ["to", "Contain"].join("")
+const READ_CALL_TOKEN = ["readFile", "Sync("].join("")
+
+/**
+ * The complete set of module specifiers this file is allowed to import, BY VALUE.
+ *
+ * This is the structural form of "the gate is offline", and it is stronger than a text scan for
+ * `child_process` or `npm audit`: those strings occur in the prose above (they have to — the
+ * header explains why they are absent from the code), so a raw scan would either fail on its own
+ * documentation or be reworded into uselessness. An import set asserted by value cannot be talked
+ * around: adding `node:child_process`, `node:net`, `undici` or anything else goes red here.
+ */
+const ALLOWED_SELF_IMPORTS = [
+  "../../../scripts/audit-policy.mjs",
+  "node:fs",
+  "node:path",
+  "semver",
+  "vitest",
+] as const
+
+/**
+ * Every module specifier a source file imports.
+ *
+ * Deliberately NOT the single-line form the script-side assertion uses: a named-import block
+ * spanning several lines is exactly what this file has, and a matcher anchored to one line would
+ * silently skip it — reporting a clean, complete import set that omitted the one import that
+ * matters. `[\s\S]*?` reaches the nearest `from` clause, which is the statement's own.
+ */
+/**
+ * The lines of a source file that are not wholly comment.
+ *
+ * S4, chosen deliberately: this file's own header HAS to name `child_process`, `npm audit` and the
+ * read call in order to explain why the code does not use them, so a raw scan of it would report
+ * its own documentation as a defect. A line-level filter is sufficient here because every
+ * occurrence being excluded is a whole-line doc-comment, and it is PROVED sufficient below rather
+ * than assumed — a stripper that blanked everything would satisfy every negative it feeds.
+ */
+function codeLines(source: string): string[] {
+  return source
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim()
+      return !(trimmed.startsWith("*") || trimmed.startsWith("//") || trimmed.startsWith("/*"))
+    })
+}
+
+function importSpecifiers(source: string): string[] {
+  return [...source.matchAll(/(?:^|\n)import\s[\s\S]*?from\s+["']([^"']+)["']/g)]
+    .map((match) => match[1])
+    .sort()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // 0. Anti-vacuity. The file exists, has entries, and the evaluator agrees with itself about the
 //    shipped policy. Without this block, every negative assertion below is satisfied by an empty
@@ -155,6 +298,66 @@ describe("the policy files exist and have contents (anti-vacuity)", () => {
       "GHSA-xvch-5gv4-984h"
     )
     expect(ghsaFromViaUrl(undefined)).toBeNull()
+  })
+
+  it("names every forbidden reason the check was written for, BY VALUE", () => {
+    // Asserted by value rather than by length, so a RENAME is as loud as a DELETION. Dropping
+    // `"dev-only"` from this set would turn 47-CONTEXT's central prohibition — "a bare 'dev-only'
+    // is not a reason unless it is true and shown to be true" — into a no-op, while NC-1's
+    // `it.each` over the same set kept reporting a clean pass over one fewer case. That is a check
+    // deleting itself and taking its own control with it. Same shape as
+    // `migrate-from-zero-fences.test.ts:63-70`'s reserved-database list.
+    expect([...FORBIDDEN_REASONS].sort()).toEqual(["dev-only", "n/a", "see above", "wontfix"])
+  })
+
+  it("the GHSA validator accepts a REAL id from the shipped allowlist", () => {
+    // The `migrate-from-zero-fences.test.ts:52-62` shape: the pattern must accept what the data
+    // actually contains. Without this, every per-entry assertion below is satisfied by a matcher
+    // that rejects EVERYTHING — including the real allowlist, which would make the gate incapable
+    // of passing while reporting a clean run. Anchored on the shipped file rather than a literal,
+    // so it is the real data that is proven acceptable and not a copy of it.
+    const shipped = policy().allowlist[0]?.ghsa
+    expect(shipped, "the shipped allowlist has no first entry to anchor the validator on").toBeDefined()
+    expect(GHSA_PATTERN.test(shipped as string)).toBe(true)
+    expect(GHSA_PATTERN.test("CVE-2024-1234")).toBe(false)
+  })
+
+  it("the prose SCANNER and the field VALIDATOR agree on what a GHSA id is", () => {
+    // `GHSA_PATTERN` is anchored and validates a field; `GHSA_TOKEN` is unanchored and scans prose.
+    // Two matchers for one format drift, and the cross-reference below is only as good as the
+    // weaker of them. Pinned to each other here: every id the scanner extracts must validate, and
+    // the scanner must not extract something the validator rejects.
+    const extracted = "a note about GHSA-aaaa-bbbb-cccc in prose".match(GHSA_TOKEN) ?? []
+    expect(extracted).toEqual(["GHSA-aaaa-bbbb-cccc"])
+    expect(GHSA_PATTERN.test(extracted[0] ?? "")).toBe(true)
+    expect("CVE-2024-1234".match(GHSA_TOKEN)).toBeNull()
+    for (const id of docGhsaIds()) {
+      expect(id, `${POLICY_DOC} yielded ${id}, which the field validator would reject`).toMatch(
+        GHSA_PATTERN
+      )
+    }
+  })
+
+  it("neither side of the prose/JSON cross-reference is empty (IDENTICAL — both empty proves nothing)", () => {
+    // Every cross-reference below is a SET DIFFERENCE, and the difference of two empty sets is
+    // empty. So the floor is stated once, here, before any of them: both sides have contents, and
+    // the comparisons are therefore real. This is the case the register calls "IDENTICAL (both
+    // empty — proves nothing)", and it is the difference between a gate and a gate-shaped no-op.
+    //
+    // If the allowlist legitimately empties because every advisory was fixed, THIS is the test
+    // that goes red and says so — in the same commit that deletes the entries.
+    const jsonIds = policy().allowlist.map((entry) => entry.ghsa)
+    expect(
+      jsonIds.length,
+      `the allowlist is empty, so every per-entry assertion in this file passes over zero rows. ` +
+        `That is a vacuous pass, not a clean one.`
+    ).toBeGreaterThan(0)
+    expect(
+      docGhsaIds().length,
+      `${POLICY_DOC} names no GHSA id at all, so the prose/JSON cross-reference compares the ` +
+        `allowlist against an empty set and passes for the wrong reason. Either the document was ` +
+        `gutted, or GHSA_TOKEN stopped matching its own format — Phase 46's WR-11 shape.`
+    ).toBeGreaterThanOrEqual(MIN_DOC_GHSA_IDS)
   })
 })
 
@@ -457,50 +660,88 @@ describe("the shipped audit-policy.json", () => {
     expect(policy().failOn).toEqual(["critical", "high"])
   })
 
-  it("gives every entry a well-formed GHSA id, and no id twice", () => {
+  it("gives no advisory two entries", () => {
     const ids = policy().allowlist.map((entry) => entry.ghsa)
-    for (const id of ids) expect(id, `${id} is not a GHSA id`).toMatch(GHSA_PATTERN)
     expect(new Set(ids).size, "an advisory has two entries; exactly one disposition each").toBe(
       ids.length
     )
   })
+})
 
-  it("gives every entry a reach from the closed set", () => {
-    for (const entry of policy().allowlist) {
-      expect(VALID_REACH as string[], `${entry.ghsa} reach=${entry.reach}`).toContain(entry.reach)
-    }
+/**
+ * The shipped allowlist as an `it.each` payload table.
+ *
+ * WHY `it.each` AND NOT A `for` LOOP INSIDE ONE `it`. A loop stops at the first offender and
+ * reports "the policy is wrong"; `it.each` names the offending GHSA in the TEST NAME and reports
+ * EVERY offender. 33 of the 39 shipped entries share one expiry date, so on 2026-09-24 the
+ * difference is between one failure and thirty-three named ones — and the whole point of the
+ * expiry mechanism is that the suite hands back the complete list of decisions to revisit.
+ *
+ * Each axis gets its own `it.each` rather than one `it` per entry, so a broken `reach` and an
+ * expired `expires` on the same entry are two reports and not one short-circuit.
+ *
+ * If the allowlist ever empties, every block below registers ZERO tests and vanishes silently.
+ * That is what the `MIN_ALLOWLIST_ENTRIES` floor above exists to catch, and why it lives in its
+ * own `it` rather than inside these.
+ */
+const SHIPPED_ENTRIES = policy().allowlist.map((entry) => ({
+  ...entry,
+  label: `${entry.ghsa} (${entry.package})`,
+}))
+
+const SHIPPED_PACKAGES = [...new Set(SHIPPED_ENTRIES.map((entry) => entry.package))]
+
+describe("every shipped allowlist entry, named", () => {
+  it.each(SHIPPED_ENTRIES)("$label has a well-formed GHSA id", (entry) => {
+    expect(entry.ghsa, `${entry.ghsa} is not a GHSA id matching ${GHSA_PATTERN}`).toMatch(
+      GHSA_PATTERN
+    )
   })
 
-  it("gives every entry a substantive, non-forbidden reason", () => {
-    for (const entry of policy().allowlist) {
-      expect(entry.reason.trim().length, `${entry.ghsa} reason too short`).toBeGreaterThanOrEqual(
-        MIN_REASON_LENGTH
-      )
-      expect(FORBIDDEN_REASONS as string[], `${entry.ghsa}`).not.toContain(
-        entry.reason.trim().toLowerCase()
-      )
-    }
+  it.each(SHIPPED_ENTRIES)("$label declares a reach from the closed set", (entry) => {
+    expect(
+      VALID_REACH as string[],
+      `${entry.label} has reach=${JSON.stringify(entry.reach)}; an advisory reachable only from a ` +
+        `build tool is a different risk from one in the request path, and the entry has to say which`
+    ).toContain(entry.reach)
   })
 
-  it("gives every entry an expiry that is a bare date and has not passed", () => {
-    // The one assertion in this file that is time-dependent BY DESIGN. It goes red on the day an
+  it.each(SHIPPED_ENTRIES)("$label gives a substantive, non-forbidden reason", (entry) => {
+    expect(
+      entry.reason.trim().length,
+      `${entry.label}'s reason is ${entry.reason.trim().length} characters; the floor is ` +
+        `${MIN_REASON_LENGTH}. A reason that would be true of any project is not a reason — name ` +
+        `the call site, the measurement, and the alternative that was rejected.`
+    ).toBeGreaterThanOrEqual(MIN_REASON_LENGTH)
+    expect(FORBIDDEN_REASONS as string[], `${entry.label}`).not.toContain(
+      entry.reason.trim().toLowerCase()
+    )
+  })
+
+  it.each(SHIPPED_ENTRIES)("$label has an expiry that is a bare date and has not passed", (entry) => {
+    // The one axis in this file that is time-dependent BY DESIGN. It goes red on the day an
     // acceptance runs out, which is the entire mechanism: the suite is what brings the decision
-    // back. Do not "fix" a red here by editing the date — re-read the evidence first.
-    const today = new Date()
-    for (const entry of policy().allowlist) {
-      expect(entry.expires, `${entry.ghsa} expires`).toMatch(EXPIRES_PATTERN)
-      expect(
-        Date.parse(`${entry.expires}T00:00:00Z`),
-        `${entry.ghsa} (${entry.package}) expired on ${entry.expires}. Take the fix, or re-state ` +
-          `the reason against today's code and set a new date — see ${POLICY_DOC}.`
-      ).toBeGreaterThan(today.getTime())
-    }
+    // back. Do NOT "fix" a red here by editing the date — re-read the evidence first.
+    //
+    // The second form is deliberately written as `new Date(...).getTime()` compared to a bare
+    // `Date.now()`, which is `src/app/admin/users/actions.test.ts:59`'s shape and KNOWN_NEGATIVE
+    // fixture (c) of `suite-timing-hygiene.test.ts`'s SC-1b taint rule. Keeping it in exactly that
+    // shape is what makes the cross-check between the two gates a real pairing rather than a hope:
+    // it is a comparison against a clock call, not a delta or a ratio derived from one.
+    expect(entry.expires, `${entry.label} expires=${JSON.stringify(entry.expires)}`).toMatch(
+      EXPIRES_PATTERN
+    )
+    expect(
+      Date.parse(`${entry.expires}T00:00:00Z`),
+      `${entry.label} expired on ${entry.expires}. Take the fix, or re-state the reason against ` +
+        `today's code and set a new date — see ${POLICY_DOC}. Extending the date without ` +
+        `re-reading the evidence is the failure this field exists to prevent.`
+    ).toBeGreaterThan(Date.now())
+    expect(new Date(entry.expires).getTime()).toBeGreaterThan(Date.now())
   })
 
-  it("names a package for every entry", () => {
-    for (const entry of policy().allowlist) {
-      expect(entry.package.trim().length, `${entry.ghsa} has no package`).toBeGreaterThan(0)
-    }
+  it.each(SHIPPED_ENTRIES)("$label names a package", (entry) => {
+    expect(entry.package.trim().length, `${entry.label} has no package`).toBeGreaterThan(0)
   })
 })
 
@@ -514,6 +755,104 @@ describe("the prose policy and the machine-readable policy cannot drift apart", 
           `half a human reads; an exception that exists only in the JSON is an undocumented one.`
       ).toBe(true)
     }
+  })
+
+  it("every GHSA id the prose names is either allowlisted or on the remediated register", () => {
+    // THE OTHER DIRECTION, and the one the forward check cannot see. A document that names an
+    // exception the JSON does not carry is a claim with no enforcement behind it — the reader
+    // believes the advisory has a disposition and the gate never applies one. So the prose's id
+    // set must partition exactly: allowlisted, or explicitly recorded as remediated.
+    const allowlisted = new Set(policy().allowlist.map((entry) => entry.ghsa))
+    const remediated = new Set<string>(REMEDIATED_IN_DOC.map((entry) => entry.ghsa))
+    const unclassified = docGhsaIds().filter(
+      (id) => !allowlisted.has(id) && !remediated.has(id)
+    )
+    expect(
+      unclassified,
+      `${POLICY_DOC} names ${unclassified.length} GHSA id(s) that are neither in ` +
+        `${POLICY_JSON}'s allowlist nor on REMEDIATED_IN_DOC. Either add the entry (with a ` +
+        `reason, a reach and an expiry) or record it as remediated with the evidence. An advisory ` +
+        `discussed in prose with no disposition anywhere is the shape this gate exists to delete.`
+    ).toEqual([])
+  })
+
+  it.each(REMEDIATED_IN_DOC)(
+    "$ghsa is on the remediated register, and the register is live not decorative",
+    ({ ghsa, marker, package: name }) => {
+      // S1(f): an exclusion list is a LIVE CONTROL. Each of the three halves below fails on a
+      // different kind of rot — the id silently leaving the prose, the id silently becoming an
+      // acceptance, and the line that says "fixed" silently ceasing to say it. Without the third,
+      // an id could migrate from the "upgraded" table into an acceptance paragraph and keep its
+      // exemption from the reverse cross-reference above.
+      const document = read(POLICY_DOC)
+      expect(
+        document.includes(ghsa),
+        `${ghsa} is on REMEDIATED_IN_DOC but ${POLICY_DOC} no longer mentions it. Delete the ` +
+          `register entry deliberately; do not leave an exemption for an id that is not there.`
+      ).toBe(true)
+      expect(
+        policy().allowlist.map((entry) => entry.ghsa),
+        `${ghsa} is recorded as remediated AND allowlisted. Those are contradictory dispositions.`
+      ).not.toContain(ghsa)
+      const citing = document.split("\n").filter((line) => line.includes(ghsa))
+      expect(citing.length, `${ghsa} matched no line — the line split broke`).toBeGreaterThan(0)
+      expect(
+        citing.some((line) => line.includes(marker)),
+        `no line naming ${ghsa} in ${POLICY_DOC} also says "${marker}", so nothing in the prose ` +
+          `still presents it as remediated for ${name}. If the advisory came back, it needs an ` +
+          `allowlist entry, not a register entry.`
+      ).toBe(true)
+    }
+  )
+
+  it.each(SHIPPED_PACKAGES)(
+    "%s's prose section states the same reach and the same expiry as the JSON",
+    (name) => {
+      // S5, relational rather than literal: the fact is read from BOTH files that own it and
+      // compared, instead of being typed into this test twice. The two most gameable fields are
+      // `reach` (it decides how alarming the entry reads) and `expires` (it decides whether the
+      // entry ever gets revisited), and a prose section that still says `build` / 2026-09-24 while
+      // the JSON says `runtime` / 2027 is a policy that lies to its reader while passing its gate.
+      const headings = [
+        ...read(POLICY_DOC).matchAll(
+          /^### `([^`]+)`[^\n]*reach `(runtime|build|dev)`[^\n]*expires \*\*(\d{4}-\d{2}-\d{2})\*\*/gm
+        ),
+      ].map((match) => ({ package: match[1], reach: match[2], expires: match[3] }))
+
+      // The token floor for this parse (WR-11): a heading format change turns the matcher into one
+      // that finds nothing, and a comparison over nothing passes.
+      expect(
+        headings.length,
+        `${POLICY_DOC} yielded no "### \`pkg\` … reach \`x\` … expires **date**" heading at all. ` +
+          `The heading format changed and this cross-check now compares empty sets. Re-anchor the ` +
+          `pattern; do not delete the check.`
+      ).toBeGreaterThanOrEqual(SHIPPED_PACKAGES.length)
+
+      const heading = headings.find((row) => row.package === name)
+      expect(heading, `${POLICY_DOC} has no reach/expiry heading for ${name}`).toBeDefined()
+
+      const entries = SHIPPED_ENTRIES.filter((entry) => entry.package === name)
+      expect([...new Set(entries.map((entry) => entry.reach))]).toEqual([heading?.reach])
+      expect([...new Set(entries.map((entry) => entry.expires))]).toEqual([heading?.expires])
+    }
+  )
+
+  it("the prose claim that there are ZERO dev-reach acceptances is true of the JSON", () => {
+    // A claim in a policy document is a liability unless something checks it. This one is
+    // load-bearing: `dev` is the reach a reader discounts fastest, so "there are none" is the
+    // sentence that would be quietly falsified first. Asserted in both directions — if a dev-reach
+    // acceptance is ever taken, this test names the prose line that has to change with it.
+    const document = read(POLICY_DOC)
+    expect(
+      document.includes("There are currently ZERO dev-reach acceptances"),
+      `${POLICY_DOC} no longer states its dev-reach position; this assertion has nothing to check.`
+    ).toBe(true)
+    expect(
+      SHIPPED_ENTRIES.filter((entry) => entry.reach === "dev").map((entry) => entry.label),
+      `${POLICY_DOC} says there are ZERO dev-reach acceptances and ${POLICY_JSON} carries some. ` +
+        `47-CONTEXT's rule is that "dev-only" must be true and SHOWN to be true; update the prose ` +
+        `with the reconciliation that justifies the classification, in the same commit.`
+    ).toEqual([])
   })
 
   it("every package named in the allowlist appears in the prose too", () => {
@@ -533,6 +872,9 @@ describe("the prose policy and the machine-readable policy cannot drift apart", 
       "**replaced**",
       "**accepted with a reason**",
       "an expired entry fails the gate", // the expiry rule
+      "Runtime vs build vs dev — a judgement per advisory, not a flag", // the reach rule, by heading
+      "from the closed set `runtime` / `build` / `dev`", // ...and the closed set it draws on
+      "Reach is **reconciled, never asserted**", // ...and how a classification earns belief
       "`npm audit --omit=dev` is not this policy", // reach is a judgement, not a flag
       "required `ci` job", // where the gate runs
       "non-blocking gate is a vacuous gate",
@@ -609,6 +951,218 @@ describe("the gate is wired the way CI invokes it", () => {
     // so a future refactor that started branching on it would make this gate permanently red and
     // then permanently deleted.
     expect(read(AUDIT_SCRIPT)).toContain("NOT the verdict")
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 4b. THIS GATE ITSELF: offline, and anchored the way it claims to be anchored (T-47-10-05).
+//
+//     Asserted from this file's own source, so the two properties that make it trustworthy cannot
+//     be edited away in a diff nobody reads. Both are structural rather than textual: the header
+//     above HAS to contain the words `child_process` and `npm audit` to explain why the code does
+//     not, so a raw text scan would either fail on its own documentation or be reworded into
+//     uselessness. S4, choosing deliberately and saying so.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("this gate is offline, and its anchors are anchored", () => {
+  it("the self-read reached this file's real text — the floor before the negatives", () => {
+    // WR-11's half: a scan of an empty string satisfies every "does not contain" below. The two
+    // tokens are ones that must be present for the negatives to mean anything at all.
+    const source = read(SELF_PATH)
+    expect(source.length, `${SELF_PATH} read as ${source.length} characters`).toBeGreaterThan(5000)
+    expect(source, `${SELF_PATH} does not contain its own describe titles — wrong file`).toContain(
+      "this gate is offline, and its anchors are anchored"
+    )
+  })
+
+  it("imports exactly the modules it is allowed to import, asserted BY VALUE", () => {
+    // The structural form of "runs no `npm audit`, opens no socket, reads no `.env`". A file that
+    // imports only `node:fs`, `node:path`, `vitest`, `semver` and the evaluator's pure surface has
+    // no way to reach a network or a process, whatever its bodies say. Adding
+    // `node:child_process`, `node:net`, `undici` or a fetch polyfill goes red HERE, which is the
+    // one place a reviewer of a supply-chain gate will look.
+    const specifiers = importSpecifiers(read(SELF_PATH))
+    expect(specifiers.length, "no imports parsed — the matcher broke, not the file").toBeGreaterThan(
+      0
+    )
+    expect(specifiers).toEqual([...ALLOWED_SELF_IMPORTS])
+  })
+
+  it("imports the evaluator by relative path, not by the `@/` alias", () => {
+    // `vitest.config.ts:31-33` resolves `@/` to `./src` only, so an aliased import of a
+    // `scripts/*.mjs` does not resolve at all — it would fail at collection rather than silently,
+    // but the intent is worth pinning: this gate exercises PRODUCTION logic, not a copy of it.
+    expect(importSpecifiers(read(SELF_PATH))).toContain("../../../scripts/audit-policy.mjs")
+  })
+
+  it(`reads its inputs through exactly one ${READ_CALL_TOKEN} call site`, () => {
+    // A second, unaudited read is how a `.env` or a checked-in fixture arrives later. One helper,
+    // named path constants, and this count is what keeps it that way. The searched token is
+    // assembled at runtime for the S1(e) reason: this file is the file that makes the call.
+    const code = codeLines(read(SELF_PATH))
+    const reads = code.filter((line) => line.includes(READ_CALL_TOKEN))
+    expect(
+      reads.length,
+      `${SELF_PATH} has ${reads.length} non-comment ${READ_CALL_TOKEN} call sites. Every file ` +
+        `this gate reads goes through the single \`read()\` helper and a named path constant; a ` +
+        `second call site is where an unaudited input arrives. Found: ${reads.join(" | ")}`
+    ).toBe(1)
+  })
+
+  it("the comment filter the scan above depends on does not blank real code", () => {
+    // S4's second half, and the WR-11 lesson: a stripper that returned nothing would make the
+    // count above zero, and `toBe(1)` would then fail LOUDLY — but a stripper that returned
+    // everything would make it 2 and be "fixed" by relaxing the number. So both directions are
+    // pinned: the filter keeps the code line it must keep, and drops the comment line it must drop.
+    const code = codeLines(read(SELF_PATH))
+    expect(
+      code.some((line) => line.includes(`${READ_CALL_TOKEN}path.join(`)),
+      "the comment filter dropped the read helper itself, so the scan above has no input"
+    ).toBe(true)
+    expect(
+      code.some((line) => line.trim().startsWith("* ")),
+      "the comment filter kept a doc-comment line, so the scan above counts prose as code"
+    ).toBe(false)
+  })
+
+  it(`anchors ${FAIL_ON_TOKEN} with an array equality and never with ${CONTAINMENT_MATCHER}`, () => {
+    // THE ANCHOR, asserted on itself. Containment would permit
+    // ["critical","high","moderate"] — a policy that claims one thing and gates another — and it
+    // is the single cheapest edit that would leave every other assertion in this file green.
+    const lines = read(SELF_PATH).split("\n")
+    const both = lines
+      .map((line, index) => ({ line, number: index + 1 }))
+      .filter(
+        (row) => row.line.includes(FAIL_ON_TOKEN) && row.line.includes(CONTAINMENT_MATCHER)
+      )
+      .map((row) => `${SELF_PATH}:${row.number}`)
+    expect(
+      both,
+      `a line applies a containment matcher to ${FAIL_ON_TOKEN}. Use an array equality: ` +
+        `containment lets a WIDENED severity list pass, and the claim about what the gate catches ` +
+        `lives in ${POLICY_DOC}.`
+    ).toEqual([])
+
+    // The positive half. Without it, renaming the field would satisfy the negative above forever.
+    const anchored = lines.filter(
+      (line) => line.includes(FAIL_ON_TOKEN) && line.includes("toEqual")
+    )
+    expect(
+      anchored.length,
+      `no line asserts ${FAIL_ON_TOKEN} with toEqual, so the negative above matches nothing and ` +
+        `passes vacuously. The field was almost certainly renamed: re-anchor FAIL_ON_TOKEN.`
+    ).toBeGreaterThan(0)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 4c. The allowlist still has something to suppress (S1(f), the offline half).
+//
+//     The network half — "is every allowlisted advisory still REPORTED?" — is
+//     `staleAllowlistProblems` in the script. The offline half is cheaper and catches the coarser
+//     case: an entry for a package this project no longer installs covers nothing at all, and
+//     reads as a live, reasoned acceptance forever.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("every allowlisted package is still in the tree the policy claims to cover", () => {
+  it(`the lockfile parse reached a real tree (>= ${MIN_LOCKFILE_PACKAGES} packages)`, () => {
+    expect(
+      lockfilePackageNames().size,
+      `${LOCKFILE} yielded almost nothing; the per-package assertions below would pass over an ` +
+        `empty set. Measured 2026-08-25: 1286 keys.`
+    ).toBeGreaterThanOrEqual(MIN_LOCKFILE_PACKAGES)
+  })
+
+  it.each(SHIPPED_PACKAGES)("%s is installed, so its entries suppress a real advisory", (name) => {
+    expect(
+      lockfilePackageNames().has(name),
+      `${POLICY_JSON} allowlists advisories against ${name}, which ${LOCKFILE} no longer ` +
+        `contains. The entries cover nothing while reading as live acceptances — delete them, and ` +
+        `their prose section, in the same commit.`
+    ).toBe(true)
+  })
+
+  it.each(REJECTED_TOOLING)("%s is NOT installed — the zero-new-dependencies decision", (name) => {
+    // The known-negative half of the same matcher: a lockfile reader that answered `true` for
+    // everything would satisfy every assertion above. It also pins 47-09's decision — an audit
+    // gate that installs 30 packages, one of which reaches `event-stream@4.0.1`, is self-defeating.
+    expect(
+      lockfilePackageNames().has(name),
+      `${name} is in ${LOCKFILE}. 47-09 chose an in-repo evaluator over every off-the-shelf one ` +
+        `precisely to avoid this; see ${POLICY_DOC} § on tooling.`
+    ).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 4d. THE CROSS-FILE CONTROL. Fixtures prove the evaluator's rules; only this proves the
+//     evaluator can read the file a real consumer reads.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A synthetic `npm audit --json` document in which every shipped allowlist entry is reported.
+ *
+ * Built FROM the shipped allowlist rather than checked in, for the reason
+ * `migrate-from-zero-fences.test.ts:193-204` gives: a fixture is a copy, and a copy stops tracking
+ * the thing it copied. Every advisory here is at a `failOn` severity, so `evaluatePolicy` has to
+ * match all 39 against the real file — which means a policy file the evaluator cannot parse, or an
+ * id that does not match the way the evaluator matches it, is red in vitest rather than only in CI
+ * on the next push.
+ */
+function auditDocumentCoveringShippedAllowlist() {
+  const vulnerabilities: Record<string, unknown> = {}
+  for (const entry of policy().allowlist) {
+    const bucket = (vulnerabilities[entry.package] ??= {
+      name: entry.package,
+      severity: "high",
+      via: [] as unknown[],
+    }) as { via: unknown[] }
+    bucket.via.push({
+      source: 1,
+      name: entry.package,
+      title: `synthetic report of ${entry.ghsa}`,
+      url: `https://github.com/advisories/${entry.ghsa}`,
+      severity: "high",
+    })
+  }
+  return { vulnerabilities }
+}
+
+describe("the evaluator applied to the SHIPPED policy file, not to a fixture of it", () => {
+  it("reports nothing when every shipped entry's advisory is reported", () => {
+    expect(
+      evaluatePolicy(auditDocumentCoveringShippedAllowlist(), policy(), new Date()),
+      `the shipped ${POLICY_JSON} does not satisfy its own evaluator against a document in which ` +
+        `every one of its entries is reported. Either an entry is malformed or expired, or the ` +
+        `evaluator and the file disagree about the shape of an entry.`
+    ).toEqual([])
+  })
+
+  it("reports the uncovered advisory when one shipped entry is removed", () => {
+    // The complement, and the half that makes the pass above mean something: a document every
+    // possible policy accepts would satisfy it. Removing one real entry must produce exactly one
+    // problem, naming exactly that advisory.
+    const shipped = policy()
+    const [dropped, ...rest] = shipped.allowlist
+    const problems = evaluatePolicy(
+      auditDocumentCoveringShippedAllowlist(),
+      { ...shipped, allowlist: rest },
+      new Date()
+    )
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain(dropped.ghsa)
+    expect(problems[0]).toContain("NO recorded disposition")
+  })
+
+  it("the synthetic document really carries every shipped id — the floor", () => {
+    // Without this, a builder that produced an EMPTY document would make the pass above vacuous:
+    // no advisories reported means no offender can be missing.
+    const rows = collectAdvisories(auditDocumentCoveringShippedAllowlist())
+    expect(rows.map((row) => row.ghsa).sort()).toEqual(
+      policy()
+        .allowlist.map((entry) => entry.ghsa)
+        .sort()
+    )
   })
 })
 
