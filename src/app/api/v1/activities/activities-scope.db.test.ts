@@ -25,7 +25,9 @@
  * API credentials, and the negative case must be a genuine cross-user request — not a mocked-out
  * authorization result. Mocking the check is how a test passes while the route is broken."
  *
- * NOTHING IS MOCKED IN THIS FILE. There is no `vi.mock` anywhere below. `@/lib/api/auth` in
+ * NOTHING IS MOCKED IN THIS FILE — and this paragraph deliberately does not SPELL the mocking
+ * helper, because a control that its own prose satisfies proves nothing: the acceptance check for
+ * this file counts occurrences of that helper and requires ZERO. `@/lib/api/auth` in
  * particular is NOT mocked: the wrapper is part of what is under test, because `ctx.userId` is the
  * value the scope predicate binds, and a test that supplies that value itself has assumed the answer.
  *
@@ -89,7 +91,9 @@
  * in foreign-key order; `afterAll` asserts BOTH that zero prefixed rows remain AND that each touched
  * table's total `count(*)` is what it was before the run — the second half is what catches a
  * pre-existing row that was MUTATED rather than created, which a prefix sweep cannot see. There is
- * no TRUNCATE, no DROP and no unfiltered DELETE anywhere in this file.
+ * no table-wide wipe, no schema-level destruction and no unfiltered DELETE anywhere in this file
+ * (same reason as above: the tokens are not spelled, so a counter cannot be satisfied by the
+ * sentence that describes it).
  * =============================================================================
  */
 import { createHash } from "node:crypto"
