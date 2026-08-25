@@ -956,6 +956,32 @@ describe("resolveFieldPath — parsing is linear, not backtracking (T-34-20)", (
           `${large.inputChars} characters. Linear cost keeps this near 1.0; quadratic cost ` +
           `makes it grow with n. A restart-on-failure parser measured 7.3x across an 8x span.`
       ).toBeLessThanOrEqual(MAX_FLATNESS_GROWTH)
+
+      // WR-03. THE FLOOR AT THE LARGE END, and Rule 1 of this milestone recurring
+      // inside the very file that established it: a counting gate needs a floor
+      // as well as a ceiling.
+      //
+      // Growth alone is ceiling-only. If a future parser collapsed to a native
+      // scan above some input size, `large.opsPerChar` would be ~0, `growth`
+      // would be ~0, and `<= 1.25` would pass — which is exactly the failure this
+      // block's own header names at :634-643: "a regex-backtracking
+      // tokenizeFieldPath reads ZERO counted characters at every input size and
+      // therefore PASSES any ceiling". AGGREGATE_N = 2000 sits BETWEEN
+      // FLATNESS_SMALL_N = 500 and FLATNESS_LARGE_N = 8000, so the FLOOR above
+      // does not run anywhere at the large end of this span; without this line
+      // there is no counted floor at n = 8000 at all.
+      //
+      // The AST half mitigates the same shape by a different route (a RegExp
+      // construction or a `.exec` call is flagged), but that is a different check
+      // with different blind spots — see the by-value anchor on
+      // FORBIDDEN_BULK_SCANNERS below. Neither half is redundant.
+      expect(
+        large.opsPerChar,
+        `ops/char collapsed to ${large.opsPerChar.toFixed(3)} at the large end of the span ` +
+          `(${large.inputChars} input characters). A count at or near ZERO means the parse moved ` +
+          `inside a native call the facade cannot see — the ReDoS shape — and the growth ratio ` +
+          `beside this assertion PASSES that case, because ~0 / 1.71 is far below any ceiling.`
+      ).toBeGreaterThanOrEqual(MIN_COUNTED_PER_CHAR)
     })
 
     it("EARLY REJECTION: the quote storm costs a constant, independent of n", () => {
