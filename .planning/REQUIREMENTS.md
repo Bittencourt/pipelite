@@ -29,9 +29,18 @@ activities, and custom fields. Advanced features can be built externally via the
       the run is transactional, leaves **0 tables**. No migration creates `import_sessions`; it arrived
       via `db:push`. Gate: a CI job or documented script that migrates a throwaway database from
       scratch — the only check that can catch a recurrence.*
-- [ ] **DEPLOY-02**: The documented migrate command works from the host without an inline override.
-      *Source: `999.20`. `.env.local:1` points at `localhost:5432`; Postgres publishes on **5433**.
-      Every phase since 33 that ran a migration paid a manual workaround.*
+- [x] **DEPLOY-02**: The documented migrate command works from the host without an inline override.
+      *Source: `999.20`, whose diagnosis was **wrong about the file** and is corrected here.
+      999.20 blamed `.env.local:1`. Measured in Phase 46 (RESEARCH C2): **drizzle-kit never reads
+      `.env.local`** — its bundled dotenv resolves only `path.resolve(cwd, ".env")`
+      (`node_modules/drizzle-kit/bin.cjs:754`), and the string `.env.local` does not appear anywhere
+      in that bundle. Editing it was a no-op. The real targets were `.env.example` (the only one of
+      the three that is tracked, and the only one a self-hoster ever sees), `.env`, and
+      `docker-compose.yml`. Resolved in Phase 46: the host files describe the host, compose constructs
+      the container URL, `README.md`/`CONTRIBUTING.md`/`docs/development/contributing.md` reconciled,
+      and `deployment-docs-accuracy.test.ts` now gates the host/container split with an explicit
+      exclusion list for the two deliberately container-perspective docs. Proved by running the
+      printed command verbatim from the host at exit 0 **with a wrong-port `.env.local` present**.*
 - [x] **DEPLOY-03**: The container's base image satisfies the toolchain's declared engines floor and
       cannot silently drift below it. *Source: `999.14`, whose framing was **falsified in both halves**
       by Phase 46 research (RESEARCH C3) and is corrected here so the register is not left carrying a
