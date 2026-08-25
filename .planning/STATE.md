@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
 status: executing
-last_updated: "2026-08-25T16:42:38.831Z"
-last_activity: 2026-08-25
+last_updated: "2026-08-25T19:03:48.636Z"
+last_activity: 2026-08-25 -- Phase 48 execution started
 progress:
   total_phases: 9
   completed_phases: 2
-  total_plans: 20
+  total_plans: 30
   completed_plans: 20
   percent: 22
 ---
@@ -20,7 +20,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-24)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 47 — Suite Trust & Supply Chain — **ALL 14 PLANS EXECUTED** (2026-08-25).
+**Current focus:** Phase 48 — REST API Authorization
 Next: `/gsd:verify-phase 47` (and Phase 46 is still owed its own `/gsd:verify-phase 46`).
 **QG-01 is COMPLETE. SEC-05 stays PARTIAL and its box stays `[ ]`.**
 **47-12 is PARTIAL, not complete** — its local half only; see the blocker below.
@@ -621,8 +621,8 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - 2026-08-25: 47-07 complete -- in-range advisory fixes: crit+high 24 -> 4, critical 3 -> 0, total 36 -> 14; drizzle-orm 0.45.2 (SQL injection), Auth.js trio (all 3 criticals), fast-xml-parser removed; residual 4 handed to 47-08/47-09; 15 runtime packages moved so 47-08's rebuild is load-bearing
 - 2026-08-25: 47-06 complete -- SC-1 AFTER margin measured with 47-02's committed instrument at a HARSHER load than the BEFORE half (runnable medians 3.75x/4.25x vs 3.50x, peaks 9.00x/7.75x): toggle 49.6% -> 0.7% of hookTimeout (margin 2.02x -> 133.84x), recursion 35.3% -> 0.4% (2.83x -> 268.94x); linearity row closed as a CATEGORY CHANGE proven by the BEFORE instrument's own FATAL plus both sides measured at the same load (deleted ratio 11.44-55.85, 4.88x spread; counted replacement ONE integer 23730 across 400 repeats); SC-1b 0 and 0 from the gates; ten-run 10/10 IDENTICAL at 4853 with the +106 delta reconciled exactly and labelled a guard; differ floor re-proven red. BLOCKER D-47-06-A opened: npm test goes RED at >=3x, four assertions timed out in three files (up to 186.8% of testTimeout), the same import-cost defect in ~146 test BODIES against half the budget, ungated because 47-03's gate scans hooks only.
 
-Phase: 47 (Suite Trust & Supply Chain) — ALL PLANS EXECUTED, AWAITING /gsd:verify-phase 47
-Plan: 14 of 14 complete (01-14) — QG-01 complete, SEC-05 PARTIAL (SC-4 runner half NOT PROVED)
-Status: Executing
+Phase: 48 (REST API Authorization) — EXECUTING
+Plan: 1 of 10
+Status: Executing Phase 48
 Progress: [██████████] 100%
-Last activity: 2026-08-25
+Last activity: 2026-08-25 -- Phase 48 execution started
