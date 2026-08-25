@@ -278,6 +278,23 @@ None.
 - **One caution for 46-04:** exclude `ordinal_position` from the column comparison. The `user_id` ordering decision above is what makes `import_sessions` match, but RESEARCH measured ~12 unrelated order differences on `activities` and `deals` from historical `db:push` operations.
 - **Deferred, unchanged:** converting `scripts/dedup-db-test-setup.sh` to build its database from the repaired chain. Its header now says so explicitly, and `db-test-isolation.test.ts:221-229` still asserts the `--schema-only` path.
 
+## Self-Check: PASSED
+
+Files claimed created/modified, verified present on disk:
+
+- `src/lib/__tests__/migration-chain-integrity.test.ts` — FOUND (28.8K)
+- `drizzle/0006_import-sessions-user-id.sql` — FOUND (1.1K)
+- `scripts/dedup-db-test-setup.sh` — FOUND (8.0K)
+- `.planning/phases/46-migration-chain-toolchain-floor/46-01-SUMMARY.md` — FOUND
+
+Commits claimed, verified in `git log`:
+
+- `e478f97` — FOUND (`test(46-01): add failing migration-chain-integrity gate`)
+- `a9db389` — FOUND (`fix(46-01): restore the two lost CREATE TABLEs to migration 0006`)
+- `92e329d` — FOUND (`docs(46-01): complete migration chain repair plan`)
+
+No missing items.
+
 ---
 *Phase: 46-migration-chain-toolchain-floor*
 *Completed: 2026-08-25*
