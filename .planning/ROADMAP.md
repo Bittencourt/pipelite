@@ -5,7 +5,8 @@
 - ✅ **v1.0 MVP** -- Phases 1-16 (shipped 2026-03-14)
 - ✅ **v1.1 Reliability & Operations** -- Phases 17-20, 23 (shipped 2026-03-26)
 - ✅ **v1.2 Workflows** -- Phases 24-31 (shipped 2026-03-28)
-- 🚧 **v1.3 Foundation & CRM Depth** -- Phases 32-44 (in progress)
+- ✅ **v1.3 Foundation & CRM Depth** -- Phases 32-45 (shipped 2026-08-24)
+- 📋 **v1.4** -- not yet scoped; seed from the Backlog review below (`/gsd:new-milestone`)
 
 ## Phases
 
@@ -92,7 +93,47 @@ _v1.3's 14 phase definitions are archived in [milestones/v1.3-ROADMAP.md](milest
 
 Unsequenced items awaiting a milestone. Promote with `/gsd:review-backlog` when ready.
 
-**999.13 — Proper fix for the five React Compiler lint findings** (captured 2026-08-14, Phase 32)
+### Review 2026-08-24 — all 12 open items promoted to v1.4
+
+Every open item was re-verified against the tree at `a58b9e1` before triage. **None was stale** — all
+twelve reproduce today, so nothing was removed. Three had drifted from their captured description and
+the entries below have been corrected in place (999.13, 999.15, 999.16).
+
+v1.3 shipped 2026-08-24 and **no milestone was active at review time**, so these carry a tag rather
+than a phase number. `/gsd:new-milestone` should seed v1.4's requirements from this table; the
+evidence in each entry below is what a phase plan needs and should not be re-derived.
+
+| Item | Tag | Why it is ordered here |
+|---|---|---|
+| **999.17** IDOR on `/api/v1/activities` | PROMOTE → v1.4 | Only unauthenticated-read-class defect on the list. Any valid API key reads, edits (incl. reassigning `owner_id`) or soft-deletes **any** user's activity; the list endpoint returns everyone's rows. Six route files, zero test coverage |
+| **999.21 + 999.22** workflow condition field picker | PROMOTE → v1.4 | 90% of live custom fields (152/169) remain unreachable from a workflow condition. Engine fixed in 34-12; the product gap is the UI |
+| **999.16** 38 npm advisories | PROMOTE → v1.4 | 4 critical / 22 high in the committed lockfile. Needs triage *and* a CI-policy decision |
+| **999.15** `stages/:id` 403s the owner | PROMOTE → v1.4 | Live auth bug on a documented API route |
+| **999.20** `.env.local` wrong DB port | PROMOTE → v1.4 | One-line fix; has already cost six phases a manual workaround |
+| **999.28** contention-flaky linearity gate | PROMOTE → v1.4 | A suite that cries wolf is how real defects stay invisible |
+| **999.23** POST echoes pre-recalc formulas | PROMOTE → v1.4 | API inconsistency across all four entities; decide once |
+| **999.13** six `react-hooks` suppressions | PROMOTE → v1.4 | Needs a UI phase with test coverage. **Register drifted — see entry** |
+| **999.19** Pipedrive stage type hardcoded | PROMOTE → v1.4 | Product decision, not a regression; pairs with terminal-stage handling |
+| **999.18** raw `sql` array in `stages/route.ts` | PROMOTE → v1.4 | Mechanical; unreachable today, fragile under refactor |
+| **999.14** Dockerfile pins `node:20-alpine` | PROMOTE → v1.4 | Latent, not broken. Cheapest item on the list |
+
+Note that `.planning/BACKLOG.md` is a **separate and larger** register (~31 open items carrying their
+own evidence, written by the phase close-outs of 39/40/41). It was not part of this review and its
+items have no 999.x numbers. v1.4 scoping should read both.
+
+---
+
+**999.13 — Proper fix for the React Compiler lint findings** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24 and the register drifted.** Still six suppressions, but not the five
+> captured below: `src/app/import/import-wizard.tsx:91` (`preserve-manual-memoization`) is **gone**,
+> and two new `react-hooks/exhaustive-deps` suppressions have appeared at
+> `src/components/ui/entity-combobox.tsx:96` and
+> `src/app/workflows/[id]/edit/components/config-forms/webhook-response-config.tsx:39`. The other
+> four rows in the table below are unchanged and still live. **The Suppression Register in
+> `32-04-SUMMARY.md` is therefore out of date** — re-derive the set with the grep at the end of this
+> entry rather than trusting either document.
+
 Phase 32 suppressed five `react-hooks/*` errors with scoped `// eslint-disable-next-line <rule> -- <reason>`
 comments per D-02. The rules remain at `error` severity project-wide, so a sixth occurrence still fails CI —
 but these five need a real refactor in a UI-focused phase that has UI test coverage (per 32-CONTEXT.md
@@ -110,27 +151,50 @@ Each is behaviour-adjacent (auth error UX, single-use token fetch, hydration gua
 transitions), which is why none was mechanically "fixed" inside an infrastructure phase.
 Grep the live set with `grep -rn 'eslint-disable-next-line react-hooks/' src/`.
 
-**999.14 — Dockerfile pins `node:20-alpine`, below vite 7's engines floor** (captured 2026-08-14, Phase 32)
+**999.14 — Dockerfile pins `node:20-alpine`, below vite 7's engines floor** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24:** `node:20-alpine` is pinned at **all three** build stages
+> (`Dockerfile:2` deps, `:10` builder, `:74` runner) — a fix has to change all three, not one.
 `vite@7.3.1` declares `engines: ^20.19.0 || >=22.12.0`, reached transitively via vitest. The image tag
 currently resolves to something >= 20.19 (the container builds today), so this is latent rather than broken.
 CI pins Node 24 and does not inherit the Dockerfile's tag. Resolution: raise the base image, or pin the
 patch explicitly so a future `node:20-alpine` rebuild cannot drift below the floor.
 Source: `32-RESEARCH.md` Open Question 4 / Pitfall 6.
 
-**999.15 — `GET /api/v1/stages/:id` returns 403 to the legitimate owner** (captured 2026-08-14, Phase 32)
+**999.15 — `GET /api/v1/stages/:id` returns 403 to the legitimate owner** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24 — still open, with the exact mechanism.** `src/app/api/v1/stages/[id]/route.ts:60-62`
+> builds `const withOptions: StageWith = expand.has("pipeline") ? { pipeline: true as const } : undefined`,
+> so the relation is simply **not loaded** on a bare request. Line 74 then rejects on
+> `!stage.pipeline || stage.pipeline.ownerId !== ctx.userId || stage.pipeline.deletedAt` and returns
+> `Problems.forbidden()`. Note the file already carries an `ownershipWith` helper (line 35) that loads
+> the relation unconditionally for the PUT/DELETE paths — **the GET is the one path that does not use
+> it**, which is both the bug and the shape of the fix.
 The ownership check reads `stage.pipeline`, which is only loaded when `?expand=pipeline` is passed, so a
 request without that query parameter fails authorization for the resource owner. Found by plan 32-03 and
 deliberately left unchanged there because T-32-10 required that plan's typing work to be behaviour-neutral.
 This is a real pre-existing auth bug, not a typing artifact — fixing it changes runtime behaviour and needs
 its own test. See `32-03-SUMMARY.md` § Decisions Made.
 
-**999.16 — 39 npm advisories in the committed lockfile** (captured 2026-08-14, Phase 32)
+**999.16 — npm advisories in the committed lockfile (39 at capture, 38 today)** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-measured 2026-08-24: 38, not 39** — 3 low, 9 moderate, **22 high**, **4 critical**
+> (`npm audit --json`). One high dropped off since capture; the criticals are unchanged. The count is
+> not the point and should be re-measured at plan time rather than trusted from this line — the
+> decision the item asks for (triage, then whether an audit gate or an `.npmrc` policy belongs in CI)
+> is unaffected by the drift.
 `npm ci` reports 39 vulnerabilities (3 low, 9 moderate, 23 high, 4 critical). CI-04 does not ask for an
 audit gate, and adding `npm audit --audit-level=high` to `ci.yml` would make the required check red on day
 one, so it was deliberately not bolted on. Resolution: triage the criticals/highs, then decide whether an
 audit step or a `.npmrc` audit policy belongs in CI.
 
-**999.17 — SECURITY: `/api/v1/activities` has no ownership check (IDOR)** (captured 2026-08-14, Phase 32)
+**999.17 — SECURITY: `/api/v1/activities` has no ownership check (IDOR)** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24 — still open, and nothing has been added.** The only `ownerId` references
+> in either route file are a **user-supplied `owner_id` query filter** (`route.ts:50,61-62`, optional,
+> so an unfiltered list still returns every user's activities) and the **PUT that writes it**
+> (`[id]/route.ts:188-190`, confirming the reassignment vector). There is no authorization check on
+> any of GET / PUT / DELETE. Compare `pipelines/[id]/route.ts`, which does check `ownerId`.
 `src/app/api/v1/activities/[id]/route.ts` GET/PUT/DELETE and `src/app/api/v1/activities/route.ts` GET
 perform **no ownership check at all**. Any valid API key can read (`[id]:80-116`), modify
 (`[id]:126-216`, **including reassigning `owner_id`**) or soft-delete (`[id]:226-237`) *any* user's
@@ -140,12 +204,17 @@ by the Phase 32 code review, and **more severe than anything found in the phase 
 route files have zero test coverage, so add tests with the fix. Prioritise ahead of the cosmetic
 backlog items. See `32-REVIEW.md` § "Pre-existing, out of diff scope".
 
-**999.18 — `stages/route.ts` passes a JS array into a raw `sql` fragment** (captured 2026-08-14, Phase 32)
+**999.18 — `stages/route.ts` passes a JS array into a raw `sql` fragment** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24:** unchanged at `src/app/api/v1/stages/route.ts:73`.
 `src/app/api/v1/stages/route.ts:73` uses ``sql`${pipelines.id} IN ${pipelineIds}` `` instead of
 `inArray()`. Unreachable with an empty array today (guarded by `stageList` being non-empty) but
 fragile — a future refactor removing that guard changes it from awkward to broken. Mechanical fix.
 
-**999.19 — Pipedrive importer hardcodes stage type `"open"`** (captured 2026-08-14, Phase 32)
+**999.19 — Pipedrive importer hardcodes stage type `"open"`** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24:** unchanged at `src/lib/import/pipedrive-api-transformers.ts:167`
+> (`const type: "open" | "won" | "lost" = "open"`), with the union declared at `:43`.
 `src/lib/import/pipedrive-api-transformers.ts:164-167` reads
 `const type: "open" | "won" | "lost" = "open"` under a comment promising "Determine stage type based
 on `rotten_flag` and `deal_probability`". The won/lost mapping was never implemented; Phase 32's
@@ -153,7 +222,13 @@ on `rotten_flag` and `deal_probability`". The won/lost mapping was never impleme
 from the Phase 32 fix pass — it is a product decision about Pipedrive stage mapping, not a
 regression. Address alongside the import wizard's terminal-stage handling.
 
-**999.20 — `npm run db:migrate` cannot reach the DB from the host** (captured 2026-08-14, Phase 33)
+**999.20 — `npm run db:migrate` cannot reach the DB from the host** (captured 2026-08-14, Phase 33) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24:** `.env.local:1` still reads
+> `DATABASE_URL="postgresql://pipelite:pipelite@localhost:5432/pipelite"` — the wrong port. Postgres
+> publishes on **5433**. Every phase since 33 that ran a migration paid this workaround, and
+> `.planning/BACKLOG.md` records the same footgun biting the live export test from the host
+> (`EAI_AGAIN postgres`), so fixing it closes two papercuts.
 `drizzle.config.ts` reads `DATABASE_URL`. `.env` sets it to `postgres:5432` (the Docker-network hostname —
 unresolvable from the host, fails `EAI_AGAIN`) and `.env.local` sets it to `localhost:5432` — the **wrong
 port**, since Postgres publishes on **5433**. So the documented migrate command fails from the host and has
@@ -161,7 +236,7 @@ to be run with an inline `DATABASE_URL` override. Phase 33 worked around it with
 Fix: point `.env.local` at `localhost:5433`. This will bite every future phase that runs a migration
 (34, 35, 36, 37, 39, 40 all add schema). Cheap fix, high recurring cost if left.
 
-**999.28 — `condition-evaluator` linearity gate is contention-flaky** (captured 2026-08-15, Phase 44)
+**999.28 — `condition-evaluator` linearity gate is contention-flaky** (captured 2026-08-15, Phase 44) — **PROMOTE → v1.4**
 `src/lib/execution/condition-evaluator.test.ts` › "resolveFieldPath — parsing is linear, not backtracking"
 (Phase 34 **T-34-20**) asserts a **wall-clock ratio**, so it misfires whenever the machine is loaded. It
 failed twice during Phase 44's parallel waves — once reported as `25.5 < 10` — while passing 70/70 in
@@ -198,7 +273,7 @@ the JSON export, which shares `flattenCustomFields`), yet the columns never reac
 header as the union of keys across all rows, or pass an explicit `columns` list to `unparse`. This is
 arguably the most user-visible defect found in the milestone so far. See `34-11-SUMMARY.md`.
 
-**999.23 — POST responses echo pre-recalculation formula values** (captured 2026-08-14, Phase 34)
+**999.23 — POST responses echo pre-recalculation formula values** (captured 2026-08-14, Phase 34) — **PROMOTE → v1.4**
 The create mutations return the raw `.returning()` row, so a `POST /api/v1/{organizations,people,deals,activities}`
 201 body carries the **un-computed** custom-field blob. The stored value, the emitted `crmBus` event and any
 subsequent `GET` are all correct — only the create response is stale, and `PUT` has no such gap.
@@ -209,7 +284,10 @@ result against a fixture, and weakening existing tests was forbidden. But it lea
 a client that trusts the 201 body sees different data than the same client re-reading the record. Decide
 once for all four entities. See `34-07-SUMMARY.md`.
 
-**999.22 — Condition builder UI has no field picker for bracket paths** (captured 2026-08-14, Phase 34)
+**999.22 — Condition builder UI has no field picker for bracket paths** (captured 2026-08-14, Phase 34) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24:** no file under `src/app/workflows/` emits `customFields[` in any form —
+> the picker still does not exist, and `condition-config.tsx` is where it would land.
 Phase 34 plan 34-12 made `resolveFieldPath` accept bracket-quoted segments, so a workflow condition can now
 reach `customFields["Previsão de início operação"]`. But the condition builder UI offers no picker that
 emits that syntax — an operator has to hand-type both the bracket form and the exact accented field name,
@@ -221,7 +299,7 @@ Also from 34-12: **escaping is unsupported inside brackets** — a name containi
 used to delimit it stops the parser at the first match. The other quote style works around it; a name
 containing *both* quote characters is unaddressable. None of the 169 live definitions hit this today.
 
-**999.21 — Workflow conditions cannot address 90% of custom fields — ENGINE FIXED in Phase 34 (34-12), UI GAP REMAINS** (captured 2026-08-14, Phase 34)
+**999.21 — Workflow conditions cannot address 90% of custom fields — ENGINE FIXED in Phase 34 (34-12), UI GAP REMAINS** (captured 2026-08-14, Phase 34) — **PROMOTE → v1.4**
 `resolveFieldPath` splits a condition's field path on `.`, so any custom field whose **name contains a
 space or punctuation is unreachable from a workflow condition**. Measured against the live DB:
 **152 of 169 definitions (90%)** are affected — this dataset's field names are predominantly Portuguese
@@ -301,6 +379,7 @@ Plans:
 - [x] 45-11-PLAN.md — the single Docker rebuild, the full e2e run, and the human dark-palette walk
 
 ---
+*Roadmap updated: 2026-08-24 -- backlog reviewed against `a58b9e1`: all 12 open items verified live and tagged PROMOTE -> v1.4; 999.13/15/16 corrected in place; no milestone active, so nothing was renumbered*
 *Roadmap updated: 2026-08-18 -- Phase 45 planned (11 plans, 4 waves); UI edits batched so the Docker rebuild is paid once, in the final wave*
 *Roadmap updated: 2026-08-18 -- Phase 45 added (Cross-Cutting UI Repair and UAT Closure), collecting the five app-wide defects found when the outstanding Phase 36-38 human UAT was re-run in a real authenticated browser; depends on nothing and can run in parallel with Phases 39-43*
 *Roadmap updated: 2026-08-17 -- Phase 38 planned (20 plans, 6 waves); the anticipated Phase 43 collision on `organizations/columns.tsx` and `people/columns.tsx` was designed out*
