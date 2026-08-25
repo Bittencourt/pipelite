@@ -248,7 +248,8 @@ const EXACT_MATCHERS = new Set(["toBe", "toEqual", "toStrictEqual"])
 
 /**
  * Floor on the number of `*.test.ts` / `*.test.tsx` files the walk enumerates under `src/`.
- * Measured on the tree this gate was written against: 176. 150 is a deliberately loose floor set
+ * Measured on the tree this gate was written against: 177 (174 `.test.ts`, 3 `.test.tsx`),
+ * including this file. 150 is a deliberately loose floor set
  * BELOW the measurement, so ordinary consolidation of test files does not fatal with a message that
  * misdiagnoses shrinkage as a broken walk — and so nobody under time pressure "fixes" it by lowering
  * a number whose purpose they cannot re-derive.
@@ -259,8 +260,9 @@ const EXACT_MATCHERS = new Set(["toBe", "toEqual", "toStrictEqual"])
 const MIN_TEST_FILES = 150
 
 /**
- * Floor on `expect()` CallExpressions parsed across that corpus. Measured 8143 by this walk;
- * 47-RESEARCH's prototype measured 8060 over 175 files, and raw text counts 8151 (the difference is
+ * Floor on `expect()` CallExpressions parsed across that corpus. Measured 8183 by this walk
+ * (8143 before this file was added to the corpus);
+ * 47-RESEARCH's prototype measured 8060 over 175 files, and raw text counts 8231 (the difference is
  * prose and `expect.` member forms, which an AST does not count as `expect()` calls). 7000 is set
  * below all three.
  *
@@ -999,7 +1001,7 @@ describe("the sweep reaches the tree it claims to scan", () => {
   it(`enumerates at least ${MIN_TEST_FILES} test files under ${SRC_ROOT}/`, () => {
     expect(
       TEST_FILES.length,
-      `the walk found ${TEST_FILES.length} test files. Measured 176 when this gate was written; a ` +
+      `the walk found ${TEST_FILES.length} test files. Measured 177 when this gate was written; a ` +
         `count this low means the root constant or the recursion is wrong, and every negative ` +
         `assertion below is passing because it has nothing to look at.`
     ).toBeGreaterThanOrEqual(MIN_TEST_FILES)
@@ -1008,7 +1010,7 @@ describe("the sweep reaches the tree it claims to scan", () => {
   it(`parses at least ${MIN_EXPECT_CALLS} expect() call expressions`, () => {
     expect(
       TOTAL_EXPECT_CALLS,
-      `the parse found ${TOTAL_EXPECT_CALLS} expect() calls. Measured 8143. If this collapsed, the ` +
+      `the parse found ${TOTAL_EXPECT_CALLS} expect() calls. Measured 8183. If this collapsed, the ` +
         `parse stopped reaching assertions — check ts.createSourceFile against the installed ` +
         `typescript major — and "no elapsed assertions" below proves nothing.`
     ).toBeGreaterThanOrEqual(MIN_EXPECT_CALLS)
@@ -1023,7 +1025,8 @@ describe("the sweep reaches the tree it claims to scan", () => {
     expect(
       TOTAL_DATE_NOW_CALLS,
       `the detector found ${TOTAL_DATE_NOW_CALLS} Date.now call sites across ${TEST_FILES.length} ` +
-        `test files. Measured 38 before plan 47-05's two deletions and 34 after. A collapse here ` +
+        `test files. Measured 38 before plan 47-05's two deletions and 34 after — confirmed on the ` +
+        `post-deletion tree. A collapse here ` +
         `means the detector broke, and the sweep below is green because it stopped working. ` +
         `Re-anchor clockCallName onto whatever shape the parser now produces — do NOT lower this ` +
         `floor to go green.`

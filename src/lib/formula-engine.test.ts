@@ -393,14 +393,18 @@ describe('formula-engine resource limits', () => {
   })
 
   it('interrupts a non-terminating expression instead of hanging', { timeout: 10000 }, async () => {
-    const start = Date.now()
     const result = await evaluateFormula(
       'LOGIC.if(true, (function(){ while(true){} })(), 0)',
       {},
       undefined,
       { timeoutMs: 50 }
     )
-    expect(Date.now() - start).toBeLessThan(5000)
+    // `{ timeout: 10000 }` above is the liveness backstop; the assertion is that the interrupt
+    // produced an error. An elapsed-time bound of 5 000 ms used to sit here and was DELETED rather
+    // than retuned (QG-01 / SC-1b, plan 47-05): it was redundant against this assertion, measured
+    // 51-59 ms across idle, 2x and 3x oversubscription, and its failure would have reported machine
+    // load as a code defect. `src/lib/__tests__/suite-timing-hygiene.test.ts` enforces the boundary
+    // suite-wide.
     expect(result.error).not.toBeNull()
   })
 

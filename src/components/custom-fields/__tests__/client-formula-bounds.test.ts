@@ -114,9 +114,11 @@ describe("the bounds actually terminate a runaway expression (T-44-12)", () => {
       expect(FORMULA_EVAL_OPTIONS?.timeoutMs).toBeGreaterThan(0)
       expect(Number.isFinite(FORMULA_EVAL_OPTIONS?.timeoutMs)).toBe(true)
 
-      // Same shape as the proven server-side case at formula-engine.test.ts:398, but with the
-      // exact options object the browser call sites now pass.
-      const start = Date.now()
+      // Same shape as the server-side case in `src/lib/formula-engine.test.ts` — the
+      // `interrupts a non-terminating expression instead of hanging` test — but with the exact
+      // options object the browser call sites now pass. Named by test rather than by line: that
+      // file's line numbers shifted in the same commit that wrote this comment, and a stale
+      // file:line pointer is the small lie that costs the next reader an hour.
       const result = await evaluateFormula(
         "LOGIC.if(true, (function(){ while(true){} })(), 0)",
         {},
@@ -125,8 +127,18 @@ describe("the bounds actually terminate a runaway expression (T-44-12)", () => {
       )
 
       // Resolving at all is the assertion; without the bound this never returns.
+      //
+      // An elapsed-time assertion used to sit on the next line, bounding this at 15 000 ms. It was
+      // DELETED rather than retuned (QG-01 / SC-1b, plan 47-05), for three reasons. It was strictly
+      // redundant: `expect(result).toBeDefined()` already carries the whole property, because
+      // without the bound this call never returns at all. It was measured at 543 ms idle and 560 ms
+      // at 3x CPU oversubscription, so it was never near its threshold. And 15 000 ms is TIGHTER
+      // than this test's own `{ timeout: 30000 }`, which made it the thing that would fire first
+      // under load — an assertion whose failure mode is the machine's contention rather than the
+      // code's behaviour. The `{ timeout: 30000 }` above stays: it is a liveness backstop against a
+      // hang, and this repository's stated boundary permits that while forbidding the assertion.
+      // `src/lib/__tests__/suite-timing-hygiene.test.ts` enforces it suite-wide.
       expect(result).toBeDefined()
-      expect(Date.now() - start).toBeLessThan(15000)
     }
   )
 
