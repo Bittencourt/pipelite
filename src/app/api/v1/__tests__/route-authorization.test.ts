@@ -12,10 +12,14 @@
  * identity, or not. A handler that does not is an offender, reported as
  * `file:line: VERB does not constrain the record by caller identity`.
  *
- * Four accepted authorization idioms are recognised (R1-R4 below), because `/api/v1` genuinely
- * uses four: `where`-scoped predicates, fetch-then-compare, delegation to a named authorizer, and
- * create-time ownership assignment. A detector that accepted only one would flag nine correct
- * handlers and be deleted within a week.
+ * Five accepted authorization idioms are recognised (R1-R5 below), because `/api/v1` genuinely
+ * uses five: `where`-scoped predicates, fetch-then-compare, delegation to a named authorizer,
+ * create-time ownership assignment, and a guarded identity-derived owner binding. A detector that
+ * accepted only one would flag nine correct handlers and be deleted within a week.
+ *
+ * R5 was added by plan 48-08 against a MEASURED false positive rather than to make a number go
+ * down — `activities/route.ts` POST is correctly fixed and R1-R4 flagged it — and the alternative,
+ * putting that one handler in a carve-out list, was rejected on the record. See `handlerMatchesR5`.
  *
  * ── WHY IT EXISTS: SEC-48-B, MEASURED 2026-08-25 ──────────────────────────────────────────────
  *
@@ -493,6 +497,120 @@ function matchesR4(node: ts.Node): boolean {
   return isIdentityExpression(node.initializer)
 }
 
+/** The two nullish-fallback operators R5 accepts as an identity-derived initialiser. */
+const FALLBACK_OPERATORS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.BarBarToken,
+  ts.SyntaxKind.QuestionQuestionToken,
+])
+
+/** The two inequality operators R5 accepts as the rejection half of the guard. */
+const REJECTION_OPERATORS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.ExclamationEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsEqualsToken,
+])
+
+/**
+ * R5 — the GUARDED IDENTITY-DERIVED BINDING, for create handlers that accept an optional
+ * caller-supplied owner and reject any value that is not the caller's own.
+ *
+ * ── WHY THIS RULE EXISTS: A MEASURED FALSE POSITIVE, NOT A CONVENIENCE ────────────────────────
+ *
+ * `src/app/api/v1/activities/route.ts` POST is CORRECTLY fixed by plan 48-02 and rules R1-R4 flag
+ * it anyway. The shape, verbatim from the merged source:
+ *
+ *     if (owner_id && owner_id !== ctx.userId) { return Problems.validation([...]) }   // reject
+ *     const activityOwnerId = owner_id || ctx.userId                                   // derive
+ *     await createActivityMutation({ ..., userId: activityOwnerId })                   // stamp
+ *
+ * After the guard, `activityOwnerId` is provably the caller's own id. But R2 cannot fire — its
+ * `pairsIdentityWithOwner` needs an owner-column PROPERTY ACCESS and `owner_id` is a bare
+ * identifier destructured off the request body — and R4 cannot fire either, because the value
+ * reaches the mutation through an INTERMEDIATE BINDING rather than as `userId: ctx.userId`.
+ *
+ * ── WHY IT IS A RULE AND NOT AN EXEMPTION ─────────────────────────────────────────────────────
+ *
+ * Adding this one handler to a carve-out list was the available alternative and it was rejected.
+ * The gate would then have stopped reporting a handler because it was TOLD to, not because the
+ * handler is safe — the eleventh vacuous gate, built inside the gate that exists to eliminate the
+ * other ten. Extending the rule is strictly stronger: it recognises the SHAPE, so the next route
+ * written this way is covered without anybody remembering to edit a list, and it keeps
+ * `MIN_EXEMPT_MATCHED` at the eleven paths that are exempt for structural reasons.
+ *
+ * ── WHAT IT REQUIRES, AND WHY ALL THREE PARTS ─────────────────────────────────────────────────
+ *
+ * All three must be present in the SAME handler, bound to the SAME identifier:
+ *
+ *   1. DERIVE — `const NAME = SOURCE || ctx.userId` (or `??`), SOURCE a bare identifier.
+ *   2. REJECT — `SOURCE !== ctx.userId` somewhere in the handler, comparing THAT source.
+ *   3. STAMP  — `NAME` reaching a property whose name is in `OWNER_PROPS`.
+ *
+ * The REJECT half is the load-bearing one. Without it, `const ownerId = body.owner_id || ctx.userId`
+ * lets a caller create a record owned by ANYONE — a real create-time BOLA — and a rule that
+ * followed the binding without demanding the guard would have accepted it. Fixture **P7** is
+ * exactly that handler and MUST still be flagged. **P8** proves the guard has to be bound to the
+ * same source (it compares a different variable and is flagged), and **P9** proves the stamp has to
+ * land on an owner column (it lands on `actorId` and is flagged).
+ *
+ * ── WHAT IT STILL CANNOT DO ───────────────────────────────────────────────────────────────────
+ *
+ * Like R2, this rule sees the comparison and not the control flow. A guard whose branch fell
+ * through instead of returning would satisfy it. That is the presence-gate limitation restated —
+ * see the file header — not a gap specific to R5.
+ *
+ * Handler-scoped rather than node-local, unlike R1-R4, because it is a three-node co-occurrence.
+ */
+function handlerMatchesR5(root: ts.Node): boolean {
+  interface Binding {
+    bound: string
+    source: string
+  }
+
+  const bindings: Binding[] = []
+  const rejectedSources = new Set<string>()
+  const stampedNames = new Set<string>()
+
+  const visit = (node: ts.Node): void => {
+    // 1. DERIVE — `const NAME = SOURCE || ctx.userId`
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined &&
+      ts.isBinaryExpression(node.initializer) &&
+      FALLBACK_OPERATORS.has(node.initializer.operatorToken.kind) &&
+      ts.isIdentifier(node.initializer.left) &&
+      isIdentityExpression(node.initializer.right)
+    ) {
+      bindings.push({ bound: node.name.text, source: node.initializer.left.text })
+    }
+
+    // 2. REJECT — `SOURCE !== ctx.userId`, either way round.
+    if (ts.isBinaryExpression(node) && REJECTION_OPERATORS.has(node.operatorToken.kind)) {
+      if (ts.isIdentifier(node.left) && isIdentityExpression(node.right)) {
+        rejectedSources.add(node.left.text)
+      }
+      if (ts.isIdentifier(node.right) && isIdentityExpression(node.left)) {
+        rejectedSources.add(node.right.text)
+      }
+    }
+
+    // 3. STAMP — `ownerId: NAME` / `userId: NAME` / …
+    if (ts.isPropertyAssignment(node)) {
+      const name =
+        ts.isIdentifier(node.name) || ts.isStringLiteral(node.name) ? node.name.text : null
+      if (name !== null && OWNER_PROPS.has(name) && ts.isIdentifier(node.initializer)) {
+        stampedNames.add(node.initializer.text)
+      }
+    }
+
+    ts.forEachChild(node, visit)
+  }
+  ts.forEachChild(root, visit)
+
+  return bindings.some(
+    (binding) => rejectedSources.has(binding.source) && stampedNames.has(binding.bound)
+  )
+}
+
 /** True when any node in `root`'s subtree satisfies R1, R2, R3 or R4. */
 function subtreeAuthorizes(root: ts.Node): boolean {
   let found = false
@@ -506,6 +624,15 @@ function subtreeAuthorizes(root: ts.Node): boolean {
   }
   ts.forEachChild(root, visit)
   return found
+}
+
+/**
+ * The handler-level verdict: any of the node-local rules R1-R4 anywhere in the body, OR the
+ * three-node co-occurrence R5. This is the ONLY place a handler is classified, so a rule that stops
+ * firing shows up as offenders rather than as a silently narrower definition of "authorized".
+ */
+function handlerAuthorizes(root: ts.Node): boolean {
+  return subtreeAuthorizes(root) || handlerMatchesR5(root)
 }
 
 /** True when a `withApiAuth(...)` call appears anywhere in `root`'s subtree. */
@@ -599,7 +726,7 @@ export function scanSource(fileName: string, sourceText: string): ScanResult {
         line: lineOf(statement),
         form: "declaration",
         delegatedTo: null,
-        authorized: subtreeAuthorizes(statement),
+        authorized: handlerAuthorizes(statement),
         withApiAuthSeen: subtreeCallsWithApiAuth(statement),
       })
       continue
@@ -796,6 +923,70 @@ const KNOWN_POSITIVE = [
     ].join("\n"),
     expected: ["DELETE:1"],
   },
+  {
+    // ⚠ THE ONE THAT KEEPS R5 HONEST. This is N8 below with the `!==` REJECTION DELETED, and it is
+    // a real create-time BOLA: `owner_id` comes straight off the request body, so a caller can
+    // create an activity owned by anybody they can name. A rule that merely "followed the binding"
+    // — accepting `x = foo || ctx.userId` and calling it identity-derived — would have accepted
+    // this handler and quietly widened the gate into a hole.
+    label: "P7 create handler deriving the owner from the body with NO rejection guard",
+    source: [
+      `export async function POST(request: NextRequest) {`,
+      `  return withApiAuth(request, async (req: NextRequest, ctx: ApiAuthContext) => {`,
+      `    const { title, owner_id } = parsed.data`,
+      `    const activityOwnerId = owner_id || ctx.userId`,
+      `    const result = await createActivityMutation({`,
+      `      title,`,
+      `      userId: activityOwnerId,`,
+      `    })`,
+      `    return createdResponse(serializeActivity(result.activity))`,
+      `  })`,
+      `}`,
+    ].join("\n"),
+    expected: ["POST:1"],
+  },
+  {
+    // The guard is present but compares a DIFFERENT variable, so it does not constrain the value
+    // that actually becomes the owner. R5's rejection set is keyed on the fallback's own source
+    // identifier for exactly this reason: "there is an inequality check somewhere in the body" is
+    // the token-presence mistake that fixture P2 already punishes in the other direction.
+    label: "P8 create handler whose rejection guard checks a variable other than the fallback source",
+    source: [
+      `export async function POST(request: NextRequest) {`,
+      `  return withApiAuth(request, async (req: NextRequest, ctx: ApiAuthContext) => {`,
+      `    const { title, owner_id, assignee_id } = parsed.data`,
+      `    if (assignee_id && assignee_id !== ctx.userId) {`,
+      `      return Problems.validation([{ field: "assignee_id", code: "forbidden", message: "no" }])`,
+      `    }`,
+      `    const activityOwnerId = owner_id || ctx.userId`,
+      `    const result = await createActivityMutation({ title, userId: activityOwnerId })`,
+      `    return createdResponse(serializeActivity(result.activity))`,
+      `  })`,
+      `}`,
+    ].join("\n"),
+    expected: ["POST:1"],
+  },
+  {
+    // Derive and reject are both present, but the derived value never reaches an owner column — it
+    // lands in an event payload, the P2 shape one level of indirection further out. Identity is in
+    // the body, guarded, and still reaching nothing that decides who owns the row.
+    label: "P9 create handler whose guarded binding is stamped onto actorId, not an owner column",
+    source: [
+      `export async function POST(request: NextRequest) {`,
+      `  return withApiAuth(request, async (req: NextRequest, ctx: ApiAuthContext) => {`,
+      `    const { title, owner_id } = parsed.data`,
+      `    if (owner_id && owner_id !== ctx.userId) {`,
+      `      return Problems.validation([{ field: "owner_id", code: "forbidden", message: "no" }])`,
+      `    }`,
+      `    const activityOwnerId = owner_id || ctx.userId`,
+      `    const [created] = await db.insert(activities).values({ title }).returning()`,
+      `    crmBus.emit("activity.created", { entityId: created.id, actorId: activityOwnerId })`,
+      `    return createdResponse(serializeActivity(created))`,
+      `  })`,
+      `}`,
+    ].join("\n"),
+    expected: ["POST:1"],
+  },
 ] as const
 
 /**
@@ -944,6 +1135,36 @@ const KNOWN_NEGATIVE = [
       `})`,
     ].join("\n"),
   },
+  {
+    // `activities/route.ts:140-190`, the shape plan 48-02 shipped, condensed. R5, and the reason
+    // R5 exists — see `handlerMatchesR5`. This handler was a MEASURED FALSE POSITIVE of rules
+    // R1-R4: the owner reaches the mutation through an intermediate binding and under the
+    // parameter name `userId`, so neither the fetch-then-compare rule nor the create-time
+    // assignment rule can see it, while the handler is provably correct.
+    //
+    // Read this fixture together with P7. They differ by the four lines of the rejection guard and
+    // nothing else, and they must land on OPPOSITE sides of the gate — which is the whole content
+    // of the claim that R5 recognises a safe shape rather than excusing a flagged one.
+    label: "N8 create handler with a guarded identity-derived owner binding",
+    source: [
+      `export async function POST(request: NextRequest) {`,
+      `  return withApiAuth(request, async (req: NextRequest, ctx: ApiAuthContext) => {`,
+      `    const { title, owner_id } = parsed.data`,
+      `    if (owner_id && owner_id !== ctx.userId) {`,
+      `      return Problems.validation([`,
+      `        { field: "owner_id", code: "forbidden", message: "owner_id cannot be set to another user" },`,
+      `      ])`,
+      `    }`,
+      `    const activityOwnerId = owner_id || ctx.userId`,
+      `    const result = await createActivityMutation({`,
+      `      title,`,
+      `      userId: activityOwnerId,`,
+      `    })`,
+      `    return createdResponse(serializeActivity(result.activity))`,
+      `  })`,
+      `}`,
+    ].join("\n"),
+  },
 ] as const
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -996,7 +1217,7 @@ describe("the authorization matcher, unit-tested against fixtures FIRST", () => 
     }
   })
 
-  it("distinguishes the four rules by which one fires, not just by the verdict", () => {
+  it("distinguishes the five rules by which one fires, not just by the verdict", () => {
     // A single rule that happened to match everything would satisfy every negative above. These
     // assert the SPECIFIC rule, at the AST level, on the exact expression each idiom produces.
     const parse = (text: string): ts.Node =>
@@ -1021,6 +1242,34 @@ describe("the authorization matcher, unit-tested against fixtures FIRST", () => 
     expect(firstMatch(`const r = verifyStageOwnership(id)`, matchesR3)).toBe(false)
     expect(firstMatch(`const v = { ownerId: ctx.userId }`, matchesR4)).toBe(true)
     expect(firstMatch(`const v = { actorId: ctx.userId }`, matchesR4)).toBe(false)
+
+    // R5 is handler-scoped, so it is probed on whole bodies rather than on single expressions, and
+    // each negative removes exactly ONE of its three required parts. All three must be able to
+    // turn it off independently, or the rule is really a two-part rule wearing a three-part
+    // comment. The all-three case is fixture N8; the no-guard case is P7.
+    const r5Body = (lines: string[]): boolean =>
+      handlerMatchesR5(parse(`async function POST() {\n${lines.join("\n")}\n}`))
+
+    const DERIVE = `  const owner = owner_id || ctx.userId`
+    const REJECT = `  if (owner_id !== ctx.userId) { return reject() }`
+    const STAMP = `  await create({ userId: owner })`
+
+    expect(r5Body([REJECT, DERIVE, STAMP]), "all three parts present").toBe(true)
+    expect(r5Body([DERIVE, STAMP]), "REJECT removed — a real create-time BOLA").toBe(false)
+    expect(r5Body([REJECT, STAMP]), "DERIVE removed").toBe(false)
+    expect(r5Body([REJECT, DERIVE]), "STAMP removed — reaches no owner column").toBe(false)
+    expect(
+      r5Body([`  if (other !== ctx.userId) { return reject() }`, DERIVE, STAMP]),
+      "the guard must be bound to the fallback's own source identifier"
+    ).toBe(false)
+    expect(
+      r5Body([REJECT, `  const owner = owner_id || fallbackUser`, STAMP]),
+      "the fallback must be the CALLER identity, not any other value"
+    ).toBe(false)
+    expect(
+      r5Body([REJECT, DERIVE, `  await create({ actorId: owner })`]),
+      "the stamp must land on an OWNER_PROPS column"
+    ).toBe(false)
   })
 })
 
@@ -1419,5 +1668,159 @@ describe("every name in AUTHORIZERS is actually reached by the corpus", () => {
         `delegation stopped being recognised and nine correctly-authorized handlers are about to ` +
         `be reported as offenders.`
     ).toBeGreaterThanOrEqual(12)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 6. THE GATE.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ── THE OFFENDER COMPOSITION ──────────────────────────────────────────────────────────────────
+ *
+ *     offenders = declaration-form handlers the detector classified UNAUTHORIZED
+ *               + EVERY binding-form handler whose file is NOT in DELEGATED_ROUTES
+ *               − every handler whose file appears in ANY of the four exemption lists
+ *
+ * Written out because this is the only place the two handler forms and the four exemption lists
+ * meet, and a reader has to be able to see the middle term without reconstructing it.
+ *
+ * ⚠ THE MIDDLE TERM IS THE LOAD-BEARING ONE. `scanSource` marks every binding-form handler
+ * `authorized: true` — that is a DEFERRAL, not a verdict: the body being exported lives inside a
+ * factory that a single-file parse cannot see. The deferral is only legitimate for the four files
+ * whose delegation target is asserted, above, to still call `withApiAuth` and still reach an
+ * identity expression. A NEW file exporting `export const { GET } = somethingElse(...)` has no such
+ * assertion behind it, so it is an OFFENDER rather than a silent zero.
+ *
+ * That is the whole difference between this gate and a `FunctionDeclaration`-only walker, which
+ * would see such a file as zero handlers, therefore zero offenders, therefore green. Control C in
+ * `48-08-SUMMARY.md` creates exactly that file and records the offender line it produces.
+ */
+const ALL_HANDLER_OFFENDERS: readonly { file: string; text: string }[] = [
+  // TERM 1 — declaration-form handlers that satisfied none of R1-R5.
+  ...CORPUS.flatMap((entry) =>
+    entry.handlers
+      .filter((handler) => handler.form === "declaration" && !handler.authorized)
+      .map((handler) => ({ file: entry.file, text: formatOffender(entry.file, handler) }))
+  ),
+  // TERM 2 — binding-form handlers whose file has no delegation entry, and therefore no live
+  // control standing behind `authorized: true`.
+  ...CORPUS.filter(
+    (entry) => !(DELEGATED_ROUTES as readonly string[]).includes(entry.file)
+  ).flatMap((entry) =>
+    entry.handlers
+      .filter((handler) => handler.form === "binding")
+      .map((handler) => ({ file: entry.file, text: formatOffender(entry.file, handler) }))
+  ),
+]
+
+/** TERM 3 — minus every exempt path. Sorted so a failure message reads in file order. */
+const GATE_OFFENDERS = ALL_HANDLER_OFFENDERS.filter(
+  (offender) => !ALL_EXEMPT_PATHS.includes(offender.file)
+)
+  .map((offender) => offender.text)
+  .sort()
+
+/**
+ * Handlers the gate classified as AUTHORIZED. Measured: **50** declaration-form
+ * (62 parsed − 12 still-unauthorized, all twelve of them exempt).
+ *
+ * Floored at 30, deliberately far below, because this is a polarity check rather than a census.
+ *
+ * Why it exists beside `toEqual([])` and is not redundant with it: if the detector breaks, every
+ * handler looks unauthorized under one polarity and authorized under the other. The offender
+ * assertion catches only the first — a rule that stopped firing floods the list and is loud. The
+ * second is the dangerous one: a rule that fires on EVERYTHING, or an `authorized` flag stuck
+ * `true`, empties the offender list and the gate goes green because it broke. The offender
+ * assertion alone cannot tell that apart from a clean tree; this can.
+ */
+const AUTHORIZED_HANDLERS = CORPUS.reduce(
+  (sum, entry) =>
+    sum + entry.handlers.filter((h) => h.form === "declaration" && h.authorized).length,
+  0
+)
+const MIN_AUTHORIZED_HANDLERS = 30
+
+describe("every /api/v1 handler constrains the record it touches by caller identity", () => {
+  it("finds no unauthorized handler outside the documented exemptions", () => {
+    expect(
+      GATE_OFFENDERS,
+      `an /api/v1 handler reads or writes an owned record without constraining it by the CALLER's ` +
+        `identity. That is OWASP API1:2023 BOLA — Broken Object Level Authorization: any valid API ` +
+        `key can read or modify another user's row by guessing or enumerating its id.\n\n` +
+        `FIX IT, do not exempt it. The reference implementation is the fetch-then-compare check at ` +
+        `src/app/api/v1/pipelines/[id]/route.ts:46-58 — load the row, then ` +
+        `\`if (row.ownerId !== ctx.userId) return Problems.forbidden()\`. The where-scoped ` +
+        `alternative at organizations/[id]/route.ts:31-36 is equally accepted and yields 404 ` +
+        `instead of 403; both are correct, pick whichever the route's siblings already use.\n\n` +
+        `A route with genuinely NO owner column belongs in one of the four exemption lists at the ` +
+        `top of this file, with a written reason — and the live control beside that list will hold ` +
+        `you to the reason, because it asserts the reason is still TRUE. An exemption is not a way ` +
+        `to make this message go away.\n\n` +
+        `Offenders:\n  ${GATE_OFFENDERS.join("\n  ")}`
+    ).toEqual([])
+  })
+
+  it(`classifies at least ${MIN_AUTHORIZED_HANDLERS} handlers as authorized`, () => {
+    expect(
+      AUTHORIZED_HANDLERS,
+      `the gate classified ${AUTHORIZED_HANDLERS} declaration-form handlers as authorized, ` +
+        `measured 50. An empty offender list is ALSO what a detector that classifies everything as ` +
+        `authorized produces — a rule firing on every node, or \`authorized\` stuck true. The ` +
+        `offender assertion cannot tell that apart from a clean tree. This can, and this is the ` +
+        `only assertion in the file that fails in that direction.`
+    ).toBeGreaterThanOrEqual(MIN_AUTHORIZED_HANDLERS)
+  })
+
+  it("names every offender the exemptions suppress, so none can vanish silently", () => {
+    /**
+     * `toEqual([])` above is green in two very different worlds: one where no handler is
+     * unauthorized, and one where the exemption lists grew until none of them was reported. This is
+     * what tells those apart. It writes down, by name, EVERY handler the four lists remove from the
+     * sweep — the difference between the raw detector output and the gated list.
+     *
+     * Twelve, measured. Phase 48 started from seventeen; the five that left are the four routes
+     * this phase FIXED (`activities/[id]` GET, PUT, DELETE and the `activities` list GET) plus the
+     * `activities` POST, which rule R5 now recognises as correctly authorized rather than exempt.
+     *
+     * Matched on `file: VERB`, deliberately NOT on line number. Pinning lines would false-RED on
+     * any benign edit to these files and get relaxed within a month; pinning file and verb goes red
+     * exactly when a handler is added, removed or fixed, which is when someone should look.
+     */
+    const SUPPRESSED_BY_EXEMPTION = [
+      // NO_OWNER_COLUMN — custom_field_definitions rows belong to nobody.
+      "src/app/api/v1/custom-field-definitions/[id]/route.ts: DELETE",
+      "src/app/api/v1/custom-field-definitions/[id]/route.ts: GET",
+      "src/app/api/v1/custom-field-definitions/[id]/route.ts: PUT",
+      "src/app/api/v1/custom-field-definitions/route.ts: GET",
+      "src/app/api/v1/custom-field-definitions/route.ts: POST",
+      // PUBLIC — the OpenAPI document, deliberately outside withApiAuth.
+      "src/app/api/v1/docs/route.ts: GET",
+      // NO_OWNER_COLUMN — workflow_templates is a read-mostly catalogue.
+      "src/app/api/v1/workflow-templates/[id]/route.ts: DELETE",
+      "src/app/api/v1/workflow-templates/[id]/route.ts: GET",
+      "src/app/api/v1/workflow-templates/route.ts: GET",
+      "src/app/api/v1/workflow-templates/route.ts: POST",
+      // ACCEPTED_KNOWN — SEC-48-A. Real holes, named, deferred, and asserted still broken.
+      "src/app/api/v1/workflows/[id]/runs/[runId]/route.ts: GET",
+      "src/app/api/v1/workflows/[id]/runs/route.ts: GET",
+    ]
+
+    const gated = new Set(GATE_OFFENDERS)
+    const suppressed = ALL_HANDLER_OFFENDERS.filter((offender) => !gated.has(offender.text))
+      .map((offender) => {
+        // `path:line: VERB does not …` → `path: VERB`, dropping the volatile line number.
+        const verb = offender.text.slice(offender.text.indexOf(": ") + 2).split(" ")[0]
+        return `${offender.file}: ${verb}`
+      })
+      .sort()
+
+    expect(
+      suppressed,
+      `the set of handlers hidden from this gate by the four exemption lists changed. If a route ` +
+        `LEFT this list it was fixed — delete its path from the exemption list and let the sweep ` +
+        `cover it. If a route JOINED, an exemption just swallowed a handler that nobody reviewed, ` +
+        `which is precisely the failure this file exists to prevent.`
+    ).toEqual(SUPPRESSED_BY_EXEMPTION)
   })
 })
