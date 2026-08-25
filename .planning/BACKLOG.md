@@ -1328,3 +1328,27 @@ review-fix scope.
 in the live `workflows` table, (b) picks between the sandbox route and an explicit, LOGGED bound,
 and (c) proves the wedge with a real `(a+)+$` payload before and after. Do not fold it into a test
 or tooling task; it is a behaviour change on the execution path.
+
+### SEC-48-A — `workflows/[id]/runs` and `runs/[runId]` are unscoped reads — **DEFERRED from Phase 48**
+
+Measured 2026-08-25 by Phase 48 research while auditing all 36 `/api/v1` route files. Both endpoints
+read workflow-run records **without any per-record ownership check**. Real, reproducible, and the same
+defect class as SEC-01.
+
+**Deliberately left out of Phase 48's scope**, and recorded here rather than silently dropped: it is a
+different subsystem from activities/stages, and folding it in would widen a security fix past what one
+phase can verify. Phase 48 fixes activities + stages and — more importantly — ships the route-level
+authorization regression gate that would have caught all of these. **Run that gate against these two
+routes first; it should name them.**
+
+### SEC-48-B — nothing in this repo detects removing an authorization check — **BEING FIXED in Phase 48**
+
+Measured 2026-08-25. All **three** `eq(organizations.ownerId, context.userId)` predicates were deleted
+from `src/app/api/v1/organizations/[id]/route.ts` (GET, PUT, DELETE) and the full base suite was run:
+**172 files passed / 2 skipped, 5237 tests passed / 32 skipped — nothing red.** A test named
+*"returns 404 ... when the organization is not the caller's"* does not detect its own subject being
+removed.
+
+This is the tenth gate-that-cannot-fail found in milestone v1.4, and the most consequential: it means
+every REST authorization check in the repo is currently unprotected against silent regression.
+Phase 48 makes the Q10 route-level gate its central deliverable for exactly this reason.
