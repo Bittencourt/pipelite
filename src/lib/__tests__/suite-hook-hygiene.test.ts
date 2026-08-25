@@ -68,7 +68,14 @@
  *     run time, and hoisting it to a static import would load the REAL `@/db` at collection in a
  *     project with no `DATABASE_URL`. Flagging it would have produced a broken "fix".
  *   - **Only bare-identifier calls are edges.** `obj.method()` and `this.method()` are not
- *     followed. Every instance measured is a bare call.
+ *     followed. Every instance measured is a bare call. An `import()` inside an object-literal
+ *     method, an object-literal property holding a function, or a class method is therefore
+ *     reported as an UNREACHABLE helper import even when a test does call it — but it IS reported.
+ *     WR-06: it used not to be. `declaredFunctionName` recognised only `function name(…)` and
+ *     `const name = …`, so such an import was visited with no enclosing scope and dropped from the
+ *     `ScanResult` entirely — neither a hit nor observable, which is not a boundary but a hole, and
+ *     a free evasion for anyone who hit a red. Section 1 now holds all three shapes as fixtures
+ *     asserting they land in `unreachableHelperImports`.
  *   - **One flat name space per file.** A shadowed name resolves to the last declaration seen.
  *   - **An `import()` directly in a `describe` body is NOT a hit** — it runs during collection,
  *     under no test or hook budget at all.
@@ -531,13 +538,43 @@ function testCallName(node: ts.Node): string | null {
   return [cursor.text, ...suffix].join(".")
 }
 
-/** `function name(…)` or `const name = (…) => …` / `const name = function(…)`, or `null`. */
+/**
+ * `function name(…)`, `const name = (…) => …` / `const name = function(…)`, an object-literal
+ * method or property holding a function, or a class method — else `null`.
+ *
+ * WR-06: the method forms were added because WITHOUT them an `import()` inside one had
+ * `ctx === undefined` when it was visited, so the guard at the hit site
+ * (`isDynamicImportCall(node) && ctx !== undefined`) dropped it ENTIRELY — it became neither a hit
+ * nor an entry in `unreachableHelperImports`. Verified against the shipped scanner:
+ *
+ *     MISSED  object-literal method a test calls   | hits: 0 | unreachable: 0
+ *     MISSED  class method a test calls            | hits: 0 | unreachable: 0
+ *     MISSED  helper aliased through a const       | hits: 0 | unreachable: 1   (visible, at least)
+ *
+ * Not FOLLOWING `obj.method()` calls is a stated limit of this gate and stays one — the call graph
+ * is bare-identifier only, so an import in a method is reported as UNREACHABLE even when a test
+ * calls it. What was not stated, and what broke a control, is that these imports never appeared in
+ * the `ScanResult` at all. Section 5 exists specifically to prove the stated boundary is
+ * OBSERVABLE rather than merely absent from the hit list, because otherwise "no hits" cannot be
+ * told apart from "the helper pass broke". For this shape it was neither, which made it a free
+ * evasion for anyone who hit a red.
+ */
 function declaredFunctionName(node: ts.Node): string | null {
   if (ts.isFunctionDeclaration(node) && node.name) return node.name.text
   if (
     ts.isVariableDeclaration(node) &&
     ts.isIdentifier(node.name) &&
     node.initializer &&
+    (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
+  ) {
+    return node.name.text
+  }
+  // `{ name() {…} }` and `class X { name() {…} }`.
+  if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) return node.name.text
+  // `{ name: () => …, name: function () {…} }`.
+  if (
+    ts.isPropertyAssignment(node) &&
+    ts.isIdentifier(node.name) &&
     (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
   ) {
     return node.name.text
@@ -1079,6 +1116,71 @@ describe("the hook/test/helper import matcher, unit-tested against fixtures FIRS
     // import" rather than "saw nothing at all".
     const { hooksSeen, testCallbacksSeen } = scanSource("known-negative.ts", source)
     expect(hooksSeen + testCallbacksSeen, `the parse saw no hook and no test in: ${label}`).toBeGreaterThan(0)
+  })
+
+  it.each([
+    {
+      shape: "an object-literal method",
+      source: [
+        `const helpers = {`,
+        `  async loadActions() {`,
+        `    return await import("@/app/workflows/actions")`,
+        `  },`,
+        `}`,
+        `it("uses it", async () => {`,
+        `  await helpers.loadActions()`,
+        `})`,
+      ].join("\n"),
+      container: "loadActions",
+    },
+    {
+      shape: "a class method",
+      source: [
+        `class Helpers {`,
+        `  async loadActions() {`,
+        `    return await import("@/app/workflows/actions")`,
+        `  }`,
+        `}`,
+        `it("uses it", async () => {`,
+        `  await new Helpers().loadActions()`,
+        `})`,
+      ].join("\n"),
+      container: "loadActions",
+    },
+    {
+      shape: "an object-literal property holding an arrow function",
+      source: [
+        `const helpers = {`,
+        `  loadActions: async () => import("@/app/workflows/actions"),`,
+        `}`,
+        `it("uses it", async () => {`,
+        `  await helpers.loadActions()`,
+        `})`,
+      ].join("\n"),
+      container: "loadActions",
+    },
+  ])("an import() inside $shape is OBSERVABLE, not dropped", ({ source, container }) => {
+    // WR-06. THE OBSERVABILITY CONTROL FOR THE STATED BOUNDARY, at the level of the ScanResult.
+    //
+    // Not following `obj.method()` CALLS is a stated limit of this gate and stays one — so these
+    // are correctly not HITS. What was not stated, and what broke section 5's whole argument, is
+    // that these imports did not appear in the ScanResult AT ALL: `declaredFunctionName` recognised
+    // only `function name(…)` and `const name = …`, so an import inside a method was visited with
+    // `ctx === undefined` and dropped by the guard at the hit site. Verified against the shipped
+    // scanner: `hits: 0 | unreachable: 0` for both method shapes.
+    //
+    // Section 5 exists to prove the boundary is OBSERVABLE rather than merely absent from the hit
+    // list, "otherwise 'no hits' cannot be told apart from 'the helper pass broke'". For this shape
+    // it was neither, which made it a free evasion of the gate for anyone who hit a red — move the
+    // import into a method and the whole thing goes quiet.
+    const result = scanSource("method-shaped.test.ts", source)
+    expect(result.hits.map(formatHit), "the stated boundary: obj.method() calls are not edges").toEqual([])
+    expect(
+      result.unreachableHelperImports.map((hit) => hit.container),
+      `the import inside ${container} is invisible to the ScanResult: neither a hit nor an ` +
+        `unreachable helper import. That is not a boundary, it is a hole — the boundary is "we do ` +
+        `not follow obj.method() calls", and it requires the import to still be REPORTED.`
+    ).toEqual([container])
   })
 
   it("counts an it.each chain as exactly one test callback", () => {
