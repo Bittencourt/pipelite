@@ -358,7 +358,12 @@ export function assertAuditDocument(auditJson) {
     fatal(`the audit document has no \`metadata.vulnerabilities\` histogram.${FLOOR_ADVICE}`)
   }
   for (const key of [...SEVERITIES, "total"]) {
-    if (!Number.isFinite(histogram[key])) {
+    // `Object.hasOwn` first, for the same reason the reconciliation below uses it: `histogram` came
+    // out of JSON.parse and therefore inherits Object.prototype, so a document that omitted a
+    // severity key entirely would be read through the prototype chain. `Number.isFinite` happens to
+    // reject the inherited function values, so this loop was safe today — but only by accident, and
+    // "safe by accident" is what WR-01 was.
+    if (!Object.hasOwn(histogram, key) || !Number.isFinite(histogram[key])) {
       fatal(
         `\`metadata.vulnerabilities.${key}\` is ${JSON.stringify(histogram[key])}, not a number. ` +
           `A missing histogram key reads as zero in JavaScript, which is indistinguishable from a ` +
@@ -377,11 +382,23 @@ export function assertAuditDocument(auditJson) {
   // RECONCILIATION. Count the packages in `vulnerabilities` by severity and require the counts to
   // equal the histogram npm reported beside them. Two independently-derived views of the same
   // fact; a document where either half was emptied, truncated or hand-edited disagrees.
+  //
+  // NULL-PROTOTYPE, and `Object.hasOwn` rather than `in`. WR-01: `severity in counted` was true for
+  // every `Object.prototype` member name, so a package reporting severity "toString",
+  // "constructor", "__proto__", "valueOf" or "hasOwnProperty" slipped past the "the schema changed"
+  // fatal below — verified PASSED for all five while "catastrophic" correctly fatalled — and was
+  // then excluded from both the per-severity reconciliation and `totalCounted`, leaving the document
+  // reconciling cleanly. `counted["__proto__"] += 1` is additionally a silent no-op. Such a
+  // package's advisories never met `failOnSet` either, so they got no disposition requirement at
+  // all. This IS the schema-drift detector; it must detect drift into that name space too.
   /** @type {Record<string, number>} */
-  const counted = Object.fromEntries(SEVERITIES.map((severity) => [severity, 0]))
+  const counted = Object.assign(
+    Object.create(null),
+    Object.fromEntries(SEVERITIES.map((severity) => [severity, 0]))
+  )
   for (const entry of Object.values(vulnerabilities)) {
     const severity = String(entry?.severity ?? "unknown")
-    if (!(severity in counted)) {
+    if (!Object.hasOwn(counted, severity)) {
       fatal(
         `a package in \`vulnerabilities\` reports severity ${JSON.stringify(severity)}, which is ` +
           `not one of ${SEVERITIES.join("/")}. The schema changed; this gate's severity ` +

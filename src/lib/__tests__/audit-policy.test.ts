@@ -863,6 +863,28 @@ describe("the evaluator refuses to certify an empty or wrong-shaped audit docume
     ;(document.vulnerabilities["pkg-0"] as { severity: string }).severity = "catastrophic"
     expect(() => assertAuditDocument(document)).toThrow(/schema changed/)
   })
+
+  it.each(["toString", "constructor", "__proto__", "valueOf", "hasOwnProperty"])(
+    "fatals on a severity named %s, which the prototype chain used to hide",
+    (inherited) => {
+      // WR-01, made permanent. The severity histogram was built with `Object.fromEntries`, so it
+      // inherited `Object.prototype`, and `severity in counted` was TRUE for every member name on
+      // it. All five of these were verified PASSED against the shipped detector while
+      // "catastrophic" correctly fatalled — so the one control whose stated job is to notice that
+      // npm's schema changed could not notice drift into this name space. The offending package was
+      // then dropped from the reconciliation and from `totalCounted` (and `counted["__proto__"] +=
+      // 1` is a silent no-op), so the document reconciled cleanly and the package's advisories were
+      // never tested against `failOn` at all — no disposition requirement whatsoever.
+      //
+      // These names are not exploitable through npm today. The point is that this is the
+      // SCHEMA-DRIFT DETECTOR, and it was blind in exactly the region a prototype-chain lookup is
+      // blind. Keep this table beside the "catastrophic" case above: the ordinary unknown severity
+      // and the inherited one are two different failure modes of the same check.
+      const document = healthyDocument()
+      ;(document.vulnerabilities["pkg-0"] as { severity: string }).severity = inherited
+      expect(() => assertAuditDocument(document)).toThrow(/schema changed/)
+    }
+  )
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
