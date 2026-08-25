@@ -1352,3 +1352,25 @@ removed.
 This is the tenth gate-that-cannot-fail found in milestone v1.4, and the most consequential: it means
 every REST authorization check in the repo is currently unprotected against silent regression.
 Phase 48 makes the Q10 route-level gate its central deliverable for exactly this reason.
+
+### DEF-48-01 — `npm run test:db` exits NON-ZERO on a fully green suite — **found by Phase 48, plan 48-06**
+
+Measured 2026-08-25: `npm run test:db` reports **73 passed / 73** and still exits non-zero.
+`src/lib/views/queries.db.test.ts:250` issues an `id`-keyed leftover query against
+`saved_view_defaults`, a table with **no `id` column** → PostgreSQL `42703`. Pre-existing since
+Phase 40 (`f097b5b`); reproduced with that file run alone.
+
+**Why this matters beyond the noise:** any future CI gate keyed on that exit code **reads green as
+red**. It is the mirror image of the failure class this milestone exists to remove — instead of a gate
+that cannot fail, a gate that cannot pass. Both destroy the signal. Fix the stray query, then the exit
+code becomes usable as a gate.
+
+### OBS-48-01 — a cross-check assertion goes vacuous when either side is empty — **generalisable**
+
+Measured 2026-08-25 by plan 48-06's control E1. A two-directional cross-check ("A's rows are absent
+from B's response, and B's rows are absent from A's") was expected to redden on a single-owner
+dataset. **It passed** — with B owning nothing, *both* directions are satisfied by an empty response.
+Under control E2 (empty database) **21 of 23 assertions in that file pass**.
+
+**Rule:** a cross-check needs a non-emptiness floor on **each side independently**, exactly as a
+counting gate needs a floor as well as a ceiling. Symmetry is not sufficiency.
