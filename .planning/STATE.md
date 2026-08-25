@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
-status: executing
-last_updated: "2026-08-25T04:15:17.256Z"
+status: verifying
+last_updated: "2026-08-25T04:33:59.523Z"
 last_activity: 2026-08-25
 progress:
   total_phases: 9
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 6
-  completed_plans: 5
-  percent: 0
+  completed_plans: 6
+  percent: 11
 ---
 
 # Session State
@@ -21,7 +21,7 @@ See: .planning/PROJECT.md (updated 2026-08-24)
 
 **Core value:** API-complete CRM core that handles fundamentals well
 **Current focus:** Phase 46 — Migration Chain & Toolchain Floor
-No plans written yet. Next command: `/gsd:plan-phase 46`.
+All 6 plans executed (2026-08-25). Next command: `/gsd:verify-phase 46`.
 
 ## Position
 
@@ -45,7 +45,15 @@ which ended at Phase 45.
 the migration chain) must hold before any later phase can verify itself against a clean database —
 that is exactly why Phase 39 had to provision its test database from a `pg_dump --schema-only`.
 
-Next: `/gsd:plan-phase 46`.
+**Phase 46 is EXECUTED — all 6 plans, 6 SUMMARYs, all five negative controls observed red with
+verbatim output.** SC-1, SC-2, SC-4 and SC-5 are proved; SC-3 is proved as a check but its
+merge-gate half is unexecuted because the 35 phase-46 commits are unpushed (see Known Issues). The
+container now runs **Node v24.19.0** (it ran the EOL v20.20.2 until 46-06 rebuilt the image), and
+`/api/health` returned 200 with `db.ok: true` and 10/10 processors against a database built by
+`drizzle-kit migrate` alone. Two items are owed by the developer: sign in at http://localhost:3001
+and open `/deals`, and push so the `ci` check runs the new `Migration chain check` step.
+
+Next: `/gsd:verify-phase 46`.
 
 v1.3 "Foundation & CRM Depth" SHIPPED 2026-08-24 — 14 phases (32-45), 190 plans, 42/42 requirements,
 audit `passed`, tagged `v1.3`. Archive: [roadmap](milestones/v1.3-ROADMAP.md) · [requirements](milestones/v1.3-REQUIREMENTS.md) ·
@@ -92,9 +100,15 @@ the same commit** — those contracts use an exact `toEqual`.
 deletion runs POST-commit; `DATA-01` must run POST-commit because `recalculateFormulas` uses the
 module-level `db` and cannot take a `tx`.
 
-**Environment gotcha that cost this milestone two debugging detours:** `.env`'s `DATABASE_URL` is
-`postgresql://…@postgres:5432` — the Docker-internal hostname. From the HOST it fails with
-`getaddrinfo EAI_AGAIN postgres`. Use `@localhost:5433` for anything run outside a container.
+**Environment gotcha that cost this milestone two debugging detours — FIXED by Phase 46 (DEPLOY-02),
+2026-08-25.** `.env`'s `DATABASE_URL` used to be `postgresql://…@postgres:5432`, the Docker-internal
+hostname, so anything run from the HOST failed with `getaddrinfo EAI_AGAIN postgres` and every phase
+since 33 paid an inline `DATABASE_URL=` override. It no longer does: **`.env` and `.env.example` now
+describe the HOST (`@localhost:5433`) and `docker-compose.yml` CONSTRUCTS the container's
+`@postgres:5432` URL itself.** `npm run db:migrate` works verbatim from the repo root with no
+override — measured again on the main tree in 46-06, at exit 0, with a wrong-port `.env.local` sitting
+in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back to the container form;
+`deployment-docs-accuracy.test.ts` and `compose-uploads-persistence.test.ts` will go red if you do.
 
 ## Performance Metrics
 
@@ -132,6 +146,7 @@ module-level `db` and cannot take a `tx`.
 | Phase 46 P03 | 12min | 3 tasks | 5 files |
 | Phase 46 P04 | 25min | 2 tasks | 3 files |
 | Phase 46 P05 | 9min | 2 tasks | 2 files |
+| Phase 46 P06 | 11min | 3 tasks | 0 files |
 
 ## Decisions
 
@@ -303,6 +318,9 @@ module-level `db` and cannot take a `tx`.
 - [Phase 46]: 46-04: the from-zero migration check asserts the CATALOG and records the child migrate's exit code without branching on it — NC-2 showed migrate exiting 0 while the check exits 1 on a missing table
 - [Phase 46]: 46-04: a partially-populated reference database is FATAL, never a skip — a misconfiguration must not be able to disguise itself as an absence
 - [Phase 46]: from-zero migration check wired onto the required ci job (Route A); the db-test-isolation whole-file services:/postgres proxy re-anchored to four parsed per-step assertions, committed before the workflow change
+- [Phase 46]: 46-06: the rebuilt container's Node is proved by asking the running process (v20.20.2 before -> v24.19.0 after) plus the image-ID change, never by a build log or a 'Starting' line
+- [Phase 46]: 46-06: SC-5 closed with semver.satisfies against the OBSERVED container version plus a full 832-range package-lock walk (24.19.0 -> 0 violations; 24.0.0 -> 1), not a major-number eyeball
+- [Phase 46]: 46-06: SC-2 closed against pipelite_sc2 built by drizzle-kit migrate alone — /api/health 200, db.ok true, 10/10 processors; scratch DB dropped, live pipelite intact with its 46,054 organizations
 
 ### Quick Tasks Completed
 
@@ -345,6 +363,8 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - CSV export drops every custom_* column unless the first exported row carries it (papaparse header derivation); pre-existing, affects all custom fields
 - **A purge does not delete uploaded file blobs** (Phase 37 review CR-01, deliberately scoped out of the fix pass). A file custom field stores its bytes under `${UPLOAD_DIR}/${entityId}/${fieldName}/${storedName}` and is referenced only from the record's `customFields` JSONB, so purging the row destroys the reference and leaves the bytes on disk (or in S3), still downloadable by anyone holding the URL — and the URL is recoverable from the soft-delete tombstone in `audit_log`, which purge deliberately preserves. Storage therefore grows monotonically with every purge and the retention pruner is a leak generator. `src/lib/trash/prune.ts` states this gap explicitly rather than implying files are handled. Closing it needs its own plan: irreversible disk deletion inside the most dangerous code path in the phase, plus `src/app/api/files/[entityId]/[fieldName]/[filename]/route.ts` resolving the entity before serving (it authorizes on `session?.user` alone today — pre-existing, predates Phase 37).
 - **A purge leaves the children it detaches holding stale formula values, permanently** (Phase 37 review WR-02). `activities.dealId`, `deals.personId`, `deals.organizationId` and `people.organizationId` are the foreign keys the formula cascade walks to feed `Deal.*` / `Person.*` / `Organization.*` dotted references into child formulas. A soft delete may skip recalculation because restore is the repair point; a purged parent never comes back. Not fixed locally because neither available call helps: `changedFields: ["dealId"]` selects nothing (a foreign key is not in `ENTITY_NATIVE_ATTRIBUTES` and a dotted ref is admitted only through `changedRelatedFields`), and `changedRelatedFields` does select those formulas but has no parent row to resolve them against — the engine has no representation for "this link is null", so the result is a stored internal error string on a live record. The same gap already exists wherever a child's own foreign key is cleared through the UI, so the fix is a formula-recalc scoping change (scope dotted refs on a foreign-key change, and teach the engine a null parent link), not a purge patch. The three purge mutations state the limitation at the detach.
+- Phase 46 GAP: the 35 phase-46 commits are UNPUSHED, so GitHub's ci check has never executed the new 'Migration chain check' step (latest run 32792493419 ran against pre-phase a58b9e1 and has no such step). SC-3's merge-gate half stays unexecuted until the first push.
+- Phase 46 GAP: the human half of the 46-06 sign-off checkpoint was NOT performed — nobody has signed in at http://localhost:3001 and opened /deals after the compose DATABASE_URL change. Unauthenticated evidence only: /deals 307-redirects to /login and /login renders a real credentials form.
 
 ## Session Log
 
@@ -394,6 +414,6 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 
 Phase: 46 (Migration Chain & Toolchain Floor) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
-Progress: [████████░░] 83%
+Status: Phase complete — ready for verification
+Progress: [██████████] 100%
 Last activity: 2026-08-25

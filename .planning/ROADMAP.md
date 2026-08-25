@@ -69,7 +69,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 
 ### v1.4 Debt Paydown (Phases 46-54) — ACTIVE
 
-- [ ] **Phase 46: Migration Chain & Toolchain Floor** - A clone of this repo builds its own database, and the documented commands work from the host
+- [x] **Phase 46: Migration Chain & Toolchain Floor** - A clone of this repo builds its own database, and the documented commands work from the host (completed 2026-08-25)
 - [ ] **Phase 47: Suite Trust & Supply Chain** - A red run means a defect, and the project has a stated position on its own advisories
 - [ ] **Phase 48: REST API Authorization** - Every `/api/v1` route that touches a record authorizes the caller against that record
 - [ ] **Phase 49: Mutation-Layer Truth After Commit** - A purge removes the bytes, a merge leaves the survivor consistent, a create response matches a read
@@ -166,7 +166,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 46-06-PLAN.md — behavioural proof: rebuilt container reports Node 24, `/api/health` 200 against a migration-built database · SC-2, SC-5
+- [x] 46-06-PLAN.md — behavioural proof: rebuilt container reports Node 24, `/api/health` 200 against a migration-built database · SC-2, SC-5
 
 ### Phase 47: Suite Trust & Supply Chain
 
@@ -456,7 +456,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 46. Migration Chain & Toolchain Floor | 5/6 | In Progress|  |
+| 46. Migration Chain & Toolchain Floor | 6/6 | Complete   | 2026-08-25 |
 | 47. Suite Trust & Supply Chain | 0/? | Not started | - |
 | 48. REST API Authorization | 0/? | Not started | - |
 | 49. Mutation-Layer Truth After Commit | 0/? | Not started | - |
