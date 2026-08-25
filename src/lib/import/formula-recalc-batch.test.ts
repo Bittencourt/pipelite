@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 // The importers never touch the database through this helper — `recalculateFormulas` owns every
@@ -280,8 +282,7 @@ describe("recalculateImportedRows", () => {
   // Source guards — the reasoning must survive future edits
   // ---------------------------------------------------------------------------------------
   it("never issues its own evaluateFormula call, so D-18's bounds cannot be bypassed", async () => {
-    const fs = await import("node:fs")
-    const source = fs.readFileSync("src/lib/import/formula-recalc-batch.ts", "utf8")
+    const source = readFileSync("src/lib/import/formula-recalc-batch.ts", "utf8")
     const code = source
       .split("\n")
       .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))

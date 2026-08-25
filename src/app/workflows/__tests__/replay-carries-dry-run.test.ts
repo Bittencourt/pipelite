@@ -80,6 +80,24 @@ vi.mock("@/lib/triggers/create-run", () => ({
   ) => mockCreateWorkflowRun(workflowId, envelope, depth, options),
 }))
 
+/**
+ * THE ACTION IS IMPORTED STATICALLY, AT MODULE SCOPE, AND THAT IS LOAD-BEARING.
+ *
+ * Each of the five tests below used to open with `await import("../actions")`. Every `vi.mock` call
+ * above is hoisted over this import by vitest's transform, so the static form sees exactly the same
+ * mocks — and this file calls no `vi.resetModules()`, so the module was cached after the first test
+ * anyway: four of the five loads were already no-ops and only the first one cost anything.
+ *
+ * What it cost is the point. 47-06 measured this file's first test at **5934 ms against a 5000 ms
+ * `testTimeout` — 118.7% of budget, a 0.84x margin** — at a sampled 2.50x-9.00x CPU
+ * oversubscription, failing in 3 of 6 full-suite runs; even at idle it consumed 23.1-34.0% of its
+ * budget. The cost is module-graph import work, and at module scope it is paid in vitest's
+ * collect/import phase, which carries no per-test budget at all.
+ *
+ * `src/lib/__tests__/suite-hook-hygiene.test.ts` is the suite-wide gate that keeps this true.
+ */
+import { replayWorkflowRun } from "../actions"
+
 /** The options bag `createWorkflowRun` was handed, or `undefined` if it was omitted entirely. */
 function optionsPassed(): Record<string, unknown> | undefined {
   return mockCreateWorkflowRun.mock.calls[0]?.[3] as Record<string, unknown> | undefined
@@ -94,8 +112,6 @@ describe("replayWorkflowRun — the origin's dry-run flag is carried into the re
 
   it("replaying a run whose dryRun is true produces a new run with dryRun also true", async () => {
     originRow.dryRun = true
-    const { replayWorkflowRun } = await import("../actions")
-
     const result = await replayWorkflowRun("wf-1", "run-origin")
 
     expect(result).toEqual({ success: true, runId: "run-replay" })
@@ -109,8 +125,6 @@ describe("replayWorkflowRun — the origin's dry-run flag is carried into the re
 
   it("still selects the dry_run column, so the flag cannot be read as undefined", async () => {
     originRow.dryRun = true
-    const { replayWorkflowRun } = await import("../actions")
-
     await replayWorkflowRun("wf-1", "run-origin")
 
     expect(
@@ -122,8 +136,6 @@ describe("replayWorkflowRun — the origin's dry-run flag is carried into the re
 
   it("replaying a REAL run stays real — the flag is carried, not hardcoded", async () => {
     originRow.dryRun = false
-    const { replayWorkflowRun } = await import("../actions")
-
     await replayWorkflowRun("wf-1", "run-origin")
 
     expect(
@@ -134,8 +146,6 @@ describe("replayWorkflowRun — the origin's dry-run flag is carried into the re
 
   it("carries the origin id as replayedFromRunId alongside the flag", async () => {
     originRow.dryRun = true
-    const { replayWorkflowRun } = await import("../actions")
-
     await replayWorkflowRun("wf-1", "run-origin")
 
     expect(optionsPassed()).toEqual({ dryRun: true, replayedFromRunId: "run-origin" })
@@ -144,8 +154,6 @@ describe("replayWorkflowRun — the origin's dry-run flag is carried into the re
   it("refuses a non-failed origin before it builds anything, whatever its dryRun value", async () => {
     originRow.status = "completed"
     originRow.dryRun = true
-    const { replayWorkflowRun } = await import("../actions")
-
     const result = await replayWorkflowRun("wf-1", "run-origin")
 
     expect(result).toEqual({ success: false, error: "Only failed runs can be replayed" })

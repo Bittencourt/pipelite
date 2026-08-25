@@ -40,15 +40,34 @@
  * TypeError instead of being absorbed by a permissive mock — the argument `src/lib/audit/prune.test.ts`
  * lines 28-29 makes explicitly.
  *
- * The route is loaded through a DYNAMIC import in each case rather than a top-level static one.
- * That is deliberate: it is what makes the RED run report "N tests, N failed" for a missing route
- * instead of collapsing into a single collection error with zero tests attributed to the contract
- * above.
+ * THE ROUTE IS IMPORTED STATICALLY, AT MODULE SCOPE, AND THAT IS LOAD-BEARING.
+ *
+ * It used to be reached through a two-level dynamic chain — each test called `callGet()`, which
+ * called `loadRoute()`, which performed `await import("@/app/api/health/route")`. The stated reason
+ * was diagnostic: a missing route would then report "N tests, N failed" instead of collapsing into
+ * one collection error. 47-14 reversed that trade, because the cost turned out to be the worst
+ * timing margin in the entire repository.
+ *
+ * 47-06 measured this file's first importing test at **9339 ms against a 5000 ms `testTimeout` —
+ * 186.8% of budget, a 0.54x margin** — at a sampled 2.50x-9.00x CPU oversubscription, and watched
+ * it FAIL in 2 of 6 full-suite runs. The whole cost is module-graph import work, paid inside a test
+ * body where the budget is HALF the 10 000 ms `hookTimeout` that the equivalent hook defect
+ * (`toggle.test.ts`, 47-03) was billed against. `vi.mock("@/db")` is hoisted above imports by
+ * vitest's transform, so the static form sees the mock exactly as the dynamic form did; nothing
+ * about what these tests prove changes. The diagnostic that was traded away is worth little in
+ * practice — a collection error names the file, and every one of these assertions fails either way.
+ *
+ * `src/lib/__tests__/suite-hook-hygiene.test.ts` is the suite-wide gate that keeps this true, and
+ * it follows helper calls transitively precisely because this file's import hid two calls deep
+ * where a lexical scan could not see it.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 vi.mock("@/db", () => ({ db: { execute: vi.fn() } }))
 
+// A NAMESPACE import, not a named one: the closed-verb-surface test below asserts that `POST`,
+// `PUT`, `PATCH` and `DELETE` are absent from the module, which needs the whole namespace object.
+import * as healthRoute from "@/app/api/health/route"
 import { db } from "@/db"
 import {
   EXPECTED_WORKERS,
@@ -62,13 +81,13 @@ const mockExecute = (db as unknown as { execute: ReturnType<typeof vi.fn> }).exe
 
 const DB_PROBE_TIMEOUT_MS = 2_000
 
-/** The route module, loaded lazily. See the header for why this is not a static import. */
-async function loadRoute() {
-  return await import("@/app/api/health/route")
-}
+/**
+ * The route's handler, from the STATIC namespace import above. See the header for why the two-level
+ * `callGet()` -> `loadRoute()` -> `await import(...)` chain this replaced had to go.
+ */
+const { GET } = healthRoute
 
 async function callGet(): Promise<Response> {
-  const { GET } = await loadRoute()
   return (await GET()) as unknown as Response
 }
 
@@ -393,8 +412,8 @@ describe("GET /api/health — payload minimisation (T-42-01, ASVS V4)", () => {
 })
 
 describe("GET /api/health — closed verb surface (T-42-22, ASVS V5)", () => {
-  it("is read-only: the module exports GET and no mutating handler", async () => {
-    const handlers = (await loadRoute()) as unknown as Record<string, unknown>
+  it("is read-only: the module exports GET and no mutating handler", () => {
+    const handlers = healthRoute as unknown as Record<string, unknown>
 
     expect(typeof handlers.GET).toBe("function")
     // A route file that later grows a mutating handler breaks here. An unauthenticated endpoint
@@ -405,9 +424,7 @@ describe("GET /api/health — closed verb surface (T-42-22, ASVS V5)", () => {
     expect(handlers.DELETE).toBeUndefined()
   })
 
-  it("takes no parameters, so the handler reads no input at all", async () => {
-    const { GET } = await loadRoute()
-
+  it("takes no parameters, so the handler reads no input at all", () => {
     // No `request` parameter means no query string, no body and no header is read — the strongest
     // input-validation posture available is having no input.
     expect(GET.length).toBe(0)

@@ -331,7 +331,12 @@ const MODULE_INSTANCE_CARVE_OUT = [
  * their test bodies call. That deep compiled path ships no type declarations, which is why the
  * dynamic form is cast `as unknown as FlightServer` at the boundary; a static import of it does not
  * typecheck, so "hoist it" is not available here without either a module declaration for a Next
- * internal or a standing `@ts-expect-error` — both worse than the import.
+ * internal or a standing compiler-suppression directive — both worse than the import. (That
+ * directive is named here by description rather than by spelling on purpose:
+ * `src/types/__tests__/no-standing-suppressions.test.ts` counts its occurrences over RAW,
+ * un-stripped source, so writing it even inside a comment inflates what that gate counts. This
+ * file learned that the hard way — the sentence you are reading replaced two literal spellings
+ * that took three of its assertions red.)
  *
  * They are also `*.rsc.test.tsx`, which `vitest.config.ts` EXCLUDES from the base project: they run
  * in the second (rsc) project, 8 tests total, and no run of it has ever been observed near a
@@ -1361,7 +1366,8 @@ describe("carve-out 3: the rsc files still import an untyped compiled path", () 
         untyped.length,
         `${file} is exempted ONLY because its import target is the shipped Flight server under ` +
           `next/dist/compiled/, a deep path with no type declarations that cannot be statically ` +
-          `imported without a module declaration or a standing @ts-expect-error. Its imports no ` +
+          `imported without a module declaration or a standing compiler-suppression directive. ` +
+          `Its imports no ` +
           `longer point there, so the reason is gone: hoist them and delete the entry. Hits: ` +
           `${hits.map(formatHit).join(" | ")}`
       ).toBeGreaterThan(0)

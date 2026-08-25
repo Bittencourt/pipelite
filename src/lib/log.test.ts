@@ -33,11 +33,23 @@
  *   - One call is one line. A newline inside a user-controlled `ctx` value must not be able to
  *     forge a second JSON log record once these lines are machine-parsed (threat T-42-05).
  *
- * The module is loaded with `await import("./log")` inside each test rather than a top-level
- * import — the convention in src/lib/email/send.test.ts — so that a missing or broken module
- * surfaces as per-test failures instead of one collection error that hides the assertion count.
+ * THE MODULE IS IMPORTED STATICALLY, AT MODULE SCOPE. It used to be loaded with
+ * `await import("./log")` inside each of the 24 tests — copying the convention in
+ * src/lib/email/send.test.ts — so that a missing or broken module would surface as per-test
+ * failures instead of one collection error that hides the assertion count. 47-14 reversed that
+ * trade deliberately: the diagnostic is worth little (a broken `./log` fails 24 assertions either
+ * way, and the collection error names the file), while the cost is real and is billed against
+ * `testTimeout` 5000 ms rather than the collect phase's unbudgeted time. 47-06 measured three of
+ * six full-suite runs going RED on exactly that mechanism at >=3x CPU oversubscription. The
+ * per-test load bought nothing here in particular, because this file calls no `vi.resetModules()`
+ * — the module was cached after the first test regardless, so 23 of the 24 loads were already
+ * no-ops.
+ *
+ * `src/lib/__tests__/suite-hook-hygiene.test.ts` is the suite-wide gate that keeps this true.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+
+import { log } from "./log"
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 
@@ -45,11 +57,6 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 const MAX_LINE = 8_000
 
 type Spy = ReturnType<typeof vi.fn>
-
-async function loadLog() {
-  const mod = await import("./log")
-  return mod.log
-}
 
 function spyFor(method: "log" | "warn" | "error" | "debug"): Spy {
   return console[method] as unknown as Spy
@@ -107,8 +114,6 @@ afterEach(() => {
 
 describe("log — line shape", () => {
   it("emits exactly one console call carrying exactly one string argument", async () => {
-    const log = await loadLog()
-
     log.info("scope-a", "hello")
 
     expect(spyFor("log")).toHaveBeenCalledTimes(1)
@@ -117,8 +122,6 @@ describe("log — line shape", () => {
   })
 
   it("emits parseable JSON carrying level, scope, msg and an ISO-8601 ts", async () => {
-    const log = await loadLog()
-
     log.info("scope-a", "hello")
 
     const record = lastRecord("log")
@@ -129,8 +132,6 @@ describe("log — line shape", () => {
   })
 
   it("spreads ctx keys onto the top level rather than nesting them under ctx", async () => {
-    const log = await loadLog()
-
     log.info("s", "m", { count: 3 })
 
     const record = lastRecord("log")
@@ -139,8 +140,6 @@ describe("log — line shape", () => {
   })
 
   it("emits a single line — the string contains no newline", async () => {
-    const log = await loadLog()
-
     log.info("s", "m", { note: "plain" })
 
     const line = lastLine("log")
@@ -151,8 +150,6 @@ describe("log — line shape", () => {
 
 describe("log — LOG_LEVEL gating", () => {
   it("defaults to info: debug is suppressed, info/warn/error all emit", async () => {
-    const log = await loadLog()
-
     log.debug("s", "d")
     expect(callCounts().debug).toBe(0)
 
@@ -167,8 +164,6 @@ describe("log — LOG_LEVEL gating", () => {
 
   it("LOG_LEVEL=warn suppresses debug and info while warn and error still emit", async () => {
     process.env.LOG_LEVEL = "warn"
-    const log = await loadLog()
-
     log.debug("s", "d")
     log.info("s", "i")
     log.warn("s", "w")
@@ -179,8 +174,6 @@ describe("log — LOG_LEVEL gating", () => {
 
   it("LOG_LEVEL=silent mutes every level — zero console calls", async () => {
     process.env.LOG_LEVEL = "silent"
-    const log = await loadLog()
-
     log.debug("s", "d")
     log.info("s", "i")
     log.warn("s", "w")
@@ -191,8 +184,6 @@ describe("log — LOG_LEVEL gating", () => {
 
   it("an unrecognised LOG_LEVEL falls back to info instead of throwing", async () => {
     process.env.LOG_LEVEL = "nonsense"
-    const log = await loadLog()
-
     // A typo in an operator's .env must not take the app down.
     expect(() => log.info("s", "i")).not.toThrow()
     log.debug("s", "d")
@@ -203,8 +194,6 @@ describe("log — LOG_LEVEL gating", () => {
   })
 
   it("reads LOG_LEVEL on every call rather than memoising it at module load", async () => {
-    const log = await loadLog()
-
     log.info("s", "first")
     expect(callCounts().log).toBe(1)
 
@@ -222,8 +211,6 @@ describe("log — LOG_LEVEL gating", () => {
 
 describe("log — Error serialization (amendment A3)", () => {
   it("round-trips an Error's name, message AND stack", async () => {
-    const log = await loadLog()
-
     log.error("s", "boom", { err: new Error("kaput") })
 
     const err = lastRecord("error").err as Record<string, unknown>
@@ -235,8 +222,6 @@ describe("log — Error serialization (amendment A3)", () => {
   })
 
   it("does not emit the empty object a bare JSON.stringify would produce", async () => {
-    const log = await loadLog()
-
     // JSON.stringify(new Error("kaput")) === "{}" — name/message/stack are non-enumerable.
     // This assertion is the whole reason serialize() exists.
     expect(JSON.stringify(new Error("kaput"))).toBe("{}")
@@ -249,8 +234,6 @@ describe("log — Error serialization (amendment A3)", () => {
   })
 
   it("serialises a cause chain", async () => {
-    const log = await loadLog()
-
     log.error("s", "boom", {
       err: new Error("outer", { cause: new Error("inner") }),
     })
@@ -263,8 +246,6 @@ describe("log — Error serialization (amendment A3)", () => {
   })
 
   it("terminates a cause chain deeper than the depth cap without throwing", async () => {
-    const log = await loadLog()
-
     let deep = new Error("level-0")
     for (let i = 1; i <= 10; i++) deep = new Error(`level-${i}`, { cause: deep })
 
@@ -283,8 +264,6 @@ describe("log — Error serialization (amendment A3)", () => {
   })
 
   it("survives a cyclic cause chain", async () => {
-    const log = await loadLog()
-
     const a = new Error("a")
     const b = new Error("b", { cause: a })
     ;(a as Error & { cause?: unknown }).cause = b
@@ -295,8 +274,6 @@ describe("log — Error serialization (amendment A3)", () => {
   })
 
   it("passes non-Error ctx values through unchanged", async () => {
-    const log = await loadLog()
-
     log.info("s", "m", {
       text: "hello",
       count: 42,
@@ -316,8 +293,6 @@ describe("log — Error serialization (amendment A3)", () => {
 
 describe("log — console delegation (amendment A3)", () => {
   it("log.error lands on console.error and on nothing else", async () => {
-    const log = await loadLog()
-
     log.error("s", "m")
 
     expect(callCounts()).toEqual({ log: 0, warn: 0, error: 1, debug: 0 })
@@ -327,8 +302,6 @@ describe("log — console delegation (amendment A3)", () => {
   })
 
   it("log.warn lands on console.warn and on nothing else", async () => {
-    const log = await loadLog()
-
     log.warn("s", "m")
 
     expect(callCounts()).toEqual({ log: 0, warn: 1, error: 0, debug: 0 })
@@ -338,8 +311,6 @@ describe("log — console delegation (amendment A3)", () => {
 
   it("log.debug lands on console.debug and on nothing else", async () => {
     process.env.LOG_LEVEL = "debug"
-    const log = await loadLog()
-
     log.debug("s", "m")
 
     expect(callCounts()).toEqual({ log: 0, warn: 0, error: 0, debug: 1 })
@@ -348,8 +319,6 @@ describe("log — console delegation (amendment A3)", () => {
   })
 
   it("log.info lands on console.log and on nothing else", async () => {
-    const log = await loadLog()
-
     log.info("s", "m")
 
     expect(callCounts()).toEqual({ log: 1, warn: 0, error: 0, debug: 0 })
@@ -360,8 +329,6 @@ describe("log — console delegation (amendment A3)", () => {
 
 describe("log — throw-safety", () => {
   it("emits a marked line for a circular ctx object instead of throwing", async () => {
-    const log = await loadLog()
-
     const circular: Record<string, unknown> = { name: "loop" }
     circular.self = circular
 
@@ -376,8 +343,6 @@ describe("log — throw-safety", () => {
   })
 
   it("does not throw on a BigInt in ctx", async () => {
-    const log = await loadLog()
-
     // `BigInt("…")` rather than a `9007199254740993n` literal: tsconfig targets ES2017, where
     // the literal syntax is a compile error (TS2737) even though the global exists at runtime.
     expect(() => log.info("s", "big", { size: BigInt("9007199254740993") })).not.toThrow()
@@ -389,8 +354,6 @@ describe("log — throw-safety", () => {
   })
 
   it("truncates an oversized payload to a valid line under the cap", async () => {
-    const log = await loadLog()
-
     log.info("s", "huge", { blob: "x".repeat(50_000) })
 
     const line = lastLine("log")
@@ -409,8 +372,6 @@ describe("log — throw-safety", () => {
 
 describe("log — log injection (threat T-42-05)", () => {
   it("a newline-bearing ctx value cannot forge a second log record", async () => {
-    const log = await loadLog()
-
     const forgery = '\n{"level":"error","scope":"forged","msg":"pwned"}'
     log.info("real-scope", "user input", { payload: forgery })
 
@@ -432,8 +393,6 @@ describe("log — log injection (threat T-42-05)", () => {
   })
 
   it("a newline in the scope or msg itself cannot break the line either", async () => {
-    const log = await loadLog()
-
     log.error('sco\npe', 'ms\ng {"level":"info"}')
 
     const line = lastLine("error")

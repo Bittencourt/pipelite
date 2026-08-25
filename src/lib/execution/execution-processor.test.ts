@@ -4,35 +4,54 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 
 import { readStrippedSource } from "@/components/custom-fields/__tests__/source-scan"
 
-// NOTE FOR WHOEVER TOUCHES THIS FILE NEXT: the module under test must be loaded with
-// `await import("./execution-processor")` INSIDE each test. A static import is hoisted above the
-// `const mockDb` declarations below and throws `Cannot access 'mockDb' before initialization`,
+// NOTE FOR WHOEVER TOUCHES THIS FILE NEXT (rewritten by 47-14): the module under test is a STATIC
+// import, and the mock state below lives in `vi.hoisted` because that is what makes it legal.
+//
+// The note this replaces was right about the mechanism and wrong about the conclusion. A static
+// import IS hoisted above plain module-scope `const mockDb` declarations, and the `@/db` factory
+// would then read `mockDb` inside its TDZ and throw `Cannot access 'mockDb' before initialization`,
 // which vitest surfaces as a 0-test collection failure that reads exactly like a missing module.
-
-// Mock the DB module with raw SQL support
-const mockExecute = vi.fn()
-const mockDb = {
-  execute: mockExecute,
-  update: vi.fn(),
-  select: vi.fn(),
-  // CONTEXT amendment A3: the waiting claim now runs inside `db.transaction`, so the mock has to
-  // hand a "tx" to the callback. It hands back mockDb itself, so every `tx.execute` / `tx.update`
-  // assertion below still reads through the same two mocks.
-  transaction: vi.fn(),
-}
+// `vi.hoisted` is the fix for precisely that: its callback is lifted above the imports as well, so
+// the bindings exist before any factory can touch them. The `vi.hoisted` block and the `vi.mock`
+// factories cannot move independently — the factories close over these bindings — so they are one
+// unit.
+//
+// The reason for changing it: the 33 `await import("./execution-processor")` calls this file used to
+// make were the same module-import-cost defect 47-03 fixed in two lifecycle hooks, except billed
+// against `testTimeout` 5000 ms instead of `hookTimeout` 10 000 ms. 47-06 measured that population
+// taking three of six full-suite runs RED at a sampled 2.50x-9.00x CPU oversubscription. This file
+// calls no `vi.resetModules()`, so 32 of the 33 loads were already cache hits — the cost was
+// concentrated in whichever test ran first.
+//
+// `src/lib/__tests__/suite-hook-hygiene.test.ts` is the suite-wide gate that keeps this true.
+// `mockExecute` is deliberately NOT destructured out here: nothing in this file reads it directly,
+// it only exists as `mockDb.execute`. Naming it at module scope would be an unused binding.
+const { mockDb, mockExecuteRun, mockAlert } = vi.hoisted(() => {
+  const mockExecute = vi.fn()
+  return {
+    mockExecute,
+    mockDb: {
+      execute: mockExecute,
+      update: vi.fn(),
+      select: vi.fn(),
+      // CONTEXT amendment A3: the waiting claim now runs inside `db.transaction`, so the mock has
+      // to hand a "tx" to the callback. It hands back mockDb itself, so every `tx.execute` /
+      // `tx.update` assertion below still reads through the same two mocks.
+      transaction: vi.fn(),
+    },
+    mockExecuteRun: vi.fn(),
+    // Plan 41-08's module. Deliberately a thin wrapper so the tests can make it reject AND make it
+    // throw synchronously -- two different failure shapes that a call site must both survive.
+    mockAlert: vi.fn(),
+  }
+})
 
 vi.mock("@/db", () => ({ db: mockDb }))
 
-// Mock the engine
-const mockExecuteRun = vi.fn()
 vi.mock("./engine", () => ({
   executeRun: (...args: unknown[]) => mockExecuteRun(...args),
 }))
 
-// Mock the failure alert (plan 41-08's module). It is deliberately a thin wrapper so the tests can
-// make it reject AND make it throw synchronously -- two different failure shapes that a call site
-// must both survive.
-const mockAlert = vi.fn()
 vi.mock("./failure-alert", () => ({
   maybeAlertOnRunFailure: (...args: unknown[]) => mockAlert(...args),
 }))
@@ -53,6 +72,12 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn((a, b) => ({ _tag: "eq", a, b })),
   and: vi.fn((...conditions: unknown[]) => ({ _tag: "and", conditions })),
 }))
+
+import {
+  processPendingRuns,
+  processWaitingRuns,
+  reclaimStaleRuns,
+} from "./execution-processor"
 
 const PROCESSOR_PATH = "src/lib/execution/execution-processor.ts"
 
@@ -227,7 +252,6 @@ describe("execution-processor", () => {
         .mockResolvedValueOnce([{ id: "run-1", workflow_id: "wf-1", status: "running" }])
         .mockResolvedValueOnce([]) // No more pending runs
 
-      const { processPendingRuns } = await import("./execution-processor")
       const count = await processPendingRuns()
 
       expect(count).toBe(1)
@@ -238,7 +262,6 @@ describe("execution-processor", () => {
       // The SQL enforces this -- if no rows returned, no claim
       mockDb.execute.mockResolvedValueOnce([])
 
-      const { processPendingRuns } = await import("./execution-processor")
       const count = await processPendingRuns()
 
       expect(count).toBe(0)
@@ -249,7 +272,6 @@ describe("execution-processor", () => {
       // The SQL NOT EXISTS checks for both running AND waiting
       mockDb.execute.mockResolvedValueOnce([])
 
-      const { processPendingRuns } = await import("./execution-processor")
       const count = await processPendingRuns()
 
       expect(count).toBe(0)
@@ -263,7 +285,6 @@ describe("execution-processor", () => {
         .mockResolvedValueOnce([{ id: "run-3", workflow_id: "wf-3", status: "running" }])
         .mockResolvedValueOnce([]) // Done
 
-      const { processPendingRuns } = await import("./execution-processor")
       const count = await processPendingRuns()
 
       expect(count).toBe(3)
@@ -276,7 +297,6 @@ describe("execution-processor", () => {
     it("leaves its single-statement claim SQL untouched by the A3 fix", async () => {
       mockDb.execute.mockResolvedValueOnce([])
 
-      const { processPendingRuns } = await import("./execution-processor")
       await processPendingRuns()
 
       const claimSql = (
@@ -300,7 +320,6 @@ describe("execution-processor", () => {
       mockDb.execute.mockResolvedValueOnce([readyStep("step-1", "run-1")])
       mockDb.update.mockReturnValue(makeUpdateChain([[{ id: "step-1" }]]))
 
-      const { processWaitingRuns } = await import("./execution-processor")
       const count = await processWaitingRuns()
 
       expect(count).toBe(1)
@@ -311,7 +330,6 @@ describe("execution-processor", () => {
       // Query returns no rows (resume_at > now filtered in SQL)
       mockDb.execute.mockResolvedValueOnce([])
 
-      const { processWaitingRuns } = await import("./execution-processor")
       const count = await processWaitingRuns()
 
       expect(count).toBe(0)
@@ -323,7 +341,6 @@ describe("execution-processor", () => {
       const chain = makeUpdateChain([[{ id: "step-1" }]])
       mockDb.update.mockReturnValue(chain)
 
-      const { processWaitingRuns } = await import("./execution-processor")
       await processWaitingRuns()
 
       // The run's transition back to 'running' must refresh the lease:
@@ -352,7 +369,6 @@ describe("execution-processor", () => {
       const chain = makeUpdateChain([[{ id: "step-1" }]])
       mockDb.update.mockReturnValue(chain)
 
-      const { processWaitingRuns } = await import("./execution-processor")
       await processWaitingRuns()
 
       // ANTI-VACUITY: a short-circuit that never issued the claim at all would leave whereArgs
@@ -381,7 +397,6 @@ describe("execution-processor", () => {
       const chain = makeUpdateChain([[]]) // another instance won this step
       mockDb.update.mockReturnValue(chain)
 
-      const { processWaitingRuns } = await import("./execution-processor")
       const count = await processWaitingRuns()
 
       expect(
@@ -404,7 +419,6 @@ describe("execution-processor", () => {
       const chain = makeUpdateChain([[{ id: "step-1" }]])
       mockDb.update.mockReturnValue(chain)
 
-      const { processWaitingRuns } = await import("./execution-processor")
       const count = await processWaitingRuns()
 
       expect(mockExecuteRun).toHaveBeenCalledTimes(1)
@@ -421,7 +435,6 @@ describe("execution-processor", () => {
       const chain = makeUpdateChain([[{ id: "step-1" }], []])
       mockDb.update.mockReturnValue(chain)
 
-      const { processWaitingRuns } = await import("./execution-processor")
       const count = await processWaitingRuns()
 
       // Counted as STEP claims specifically: `processWaitingRuns` now also makes a guarded RUN
@@ -453,7 +466,6 @@ describe("execution-processor", () => {
       const chain = makeUpdateChain([[{ id: "step-1" }]])
       mockDb.update.mockReturnValue(chain)
 
-      const { processWaitingRuns } = await import("./execution-processor")
       await processWaitingRuns()
 
       // ANTI-VACUITY: no run transition at all would leave this empty and every toContain below
@@ -482,7 +494,6 @@ describe("execution-processor", () => {
       const chain = makeUpdateChain([[{ id: "step-1" }]], [[]])
       mockDb.update.mockReturnValue(chain)
 
-      const { processWaitingRuns } = await import("./execution-processor")
       const count = await processWaitingRuns()
 
       expect(
@@ -503,7 +514,6 @@ describe("execution-processor", () => {
       const chain = makeUpdateChain([[{ id: "step-1" }]], [[]])
       mockDb.update.mockReturnValue(chain)
 
-      const { processWaitingRuns } = await import("./execution-processor")
       await processWaitingRuns()
 
       expect(
@@ -523,7 +533,6 @@ describe("execution-processor", () => {
       const chain = makeUpdateChain([[{ id: "step-1" }], [{ id: "step-2" }]], [[], [{ id: "run-2" }]])
       mockDb.update.mockReturnValue(chain)
 
-      const { processWaitingRuns } = await import("./execution-processor")
       const count = await processWaitingRuns()
 
       expect(
@@ -543,7 +552,6 @@ describe("execution-processor", () => {
       mockDb.execute.mockResolvedValueOnce([readyStep("step-1", "run-1")])
       mockDb.update.mockReturnValue(makeUpdateChain([[{ id: "step-1" }]]))
 
-      const { processWaitingRuns } = await import("./execution-processor")
       await processWaitingRuns()
 
       expect(mockDb.execute).toHaveBeenCalledTimes(1)
@@ -582,7 +590,6 @@ describe("execution-processor", () => {
         .mockResolvedValueOnce([]) // orphaned step cleanup
         .mockResolvedValueOnce([{ id: "run-stale" }]) // reclaimed runs
 
-      const { reclaimStaleRuns } = await import("./execution-processor")
       const count = await reclaimStaleRuns()
 
       expect(count).toBe(1)
@@ -601,7 +608,6 @@ describe("execution-processor", () => {
         .mockResolvedValueOnce([]) // orphaned step cleanup
         .mockResolvedValueOnce([]) // no stale runs
 
-      const { reclaimStaleRuns } = await import("./execution-processor")
       const count = await reclaimStaleRuns()
 
       expect(count).toBe(0)
@@ -630,7 +636,6 @@ describe("execution-processor", () => {
           .mockResolvedValueOnce([{ id: "run-1", workflow_id: "wf-1", status: "running" }])
           .mockResolvedValueOnce([])
 
-        const { processPendingRuns } = await import("./execution-processor")
         await processPendingRuns()
 
         // ANTI-VACUITY: a call site that was never added passes every "does not abort" assertion
@@ -647,7 +652,6 @@ describe("execution-processor", () => {
         const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 
         try {
-          const { processPendingRuns } = await import("./execution-processor")
           const count = await processPendingRuns()
 
           // An unexpected exception is also a failure the operator should hear about, and the run
@@ -667,7 +671,6 @@ describe("execution-processor", () => {
           .mockResolvedValueOnce([{ id: "run-b" }])
           .mockResolvedValueOnce([])
 
-        const { processPendingRuns } = await import("./execution-processor")
         await processPendingRuns()
 
         expect(mockAlert).toHaveBeenCalledTimes(2)
@@ -680,7 +683,6 @@ describe("execution-processor", () => {
         mockDb.execute.mockResolvedValueOnce([readyStep("step-1", "run-1")])
         mockDb.update.mockReturnValue(makeUpdateChain([[{ id: "step-1" }]]))
 
-        const { processWaitingRuns } = await import("./execution-processor")
         await processWaitingRuns()
 
         expect(mockAlert.mock.calls.length, AFTER_NOT_INSIDE).toBeGreaterThan(0)
@@ -694,7 +696,6 @@ describe("execution-processor", () => {
         const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 
         try {
-          const { processWaitingRuns } = await import("./execution-processor")
           await processWaitingRuns()
 
           expect(mockAlert).toHaveBeenCalledWith("run-1")
@@ -711,7 +712,6 @@ describe("execution-processor", () => {
         ])
         mockDb.update.mockReturnValue(makeUpdateChain([[{ id: "step-1" }], [{ id: "step-2" }]]))
 
-        const { processWaitingRuns } = await import("./execution-processor")
         const count = await processWaitingRuns()
 
         expect(count).toBe(2)
@@ -724,7 +724,6 @@ describe("execution-processor", () => {
         mockDb.execute.mockResolvedValueOnce([readyStep("step-1", "run-1")])
         mockDb.update.mockReturnValue(makeUpdateChain([[]]))
 
-        const { processWaitingRuns } = await import("./execution-processor")
         await processWaitingRuns()
 
         expect(mockAlert).not.toHaveBeenCalled()
@@ -743,7 +742,6 @@ describe("execution-processor", () => {
           .mockResolvedValueOnce([]) // orphaned step cleanup
           .mockResolvedValueOnce([{ id: "run-stale-1" }, { id: "run-stale-2" }])
 
-        const { reclaimStaleRuns } = await import("./execution-processor")
         const count = await reclaimStaleRuns()
 
         expect(count).toBe(2)
@@ -755,7 +753,6 @@ describe("execution-processor", () => {
       it("does not alert when nothing exceeded the lease", async () => {
         mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([])
 
-        const { reclaimStaleRuns } = await import("./execution-processor")
         const count = await reclaimStaleRuns()
 
         expect(count).toBe(0)
@@ -767,7 +764,6 @@ describe("execution-processor", () => {
         // count line already tolerates this, and the alert loop has to as well.
         mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce(undefined)
 
-        const { reclaimStaleRuns } = await import("./execution-processor")
         const count = await reclaimStaleRuns()
 
         expect(count).toBe(0)
@@ -791,7 +787,6 @@ describe("execution-processor", () => {
         const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 
         try {
-          const { processPendingRuns } = await import("./execution-processor")
           const count = await processPendingRuns()
 
           expect(mockExecuteRun, MUST_NOT_ABORT).toHaveBeenCalledWith("run-b")
@@ -812,7 +807,6 @@ describe("execution-processor", () => {
         const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 
         try {
-          const { processPendingRuns } = await import("./execution-processor")
           const count = await processPendingRuns()
 
           // Asserted SEPARATELY from the rejection case on purpose: a bare
@@ -834,7 +828,6 @@ describe("execution-processor", () => {
         const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 
         try {
-          const { processWaitingRuns } = await import("./execution-processor")
           const count = await processWaitingRuns()
 
           expect(mockExecuteRun, MUST_NOT_ABORT).toHaveBeenCalledWith("run-2")
@@ -852,7 +845,6 @@ describe("execution-processor", () => {
         const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 
         try {
-          const { reclaimStaleRuns } = await import("./execution-processor")
           const count = await reclaimStaleRuns()
 
           // reclaimStaleRuns runs FIRST in the tick and its failure would keep processPendingRuns

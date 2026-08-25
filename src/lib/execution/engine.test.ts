@@ -10,12 +10,32 @@ import { getCurrentExecutionDepth } from "./recursion"
 // satisfied by the prose it exists to make redundant.
 import { readStrippedSource } from "@/components/custom-fields/__tests__/source-scan"
 
-// Mock the DB module
-const mockDb = {
-  select: vi.fn(),
-  insert: vi.fn(),
-  update: vi.fn(),
-}
+// ── WHY THE MOCK STATE IS IN `vi.hoisted` AND THE SUBJECTS ARE STATIC IMPORTS (47-14) ────────
+//
+// This file used to load its subjects with `await import("./engine")` / `await import("./actions")`
+// inside 30 places — 26 test bodies plus the two `observeFromAction` / `observeDryRun` helpers the
+// bodies call. That is the module-import-cost defect 47-03 fixed in two lifecycle hooks, except
+// billed against `testTimeout` 5000 ms instead of `hookTimeout` 10 000 ms, i.e. HALF the budget.
+//
+// 47-06 measured `walks a linear 3-node graph and completes the run` at **5782 ms against that
+// 5000 ms budget — 115.6%, a 0.86x margin** — at a sampled 2.50x-9.00x CPU oversubscription, and
+// watched it FAIL a full-suite run. Even at idle it consumed 23.0% of its budget.
+//
+// A static import is hoisted above module-scope consts by vitest's transform, so the `@/db` factory
+// would have read `mockDb` inside its TDZ; `vi.hoisted` is lifted above the imports too, which is
+// what makes the static form legal. The `vi.hoisted` block and the `vi.mock` factories that close
+// over it cannot move independently, so they are one unit.
+//
+// `src/lib/__tests__/suite-hook-hygiene.test.ts` is the suite-wide gate that keeps this true.
+const { mockDb, mockEvaluateCondition, mockResolveDelay } = vi.hoisted(() => ({
+  mockDb: {
+    select: vi.fn(),
+    insert: vi.fn(),
+    update: vi.fn(),
+  },
+  mockEvaluateCondition: vi.fn(),
+  mockResolveDelay: vi.fn(),
+}))
 
 // Chain helpers for Drizzle query builder pattern
 function chainSelect(returnValue: unknown) {
@@ -50,9 +70,6 @@ function chainUpdate() {
 vi.mock("@/db", () => ({ db: mockDb }))
 
 // Mock condition evaluator and delay resolver
-const mockEvaluateCondition = vi.fn()
-const mockResolveDelay = vi.fn()
-
 vi.mock("./condition-evaluator", () => ({
   evaluateCondition: (...args: unknown[]) => mockEvaluateCondition(...args),
 }))
@@ -77,6 +94,18 @@ vi.mock("@/db/schema/workflows", () => ({
   workflowRuns: { id: "workflowRuns.id", workflowId: "workflowRuns.workflowId" },
   workflowRunSteps: { id: "workflowRunSteps.id" },
 }))
+
+// The subjects, statically. `./actions` is mocked above, so `executeAction` here IS the mock, and
+// `vi.mocked(executeAction)` behaves exactly as it did through the dynamic form.
+//
+// `./actions/transform` is a SIDE-EFFECT import: loading it registers the `javascript_transform`
+// handler with `./actions/registry`, which the sandbox test below reaches directly precisely because
+// `./actions` is mocked for this whole file. Registration is now done once at collect time rather
+// than inside that test.
+import { executeAction } from "./actions"
+import { getHandler } from "./actions/registry"
+import "./actions/transform"
+import { executeRun } from "./engine"
 
 // Helper to build test nodes
 function makeActionNode(id: string, nextNodeId: string | null = null, config: Record<string, unknown> = {}): WorkflowNode {
@@ -212,7 +241,6 @@ describe("executeRun", () => {
 
     setupDbMocks(workflow, run)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-1")
 
     // 3 steps should be created
@@ -247,7 +275,6 @@ describe("executeRun", () => {
     setupDbMocks(workflow, run)
     mockEvaluateCondition.mockReturnValue(true)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-2")
 
     // Should create step for: cond-1, true-1 (branch), merge-1 (after merge)
@@ -278,7 +305,6 @@ describe("executeRun", () => {
     setupDbMocks(workflow, run)
     mockEvaluateCondition.mockReturnValue(false)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-3")
 
     const stepNodeIds = insertedSteps.map(s => s.nodeId)
@@ -308,7 +334,6 @@ describe("executeRun", () => {
     setupDbMocks(workflow, run)
     mockResolveDelay.mockReturnValue(futureDate)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-4")
 
     // Run should be set to waiting
@@ -342,7 +367,6 @@ describe("executeRun", () => {
     setupDbMocks(workflow, run)
     mockResolveDelay.mockReturnValue(null) // Past time
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-5")
 
     // Should execute all 3 nodes including n3
@@ -377,7 +401,6 @@ describe("executeRun", () => {
     // Actually, we need to make the action processing throw. We'll use a special config flag.
     // The engine should wrap node execution in try/catch.
 
-    const { executeRun } = await import("./engine")
     // We need to mock a throw scenario - let's make the insert for the 2nd step throw
     let callCount = 0
     mockDb.insert.mockImplementation(() => {
@@ -433,7 +456,6 @@ describe("executeRun", () => {
 
     setupDbMocks(workflow, run)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-7")
 
     // Should only execute n3 (resumed from delay)
@@ -464,7 +486,6 @@ describe("executeRun", () => {
     setupDbMocks(workflow, run)
     mockResolveDelay.mockReturnValue(futureDate)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-8")
 
     const waitingUpdate = updatedRuns.find(u => u.status === "waiting")
@@ -511,7 +532,6 @@ describe("executeRun", () => {
     mockEvaluateCondition.mockReturnValue(true)
     mockResolveDelay.mockReturnValue(futureDate)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-9")
 
     // First pass: cond-1, b1, then delay yields
@@ -555,7 +575,6 @@ describe("executeRun", () => {
     setupDbMocks(workflow, run)
     mockResolveDelay.mockReturnValue(futureDate)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-10")
 
     expect(insertedSteps.map(s => s.nodeId)).toEqual(["split-1", "a1"])
@@ -596,7 +615,6 @@ describe("executeRun", () => {
     setupDbMocks(workflow, run)
     mockEvaluateCondition.mockReturnValue(true)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-11")
 
     const stepNodeIds = insertedSteps.map(s => s.nodeId)
@@ -625,7 +643,6 @@ describe("executeRun", () => {
 
     setupDbMocks(workflow, run)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-12")
 
     const stepNodeIds = insertedSteps.map(s => s.nodeId)
@@ -651,7 +668,6 @@ describe("executeRun", () => {
 
     setupDbMocks(workflow, run)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-13")
 
     const failUpdate = updatedRuns.find(u => u.status === "failed")
@@ -681,10 +697,8 @@ describe("executeRun", () => {
     setupDbMocks(workflow, run)
     mockEvaluateCondition.mockReturnValue(true)
 
-    const { executeAction } = await import("./actions")
     vi.mocked(executeAction).mockRejectedValueOnce(new Error("SMTP exploded"))
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-14")
 
     const failUpdate = updatedRuns.find(u => u.status === "failed")
@@ -718,7 +732,6 @@ describe("executeRun", () => {
     setupDbMocks(workflow, run)
     mockEvaluateCondition.mockReturnValue(true)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-15")
 
     const failUpdate = updatedRuns.find(u => u.status === "failed")
@@ -771,7 +784,6 @@ describe("executeRun actor scope", () => {
     let actor: AuditActor | undefined
     let depth = -1
 
-    const { executeAction } = await import("./actions")
     vi.mocked(executeAction).mockImplementationOnce(async () => {
       // Await first: a synchronous read at action entry would pass even if the scope
       // did not survive the engine's own awaits, which is the property under test.
@@ -781,7 +793,6 @@ describe("executeRun actor scope", () => {
       return { output: { type: "crm", status: "executed" } }
     })
 
-    const { executeRun } = await import("./engine")
     await executeRun(run.id)
 
     return { actor, depth }
@@ -922,7 +933,6 @@ describe("executeRun dry-run flag", () => {
 
     let seen: unknown = "HANDLER_NEVER_RAN"
 
-    const { executeAction } = await import("./actions")
     vi.mocked(executeAction).mockImplementationOnce(async (_type, _config, context) => {
       // Await first: a synchronous read at action entry cannot show that the value survives
       // the engine's own awaits, and a real CRM mutation reads it after several.
@@ -931,7 +941,6 @@ describe("executeRun dry-run flag", () => {
       return { output: { type: "crm", status: "executed" } }
     })
 
-    const { executeRun } = await import("./engine")
     await executeRun(run.id)
 
     return { seen, seenType: typeof seen }
@@ -1084,9 +1093,6 @@ describe("executeRun dry-run flag", () => {
     // through the registry directly. The observation point is user JS itself: if a workflow
     // author could branch on `_dryRun`, a workflow could behave one way under test and
     // another in production, and "transform runs FOR REAL" would be a lie.
-    const { getHandler } = await import("./actions/registry")
-    await import("./actions/transform")
-
     const handler = getHandler("javascript_transform")
     expect(handler).toBeDefined()
 
@@ -1232,7 +1238,6 @@ describe("executeRun delay under dry run", () => {
     setupDbMocks(linearWithDelay("wf-a2-1"), baseRun("run-a2-1", "wf-a2-1", true))
     mockResolveDelay.mockReturnValue(FUTURE())
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-a2-1")
 
     // The node AFTER the delay ran in the same invocation -- the engine did not return early.
@@ -1247,7 +1252,6 @@ describe("executeRun delay under dry run", () => {
     setupDbMocks(linearWithDelay("wf-a2-2"), baseRun("run-a2-2", "wf-a2-2", true))
     mockResolveDelay.mockReturnValue(FUTURE())
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-a2-2")
 
     // `simulated: true` is the whole diagnostic: it surfaces in the existing json-viewer with
@@ -1261,7 +1265,6 @@ describe("executeRun delay under dry run", () => {
     const future = FUTURE()
     mockResolveDelay.mockReturnValue(future)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-a2-3")
 
     // The regression half, and the more important one: a real run's delay must be unchanged.
@@ -1281,7 +1284,6 @@ describe("executeRun delay under dry run", () => {
     setupDbMocks(linearWithDelay("wf-a2-4"), baseRun("run-a2-4", "wf-a2-4", true))
     mockResolveDelay.mockReturnValue(null)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-a2-4")
 
     // The two dry-run delay paths must be indistinguishable to a reader of the run detail page.
@@ -1293,7 +1295,6 @@ describe("executeRun delay under dry run", () => {
     setupDbMocks(linearWithDelay("wf-a2-5"), baseRun("run-a2-5", "wf-a2-5", false))
     mockResolveDelay.mockReturnValue(null)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-a2-5")
 
     // Exact object: a `simulated` key on a real run would misreport a delay that genuinely
@@ -1305,7 +1306,6 @@ describe("executeRun delay under dry run", () => {
     setupDbMocks(linearWithDelay("wf-a2-6", null), baseRun("run-a2-6", "wf-a2-6", true))
     mockResolveDelay.mockReturnValue(FUTURE())
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-a2-6")
 
     expect(insertedSteps.map((s) => s.nodeId)).toEqual(["n1", "delay-1"])
@@ -1321,7 +1321,6 @@ describe("executeRun delay under dry run", () => {
     mockEvaluateCondition.mockReturnValue(true)
     mockResolveDelay.mockReturnValue(FUTURE())
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-a2-7")
 
     // Driven through the real condition walk, so a fix applied to only the main-loop site
@@ -1340,7 +1339,6 @@ describe("executeRun delay under dry run", () => {
     const future = FUTURE()
     mockResolveDelay.mockReturnValue(future)
 
-    const { executeRun } = await import("./engine")
     await executeRun("run-a2-8")
 
     expect(insertedSteps.map((s) => s.nodeId)).toEqual(["cond-1", "b1", "d1"])
