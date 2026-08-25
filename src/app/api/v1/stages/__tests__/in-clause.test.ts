@@ -17,12 +17,12 @@ type ApiRouteHandler = (
  * THE TWO DEFECTS UNDER TEST.
  *
  * QG-03. The route fetched a GLOBAL page of stages, derived a JavaScript array of pipeline ids
- * from that page, and interpolated the array into a raw SQL fragment:
- * ``sql`${pipelines.id} IN ${pipelineIds}` ``. `parsePagination` clamps `offset` at zero and
- * imposes NO ceiling, so any `?offset=` at or past the global stage count made that page empty,
- * made the array empty, and emitted `"pipelines"."id" IN ()` — which PostgreSQL rejects with
- * `42601 syntax error at or near ")"`. This was a LIVE 500 reachable from the public API with one
- * query parameter, not a latent one.
+ * from that page, and interpolated that array into a raw SQL membership fragment (quoted in full
+ * in the header of `src/lib/api/stage-scope.ts`, and deliberately not re-quoted here).
+ * `parsePagination` clamps `offset` at zero and imposes NO ceiling, so any `?offset=` at or past
+ * the global stage count made that page empty, made the array empty, and emitted an empty
+ * membership list — which PostgreSQL rejects with `42601 syntax error at or near ")"`. This was a
+ * LIVE 500 reachable from the public API with one query parameter, not a latent one.
  *
  * F3. The same route paginated BEFORE it authorized: `offset`/`limit` were applied to the whole
  * `stages` table and ownership was enforced afterwards in JavaScript. Measured, `?limit=5`

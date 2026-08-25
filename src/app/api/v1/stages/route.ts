@@ -8,6 +8,7 @@ import { serializeStage, serializePipeline } from "@/lib/api/serialize"
 
 import { db } from "@/db"
 import { stages, pipelines } from "@/db/schema"
+import { ownedStagesPredicate } from "@/lib/api/stage-scope"
 import { eq, and, isNull, asc, sql } from "drizzle-orm"
 import { z } from "zod"
 
@@ -18,14 +19,6 @@ const createStageSchema = z.object({
   type: z.enum(["open", "won", "lost"]).optional(),
   description: z.string().optional().nullable(),
 })
-
-/** The exact shape Drizzle accepts for the relational `with` key on a stage list query. */
-type StageWith = NonNullable<Parameters<typeof db.query.stages.findMany>[0]>["with"]
-
-/** A stage row plus the pipeline relation the `expand` handler may have loaded. */
-type StageExpanded = typeof stages.$inferSelect & {
-  pipeline?: typeof pipelines.$inferSelect | null
-}
 
 // GET /api/v1/stages - List stages with pagination and filters
 export async function GET(request: NextRequest) {
@@ -47,59 +40,48 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Build conditions for stages
-    const stageConditions = pipelineId ? [eq(stages.pipelineId, pipelineId)] : []
+    // The page. PAGINATION IS APPLIED AFTER THE OWNERSHIP PREDICATE, and that order is the fix.
+    //
+    // The previous shape paginated a GLOBAL `stages` page and then enforced ownership in
+    // JavaScript, which broke twice over. It denied legitimate owners — measured, `?limit=5`
+    // returned `data: []` with `meta.total: 1` for the stage's own owner, because the page was
+    // scoped by nothing while the total below was scoped correctly. And to run that post-filter it
+    // built a JavaScript array of the page's pipeline ids and interpolated that array into a raw
+    // SQL membership fragment; `parsePagination` puts no ceiling on `offset`, so any offset past
+    // the end of the table emptied the page, emptied the array, emitted an empty membership list
+    // and returned a 500 (`42601`) to any caller who asked for it. The full autopsy, with the
+    // fragment quoted, is in the header of `src/lib/api/stage-scope.ts` — it is deliberately not
+    // re-quoted inside this route file.
+    //
+    // Scoping in the JOIN removes both: no foreign row is read at all, and no runtime-sized list
+    // is rendered into the statement.
+    const rows = await db
+      .select({ stage: stages, pipeline: pipelines })
+      .from(stages)
+      .innerJoin(pipelines, eq(stages.pipelineId, pipelines.id))
+      .where(ownedStagesPredicate(ctx.userId, pipelineId))
+      .orderBy(asc(stages.position))
+      .offset(offset)
+      .limit(limit)
 
-    // Build with options based on expand
-    const withOptions: StageWith = expand.has("pipeline")
-      ? { pipeline: true as const }
-      : undefined
-
-    // Query stages
-    const stageList = await db.query.stages.findMany({
-      where: stageConditions.length > 0 ? and(...stageConditions) : undefined,
-      orderBy: [asc(stages.position)],
-      offset,
-      limit,
-      with: withOptions,
-    }) as StageExpanded[]
-
-    // Filter to only stages from user's pipelines (when no specific pipeline filter)
-    let userStages = stageList
-    if (!pipelineId) {
-      const pipelineIds = [...new Set(stageList.map(s => s.pipelineId))]
-      const userPipelines = await db.query.pipelines.findMany({
-        where: and(
-          sql`${pipelines.id} IN ${pipelineIds}`,
-          eq(pipelines.ownerId, ctx.userId),
-          isNull(pipelines.deletedAt)
-        ),
-        columns: { id: true },
-      })
-      const userPipelineIds = new Set(userPipelines.map(p => p.id))
-      userStages = stageList.filter(s => userPipelineIds.has(s.pipelineId))
-    }
-
-    // Get total count for user's stages
+    // The total, over the SAME join and the SAME predicate expression — so a total that does not
+    // bound its own page is now structurally impossible rather than merely unintended.
     const countResult = await db
       .select({ count: sql<number>`count(*)` })
       .from(stages)
       .innerJoin(pipelines, eq(stages.pipelineId, pipelines.id))
-      .where(and(
-        eq(pipelines.ownerId, ctx.userId),
-        isNull(pipelines.deletedAt),
-        ...(pipelineId ? [eq(stages.pipelineId, pipelineId)] : [])
-      ))
+      .where(ownedStagesPredicate(ctx.userId, pipelineId))
       .then(rows => rows[0]?.count ?? 0)
 
-    // Serialize with expand
-    const data = userStages.map(stage => {
-      const serialized: Record<string, unknown> = serializeStage(stage)
-      
-      if (expand.has("pipeline") && stage.pipeline) {
-        serialized.pipeline = serializePipeline(stage.pipeline)
+    // Serialize with expand. The pipeline row is now ALWAYS joined, so this `expand` gate is the
+    // only thing keeping it out of a bare response — it is retained deliberately.
+    const data = rows.map(row => {
+      const serialized: Record<string, unknown> = serializeStage(row.stage)
+
+      if (expand.has("pipeline") && row.pipeline) {
+        serialized.pipeline = serializePipeline(row.pipeline)
       }
-      
+
       return serialized
     })
 
