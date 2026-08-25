@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
 status: executing
-last_updated: "2026-08-25T03:34:14.336Z"
+last_updated: "2026-08-25T03:58:44.911Z"
 last_activity: 2026-08-25
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 6
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -130,6 +130,7 @@ module-level `db` and cannot take a `tx`.
 | Phase 45 P09 | 13min | 3 tasks | 4 files |
 | Phase 45 P11 | 100min | 1 tasks | 2 files |
 | Phase 46 P03 | 12min | 3 tasks | 5 files |
+| Phase 46 P04 | 25min | 2 tasks | 3 files |
 
 ## Decisions
 
@@ -295,9 +296,11 @@ module-level `db` and cannot take a `tx`.
 - [Phase ?]: [Phase 45]: 45-11: Radix Checkbox renders a position:absolute bubble input whose offsetParent resolves to <body> — an overflow-x-auto row containing one must ALSO be 'relative' or the hidden inputs escape the clip and widen the document (measured /deals 351 vs 305; it self-heals after ~2s only because dnd-kit's transforms eventually create a containing block, which makes it look like a hydration artefact)
 - [Phase ?]: [Phase 45]: 45-11: the SC-1 spec exercises the DEFAULT pipeline, so the won/lost summary row was never rendered by it — that row measured 608 vs 305 permanently on the one pipeline defining both stages, and was fixed by measurement rather than by the spec; the coverage boundary is recorded rather than closed with a pipeline-id-pinned 19th assertion
 - [Phase ?]: [Phase 45]: 45-11: the plan's single-rebuild budget was exceeded (4 rebuilds) because each rebuild exposed a defect only the previous fix made visible — no assertion was weakened and no spec was edited to compensate
-- [Phase ?]: 46-03: the Node floor gate reads package-lock.json engines.node ranges rather than a literal — the binding constraint moved off vite onto @napi-rs/lzma-linux-x64-gnu in ten days, so any gate holding a version number is stale by construction
-- [Phase ?]: 46-03: node:24-alpine on all three Dockerfile stages, with package.json engines.node >=24.12.0 as a patch-level floor — ^24.12 is not satisfied by 24.0.0, so a bare major pin is not sufficient proof
-- [Phase ?]: 46-03: GATE C is structural and unconditional and never shells out to docker; the running container's node -v is proved behaviourally in 46-06. A conditionally-skipped gate is one edit from a permanent pass
+- [Phase 46]: 46-03: the Node floor gate reads package-lock.json engines.node ranges rather than a literal — the binding constraint moved off vite onto @napi-rs/lzma-linux-x64-gnu in ten days, so any gate holding a version number is stale by construction
+- [Phase 46]: 46-03: node:24-alpine on all three Dockerfile stages, with package.json engines.node >=24.12.0 as a patch-level floor — ^24.12 is not satisfied by 24.0.0, so a bare major pin is not sufficient proof
+- [Phase 46]: 46-03: GATE C is structural and unconditional and never shells out to docker; the running container's node -v is proved behaviourally in 46-06. A conditionally-skipped gate is one edit from a permanent pass
+- [Phase 46]: 46-04: the from-zero migration check asserts the CATALOG and records the child migrate's exit code without branching on it — NC-2 showed migrate exiting 0 while the check exits 1 on a missing table
+- [Phase 46]: 46-04: a partially-populated reference database is FATAL, never a skip — a misconfiguration must not be able to disguise itself as an absence
 
 ### Quick Tasks Completed
 
@@ -388,7 +391,7 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 ## Current Position
 
 Phase: 46 (Migration Chain & Toolchain Floor) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
-Progress: [█████░░░░░] 50%
+Progress: [███████░░░] 67%
 Last activity: 2026-08-25

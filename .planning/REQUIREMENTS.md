@@ -23,7 +23,7 @@ activities, and custom fields. Advanced features can be built externally via the
 
 ### Deployment — the product can be installed from its own repository
 
-- [ ] **DEPLOY-01**: A self-hoster can build a working database from the migration chain alone —
+- [x] **DEPLOY-01**: A self-hoster can build a working database from the migration chain alone —
       `drizzle-kit migrate` against an empty database completes and produces the full schema.
       *Source: `MIG-01`. Today it dies `42P01` at `0006` (`ALTER TABLE "import_sessions"`) and, because
       the run is transactional, leaves **0 tables**. No migration creates `import_sessions`; it arrived
@@ -200,7 +200,7 @@ Which phases cover which requirements. Filled in during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DEPLOY-01 | Phase 46 | Pending |
+| DEPLOY-01 | Phase 46 | Complete |
 | DEPLOY-02 | Phase 46 | Pending |
 | DEPLOY-03 | Phase 46 | Complete |
 | QG-01 | Phase 47 | Pending |

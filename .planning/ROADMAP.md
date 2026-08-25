@@ -158,7 +158,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 46-04-PLAN.md — `scripts/migrate-from-zero.mjs` + `npm run db:check-migrations`: from-zero build with ten-dimension catalog equivalence · NC-1, NC-2
+- [x] 46-04-PLAN.md — `scripts/migrate-from-zero.mjs` + `npm run db:check-migrations`: from-zero build with ten-dimension catalog equivalence · NC-1, NC-2
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -456,7 +456,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 46. Migration Chain & Toolchain Floor | 3/6 | In Progress|  |
+| 46. Migration Chain & Toolchain Floor | 4/6 | In Progress|  |
 | 47. Suite Trust & Supply Chain | 0/? | Not started | - |
 | 48. REST API Authorization | 0/? | Not started | - |
 | 49. Mutation-Layer Truth After Commit | 0/? | Not started | - |
