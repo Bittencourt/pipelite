@@ -1,4 +1,12 @@
+import { readFileSync } from "node:fs"
+// Aliased, not the house `import path from "node:path"`: this file's subject is
+// FIELD PATHS, and `path` is a parameter name in a dozen places below. A
+// module-level binding of that name would be shadowed everywhere it is used and
+// visible only where it is not.
+import { join as joinPath } from "node:path"
+
 import { describe, it, expect } from "vitest"
+import ts from "typescript"
 import {
   resolveFieldPath,
   tokenizeFieldPath,
@@ -998,5 +1006,457 @@ describe("resolveFieldPath — parsing is linear, not backtracking (T-34-20)", (
           `native call in one step, and everything that call does is invisible to this gate.`
       ).toBe(0)
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE STRUCTURAL HALF of the linearity gate (QG-01 SC-2, phase 47 plan 04).
+//
+// WHY THIS EXISTS AND WHY IT IS NOT REDUNDANT WITH THE COUNTED HALF ABOVE.
+// Catastrophic backtracking happens inside a single native `RegExp.prototype`
+// call. Nothing at the JS level can observe it: measured, a regex-backtracking
+// `tokenizeFieldPath` reads ZERO counted characters at every input size, n=200
+// through n=1600, while burning exponential time. So the counted CEILING passes
+// it outright, and the counted FLOOR sees it only as an ABSENCE of work — a true
+// signal, but an indirect one. This half sees it as a SHAPE: a regex is
+// constructed, or a whole-string scanner is called, inside a function whose
+// entire contract is a single forward pass. Both halves are required and neither
+// substitutes for the other. Negative control A in 47-04-SUMMARY.md is the
+// rewrite that proves it: it fails BOTH of this half's checks AND the counted
+// floor, while passing the counted ceiling.
+//
+// WHY IT HAS TO EXIST AT ALL: the counted half measures `tokenizeFieldPath`
+// directly, because `resolveFieldPath` rejects the counting facade at its
+// `typeof path !== "string"` guard — correctly, and that guard is not weakened.
+// Exporting a previously private parser therefore creates an anti-vacuity debt:
+// something must prove the counted function is still the one production uses.
+// The delegation assertion below is that proof.
+//
+// This is one of the repository's first two TypeScript-AST gates. Everything
+// around the parse — the raw read that fails collection loudly, the anti-vacuity
+// floors, the matcher self-test before the sweep, the `file:line` violation
+// collector and the `toEqual([])` assertion form — is copied from
+// `src/lib/__tests__/deployment-docs-accuracy.test.ts:239-261` and
+// `src/lib/__tests__/node-engines-floor.test.ts:203-241`. Only the parse is new.
+// ---------------------------------------------------------------------------
+
+const REPO_ROOT = process.cwd()
+
+/** The production file this gate reads. Its own source is the subject. */
+const SUBJECT_PATH = "src/lib/execution/condition-evaluator.ts"
+
+/** Raw read at module scope, so a wrong path constant fails COLLECTION, loudly. */
+function readRepoFile(relativePath: string): string {
+  return readFileSync(joinPath(REPO_ROOT, relativePath), "utf8")
+}
+
+const subjectSource = readRepoFile(SUBJECT_PATH)
+
+/** What the parse extracted about one named function declaration. */
+interface FunctionShape {
+  name: string
+  /** Every callee in the body, as a bare `identifier` or a `.method`. Sorted, unique. */
+  calls: string[]
+  /** `file:line: text` for each regex literal and each `new RegExp` in the body. */
+  regexes: string[]
+  /** Nodes below the body. The anti-vacuity measure of "the parse found real code". */
+  bodyNodeCount: number
+}
+
+/**
+ * The two functions this gate governs. Deliberately NOT every function in the
+ * file: `evaluateOperator` implements the `matches_regex` condition operator and
+ * therefore contains a `new RegExp` and a `.test` call on purpose. Gating the
+ * whole file would either fail on legitimate code or force the forbidden lists to
+ * be emptied — and an emptied forbidden list is a gate that cannot fail.
+ */
+const GATED_FUNCTIONS = ["resolveFieldPath", "tokenizeFieldPath"] as const
+
+/**
+ * Whole-string scanners. Any of these inside the two gated functions means an
+ * unbounded amount of work is happening inside one native call, where neither the
+ * counting facade nor a reviewer can see its cost.
+ *
+ * `.trim` is deliberately NOT on this list. `resolveFieldPath` calls it once, at
+ * `condition-evaluator.ts:100`, on the whole path before tokenising: it is O(len)
+ * with no backtracking possible, it is what makes `"   "` resolve to undefined,
+ * and the counting facade re-implements it so its span is counted like any other
+ * read. Forbidding it would delete a correctness behaviour to satisfy a
+ * lint-shaped rule. `.indexOf` is likewise permitted and is in fact REQUIRED by
+ * the floor below — it is how the forward scan finds each closing quote, and
+ * every call starts at the current cursor.
+ */
+const FORBIDDEN_BULK_SCANNERS = [
+  ".match",
+  ".matchAll",
+  ".replace",
+  ".replaceAll",
+  ".search",
+  ".split",
+  ".test",
+  ".exec",
+]
+
+/**
+ * Parse a TypeScript source STRING and report the shape of every named function
+ * declaration in it.
+ *
+ * Takes a string rather than a path so the fixtures below and the real file go
+ * through one code path — the `nodeBaseTags(dockerfileText = dockerfileRaw)` form
+ * from `node-engines-floor.test.ts:149`. That is also this file's
+ * self-collision mitigation: the KNOWN_POSITIVE fixtures are source strings, so
+ * this gate never has to read, or exempt, itself.
+ */
+function analyseFunctions(
+  sourceText: string,
+  fileName: string
+): Map<string, FunctionShape> {
+  const src = ts.createSourceFile(
+    fileName,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    /* setParentNodes */ true
+  )
+  const shapes = new Map<string, FunctionShape>()
+
+  const lineOf = (node: ts.Node) =>
+    src.getLineAndCharacterOfPosition(node.getStart(src)).line + 1
+
+  const record = (node: ts.FunctionDeclaration) => {
+    if (!node.name || !node.body) return
+    const shape: FunctionShape = {
+      name: node.name.text,
+      calls: [],
+      regexes: [],
+      bodyNodeCount: 0,
+    }
+    const callees = new Set<string>()
+    const walk = (child: ts.Node) => {
+      shape.bodyNodeCount++
+      if (ts.isCallExpression(child)) {
+        const callee = child.expression
+        if (ts.isIdentifier(callee)) callees.add(callee.text)
+        else if (ts.isPropertyAccessExpression(callee)) callees.add(`.${callee.name.getText(src)}`)
+        else if (ts.isElementAccessExpression(callee)) callees.add(".[computed]")
+      }
+      const isRegexLiteral = child.kind === ts.SyntaxKind.RegularExpressionLiteral
+      const isRegexConstruction =
+        ts.isNewExpression(child) &&
+        ts.isIdentifier(child.expression) &&
+        child.expression.text === "RegExp"
+      if (isRegexLiteral || isRegexConstruction) {
+        shape.regexes.push(`${fileName}:${lineOf(child)}: ${child.getText(src).trim()}`)
+      }
+      ts.forEachChild(child, walk)
+    }
+    ts.forEachChild(node.body, walk)
+    shape.calls = [...callees].sort()
+    shapes.set(shape.name, shape)
+  }
+
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionDeclaration(node)) record(node)
+    ts.forEachChild(node, visit)
+  }
+  ts.forEachChild(src, visit)
+  return shapes
+}
+
+/**
+ * Every structural violation in a source string, as `file:line: text`. An empty
+ * array means the parser still has the shape its complexity property depends on.
+ */
+function structuralViolations(sourceText: string, fileName: string): string[] {
+  const shapes = analyseFunctions(sourceText, fileName)
+  const violations: string[] = []
+
+  for (const name of GATED_FUNCTIONS) {
+    const shape = shapes.get(name)
+    if (!shape) {
+      violations.push(`${fileName}: function ${name} was not found by the parse`)
+      continue
+    }
+    for (const regex of shape.regexes) {
+      violations.push(`${regex}  <- regex constructed inside ${name}`)
+    }
+    for (const scanner of FORBIDDEN_BULK_SCANNERS) {
+      if (shape.calls.includes(scanner)) {
+        violations.push(`${fileName}: ${name} calls ${scanner} — a whole-string scanner`)
+      }
+    }
+  }
+
+  const resolve = shapes.get("resolveFieldPath")
+  if (resolve && !resolve.calls.includes("tokenizeFieldPath")) {
+    violations.push(
+      `${fileName}: resolveFieldPath no longer calls tokenizeFieldPath ` +
+        `(calls: ${resolve.calls.join(", ") || "none"})`
+    )
+  }
+  return violations
+}
+
+describe("resolveFieldPath — the parser's SHAPE is asserted, not only its cost (T-34-20)", () => {
+  // -------------------------------------------------------------------------
+  // 1. THE CHECKER PROVES ITSELF, ON SOURCE STRINGS, BEFORE IT READS THE FILE.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Shape A, the realistic ReDoS reintroduction: the bracket grammar expressed as
+   * nested quantifiers and handed to the engine one dot-chunk at a time. This is
+   * the body negative control A installs for real in `condition-evaluator.ts`.
+   */
+  const KNOWN_POSITIVE_INLINE_REGEX = `
+    export function tokenizeFieldPath(path: string): string[] | null {
+      const out: string[] = []
+      for (const chunk of String(path).split(".")) {
+        const match = /^([^.[]*)((?:\\[(?:"(?:[^"]|"")*"|'(?:[^']|'')*')\\])*)$/.exec(chunk)
+        if (match === null) return null
+        out.push(match[1])
+      }
+      return out
+    }
+
+    export function resolveFieldPath(context: unknown, p: string): unknown {
+      if (typeof p !== "string") return undefined
+      let current: unknown = context
+      for (const part of p.trim().split(".")) {
+        if (current === null || typeof current !== "object") return undefined
+        current = (current as Record<string, unknown>)[part]
+      }
+      return current
+    }
+  `
+
+  /**
+   * The same defect with the regex hoisted to module scope, so the function body
+   * contains no regex literal at all. This is why the forbidden-scanner list
+   * exists ALONGSIDE the regex check rather than instead of it: here the only
+   * evidence inside the body is the `.exec` call.
+   */
+  const KNOWN_POSITIVE_HOISTED_REGEX = `
+    const BACKTRACK_RE = /^([^.[]*)((?:\\[(?:"(?:[^"]|"")*"|'(?:[^']|'')*')\\])*)$/
+
+    export function tokenizeFieldPath(path: string): string[] | null {
+      const out: string[] = []
+      for (const chunk of path.split(".")) {
+        const match = BACKTRACK_RE.exec(chunk)
+        if (match === null) return null
+        out.push(match[1])
+      }
+      return out
+    }
+
+    export function resolveFieldPath(context: unknown, p: string): unknown {
+      const parts = tokenizeFieldPath(p)
+      if (parts === null) return undefined
+      let current: unknown = context
+      for (const part of parts) {
+        if (current === null || typeof current !== "object") return undefined
+        current = (current as Record<string, unknown>)[part]
+      }
+      return current
+    }
+  `
+
+  /** Shaped like the real forward scan. The checker must call this one clean. */
+  const KNOWN_NEGATIVE_FORWARD_SCAN = `
+    export function tokenizeFieldPath(path: string): string[] | null {
+      const segments: string[] = []
+      const len = path.length
+      let i = 0
+      while (i < len) {
+        const start = i
+        while (i < len && path[i] !== ".") i++
+        segments.push(path.slice(start, i))
+        if (i < len) i++
+      }
+      return segments
+    }
+
+    export function resolveFieldPath(context: unknown, p: string): unknown {
+      if (typeof p !== "string" || p.trim() === "") return undefined
+      const parts = tokenizeFieldPath(p)
+      if (parts === null) return undefined
+      let current: unknown = context
+      for (const part of parts) {
+        if (current === null || typeof current !== "object") return undefined
+        current = (current as Record<string, unknown>)[part]
+      }
+      return current
+    }
+  `
+
+  it("reports the EXTRACTED call set and regex list for the inline-regex rewrite, not a boolean", () => {
+    const shapes = analyseFunctions(KNOWN_POSITIVE_INLINE_REGEX, "known-positive-inline.ts")
+
+    const tokenize = shapes.get("tokenizeFieldPath")
+    expect(tokenize, "the parse must find tokenizeFieldPath in the fixture").toBeDefined()
+    expect(tokenize?.regexes).toHaveLength(1)
+    expect(tokenize?.regexes[0]).toContain("known-positive-inline.ts:")
+    expect(tokenize?.calls).toEqual([".exec", ".push", ".split", "String"])
+
+    const resolve = shapes.get("resolveFieldPath")
+    expect(resolve?.regexes).toEqual([])
+    expect(resolve?.calls).toEqual([".split", ".trim"])
+    expect(
+      resolve?.calls,
+      "this fixture's resolveFieldPath deliberately does NOT delegate"
+    ).not.toContain("tokenizeFieldPath")
+  })
+
+  it("calls the inline-regex rewrite violating — on the regex, the scanners AND the lost delegation", () => {
+    const violations = structuralViolations(
+      KNOWN_POSITIVE_INLINE_REGEX,
+      "known-positive-inline.ts"
+    )
+    const joined = violations.join("\n")
+    expect(joined).toContain("regex constructed inside tokenizeFieldPath")
+    expect(joined).toContain("tokenizeFieldPath calls .exec")
+    expect(joined).toContain("tokenizeFieldPath calls .split")
+    expect(joined).toContain("resolveFieldPath calls .split")
+    expect(joined).toContain("resolveFieldPath no longer calls tokenizeFieldPath")
+  })
+
+  it("catches the hoisted-regex rewrite through the SCANNER list, which is why both checks exist", () => {
+    const shapes = analyseFunctions(KNOWN_POSITIVE_HOISTED_REGEX, "known-positive-hoisted.ts")
+    // The body itself holds no regex literal — the regex check alone would miss it.
+    expect(shapes.get("tokenizeFieldPath")?.regexes).toEqual([])
+    expect(shapes.get("tokenizeFieldPath")?.calls).toContain(".exec")
+
+    const joined = structuralViolations(
+      KNOWN_POSITIVE_HOISTED_REGEX,
+      "known-positive-hoisted.ts"
+    ).join("\n")
+    expect(joined).toContain("tokenizeFieldPath calls .exec")
+    // The delegation IS present in this fixture, so that check must stay quiet. A
+    // checker that reported every violation unconditionally would pass the two
+    // assertions above (`node-engines-floor.test.ts:332-336`).
+    expect(joined).not.toContain("no longer calls tokenizeFieldPath")
+  })
+
+  it("calls a forward-scan shape CLEAN — the complement, without which nothing above is evidence", () => {
+    const shapes = analyseFunctions(KNOWN_NEGATIVE_FORWARD_SCAN, "known-negative.ts")
+    expect(shapes.get("tokenizeFieldPath")?.calls).toEqual([".push", ".slice"])
+    expect(shapes.get("resolveFieldPath")?.calls).toEqual([".trim", "tokenizeFieldPath"])
+    expect(
+      structuralViolations(KNOWN_NEGATIVE_FORWARD_SCAN, "known-negative.ts"),
+      "the checker is over-broad; every clean verdict below proves nothing"
+    ).toEqual([])
+  })
+
+  it("detects `new RegExp` too — proven on this very file's `matches_regex` operator", () => {
+    // A LIVE positive control, against real code rather than a fixture.
+    // `evaluateOperator` builds a RegExp and calls `.test` on it deliberately, at
+    // condition-evaluator.ts:166-167. It is not one of the GATED_FUNCTIONS, so
+    // this is evidence the detectors work without being evidence of a defect.
+    const operator = analyseFunctions(subjectSource, SUBJECT_PATH).get("evaluateOperator")
+    expect(operator, "evaluateOperator must still exist in the subject").toBeDefined()
+    expect(operator?.regexes.map((hit) => hit.split(": ")[1])).toEqual([
+      "new RegExp(String(compareValue))",
+    ])
+    expect(operator?.calls).toContain(".test")
+  })
+
+  // -------------------------------------------------------------------------
+  // 2. THE PARSE REACHED REAL CODE (ANTI-VACUITY). A parse that found nothing
+  //    satisfies every negative assertion in section 3 perfectly.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Floors on the node count below each gated function's body. Measured on this
+   * tree 2026-08-25 with this exact walk: **resolveFieldPath 73 nodes,
+   * tokenizeFieldPath 226 nodes** (47-RESEARCH's prototype reported 89 and 237 —
+   * it counted the body block itself and descended differently; the numbers here
+   * are this walk's, re-measured, and are the ones to compare against). The floors sit
+   * far below both, deliberately — they exist to fail when the parse stops finding
+   * a body at all (a renamed file, a function converted to an arrow const, a
+   * `ts.createSourceFile` call that silently produced an empty tree), not to
+   * police the implementation's size.
+   */
+  const MIN_RESOLVE_BODY_NODES = 20
+  const MIN_TOKENIZE_BODY_NODES = 50
+
+  const subjectShapes = analyseFunctions(subjectSource, SUBJECT_PATH)
+
+  it("read a non-trivial amount of real source out of the subject file", () => {
+    expect(subjectSource.length).toBeGreaterThan(2000)
+    expect(subjectSource).toContain("FORBIDDEN_SEGMENTS")
+  })
+
+  it("the parse finds a function declaration named resolveFieldPath", () => {
+    expect(subjectShapes.get("resolveFieldPath")).toBeDefined()
+  })
+
+  it("the parse finds a function declaration named tokenizeFieldPath", () => {
+    expect(subjectShapes.get("tokenizeFieldPath")).toBeDefined()
+  })
+
+  it(`resolveFieldPath's body holds more than ${MIN_RESOLVE_BODY_NODES} AST nodes`, () => {
+    const count = subjectShapes.get("resolveFieldPath")?.bodyNodeCount ?? 0
+    expect(
+      count,
+      `measured 73 when this floor was written; ${count} now. A number near zero means the ` +
+        `parse found a declaration with no body, and every assertion below it is vacuous.`
+    ).toBeGreaterThan(MIN_RESOLVE_BODY_NODES)
+  })
+
+  it(`tokenizeFieldPath's body holds more than ${MIN_TOKENIZE_BODY_NODES} AST nodes`, () => {
+    const count = subjectShapes.get("tokenizeFieldPath")?.bodyNodeCount ?? 0
+    expect(
+      count,
+      `measured 226 when this floor was written; ${count} now. Same reasoning as above: this is ` +
+        `the forward scan, and it is the largest function in the file.`
+    ).toBeGreaterThan(MIN_TOKENIZE_BODY_NODES)
+  })
+
+  it("the call extractor still extracts calls — the WR-11 permitted-token floor", () => {
+    // Phase 46 WR-11: a scan that floors its verb but not its search token goes
+    // green BECAUSE it broke. An extractor that stopped extracting satisfies "no
+    // forbidden call" by finding no calls at all, so the tokens the parser
+    // legitimately DOES call are asserted present. Measured: .has, .indexOf,
+    // .push, .slice.
+    const calls = subjectShapes.get("tokenizeFieldPath")?.calls ?? []
+    expect(calls, "an empty call set makes the forbidden-scanner check vacuous").not.toEqual([])
+    expect(calls, "the forward scan finds each closing quote with indexOf").toContain(".indexOf")
+    expect(calls).toContain(".slice")
+    expect(subjectShapes.get("resolveFieldPath")?.calls).toContain(".trim")
+  })
+
+  // -------------------------------------------------------------------------
+  // 3. THE STRUCTURAL ASSERTIONS AGAINST THE REAL FILE.
+  // -------------------------------------------------------------------------
+
+  it("resolveFieldPath still delegates to tokenizeFieldPath", () => {
+    // The anti-vacuity obligation created by exporting the parser: without this,
+    // the counted half could go on measuring a function production had stopped
+    // calling, and stay green forever.
+    expect(
+      subjectShapes.get("resolveFieldPath")?.calls,
+      `if this is red, the counted assertions above are measuring dead code. Either restore the ` +
+        `delegation, or move the counted gate onto whatever ${SUBJECT_PATH} parses paths with now.`
+    ).toContain("tokenizeFieldPath")
+  })
+
+  it("neither gated function constructs a regular expression", () => {
+    const regexes = GATED_FUNCTIONS.flatMap(
+      (name) => subjectShapes.get(name)?.regexes ?? []
+    )
+    expect(
+      regexes,
+      `a regex in the field-path parser is a ReDoS surface NO operation counter can see: ` +
+        `backtracking happens inside one native call, and a regex rewrite was measured reading ` +
+        `ZERO counted characters at every input size. Keep the forward scan.`
+    ).toEqual([])
+  })
+
+  it("neither gated function calls a whole-string scanner", () => {
+    expect(
+      structuralViolations(subjectSource, SUBJECT_PATH),
+      `the field-path parser must stay a single forward pass. \`.trim\` is permitted (once, ` +
+        `O(len), and the counting facade counts its span); the list in FORBIDDEN_BULK_SCANNERS ` +
+        `is not. If a scanner is genuinely needed, the counted CEILING is the assertion that has ` +
+        `to be re-argued, not this list that has to be shortened.`
+    ).toEqual([])
   })
 })
