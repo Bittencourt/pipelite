@@ -10,13 +10,36 @@
  * reachable from `npm test` therefore does not break a feature, it breaks the repository.
  *
  * This file is a PLAIN unit test in the BASE vitest project, so it runs in CI, and it
- * asserts the separation by reading the four files that implement it. Three independent
- * controls, all four assertions negative, plus two anti-vacuity anchors so an emptied or
- * renamed file cannot satisfy them by accident:
+ * asserts the separation by reading the five files that implement it. Three independent
+ * controls, plus anti-vacuity anchors so an emptied or renamed file cannot satisfy the
+ * negatives by accident:
  *
  *   1. the base project EXCLUDES the *.db.test.* glob        (vitest.config.ts)
  *   2. `npm test` does not invoke the db project             (package.json)
- *   3. the workflow never mentions it at all                 (ci.yml)
+ *   3. NO STEP of the required check invokes it              (ci.yml)
+ *
+ * ── WHY CONTROL 3 CHANGED IN PHASE 46 ────────────────────────────────────────────────
+ *
+ * Control 3 used to read "the workflow never mentions it at all", and it was enforced by
+ * a pair of whole-file negatives: `ci.yml` contained neither `services:` nor `postgres`.
+ * That was a BLUNT PROXY. The invariant is not "CI has no database"; the invariant is
+ * "the database-backed vitest project is not reachable from the required check". The
+ * proxy was chosen because, at the time, the two were the same thing.
+ *
+ * Phase 46 made them different things. DEPLOY-01 requires that a self-hoster can build a
+ * working database from `drizzle/` alone, and `npm run db:check-migrations` proves it by
+ * migrating a throwaway database from zero and comparing its catalog. That check needs a
+ * real PostgreSQL, and it was wired onto THIS job — the required one — deliberately: a
+ * separate workflow publishes a new check-run name that is not in the master ruleset, so
+ * it could go red without blocking a merge. A non-blocking gate is a gate that does not
+ * gate, so the proxy was RE-ANCHORED rather than relaxed. The block below asserts the
+ * real invariant directly, step by step, and names the offending step when it fails —
+ * which the whole-file negative it replaced could not do.
+ *
+ * The failure mode being guarded is unchanged and is still the reason any of this
+ * exists: GitHub treats a required check that never passes as PERMANENTLY PENDING, so a
+ * suite that needs a database and is reachable from `ci` does not break a feature, it
+ * makes every pull request in the repository unmergeable.
  *
  * It deliberately does NOT import anything from the db project, does not read
  * E2E_DATABASE_URL, and opens no connection. Its whole subject is file content.
@@ -24,14 +47,31 @@
 import { readFileSync } from "node:fs"
 
 import { describe, expect, it } from "vitest"
+import { parse } from "yaml"
 
 import { readStrippedSource } from "@/components/custom-fields/__tests__/source-scan"
 
 const CI_WORKFLOW = ".github/workflows/ci.yml"
+const COMPOSE_FILE = "docker-compose.yml"
 const BASE_CONFIG = "vitest.config.ts"
 const DB_CONFIG = "vitest.db.config.ts"
 const PACKAGE_JSON = "package.json"
 const SETUP_SCRIPT = "scripts/dedup-db-test-setup.sh"
+const MIGRATION_CHECK_SCRIPT = "scripts/migrate-from-zero.mjs"
+
+/** The command the required check must run for the Postgres service to be load-bearing. */
+const MIGRATION_CHECK_COMMAND = "npm run db:check-migrations"
+
+/**
+ * The workflow declares at least this many steps today (measured: 6 — checkout,
+ * setup-node, install, typecheck, lint, test, plus the migration check = 7).
+ *
+ * Anti-vacuity for the per-step enumeration below. A `forEach` over an empty array
+ * satisfies every negative inside it, which is precisely the shape of a gate that passes
+ * BECAUSE it is broken; this floor is the tripwire for a parser that stopped finding
+ * steps at all.
+ */
+const MIN_CI_STEPS = 6
 
 /**
  * The entries of a `[...]` array literal assigned to `test.<key>` in a vitest config.
@@ -71,6 +111,202 @@ function packageScripts(): Record<string, string> {
     scripts?: Record<string, string>
   }
   return parsed.scripts ?? {}
+}
+
+interface WorkflowStep {
+  name?: string
+  uses?: string
+  run?: string
+  if?: string
+}
+
+interface WorkflowJob {
+  services?: Record<string, { image?: string } | undefined>
+  steps?: WorkflowStep[]
+}
+
+interface WorkflowDocument {
+  jobs?: Record<string, WorkflowJob | undefined>
+}
+
+interface ComposeDocument {
+  services?: Record<string, { image?: string } | undefined>
+}
+
+/**
+ * The `ci` job, PARSED — never regexed.
+ *
+ * S3, and the same rule `compose-uploads-persistence.test.ts:26-31` states in prose:
+ * indentation is exactly what decides whether a `services:` key belongs to the `ci` job
+ * or to the document, and a regex over YAML happily "passes" on a malformed file. It
+ * throws with the job names it actually parsed, in the
+ * `compose-uploads-persistence.test.ts:86-95` style, rather than returning `undefined`
+ * into an assertion that would then compare two undefineds and pass.
+ */
+function ciJob(): WorkflowJob {
+  const parsed = parse(readFileSync(CI_WORKFLOW, "utf8")) as WorkflowDocument
+  const job = parsed.jobs?.ci
+  if (!job || typeof job !== "object") {
+    throw new Error(
+      `${CI_WORKFLOW}: jobs.ci is missing or is not a mapping. Parsed job names: ` +
+        `${Object.keys(parsed.jobs ?? {}).join(", ") || "(none)"}. ` +
+        `\`ci\` is the check-run name the master ruleset requires; if the workflow was ` +
+        `restructured, re-anchor this reader rather than deleting the assertions it feeds.`
+    )
+  }
+  return job
+}
+
+/** Every step of the `ci` job, or a throw naming what was parsed instead. */
+function ciSteps(): WorkflowStep[] {
+  const steps = ciJob().steps
+  if (!Array.isArray(steps) || steps.length === 0) {
+    throw new Error(`${CI_WORKFLOW}: jobs.ci declares no steps array — the per-step gate has no input.`)
+  }
+  return steps
+}
+
+/** A short, stable label for a step in a failure message: its name, its action, or its index. */
+function stepLabel(step: WorkflowStep, index: number): string {
+  return step.name ?? step.uses ?? `step #${index}`
+}
+
+/**
+ * The Postgres image `docker-compose.yml` pins.
+ *
+ * Read from the file rather than written here as a literal (S6): the workflow's service
+ * image and the compose pin are asserted RELATIONALLY, so a tag typed into one file and
+ * not the other is a failure rather than a silent divergence between what a contributor
+ * runs locally and what the required check runs.
+ */
+function composePostgresImage(): string {
+  const compose = parse(readFileSync(COMPOSE_FILE, "utf8")) as ComposeDocument
+  const image = compose.services?.postgres?.image
+  if (typeof image !== "string" || image.length === 0) {
+    throw new Error(
+      `${COMPOSE_FILE}: services.postgres.image is missing. Parsed service names: ` +
+        `${Object.keys(compose.services ?? {}).join(", ") || "(none)"}`
+    )
+  }
+  return image
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────
+// THE DESTRUCTIVE-STATEMENT SCAN, over every operational script that issues DDL against
+// a cluster which also hosts the operator's real records.
+// ─────────────────────────────────────────────────────────────────────────────────────
+
+/** Which comment syntax a scanned file uses. The scan cannot be comment-blind without it. */
+type CommentSyntax = "hash" | "cstyle"
+
+interface DestructiveScanSubject {
+  /** Repo-relative path of the script. */
+  path: string
+  /** Its comment syntax — load-bearing, see `codeLines`. */
+  comments: CommentSyntax
+  /** How that file names the database it must only ever READ. */
+  protectedToken: RegExp
+  /** That token, for the failure message and the test title. */
+  label: string
+}
+
+/**
+ * The scanned scripts. This was a single `SETUP_SCRIPT` constant until phase 46 added a
+ * second script that creates and drops databases on the same cluster
+ * (`scripts/migrate-from-zero.mjs`, the behavioural half of DEPLOY-01).
+ *
+ * The per-file comment syntax is not bookkeeping. `readStrippedSource` strips `//` and
+ * `/* *\/` but NOT `#`, and the original scan stripped `^\s*#.*$` and nothing else, so a
+ * single stripper serves neither file correctly — run the shell stripper over the `.mjs`
+ * and its 70-line header stays in the scan; run the JS stripper over the `.sh` and every
+ * `#` comment stays in it. Either way prose starts being measured as code.
+ */
+const DESTRUCTIVE_SCAN_SUBJECTS: DestructiveScanSubject[] = [
+  {
+    path: SETUP_SCRIPT,
+    comments: "hash",
+    // `SOURCE_DB="pipelite"` — the development database, read with pg_dump, never written.
+    protectedToken: /\$\{?SOURCE_DB/,
+    label: "$SOURCE_DB",
+  },
+  {
+    path: MIGRATION_CHECK_SCRIPT,
+    comments: "cstyle",
+    // The reference database the catalog comparison reads. It is opened READ ONLY and only
+    // ever receives SELECT; every DROP in that script names the generated scratch database.
+    // `\b` on both ends so `REFERENCE_DATABASE_URL` — a legitimate env var — is not a hit.
+    protectedToken: /\bREFERENCE_DB\b/,
+    label: "REFERENCE_DB",
+  },
+]
+
+/** A destructive SQL verb. Same expression the original single-file scan used. */
+const DESTRUCTIVE_STATEMENT = /\b(drop|truncate|delete)\b/i
+
+/**
+ * `source` split into lines with its comments blanked out, PRESERVING the line count.
+ *
+ * Line-oriented rather than whole-file, for the reason the original scan states: a
+ * sentence in a header that merely mentions a database must not be able to mask a real
+ * statement, and a real statement must not be able to hide behind one. Preserving the
+ * line count is what lets a failure quote a line NUMBER.
+ *
+ * The `cstyle` branch tracks block comments across lines and is quote-aware, so a `//`
+ * inside a connection-string literal is not mistaken for the start of a comment.
+ */
+function codeLines(source: string, syntax: CommentSyntax): string[] {
+  const lines = source.split("\n")
+  if (syntax === "hash") return lines.map((line) => line.replace(/^\s*#.*$/, ""))
+
+  let inBlock = false
+  return lines.map((line) => {
+    let code = ""
+    let quote: string | null = null
+    let i = 0
+    while (i < line.length) {
+      const ch = line[i]
+      const next = line[i + 1]
+
+      if (inBlock) {
+        if (ch === "*" && next === "/") {
+          inBlock = false
+          i += 2
+          continue
+        }
+        i += 1
+        continue
+      }
+
+      if (quote) {
+        code += ch
+        if (ch === "\\") {
+          code += next ?? ""
+          i += 2
+          continue
+        }
+        if (ch === quote) quote = null
+        i += 1
+        continue
+      }
+
+      if (ch === '"' || ch === "'" || ch === "`") {
+        quote = ch
+        code += ch
+        i += 1
+        continue
+      }
+      if (ch === "/" && next === "/") break
+      if (ch === "/" && next === "*") {
+        inBlock = true
+        i += 2
+        continue
+      }
+
+      code += ch
+      i += 1
+    }
+    return code
+  })
 }
 
 describe("the db vitest project is unreachable from `npm test`", () => {
@@ -134,11 +370,87 @@ describe("the required CI check never mentions the db project", () => {
     expect(workflow).toContain("npm run typecheck")
   })
 
-  it("declares no PostgreSQL service, so the exclusion is load-bearing rather than belt-and-braces", () => {
-    // If a service container were ever added the reasoning in this file would change, and
-    // it should change deliberately rather than by silently making these gates pointless.
-    expect(workflow).not.toContain("services:")
-    expect(workflow).not.toContain("postgres")
+  // ───────────────────────────────────────────────────────────────────────────────────
+  // THE RE-ANCHORED CONTROL 3. This replaces a pair of whole-file negatives that asserted
+  // `ci.yml` contained neither `services:` nor `postgres` — a blunt proxy for the real
+  // invariant, which the header above explains and which these four assertions state
+  // directly. The proxy is GONE, not commented out, and nothing above was relaxed to make
+  // room for it: the raw `test:db` / `db.config` negatives and their anchor are untouched,
+  // and the per-step enumeration below is ADDITIVE to them.
+  //
+  // These read PARSED `run:` values, not raw text, so unlike the two raw scans above a
+  // comment in the workflow cannot collide with them — and equally, a commented-out step
+  // cannot satisfy them. The raw negatives are what cover the commented-out case; that is
+  // why both forms are kept.
+  // ───────────────────────────────────────────────────────────────────────────────────
+
+  it("provisions exactly one service, on the image docker-compose.yml pins", () => {
+    // The database exists for `npm run db:check-migrations` (DEPLOY-01) and for nothing
+    // else. Exactly one service, so a second one cannot be added without this being read
+    // again; and its image is compared against docker-compose.yml rather than against a
+    // literal typed here, so the tag a contributor runs locally and the tag the required
+    // check runs cannot drift apart (S6).
+    const services = ciJob().services ?? {}
+    const names = Object.keys(services)
+    expect(
+      names,
+      `job \`ci\` must declare exactly one service — the Postgres the from-zero migration ` +
+        `check needs. Parsed services: ${names.join(", ") || "(none)"}`
+    ).toHaveLength(1)
+
+    const image = services[names[0]]?.image
+    const pinned = composePostgresImage()
+    expect(
+      image,
+      `job \`ci\` service "${names[0]}" runs image ${String(image)} while ${COMPOSE_FILE} ` +
+        `pins ${pinned}. One pin, read from both files — change both or neither.`
+    ).toBe(pinned)
+  })
+
+  it("runs the from-zero migration check — the consumer that makes that service load-bearing", () => {
+    // ANTI-VACUITY FOR THE ASSERTION ABOVE, and the reason it is in this file at all. A
+    // Postgres service with no consumer is strictly worse than no service: it costs every
+    // run time, it looks like the invariant changed for a reason, and it proves nothing.
+    // Asserting the service without asserting its consumer is the exact shape of a gate
+    // that cannot fail.
+    const steps = ciSteps()
+    const consumers = steps.filter((step) => (step.run ?? "").includes(MIGRATION_CHECK_COMMAND))
+    expect(
+      consumers.map((step, index) => stepLabel(step, index)),
+      `no step of job \`ci\` runs \`${MIGRATION_CHECK_COMMAND}\`. Steps parsed: ` +
+        `${steps.map((step, index) => stepLabel(step, index)).join(", ")}`
+    ).toHaveLength(1)
+
+    // And it REPORTS rather than aborting the job, matching the convention every gate
+    // after the first one in this workflow follows: a contributor should see the lint
+    // failure and the migration failure in one run, not one per push.
+    expect(
+      consumers[0].if,
+      `the \`${MIGRATION_CHECK_COMMAND}\` step must carry the same \`!cancelled()\` ` +
+        `condition as Lint and Test, so all gates report in a single run`
+    ).toBe("${{ !cancelled() }}")
+  })
+
+  it("has NO step that reaches the database-backed vitest project — asserted step by step", () => {
+    // The direct statement of the invariant, in the same enumerated style as the
+    // package.json scan above. Strictly stronger than the whole-file negative it
+    // complements: this one NAMES the offending step instead of reporting that the token
+    // appears somewhere in an 80-line file.
+    const steps = ciSteps()
+    expect(
+      steps.length,
+      `only ${steps.length} steps parsed out of job \`ci\` — below the floor of ` +
+        `${MIN_CI_STEPS}. A per-step gate over an empty list passes because it is broken.`
+    ).toBeGreaterThanOrEqual(MIN_CI_STEPS)
+
+    steps.forEach((step, index) => {
+      const run = step.run ?? ""
+      const label = stepLabel(step, index)
+      expect(run, `workflow step "${label}" reaches the db vitest project`).not.toContain("test:db")
+      expect(run, `workflow step "${label}" reaches the db vitest project`).not.toContain(
+        "vitest.db.config"
+      )
+    })
   })
 })
 
@@ -229,17 +541,53 @@ describe("the db project points at an isolated database, never the development o
     expect(setup).toContain("ON_ERROR_STOP=1")
   })
 
-  it("the provisioning script never aims a destructive statement at $SOURCE_DB", () => {
-    // Line-oriented rather than whole-file, so a sentence in the header that merely
-    // mentions the development database cannot mask a real statement, and a real statement
-    // cannot hide behind one.
-    const destructive = /\b(drop|truncate|delete)\b/i
-    for (const line of setup.split("\n")) {
-      const code = line.replace(/^\s*#.*$/, "")
-      if (!destructive.test(code)) continue
-      expect(code, `destructive statement reaches the source database: ${line.trim()}`).not.toMatch(
-        /\$\{?SOURCE_DB/
-      )
+})
+
+describe("no operational script aims a destructive statement at a database it may only read", () => {
+  // Both scripts here execute DDL against the cluster that holds the operator's real
+  // records. Each has a database it OWNS (a scratch or test database it creates and drops)
+  // and a database it may only READ. This scan is the standing proof that no destructive
+  // verb ever appears on a line that names the second kind.
+  //
+  // It was single-file until phase 46. `scripts/migrate-from-zero.mjs` runs `CREATE
+  // DATABASE` / `DROP DATABASE` on the same cluster, so it belongs under the same scan —
+  // RESEARCH § Security Domain asked for exactly this.
+
+  it.each(DESTRUCTIVE_SCAN_SUBJECTS)(
+    "$path really contains destructive statements outside its comments — the scan's floor",
+    ({ path, comments }) => {
+      // ANTI-VACUITY, and the half the original scan lacked. A negative asserted over a
+      // file with no destructive statements at all is satisfied by having nothing to
+      // check; so is a negative asserted over the output of a comment stripper that
+      // blanked every line. Both are indistinguishable from a passing gate. This floor
+      // fails in either case. Both files honestly contain destructive statements today:
+      // `DROP SCHEMA` in the shell script, `DROP DATABASE` in the `.mjs`.
+      const source = readFileSync(path, "utf8")
+      expect(source.length, `${path} is empty — the scan has no input`).toBeGreaterThan(500)
+
+      const hits = codeLines(source, comments).filter((code) => DESTRUCTIVE_STATEMENT.test(code))
+      expect(
+        hits.length,
+        `${path} yielded no destructive statement on any non-comment line. Either the ` +
+          `script stopped issuing DDL (in which case delete it from this scan deliberately) ` +
+          `or the ${comments} comment stripper is blanking real code.`
+      ).toBeGreaterThan(0)
     }
-  })
+  )
+
+  it.each(DESTRUCTIVE_SCAN_SUBJECTS)(
+    "$path never aims a destructive statement at $label",
+    ({ path, comments, protectedToken, label }) => {
+      // Line-oriented rather than whole-file, so a sentence in the header that merely
+      // mentions that database cannot mask a real statement, and a real statement cannot
+      // hide behind one.
+      codeLines(readFileSync(path, "utf8"), comments).forEach((code, index) => {
+        if (!DESTRUCTIVE_STATEMENT.test(code)) return
+        expect(
+          code,
+          `${path}:${index + 1} aims a destructive statement at ${label}: ${code.trim()}`
+        ).not.toMatch(protectedToken)
+      })
+    }
+  )
 })
