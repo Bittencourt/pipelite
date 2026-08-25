@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
 status: executing
-last_updated: "2026-08-25T10:31:20.676Z"
+last_updated: "2026-08-25T10:55:23.310Z"
 last_activity: 2026-08-25
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 19
-  completed_plans: 12
+  completed_plans: 13
   percent: 11
 ---
 
@@ -21,9 +21,32 @@ See: .planning/PROJECT.md (updated 2026-08-24)
 
 **Core value:** API-complete CRM core that handles fundamentals well
 **Current focus:** Phase 47 — Suite Trust & Supply Chain (13 plans)
-**Plans 01-05 and 07 of 13 executed** (2026-08-25) — 6 SUMMARYs on disk. Next: plan 06 (the SC-1
+**Plans 01-05, 07 and 08 of 13 executed** (2026-08-25) — 7 SUMMARYs on disk. Next: plan 06 (the SC-1
 AFTER margin, which must be run on an otherwise idle machine with the same instrument 47-02 used).
 Phase 46 remains owed a `/gsd:verify-phase 46`.
+
+**47-08 paid the phase's single Docker rebuild, and it was load-bearing.** The running container now
+carries all 15 of 47-07's runtime bumps, proved from INSIDE the container rather than from the
+manifest: `drizzle-orm` 0.45.1 → **0.45.2** (SQL-identifier injection) and `@auth/core` 0.41.1 →
+**0.41.3** (all three criticals) are serving requests for the first time; `fast-xml-parser` and
+`strnum` are confirmed ABSENT from the image. Image `sha256:48b96371` → **`sha256:8f07a18e`**, the
+container's bound `.Image` followed it, `/api/health` 200 with `db.ok:true` and **10/10** processors,
+live DB unchanged at `36|46054|38348|25195|10`.
+
+**47-08 REVERTED `next` 16.1.6 → 16.3.2 and recommends a split.** The bump is type-clean, lint-clean
+and RSC 8/8, and was MEASURED to clear exactly `[next, postcss, sharp]` with **nothing joining at any
+severity** (audit 14 → 11, 4 high → 1, leaving only `nodemailer`/47-09). It is blocked by one thing:
+`next@16.3.2` declares `sharp ^0.35.3`, and every `sharp` 0.35.x caps `@img/sharp-win32-ia32` at
+`engines.node ^20.9.0`, which `src/lib/__tests__/node-engines-floor.test.ts` reads **platform-blind**
+and rejects against the `>=24.12.0` floor (2 assertions red, one root cause). The follow-up needs a
+platform-applicability filter in `nodeFloorViolations`; measured, that takes violations to 0 on both
+trees, and NC-3's control (`@napi-rs/lzma-linux-x64-gnu`, `os:["linux"] cpu:["x64"]`) **survives the
+filter and stays red at 20.20.2**, so the correction is a scope fix, not a new vacuity. Do NOT
+"solve" it by overriding `sharp` back to 0.34.x — that re-opens a fixed advisory.
+
+**The authenticated render is still OWED**, and it now gates 47-07's Auth.js trio + `drizzle-orm`
+rather than `next` (which is unchanged at 16.1.6). Sign-in, `/deals` with real data, a
+drag-and-persist round trip, `/organizations`, `/admin/audit`.
 
 **47-05 closed SC-1b.** The suite now contains **zero** `expect()` over a clock-derived elapsed delta
 or ratio, enforced by `src/lib/__tests__/suite-timing-hygiene.test.ts` — a parsed-AST def-use taint
@@ -230,6 +253,7 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 | Phase 47 P02 | 57min | 2 tasks | 8 files |
 | Phase 47 P07 | 20min | 2 tasks | 2 files |
 | Phase 47 P05 | 34min | 3 tasks | 3 files |
+| Phase 47 P08 | 22min | 2 tasks | 0 files |
 
 ## Decisions
 
@@ -451,6 +475,10 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 - v1.3 roadmap created 2026-08-13: all 12 backlog items promoted into Phases 32-43, 37 requirements mapped, backlog now empty
 - v1.4 roadmap created 2026-08-25: 9 phases (46-54), all 19 seeded requirements mapped, no orphans, no research phase (every requirement already carries measured evidence with a file and line, so there was nothing to discover). Phases cut by shared blast radius and shared verification setup rather than by theme — a pure-remediation milestone has no capability to sequence, so the useful grouping is the one where one container rebuild and one suite run cover a whole phase. DEPLOY-01 forced into Phase 46; PERF-01 (Phase 51) deliberately sequenced ahead of the 320px e2e work (Phase 52) because it is the named amplifier of Playwright flakiness and those gates are untrustworthy until it lands. Three open decisions flagged rather than assumed: SEC-03's bound, DATA-02's create-response shape, DATA-03's won/lost signal
 - Phase 45 added 2026-08-18: Cross-Cutting UI Repair and UAT Closure. Not a feature phase — it collects the five app-wide defects found on 2026-08-18 when the outstanding Phase 36-38 human UAT was finally re-run in a real authenticated browser (header overflow at 320px, admin sidebar not collapsing, dark mode unreachable because no ThemeProvider is mounted, untranslated admin/dialog shell strings, and a bulk failure panel that claims records are still selected when they are not), plus the one deals-drag check no available tool can drive. Depends on nothing and can run in parallel with Phases 39-43. That same sweep took cross-phase UAT debt from 10 items to 1 and fixed regression G1 (commit c413198).
+- **47-08: REVERTED `next` 16.3.2 rather than editing an assertion.** The bump is type-clean, lint-clean, RSC 8/8 and measured to clear `[next, postcss, sharp]` with nothing joining, but `next@16.3.2` forces `sharp ^0.35.3` and every `sharp` 0.35.x caps `@img/sharp-win32-ia32` at `engines.node ^20.9.0`, which `node-engines-floor.test.ts` reads platform-blind and rejects against the `>=24.12.0` floor. Fixing it needs a file outside the plan's `files_modified` and an edit to an assertion, which 47-CONTEXT reserved for a follow-up. Split recommended, and de-risked: a platform-applicability filter takes violations to 0 on both trees while NC-3's `os:["linux"]` control still fires at 20.20.2.
+- **47-08: prove a Docker rebuild by asking the RUNNING container for its own dependency versions**, never by a build log. This run produced the cleanest possible demonstration: `docker compose build` exited 0 with a new image on disk while `docker inspect pipelite-app-1` showed the container still bound to the OLD image. The environment's shell hook also compressed the build log to 186 bytes, so it was not even readable.
+- **47-08: measure a candidate upgrade's advisory set with `npm install --package-lock-only` in a scratch copy** — it resolves a lockfile without installing and without touching the repo, so a post-revert measurement is still a measurement rather than an inference drawn from `npm install`'s summary line.
+- **47-08: do NOT override `sharp` back to 0.34.x to land `next` 16.3.2.** It contradicts next's own declared `^0.35.3` and deliberately re-opens a fixed advisory to close a reporting problem.
 
 ### Research Flags
 
@@ -466,6 +494,8 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - **A purge does not delete uploaded file blobs** (Phase 37 review CR-01, deliberately scoped out of the fix pass). A file custom field stores its bytes under `${UPLOAD_DIR}/${entityId}/${fieldName}/${storedName}` and is referenced only from the record's `customFields` JSONB, so purging the row destroys the reference and leaves the bytes on disk (or in S3), still downloadable by anyone holding the URL — and the URL is recoverable from the soft-delete tombstone in `audit_log`, which purge deliberately preserves. Storage therefore grows monotonically with every purge and the retention pruner is a leak generator. `src/lib/trash/prune.ts` states this gap explicitly rather than implying files are handled. Closing it needs its own plan: irreversible disk deletion inside the most dangerous code path in the phase, plus `src/app/api/files/[entityId]/[fieldName]/[filename]/route.ts` resolving the entity before serving (it authorizes on `session?.user` alone today — pre-existing, predates Phase 37).
 - **A purge leaves the children it detaches holding stale formula values, permanently** (Phase 37 review WR-02). `activities.dealId`, `deals.personId`, `deals.organizationId` and `people.organizationId` are the foreign keys the formula cascade walks to feed `Deal.*` / `Person.*` / `Organization.*` dotted references into child formulas. A soft delete may skip recalculation because restore is the repair point; a purged parent never comes back. Not fixed locally because neither available call helps: `changedFields: ["dealId"]` selects nothing (a foreign key is not in `ENTITY_NATIVE_ATTRIBUTES` and a dotted ref is admitted only through `changedRelatedFields`), and `changedRelatedFields` does select those formulas but has no parent row to resolve them against — the engine has no representation for "this link is null", so the result is a stored internal error string on a live record. The same gap already exists wherever a child's own foreign key is cleared through the UI, so the fix is a formula-recalc scoping change (scope dotted refs on a foreign-key change, and teach the engine a null parent link), not a purge patch. The three purge mutations state the limitation at the detach.
 - **Phase 46 GAP (OPEN — the only one):** the phase-46 commits are UNPUSHED, so GitHub's `ci` check has never executed the new `Migration chain check` step (latest run `32792493419` ran against pre-phase `a58b9e1` and contains no such step, no Postgres service). **SC-3's merge-gate half stays unexecuted until the first push.** The source claim is fully green locally — YAML parses, job graph is one `ci` job with one service and seven steps, and the exact step command was run against a real `postgres:16-alpine` container at exit 0. What is unproven is GitHub's own runner plumbing (`ports:`/`options:` translation; `npm ci` leaving `drizzle-kit` invocable). Pushing was deliberately NOT done — it is an outward-facing action the operator did not request. **Resolve by pushing, then confirming the `ci` run's step list contains `Migration chain check`.** Natural home: Phase 47 (Suite Trust), which owns QG-01.
+- **47-08 SPLIT RECOMMENDED (OPEN):** `next` 16.1.6 → 16.3.2 needs its own follow-up. It would clear **28 GHSAs on `next`** (incl. GHSA-c4j6-fc7j-m34r CVSS 8.6 SSRF via WebSocket upgrades and GHSA-492v-c6pp-mqqv CVSS 8.1 middleware bypass) plus `next`'s exact-pinned `postcss@8.4.31` and its `sharp` range — measured as clearing `[next, postcss, sharp]` from the crit+high set with **nothing joining at any severity** (14 → 11 total, 4 high → 1). Blocked solely by `src/lib/__tests__/node-engines-floor.test.ts`, which walks `engines.node` platform-blind and so rejects `@img/sharp-win32-ia32@0.35.x`'s `^20.9.0` (os `win32`, cpu `ia32`, optional — uninstallable here) against the `>=24.12.0` floor. **Scope of the fix:** make `nodeFloorViolations` skip entries whose `os`/`cpu` exclude linux/x64, and add a two-direction negative control (a `win32` fixture asserted skipped, a `linux` fixture with the same range asserted reported). Proved safe: the filter takes violations to 0 on both trees and NC-3's `@napi-rs/lzma-linux-x64-gnu` (`os:["linux"] cpu:["x64"]`) survives it and still fires at 20.20.2.
+- **47-08 human render OWED:** an authenticated page load against image `sha256:8f07a18e` is still unperformed. It now gates **47-07's Auth.js trio and `drizzle-orm` 0.45.2** (which entered the container for the first time in this rebuild), not `next` — `next` is unchanged at 16.1.6. Needed: sign-in; `/deals` rendering real data; a drag-and-persist round trip (the only write path through the bumped `drizzle-orm`); `/organizations`; `/admin/audit` (confirms the Auth.js bump did not change the *authorization* result); a clean application console. An unauthenticated `/deals` → `/login` 307 plus a rendering login form was observed and is explicitly a PARTIAL signal, not the sign-off.
 - Phase 46 GAP **CLOSED 2026-08-25** (orchestrator, Claude-in-Chrome against the rebuilt image): authenticated `/deals` renders the real board — 3,466 deals in *Base Fria - Lead* ($1,165,182) and 288 in *Base Fria - Parceiro*; `/organizations` renders against the 46k-org table; `/api/health` returns `status:"ok"`, `db.ok:true`, `latencyMs:2`, **10/10 processors alive**; browser console carries **zero application errors** (only two MetaMask extension warnings). No credentials were entered — the operator's existing Chrome session was already authenticated.
 
 ## Session Log
@@ -517,7 +547,7 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - 2026-08-25: 47-07 complete -- in-range advisory fixes: crit+high 24 -> 4, critical 3 -> 0, total 36 -> 14; drizzle-orm 0.45.2 (SQL injection), Auth.js trio (all 3 criticals), fast-xml-parser removed; residual 4 handed to 47-08/47-09; 15 runtime packages moved so 47-08's rebuild is load-bearing
 
 Phase: 47 (Suite Trust & Supply Chain) — EXECUTING
-Plan: 6 of 13 complete (01, 02, 03, 04, 07)
+Plan: 7 of 13 complete (01, 02, 03, 04, 05, 07, 08) — next unexecuted is 06
 Status: Ready to execute
-Progress: [██████░░░░] 63%
+Progress: [███████░░░] 68%
 Last activity: 2026-08-25

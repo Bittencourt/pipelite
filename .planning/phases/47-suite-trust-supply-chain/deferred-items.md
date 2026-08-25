@@ -134,3 +134,97 @@ advisory *with an available in-range fix* would have been handed to 47-09 as "ac
 premise. **Re-measure the audit set after each cluster, and after a batched `npm update` re-run each
 package individually for any that did not leave the set.**
 **Owner:** none — a process finding for 47-09 through 47-13 and any future dependency work.
+
+---
+
+## From 47-08
+
+### D-47-08-A: `next` 16.3.2 is blocked by a platform-blind `engines.node` gate — SPLIT RECOMMENDED
+
+**Found during:** Task 1
+**What:** `next@16.1.6 -> 16.3.2` installs cleanly, passes `tsc` (exit 0), passes `eslint`
+(0 errors / 124 warnings) and passes the RSC project (8/8), but turns **2 assertions** in
+`src/lib/__tests__/node-engines-floor.test.ts` red — `:335` (NC-3's complement) and `:379` (the
+binding-chain assertion). One root cause:
+
+```
+next@16.3.2 declares optionalDependencies.sharp = ^0.35.3   (16.1.6 declared ^0.34.4)
+=> sharp moves 0.34.5 -> 0.35.3
+=> @img/sharp-win32-ia32@0.35.3 declares engines.node "^20.9.0"   (0.34.5 declared "^18.17.0 || ^20.3.0 || >=21.0.0")
+=> ^20.9.0 means >=20.9.0 <21.0.0, so Node 24.12.0 FAILS it
+=> the gate, which walks every engines.node range in the lockfile REGARDLESS of os/cpu, reports a violation
+```
+
+The entry is `os: ["win32"]`, `cpu: ["ia32"]`, `optional: true` — a Windows 32-bit binary that npm
+will never install on this project's linux/x64 (glibc or musl) targets. sharp's cap is **correct**:
+Node stopped shipping 32-bit Windows builds after Node 20. **The gate's scope is what is wrong.**
+
+**Structural, not incidental:** every `sharp` 0.35.x (`0.35.0`, `0.35.1`, `0.35.2`, `0.35.3`) caps
+`@img/sharp-win32-ia32` at `^20.9.0`, and `sharp >= 0.35.0` is required to clear the advisory
+(vulnerable range `<0.35.0`). No sharp version both fixes the advisory and keeps an uncapped range.
+
+**What it costs to leave open (measured, not projected):** the bump clears
+`[next, postcss, sharp]` from the crit+high set with **nothing joining at any severity** —
+`{"low":3,"moderate":7,"high":4,"critical":0,"total":14}` becomes
+`{"low":3,"moderate":7,"high":1,"critical":0,"total":11}`, leaving only `nodemailer` (47-09's
+accept-with-reason). That includes **28 GHSAs on `next`**, among them GHSA-c4j6-fc7j-m34r
+(CVSS 8.6, SSRF via WebSocket upgrades) and GHSA-492v-c6pp-mqqv (CVSS 8.1, middleware bypass via
+dynamic route parameter injection), plus `next`'s exact-pinned `postcss@8.4.31` (-> 8.5.23) and
+`sharp` (-> 0.35.3).
+
+**Scope of the fix:** make `nodeFloorViolations` skip lockfile entries whose `os`/`cpu` exclude every
+platform this project builds for. Measured on both trees:
+
+```
+REVERTED (next 16.1.6): 834 ranges walked, 0 violations platform-blind, 0 platform-aware
+BUMPED   (next 16.3.2): 836 ranges walked, 1 violation platform-blind, 0 platform-aware
+    node_modules/@img/sharp-win32-ia32  requires ^20.9.0  os=["win32"] cpu=["ia32"] optional=true
+```
+
+**And it is proved NOT to create a new vacuity** — the thing this phase exists to prevent. NC-3's
+binding control survives the filter:
+
+```
+@napi-rs/lzma-linux-x64-gnu  engines.node = ^22.20 || ^24.12 || >=25
+  os = ["linux"]  cpu = ["x64"]
+  survives a linux/x64 applicability filter ? true
+  still violated at 20.20.2 ? true
+```
+
+The follow-up should still add its own two-direction control: an `os:["win32"]` fixture with an
+impossible range asserted **skipped**, and an `os:["linux"]` fixture with the same range asserted
+**reported**. Without both, the filter itself is unfalsified.
+
+**An option to consider and probably reject:** `overrides: { "sharp": "0.34.5" }` would land
+`next@16.3.2` today with no gate change. It contradicts `next`'s own declared `^0.35.3` range and
+deliberately re-opens `GHSA-f88m-g3jw-g9cj` to close a *reporting* problem — trading a fixed advisory
+for an open one, which 47-CONTEXT prohibits. 47-07 measured sharp's reach as narrow (`next/image`
+imported in **0** files, **0** occurrences of `<Image`, no `images` block in `next.config.ts`), but
+"narrow" is not a reason to un-fix something already fixed.
+
+**Not fixed in 47-08 because:** the plan's `files_modified` is `package.json` + `package-lock.json`
+only, and its STOP CONDITION forbids weakening an assertion to accommodate the bump. 47-CONTEXT
+reserved exactly this path: *"`next@16.1.6 -> 16.3.2` is its own task with its own gate, splittable
+to a follow-up if it needs code changes."* It needs a code change.
+
+**Owner:** a new follow-up phase (or 47-13 if the phase is extended). **Not 47-09** — 47-09's
+allowlist should NOT accept `next`'s 28 advisories on a permanent basis; it should reference this item
+with a short expiry, because the fix is small and specified.
+
+### D-47-08-B: the human authenticated render against image `sha256:8f07a18e` is still owed
+
+**Found during:** Task 3
+**What:** the rebuild landed 47-07's Auth.js trio (`@auth/core` 0.41.1 -> 0.41.3, `next-auth`
+beta.30 -> beta.32, `@auth/drizzle-adapter` 1.11.1 -> 1.11.3) and `drizzle-orm` 0.45.1 -> 0.45.2 into
+the running container **for the first time**. Because 47-08's `next` bump reverted, the render no
+longer gates assumption A3 — it gates 47-07's runtime bumps, in the sign-in and query paths.
+**Owed checks:** sign-in; `/deals` rendering real data (~25,195 deals; *Base Fria - Lead* ~3,466,
+*Base Fria - Parceiro* ~288); a drag-and-persist round trip (the only write path through the bumped
+`drizzle-orm`); `/organizations`; `/admin/audit` (confirms the Auth.js bump did not change the
+*authorization* result); a clean application console.
+**What was observed and is explicitly PARTIAL, not the sign-off:** `/deals` -> HTTP 307 ->
+`/login` -> HTTP 200, login page 67,525 bytes with a `<form>` and a password input, title
+`Authentication`. This proves middleware runs and the login page server-renders. It does not prove a
+page renders data, and it touches neither authorization nor any write path.
+**Owner:** the orchestrator (drives a real browser). A failure here implicates **47-07's** bumps, not
+`next`, so the action would be to identify the package and hand it back to 47-07's disposition.
