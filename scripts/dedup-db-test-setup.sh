@@ -19,15 +19,27 @@
 #   it is a different database, and the connection string it is handed names it.
 #
 # WHY A SCHEMA DUMP RATHER THAN `drizzle-kit migrate`
-#   Measured, not assumed: the migration chain does NOT replay onto an empty
-#   database. One of the early migrations runs
-#   `ALTER TABLE "import_sessions" ADD COLUMN "user_id"` against a table no
-#   earlier migration creates (it was introduced with `db:push`), so a fresh
-#   `drizzle-kit migrate` aborts with 42P01 `relation "import_sessions" does not
-#   exist`. A `pg_dump --schema-only` of the live database is therefore both more
-#   robust AND more faithful: it reproduces the extensions, the three dedup
-#   normalization functions, the four GENERATED ALWAYS columns and every partial
-#   index exactly as the running deployment has them.
+#   HISTORY, READ THIS FIRST: this block used to state that the migration chain
+#   could not replay onto an empty database. That was true when this script was
+#   written and it is NO LONGER TRUE. Phase 46 (DEPLOY-01) restored the two
+#   `CREATE TABLE` statements that migration 0006 had lost, and the chain now
+#   builds a complete database from zero. Two checks hold it there:
+#   `src/lib/__tests__/migration-chain-integrity.test.ts` proves it statically on
+#   every CI run, and `npm run db:check-migrations` proves it behaviourally by
+#   building a throwaway database and comparing its catalog against this one.
+#
+#   THE REMAINING REASON IS FAITHFULNESS, NOT CAPABILITY. `npm run test:db`
+#   exercises real constraints against the schema THIS DEPLOYMENT is running,
+#   which is not necessarily the schema the chain produces — an operator can be
+#   mid-upgrade, or carrying a hand-applied index. A `pg_dump --schema-only` of
+#   the live database reproduces the extensions, the three dedup normalization
+#   functions, the four GENERATED ALWAYS columns and every partial index exactly
+#   as the running deployment has them, which is the property this suite wants.
+#   The dump is read-only on the source.
+#
+#   Rebuilding this database from the chain instead is a DEFERRED change, not a
+#   rejected one; see the phase 46 deferred items. Until then, do not read this
+#   block as evidence of a defect in `drizzle/` — there is none.
 #
 # IT IS IDEMPOTENT AND IT ALWAYS REFRESHES
 #   The public schema of the TEST database is dropped and rebuilt on every run,
