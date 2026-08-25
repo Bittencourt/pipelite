@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
 status: executing
-last_updated: "2026-08-25T03:58:44.911Z"
+last_updated: "2026-08-25T04:15:17.256Z"
 last_activity: 2026-08-25
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -131,6 +131,7 @@ module-level `db` and cannot take a `tx`.
 | Phase 45 P11 | 100min | 1 tasks | 2 files |
 | Phase 46 P03 | 12min | 3 tasks | 5 files |
 | Phase 46 P04 | 25min | 2 tasks | 3 files |
+| Phase 46 P05 | 9min | 2 tasks | 2 files |
 
 ## Decisions
 
@@ -301,6 +302,7 @@ module-level `db` and cannot take a `tx`.
 - [Phase 46]: 46-03: GATE C is structural and unconditional and never shells out to docker; the running container's node -v is proved behaviourally in 46-06. A conditionally-skipped gate is one edit from a permanent pass
 - [Phase 46]: 46-04: the from-zero migration check asserts the CATALOG and records the child migrate's exit code without branching on it — NC-2 showed migrate exiting 0 while the check exits 1 on a missing table
 - [Phase 46]: 46-04: a partially-populated reference database is FATAL, never a skip — a misconfiguration must not be able to disguise itself as an absence
+- [Phase 46]: from-zero migration check wired onto the required ci job (Route A); the db-test-isolation whole-file services:/postgres proxy re-anchored to four parsed per-step assertions, committed before the workflow change
 
 ### Quick Tasks Completed
 
@@ -391,7 +393,7 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 ## Current Position
 
 Phase: 46 (Migration Chain & Toolchain Floor) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
-Progress: [███████░░░] 67%
+Progress: [████████░░] 83%
 Last activity: 2026-08-25

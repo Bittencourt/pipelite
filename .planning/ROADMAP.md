@@ -162,7 +162,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 46-05-PLAN.md — Route A CI wiring: the check runs on the required `ci` job; `db-test-isolation.test.ts` proxy replaced by direct assertions
+- [x] 46-05-PLAN.md — Route A CI wiring: the check runs on the required `ci` job; `db-test-isolation.test.ts` proxy replaced by direct assertions
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -456,7 +456,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 46. Migration Chain & Toolchain Floor | 4/6 | In Progress|  |
+| 46. Migration Chain & Toolchain Floor | 5/6 | In Progress|  |
 | 47. Suite Trust & Supply Chain | 0/? | Not started | - |
 | 48. REST API Authorization | 0/? | Not started | - |
 | 49. Mutation-Layer Truth After Commit | 0/? | Not started | - |
