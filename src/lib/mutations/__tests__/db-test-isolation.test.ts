@@ -576,6 +576,34 @@ describe("no operational script aims a destructive statement at a database it ma
   )
 
   it.each(DESTRUCTIVE_SCAN_SUBJECTS)(
+    "$path really names $label outside its comments — the OTHER half of the floor",
+    ({ path, comments, protectedToken, label }) => {
+      // THE SECOND HALF, and the one the floor above does not cover. The floor above proves
+      // the file contains destructive statements. Nothing proved the file contains the
+      // PROTECTED TOKEN, and the negative below is `code.not.toMatch(protectedToken)` — a
+      // matcher that matches nothing satisfies it on every line.
+      //
+      // So renaming `REFERENCE_DB` in scripts/migrate-from-zero.mjs (or refactoring it to
+      // `reference.name`, which that script already uses) would turn this whole `describe`
+      // permanently green *because* it stopped working — the exact anti-gate shape this
+      // milestone exists to eliminate. Measured: with the identifier renamed, the negative
+      // below passes 0 → 0 and reports success. Same for `$SOURCE_DB` in the shell script.
+      //
+      // If this went red, the identifier moved. Re-anchor `protectedToken` onto whatever the
+      // script now calls the database it may only read — do NOT delete the subject.
+      const tokenHits = codeLines(readFileSync(path, "utf8"), comments).filter((code) =>
+        protectedToken.test(code)
+      )
+      expect(
+        tokenHits.length,
+        `${path} never names ${label} on a non-comment line, so the negative below matches ` +
+          `nothing and passes vacuously. The identifier was almost certainly renamed: ` +
+          `re-anchor protectedToken (${protectedToken}) onto its new name.`
+      ).toBeGreaterThan(0)
+    }
+  )
+
+  it.each(DESTRUCTIVE_SCAN_SUBJECTS)(
     "$path never aims a destructive statement at $label",
     ({ path, comments, protectedToken, label }) => {
       // Line-oriented rather than whole-file, so a sentence in the header that merely
