@@ -269,3 +269,68 @@ against roughly **8 cards visible** in the viewport. Consistent with the board m
 of the column than it displays. The server is not the bottleneck: `/api/health` answered **200 in
 5.5 ms** while the client was struggling, and the pipeline holds **3,754 deals**
 (stage `ad4d9fb5-92c7-4170-8e93-2163153a99d9`). Phase 51 owns the real measurement.
+
+---
+
+## From 47-06
+
+### D-47-06-A: the module-import-cost defect is still live in ~146 test BODIES, against HALF the budget
+
+**Found during:** Task 1, while measuring the AFTER margin at a measured 2.50x-9.00x oversubscription.
+**Severity: this is the highest-severity item in this file.** It is the only one that produces a RED
+`npm test` on the current tree.
+
+**What:** 47-03 hoisted the dynamic imports out of the two LIFECYCLE HOOKS in scope
+(`toggle.test.ts`, `recursion.test.ts`) and 47-03's gate — `suite-hook-hygiene.test.ts` — now holds
+that population at zero outside two documented carve-outs. It is green and it is not vacuous. But its
+corpus is **lifecycle hooks only**. The identical cost pattern lives in test **bodies**:
+
+```
+test files scanned                     177
+files containing `await import(`         22  (11 of the sites are string fixtures inside the gate itself)
+total `await import(` sites             157  (~146 real)
+```
+
+A hook-scoped import is billed against `hookTimeout` = **10 000 ms**. A test-body import is billed
+against `testTimeout` = **5 000 ms**. The population 47-03 did not cover therefore sits against **half
+the budget**, which makes it strictly more fragile than the population that was fixed.
+
+**Observed, not inferred.** Six under-load base runs (2 x 3 iterations, 8 spinners on 4 cores,
+runnable medians 3.75x and 4.25x, peaks 9.00x and 7.75x) produced **three RED runs and four distinct
+timed-out assertions**, none of them the two the phase fixed:
+
+| file :: assertion | max observed | % of testTimeout 5000 ms | reds |
+|---|---|---|---|
+| `src/app/api/health/__tests__/route.test.ts` :: `empty registry returns 503 with all ten workers present and dead …` | **9339 ms** | **186.8%** | 2 |
+| `src/app/workflows/__tests__/replay-carries-dry-run.test.ts` :: `replaying a run whose dryRun is true …` | **5934 ms** | **118.7%** | 3 |
+| `src/lib/execution/engine.test.ts` :: `walks a linear 3-node graph and completes the run` | **5782 ms** | **115.6%** | 1 |
+| `src/app/workflows/__tests__/replay-carries-dry-run.test.ts` :: `still selects the dry_run column …` | **6897 ms** | **137.9%** | 1 |
+
+Even at IDLE (n=10) these sit far higher than the fixed subjects: `replay-carries-dry-run` first test
+1154-1699 ms (23.1-34.0% of budget) against `toggle`'s 3.6-7.4 ms (0.1%).
+
+**Mechanism — identical to the one 47-03 diagnosed:**
+- `src/app/workflows/__tests__/replay-carries-dry-run.test.ts:97` — `await import("../actions")` in
+  the first test body. `vi.mock` already hoists above imports, so the same static-import fix applies.
+- `src/lib/execution/engine.test.ts:215` — `await import("./engine")` in the first test body
+  (30 sites in that file).
+- `src/app/api/health/__tests__/route.test.ts:67` — a module-scope helper returning
+  `await import("@/app/api/health/route")`, called from test bodies.
+
+**Not fixed in 47-06 because:** 47-06 is the AFTER half of a before/after measurement pair. Its plan
+states `files_modified: []` and forbids source changes, for the correct reason — editing the tree
+mid-measurement would invalidate the comparison it exists to produce. Fixing this needs its own plan
+with its own before/after and its own gate extension.
+
+**Suggested owner:** a new plan in Phase 47, or Phase 47's follow-up. The work is three-part:
+1. Hoist the first-test imports in the three observed files (the 47-03 fix, unchanged in shape).
+2. **Extend `suite-hook-hygiene.test.ts`'s corpus from hooks to test bodies**, or add a sibling gate.
+   Without this the population regrows. Note the gate must NOT simply forbid all test-body
+   `await import(` — 21 files use it legitimately with `vi.resetModules()`/`vi.doMock` — so the rule
+   has to be about the FIRST import in a file paying module load inside a timed body.
+3. Re-measure with `measure/extract-margins.mjs`, whose probe list 47-06 already extended with these
+   three subjects, so the AFTER is a one-command re-run.
+
+**Why the ten-run guard did not catch this:** it runs at idle, where all three pass comfortably. This
+is the clearest available demonstration that the ten-run pass-set check is a regression guard and not
+evidence — it was 10/10 IDENTICAL on the very tree that goes red at 3x.
