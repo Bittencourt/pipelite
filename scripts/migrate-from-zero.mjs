@@ -128,6 +128,15 @@ export const FORBIDDEN_SCRATCH_NAMES = ["pipelite", "postgres", "template0", "te
 
 export class Fatal extends Error {}
 
+/**
+ * Abort with a diagnosis. ALWAYS throws — the annotation is what makes that fact visible to
+ * tooling and to the reader, so nobody adds a `if (!x) …` guard for a return value that
+ * cannot happen. Two such dead `return null`s existed before this annotation did, and each
+ * one invited exactly that mistake.
+ *
+ * @param {string} message
+ * @returns {never}
+ */
 function fatal(message) {
   throw new Fatal(message)
 }
@@ -223,7 +232,6 @@ function resolveConnectionString() {
       "drizzle-kit reads. Copy the example and edit the credentials:\n" +
       "  cp .env.example .env"
   )
-  return null
 }
 
 /** A new connection string for another database on the same server. URL surgery, never
@@ -755,7 +763,6 @@ async function resolveReference({ admin, sourceUrl, requireReference, snapshotTa
         "and connection failures are never treated as an absent reference."
     )
   }
-  return null
 }
 
 // ---------------------------------------------------------------------------
