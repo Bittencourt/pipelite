@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: Foundation & CRM Depth
-status: "v1.3 SHIPPED 2026-08-24. No milestone active — run /gsd:new-milestone to scope v1.4."
-last_updated: "2026-08-24T04:07:17.857Z"
-last_activity: 2026-08-24
+milestone: v1.4
+milestone_name: Debt Paydown
+status: planning
+last_updated: "2026-08-25T01:30:27.926Z"
+last_activity: 2026-08-25
 progress:
-  total_phases: 14
-  completed_phases: 14
-  total_plans: 190
-  completed_plans: 190
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Session State
@@ -43,6 +43,7 @@ process lesson worth keeping. The two structural ones:
 
 - **Merge does not recalculate the survivor's own formula fields** (phases 39 × 34). Dormant while
   zero `type='formula'` definitions exist; live the moment an admin adds one.
+
 - **`formatters-live.test.ts` never runs in CI.** 24 tests guarding the export path, skipped in every
   normal run. The "4,605 passing" figure says nothing about it.
 
@@ -331,3 +332,10 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - 2026-08-18: 45-11 COMPLETE, and with it Phase 45 -- the visual checkpoint was APPROVED. Verified by an AGENT driving a real Chromium against the rebuilt image (not by the user personally, and not self-certified from source), reusing the plan's own storageState so no password was handled; the capture spec was temporary and e2e/ is back to exactly the three specs 45-08 created. Observed: the three theme rows exist and only after the menu opens, documentElement.className='dark' with body background lab(2.75381 0 0) on /organizations, /deals and /admin/audit, no light-mode island on any of the four required surfaces including an open Delete dialog, C-1's logout red readable on the dark popover, the admin drawer translated in all three locales (Close / Cerrar / Fechar -- which is the runtime proof that 45-04's common.close default reaches the Sheet, something no source gate could establish), the drawer navigating to /admin/users AND closing, and /admin/audit measuring 305/305 at all three locales through an independent path. Two NEW UAT debt items raised, both outside SC-1 and neither a Phase 45 regression: D-45-02/F-1 the fixed ShortcutsHint bar occluding 'Back to App' at 1280px and 'Guardar periodo de retencion' at 320px es-ES (vertical occlusion; Phase 38's h-40 sm:h-20 spacer is the likely remedy), and D-45-03/F-2 an UNCONFIRMED empty pipeline-select label on dark /deals, recorded for someone to confirm rather than asserted as broken.
 
 - 2026-08-17: Phase 37 COMPLETE (15 plans, 6 waves) — Trash & Restore. `/trash` with four scoped tabs, `/admin/trash` retention (1..365, default 30, seeded as data, fail-closed with NO `?? 30`), restore + ordered transactional purge for all four CRM entities, three REST endpoints, and a daily pruner PROVEN running in the container (`[trash-prune] Starting with initial delay of 60s, ticking daily`, all six processors announcing from the merged-master build). Suite 1549 -> 1703 passing, typecheck 0, lint 0 errors throughout. Verified 4/4 success criteria plus a live browser walkthrough (8/10 UAT steps, both "deleted by" strings, manual tab activation, restore with children intact, purge detaching a live child with both audit rows). Code review: 1 critical + 9 warnings, all in-scope findings fixed; CR-01 deliberately scoped to correcting a false comment. The 320px check found and fixed a real tablist overflow defect. Autonomous run STOPPED here by user — phases 38-43 remain.
+
+## Current Position
+
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-08-25 — Milestone v1.4 started

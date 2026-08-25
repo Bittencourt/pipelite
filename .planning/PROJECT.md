@@ -26,29 +26,62 @@ backup/restore runbook's restore was exercised against a real 34 MB dump.
 errors · `@ts-expect-error` down to 2 (both deliberate negative-test assertions) · `/api/health` 200
 with 10/10 background workers alive · CI green on `master`.
 
-## Next Milestone Goals
+## Current Milestone: v1.4 Debt Paydown
 
-Not yet defined — run `/gsd:new-milestone` to scope v1.4.
+**Goal:** Make the product installable from its own repository, restore the export authorization
+posture v1.3 regressed, and close the eight structural defects and eleven API/tooling items that v1.3
+shipped around — with no new user-facing capability.
 
-**Seven items carry forward**, all tracked in `BACKLOG.md`, none blocking. Two are worth weighing when
-scoping v1.4 because they are structural rather than cosmetic:
+**Target features** (all remediation; scope is the 19 items in `ROADMAP.md` § *v1.4 seed*, with
+evidence in `BACKLOG.md`):
 
-- **Merge does not recalculate the survivor's own formula fields** (phases 39 x 34 seam). Found by
-  v1.3's cross-phase audit — neither phase's own verification could see it. Dormant while zero
-  `type='formula'` definitions exist; a live data-correctness bug the moment one is added.
-- **`formatters-live.test.ts` (24 tests) never runs in CI**, so the export path it guards is
-  structurally unproven by any automated gate. It has already gone red silently once.
+- **A fresh database can be built from the migration chain** — `MIG-01`. Today it cannot: a run
+  against an empty database dies `42P01` at migration `0006` and, because the run is transactional,
+  leaves **0 tables**. No migration creates `import_sessions`.
+- **Export is authorized, not merely attributable** — `WR-04`. A non-admin can still export 44,254 of
+  46,054 organizations (96.1%) under the row cap.
+- **`/deals` is paginated** — `PERF-01`. 15,415 deals on the busiest board, 88 s to first paint, and
+  the named amplifier of suite flakiness.
+- **Purge means purged** — `CR-01`. Uploaded blobs survive a "permanent" delete and stay downloadable.
+- **The API authorizes every route** — `999.17` (activities IDOR), `999.15` (stages 403s its owner).
+- **Modals and small viewports are reachable** — `F-39-07`, `F-39-08`.
+- **Displayed numbers are true** — `STATS-01`, `FORM-01`, `999.23`.
+- **Gates can fail, and CI runs them** — `999.28`+`D-45-01` (wall-clock assertions), `999.16` (audit
+  policy), and the reachability assertion missing from `viewport-320.spec.ts`.
 
-The rest: WR-04's export authorization exposure (a non-admin can export 96.1% of organizations under
-the row cap), the trash pruner not deleting uploaded file blobs on purge, and the three UI items
-D-45-02/03/04.
+**Deliberately not in scope:** any new user-facing capability. This is a trust milestone; the case for
+it is that `MIG-01` means nobody can install the product from the repo, `WR-04` is a live
+authorization regression against v1.3's own Phase 38 decision, and `999.17` is an IDOR — building
+features on top of those compounds them.
+
+### What actually carried forward from v1.3 — corrected 2026-08-24
+
+This section previously read *"Seven items carry forward, all tracked in `BACKLOG.md`, none
+blocking."* **Every clause of that was wrong**, and the reconciliation that found it is worth
+recording because the error was structural rather than careless: v1.3 kept deferred work in **five**
+places — this file, `ROADMAP.md`'s `999.x` list, `BACKLOG.md`, the milestone audit's carry list, and
+the archived phase artifacts — and no two agreed.
+
+- **It was not seven.** It is **19 seeded items** plus a recorded remainder.
+- **They were not all tracked in `BACKLOG.md`.** Four of the audit's seven were not in it at all
+  (`CR-01`, `D-45-02`, `D-45-03`, `D-45-04`), and `D-45-01` was in neither.
+- **One was already closed.** `D-45-03` was disproven by direct measurement on 2026-08-18, six days
+  before the audit that lists it as open — the carry list was carrying a phantom.
+- **One was missing entirely, and it was the worst one.** `MIG-01` appeared in `BACKLOG.md` but in no
+  carry list, despite defeating v1.3's own "recoverable deployment" goal.
+- **"None blocking" was a live override.** Phase 40's verifier wrote that `WR-04` *should* block
+  milestone close; the audit carried it under "nothing blocking" and v1.3 shipped.
+
+`BACKLOG.md` is now the single register of record and `ROADMAP.md` holds only the schedule.
 
 **One process lesson from v1.3 worth carrying into how v1.4 is planned.** Six gates were found that
 *could not fail* — a grep whose malformed bracket class matched nothing, a credential grep matching
 its own file paths, count gates counting prose, a `--build` that hit the layer cache, operator docs
 whose "authoritative" check printed the same line for 0 or 20 migrations, and a suite CI never runs.
 None was a product bug; every one was a bug in the checking. What worked was requiring executors to
-mutate their own gate and watch it go red before trusting it.
+mutate their own gate and watch it go red before trusting it. **v1.4 is a milestone about trust, so
+this is not optional here:** several of its items exist *because* a gate passed while the defect was
+live, and `F-39-07` was reproduced in the very suite Phase 45 built to prevent it.
 
 <details>
 <summary>v1.3's original milestone brief (as written at kickoff)</summary>
@@ -111,8 +144,9 @@ verification is untrustworthy until the suite is green.
 
 ### Active
 
-All 12 backlog items (999.1–999.12) are scoped into v1.3 — see Current Milestone above.
-REQ-IDs are defined in `.planning/REQUIREMENTS.md`; phase mapping in `.planning/ROADMAP.md`.
+v1.4's 19 seeded items are scoped from `ROADMAP.md` § *v1.4 seed*, with per-item evidence in
+`BACKLOG.md`. REQ-IDs are defined in `.planning/REQUIREMENTS.md`; phase mapping in
+`.planning/ROADMAP.md`.
 
 ### Out of Scope
 
@@ -189,4 +223,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-13 — v1.3 Foundation & CRM Depth milestone started*
+*Last updated: 2026-08-24 — v1.4 Debt Paydown milestone started; the v1.3 carry list corrected after the five registers were reconciled into BACKLOG.md*
