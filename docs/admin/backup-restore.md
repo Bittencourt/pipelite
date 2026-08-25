@@ -311,7 +311,43 @@ Each row is a measured failure, not a style preference.
 
 ---
 
-## 10. See also
+## 10. Upgrade note: `42P07 relation "import_sessions" already exists`
+
+**Who this affects.** A deployment whose `drizzle.__drizzle_migrations` high-water mark is at or
+before migration `0006` **and** whose database already contains `import_sessions` or
+`webhook_deliveries`. That combination arises in exactly one way: the tables were created by
+`drizzle-kit push` rather than by the migration chain, which is how they entered this project
+originally. If your ledger is at 0019 or later — check with the query in section 6 — you are not
+affected and nothing below applies.
+
+**What happens.** `drizzle-kit migrate` aborts with
+
+```
+42P07  relation "import_sessions" already exists
+```
+
+and, because drizzle runs the whole chain in one transaction, nothing is applied. Your data is
+untouched.
+
+**Why the migration is written this way on purpose.** Migration `0006` had lost two
+`CREATE TABLE` statements; they were restored in the strict form, without `IF NOT EXISTS`.
+`IF NOT EXISTS` would let the run continue past a table that already exists — but a
+push-created table is not guaranteed to match what `0006` declares, so the chain would carry
+on against a schema that silently differs from the one this repository ships. A loud abort you
+can act on is better than a green migrate over a divergent schema, and "green while wrong" is
+precisely the class of defect the from-zero check (`npm run db:check-migrations`) exists to
+catch. A build from zero is byte-identical either way.
+
+**What to do.** Back up first (section 2), then tell the ledger the two tables are already
+present by marking `0006` as applied, or drop the two push-created tables if they hold no data
+you need and let the chain create them. Either way, re-run `drizzle-kit migrate` and then verify
+with section 6's ledger query. If you are unsure which case you are in, restore the dump into a
+fresh database (section 3) and try the migrate there first — that is what the fresh-target
+procedure is for.
+
+---
+
+## 11. See also
 
 - **[Import & Export](./import-export.md)** — CSV/JSON export, for migrating data between systems.
   It is **not** a backup: no schema, no migration ledger, no uploaded files, and nothing on that page
