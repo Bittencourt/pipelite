@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
-status: verifying
-last_updated: "2026-08-25T07:59:46.837Z"
+status: executing
+last_updated: "2026-08-25T08:55:15.407Z"
 last_activity: 2026-08-25
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 19
-  completed_plans: 7
+  completed_plans: 8
   percent: 11
 ---
 
@@ -21,8 +21,17 @@ See: .planning/PROJECT.md (updated 2026-08-24)
 
 **Core value:** API-complete CRM core that handles fundamentals well
 **Current focus:** Phase 47 — Suite Trust & Supply Chain (13 plans)
-**Plan 01 of 13 executed** (2026-08-25) — wave 1, alone by design. Next: plan 02.
+**Plan 02 of 13 executed** (2026-08-25) — wave 2, alone by design (it measures timing margins, so the
+machine had to be idle). Next: plan 03.
 Phase 46 remains owed a `/gsd:verify-phase 46`.
+
+**47-02 recorded the SC-1 BEFORE margin.** At a sampled 3.00x-5.75x CPU oversubscription
+(runnable/cores from `/proc/loadavg`, cross-checked against 2.7x-3.4x wall-time inflation):
+the `condition-evaluator.test.ts` linearity ratio reached **63.92 against its 80 threshold — 79.9% of
+budget consumed by contention alone**; `toggle.test.ts`'s `beforeEach` **49.6%** of its 10 000 ms
+hookTimeout; `recursion.test.ts`'s **35.3%**. 47-06 must beat these with the same instrument at
+`.planning/phases/47-suite-trust-supply-chain/measure/`. The ten-run pass-set diff was **10/10
+identical on the unfixed tree** and is a regression guard, **not** the evidence.
 
 ## Position
 
@@ -171,6 +180,7 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 | Phase 46 P05 | 9min | 2 tasks | 2 files |
 | Phase 46 P06 | 11min | 3 tasks | 0 files |
 | Phase 47 P01 | 22min | 2 tasks | 2 files |
+| Phase 47 P02 | 57min | 2 tasks | 8 files |
 
 ## Decisions
 
@@ -349,6 +359,11 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 - [Phase 47]: npm does NOT persist the overrides block into package-lock.json — Verified: 0 matches for '"overrides"' in the lockfile, lockfileVersion 3. npm ci still reproduces vite 7.3.6 because it installs the pinned tree, but no in-repo gate fails if the override is deleted. Tracked as D-47-01-A.
 - [Phase 47]: vite is already remediated at 7.3.6 by 47-01 — 47-07 must not re-handle it — The ^7.0.0 constraint resolved vite 7.3.1 -> 7.3.6, above the highest vulnerable ceiling (7.3.4) of all five vite GHSAs, so vite left the audit document entirely.
 - [Phase 47]: rolldown/lightningcss are what vite@8 pulls, not an independent npm-audit-fix signature — vite@8.2.2 declares rolldown and lightningcss as direct dependencies. A plan seeing them in a lockfile diff should check the resolved vite major before concluding the install was untargeted.
+- [Phase 47]: 47-02: SC-1's BEFORE margin is recorded at a sampled 3.00x-5.75x oversubscription (runnable/cores, never spinners/cores): linearity ratio 63.92 of its 80 threshold (79.9% of budget), toggle.test.ts beforeEach 49.6% of hookTimeout, recursion.test.ts 35.3% — 47-06 must beat these using the SAME instrument, committed at .planning/phases/47-suite-trust-supply-chain/measure/ — a before/after pair from two hand-written probes is two anecdotes, not a comparison
+- [Phase 47]: 47-02: the ten-run pass-set diff is a cheap regression guard, NOT evidence for SC-1 — 10/10 identical on the unfixed tree, reproducing research's 16/16. Both new scripts state this in their headers so the next reader cannot mistake a green diff for a fixed flake
+- [Phase 47]: 47-02: anti-vacuity floors sit BELOW the measurement (MIN_REFERENCE_PASS_SET 4000 vs measured 4747) and are evaluated AFTER the report prints — A floor set at the measurement misdiagnoses legitimate shrinkage as a parse failure (migrate-from-zero.mjs:116-121); report-then-fail means an operator sees what was compared before being told it does not count
+- [Phase 47]: 47-02: falsify a set-comparison gate by truncating BOTH sides identically, not just the reference — Truncating the reference alone makes the diff itself go red, so the floor is never load-bearing. With both sides truncated the differ printed 'IDENTICAL (57 tests)' and only the floor stopped a clean exit
+- [Phase 47]: 47-02: never count processes with 'pgrep -f' in this project — The pattern matches its own caller's command line — it reported 2 phantom spinner survivors on an idle machine. Walk /proc/*/cmdline for an exact match instead
 
 ### Quick Tasks Completed
 
@@ -443,5 +458,5 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 Phase: 46 (Migration Chain & Toolchain Floor) — EXECUTING
 Plan: 6 of 6
 Status: Phase complete — ready for verification
-Progress: [████░░░░░░] 37%
+Progress: [████░░░░░░] 42%
 Last activity: 2026-08-25
