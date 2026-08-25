@@ -334,3 +334,206 @@ with its own before/after and its own gate extension.
 **Why the ten-run guard did not catch this:** it runs at idle, where all three pass comfortably. This
 is the clearest available demonstration that the ten-run pass-set check is a regression guard and not
 evidence — it was 10/10 IDENTICAL on the very tree that goes red at 3x.
+
+---
+
+## From 47-12
+
+### D-47-12-A: control E's REAL-RUNNER half is NOT DELIVERED — the operator's push-and-observe reproduction
+
+**Found during:** 47-12, at the plan's very first task (a blocking human-action checkpoint to push).
+**Status: OPEN. This is the only thing standing between SEC-05 and a proven gate.**
+
+**What was delivered instead.** 47-12 delivered control E's **LOCAL** half in full and nothing else.
+`minimist@1.2.5` was installed into the real working tree, `npm run security:audit` went from exit 0 to
+exit **1** with a single `FATAL` naming `GHSA-xvch-5gv4-984h`, the pin was reverted, and the gate
+returned to exit 0. The manifests are byte-identical to their pre-control bytes. See `47-12-SUMMARY.md`
+for the verbatim output of both directions.
+
+**What is therefore still UNPROVEN — state it this way and no other way:**
+
+> The audit policy has been observed *failing for the right reason on this machine*. It has **never**
+> been observed failing — or passing — on GitHub's own runner, and it has **never** blocked a merge.
+> `origin/master` is still at `a58b9e1` (*chore: archive v1.3 phase directories*, pre-Phase-46), and
+> `git rev-list --count origin/master..HEAD` is **111**. The `Security audit policy` step, the
+> `Registry signature verification` step and Phase 46's `Migration chain check` step all exist only as
+> text in a file GitHub has never executed.
+
+Pushing is an outward-facing action the operator has not authorised, so 47-12 did not push, did not
+create a branch, and created nothing on GitHub. 46-06 set this standard: record the gap rather than
+manufacture a green run.
+
+---
+
+#### The reproduction, in four parts. Run them in order; Part A is not optional.
+
+Part A exists because of the trap 46-06 documented: **a red proves nothing unless a green preceded it.**
+Skipping Part A means Part B's red might only show the check was already red — from the Postgres service
+container, from `drizzle-kit` not being invocable after `npm ci`, or from a hosted runner failing to
+reach the registry's advisory bulk endpoint. None of those has ever run on GitHub.
+
+##### Part A — push master, get the green baseline, close Phase 46's GAP 1
+
+```bash
+cd /home/pedro/programming/pipelite
+git status --porcelain                                     # MUST be empty
+git rev-list --left-right --count origin/master...master    # expect 0 <TAB> 111 (or more)
+git log --oneline origin/master..master | cat               # READ THIS LIST. It is your decision.
+git rev-parse HEAD                                          # RECORD IT. 9e3fd2f as of 2026-08-25.
+git push origin master
+
+gh run list --limit 5
+gh run view <id> --json headSha,headBranch,conclusion,displayTitle
+```
+
+**ASSERT `headSha` equals the HEAD you recorded.** A green run against `a58b9e1` is exactly the trap —
+that commit predates Phase 46 and its job has six steps and no service.
+
+```bash
+gh run view <id> --json jobs -q '.jobs[].steps[].name'
+```
+
+**ASSERT the list contains all three of** `Migration chain check`, `Security audit policy`,
+`Registry signature verification`. The full expected list, from the parsed YAML on the merged tree:
+
+```
+Set up job
+Initialize containers            (postgres:16-alpine service — GitHub's first execution of it)
+actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+Install dependencies             npm ci
+Typecheck                        npm run typecheck
+Lint                             npm run lint
+Test                             npm test
+Migration chain check            npm run db:check-migrations
+Security audit policy            npm run security:audit
+Registry signature verification  npm audit signatures
+...
+```
+
+```bash
+gh run view <id> --json conclusion
+gh run view <id> --log-failed        # ONLY if the conclusion is not success
+```
+
+If any of the three new steps fails, **stop and fix the step** — do not delete an assertion, and do not
+proceed to Part B. A first-execution failure of a service container or of registry egress is information
+about the runner. Record it here.
+
+If the conclusion is `success`: **Phase 46's GAP 1 is CLOSED**, and the run id is the evidence. Write it
+into `46-06-SUMMARY.md` and into `47-12-SUMMARY.md`.
+
+Two numbers worth reading off this run, requested by 47-11:
+- `Registry signature verification`'s package count. Expect **~1100**. Locally it is
+  `1102 packages have verified registry signatures, 175 packages have verified attestations` in 20 s
+  warm-cache. A number far below ~1100 means the runner's tree is not what `npm ci` should have produced.
+- The added job time for steps 7-9, against the ~102 s cold / ~20 s warm bracket. `actions/setup-node`
+  restores a third cache state that neither number describes.
+
+##### Part B — the throwaway branch, and the RED
+
+```bash
+git checkout -b throwaway/47-12-audit-gate-control-e
+npm install --save-dev minimist@1.2.5
+```
+
+Expected, measured locally 2026-08-25: `added 2 packages, changed 1 package`, and the vulnerability
+histogram moves `14 (3 low, 7 moderate, 4 high)` -> `15 (3 low, 7 moderate, 4 high, 1 critical)`.
+`overrides: { "vite": "^7.0.0" }` is untouched; no `rolldown`, `tsx` or `esbuild` is added.
+**Never run `npm audit fix`** — measured, it moves `vite` 7 -> 8 and adds that whole subtree.
+
+```bash
+npm run security:audit; echo "EXIT=$?"        # MUST be EXIT=1 BEFORE you push
+```
+
+**This local pre-flight is what makes the remote red attributable.** It must print exactly one `FATAL:`
+naming the advisory:
+
+```
+-> parsed 48 distinct advisories across 15 vulnerable package(s); npm audited 1287 dependencies
+FATAL: minimist critical GHSA-xvch-5gv4-984h has NO recorded disposition — "Prototype Pollution in
+minimist" (advisory severity critical). ...
+FATAL: the advisories in package-lock.json do not satisfy audit-policy.json (1 problem(s) above). ...
+EXIT=1
+```
+
+`1 problem(s)` — not 2, not 40. If the count is anything else, something other than the control also
+moved and the control is not clean. **Do NOT add the GHSA to the allowlist.**
+
+```bash
+git add package.json package-lock.json
+git commit -m "test(47-12): NEGATIVE CONTROL, DO NOT MERGE — minimist@1.2.5 makes the audit gate red"
+git push -u origin throwaway/47-12-audit-gate-control-e
+gh pr create --base master --head throwaway/47-12-audit-gate-control-e \
+  --title "DO NOT MERGE — negative control E for SEC-05" \
+  --body "Deliberately vulnerable minimist@1.2.5 (GHSA-xvch-5gv4-984h). Proves the required \`ci\` check can fail. To be CLOSED UNMERGED."
+```
+
+Then gather the four pieces of evidence:
+
+```bash
+gh pr view <n> --json mergeStateStatus,statusCheckRollup
+```
+**EXPECT `mergeStateStatus: BLOCKED`.** A red check is half the claim; the merge being blocked is the
+half that makes the gate a gate. The master ruleset (id 20851119) requires the check-run named `ci`.
+
+```bash
+gh run view <id> --json conclusion,headSha                       # EXPECT conclusion FAILURE
+gh run view <id> --json jobs -q '.jobs[].steps[] | "\(.name)\t\(.conclusion)"'
+```
+**EXPECT `Security audit policy` to be the ONLY step with conclusion `failure`.** The eight others must
+be `success` or `skipped`. This was verified locally by running the neighbouring steps under the control:
+`npm audit signatures` -> exit 0 (`1102 packages have verified registry signatures`), `npm run typecheck`
+-> exit 0. If a second step is also red, control E is **not clean** — fix that step and re-run.
+
+```bash
+gh run view <id> --log-failed
+```
+**EXPECT the evaluator's own line:**
+`FATAL: minimist critical GHSA-xvch-5gv4-984h has NO recorded disposition`
+
+##### Part C — revert on the same branch, and the second GREEN
+
+```bash
+git revert --no-edit HEAD          # or: git checkout HEAD~1 -- package.json package-lock.json
+npm ci
+npm run security:audit; echo "EXIT=$?"        # MUST be EXIT=0, 47 advisories / 14 packages / 1285 deps
+git push
+gh pr view <n> --json mergeStateStatus,statusCheckRollup
+```
+**EXPECT `ci` green and no longer the blocker.** Without this the red could have come from anything.
+
+##### Part D — tear down and prove containment
+
+```bash
+gh pr close <n> --delete-branch                # CLOSED UNMERGED. Never merge it.
+git checkout master
+git branch -D throwaway/47-12-audit-gate-control-e
+git push origin --delete throwaway/47-12-audit-gate-control-e   # if --delete-branch did not
+
+git status --porcelain                          # empty
+npm run security:audit; echo "EXIT=$?"          # 0
+node -e "const p=require('./package.json');const a={...p.dependencies,...p.devDependencies};if('minimist' in a)throw new Error('containment FAILED');console.log('containment ok')"
+```
+
+Plus the history proof — `git log --all --oneline -- package.json | grep minimist` is **not** a valid
+check (it greps subject lines, not content, and `grep` is unreliable under the `rtk` hook here). Use:
+
+```bash
+node -e "
+const {execFileSync}=require('node:child_process');
+const out=execFileSync('git',['log','--all','--format=%h','--','package.json'],{encoding:'utf8'});
+let hits=0;
+for(const sha of out.trim().split('\n').filter(Boolean)){
+  const pkg=JSON.parse(execFileSync('git',['show',sha+':package.json'],{encoding:'utf8'}));
+  const all={...(pkg.dependencies||{}),...(pkg.devDependencies||{})};
+  if('minimist' in all){hits++;console.log('*** declared at',sha)}
+}
+console.log('commits declaring minimist:',hits);
+if(hits!==0)process.exit(1);
+"
+```
+
+**Owner:** the operator (the push) and then whoever records the result. **Blocks:** SEC-05's
+*"the policy can fail"* claim on the venue that matters, ROADMAP SC-4's runner half, and Phase 46's
+GAP 1. **Cost:** one push plus roughly four CI runs.
