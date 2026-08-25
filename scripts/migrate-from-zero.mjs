@@ -586,9 +586,19 @@ function runDrizzleMigrate(scratchUrl) {
     activeChild = child
     // drizzle-kit's last line carries no trailing newline, so without this the next
     // progress line is glued onto `migrations applied successfully!`.
-    let atLineStart = true
+    //
+    // Tracked as "did anything get written, and did it end in a newline" rather than as a
+    // per-stream flag: stdout and stderr are two handles onto ONE terminal, so what decides
+    // whether the cursor sits mid-line is the last byte written to the device, whichever
+    // stream wrote it. The zero-length guard is the real fix — `chunk[chunk.length - 1]` on
+    // an empty chunk is `undefined`, which compared false and asserted "we ended mid-line"
+    // on the strength of no output at all.
+    let sawOutput = false
+    let lastByte = null
     const echo = (stream, chunk) => {
-      atLineStart = chunk[chunk.length - 1] === 0x0a
+      if (chunk.length === 0) return
+      sawOutput = true
+      lastByte = chunk[chunk.length - 1]
       stream.write(chunk)
     }
     child.stdout.on("data", (chunk) => echo(process.stdout, chunk))
@@ -599,7 +609,7 @@ function runDrizzleMigrate(scratchUrl) {
     })
     child.on("close", (code, signal) => {
       activeChild = null
-      if (!atLineStart) process.stdout.write("\n")
+      if (sawOutput && lastByte !== 0x0a) process.stdout.write("\n")
       resolve({ code: code ?? -1, signal })
     })
   })
