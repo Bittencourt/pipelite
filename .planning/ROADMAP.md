@@ -223,9 +223,9 @@ Plans:
 
 **Wave 3** *(parallel: no `files_modified` overlap)*
 
-- [ ] 47-03-PLAN.md — the hook-hygiene AST gate + `toggle.test.ts` and `recursion.test.ts` hoisted to static imports · NC-C (hook half) · QG-01
-- [ ] 47-04-PLAN.md — `tokenizeFieldPath` exported, the elapsed ratio replaced by counted FLOOR/CEILING/FLATNESS + the AST structural half · NC-A, NC-B · QG-01
-- [ ] 47-07-PLAN.md — every in-range advisory fix, `drizzle-orm` 0.45.2 first, plus the residual table by reach · SEC-05
+- [x] 47-03-PLAN.md — the hook-hygiene AST gate + `toggle.test.ts` and `recursion.test.ts` hoisted to static imports · NC-C (hook half) · QG-01
+- [x] 47-04-PLAN.md — `tokenizeFieldPath` exported, the elapsed ratio replaced by counted FLOOR/CEILING/FLATNESS + the AST structural half · NC-A, NC-B · QG-01
+- [x] 47-07-PLAN.md — every in-range advisory fix, `drizzle-orm` 0.45.2 first, plus the residual table by reach · SEC-05
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -512,7 +512,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 46. Migration Chain & Toolchain Floor | 6/6 | Complete   | 2026-08-25 |
-| 47. Suite Trust & Supply Chain | 2/13 | In Progress|  |
+| 47. Suite Trust & Supply Chain | 5/13 | In Progress|  |
 | 48. REST API Authorization | 0/? | Not started | - |
 | 49. Mutation-Layer Truth After Commit | 0/? | Not started | - |
 | 50. Export Authorization | 0/? | Not started | - |

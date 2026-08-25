@@ -213,7 +213,7 @@ Which phases cover which requirements. Filled in during roadmap creation.
 | DEPLOY-02 | Phase 46 | Pending |
 | DEPLOY-03 | Phase 46 | Complete |
 | QG-01 | Phase 47 | Pending |
-| SEC-05 | Phase 47 | Pending |
+| SEC-05 | Phase 47 | In Progress |
 | SEC-01 | Phase 48 | Pending |
 | SEC-02 | Phase 48 | Pending |
 | QG-03 | Phase 48 | Pending |

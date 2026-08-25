@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
-status: executing
-last_updated: "2026-08-25T08:55:15.407Z"
+status: verifying
+last_updated: "2026-08-25T09:54:38.941Z"
 last_activity: 2026-08-25
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 19
-  completed_plans: 8
+  completed_plans: 11
   percent: 11
 ---
 
@@ -65,7 +65,7 @@ and open `/deals`, and push so the `ci` check runs the new `Migration chain chec
 
 Next: `/gsd:verify-phase 46`.
 
-**Phase 47 is EXECUTING — plan 01 of 13 done.** 47-01 was the whole of wave 1 by design, because it
+**Phase 47 is EXECUTING — plans 01, 02, 03, 04 and 07 of 13 done.** 47-01 was the whole of wave 1 by design, because it
 moves the test runner underneath every gate the other twelve plans author. `vitest` is now **4.1.11**
 (was 4.0.18), clearing `GHSA-5xrq-8626-4rwp` — critical, CVSS 9.8, arbitrary file read via the Vitest
 UI server, vulnerable range `>=4.0.0 <4.1.0`. **The runner does not move again inside this phase.**
@@ -80,6 +80,36 @@ removed; closing that is `D-47-01-A` in the phase's `deferred-items.md`.
 
 Side effect worth knowing before planning 47-07: `vite` went 7.3.1 → **7.3.6**, clearing all five of
 its GHSAs, so **`vite` is already remediated and 47-07 should not re-handle it.**
+
+**47-07 closed SEC-05's in-range half. crit+high packages 24 → 4; critical 3 → 0; total 36 → 14.**
+Twenty of the twenty-four left the audit document by targeted install, each attributable to its own
+commit by a recorded per-cluster set difference. `drizzle-orm` **0.45.2** closes
+`GHSA-gpj5-g38j-94v9` — SQL identifier injection in the server's own request path — via a patch
+already inside the declared `^0.45.1`. The Auth.js trio (`@auth/drizzle-adapter` 1.11.3, `next-auth`
+5.0.0-beta.32, bringing `@auth/core` **0.41.3** deduped to ONE copy) cleared **all three criticals**.
+`fast-xml-parser` is **gone from the lockfile**. `npm audit fix` was never run; **zero** forbidden
+packages entered the tree; `vite` is still 7.3.6 and was not re-handled.
+
+**The residual crit+high set is exactly 4 — `next`, `nodemailer`, the `postcss@8.4.31` copy `next`
+pins exactly, and `sharp` — and ZERO of them are DEV-only** (`npm audit --omit=dev` returns the same
+four). `next`/`postcss`/`sharp` are **47-08**'s; `nodemailer` is **47-09**'s accept-with-reason. The
+full residual table with GHSA ids, parent paths and evidenced reach is in `47-07-SUMMARY.md` — 47-09's
+allowlist should be built from it rather than re-derived.
+
+**47-08's rebuild is now LOAD-BEARING, not a convenience.** 47-07 moved **15 runtime-reachable**
+packages (3 entered the runtime tree, 3 left it), so the running container has neither the
+SQL-injection fix nor the three critical auth fixes. 47-07 did not rebuild, per its own plan; 47-08
+must, even if its `next` bump is reverted. Note `Dockerfile:24` is `npm install --legacy-peer-deps`,
+not `npm ci`, so the image tree is not lockfile-exact.
+
+Two measured hazards from 47-07 worth carrying: **`npm update` with many arguments does not reliably
+move every matching node** (it left `brace-expansion` at 1.1.12 though 1.1.18 satisfies its parent's
+`^1.1.7`) — so re-measure the audit set after each cluster, never after a batch. And **`npm update
+<transitive>` is narrower than `npm install <pkg>@<ver>`** when the fix is already inside the parent's
+range: it moves only that subtree and promotes nothing to a direct dependency. `D-47-01-C` (the
+`@auth/core` ↔ `nodemailer` peer mismatch) is **RESOLVED** as a side effect — but `nodemailer` 9 would
+re-open it, since `@auth/core@0.41.3` declares `peerOptional nodemailer "^7.0.7 || ^8.0.5"`.
+Suite after 47-07: **4799 passed / 32 skipped**, RSC 8/8, typecheck 0, lint **0 errors** / 124 warnings.
 
 **Suite baseline held exactly across the runner bump: 4739 passed / 32 skipped** (base, 169 files
 passed / 2 skipped), **RSC 8/8**, `tsc --noEmit` exit 0 with zero output, lint **0 errors** / 124
@@ -181,6 +211,7 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 | Phase 46 P06 | 11min | 3 tasks | 0 files |
 | Phase 47 P01 | 22min | 2 tasks | 2 files |
 | Phase 47 P02 | 57min | 2 tasks | 8 files |
+| Phase 47 P07 | 20min | 2 tasks | 2 files |
 
 ## Decisions
 
@@ -364,6 +395,13 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 - [Phase 47]: 47-02: anti-vacuity floors sit BELOW the measurement (MIN_REFERENCE_PASS_SET 4000 vs measured 4747) and are evaluated AFTER the report prints — A floor set at the measurement misdiagnoses legitimate shrinkage as a parse failure (migrate-from-zero.mjs:116-121); report-then-fail means an operator sees what was compared before being told it does not count
 - [Phase 47]: 47-02: falsify a set-comparison gate by truncating BOTH sides identically, not just the reference — Truncating the reference alone makes the diff itself go red, so the floor is never load-bearing. With both sides truncated the differ printed 'IDENTICAL (57 tests)' and only the floor stopped a clean exit
 - [Phase 47]: 47-02: never count processes with 'pgrep -f' in this project — The pattern matches its own caller's command line — it reported 2 phantom spinner survivors on an idle machine. Walk /proc/*/cmdline for an exact match instead
+- [Phase 47]: 47-07: drizzle-orm 0.45.2 closes GHSA-gpj5-g38j-94v9 (SQL identifier injection, RUNTIME) via a PATCH already inside the declared ^0.45.1 — the highest-value single change in phase 47
+- [Phase 47]: 47-07: the Auth.js trio bump took critical 3 -> 0 and deduped @auth/core to ONE copy at 0.41.3, which also RESOLVED D-47-01-C (the nodemailer peer mismatch) — nodemailer 9 would RE-OPEN it, since @auth/core 0.41.3 declares peerOptional nodemailer "^7.0.7 || ^8.0.5"
+- [Phase 47]: 47-07: npm update <transitive> is the narrowest instrument when a fix is already inside its parent's declared range — @aws-sdk/xml-builder 3.972.40 dropped fast-xml-parser with 0 keys added, where the planned @aws-sdk/client-s3 bump would have refreshed the whole AWS SDK to 3.1117.0
+- [Phase 47]: 47-07: npm update with many arguments does NOT reliably move every matching node — it left brace-expansion at 1.1.12 though 1.1.18 satisfies its parent's ^1.1.7; re-running it alone fixed it. Re-measure the audit set after EACH cluster, never after a batch
+- [Phase 47]: 47-07: the residual crit+high set is exactly 4 (next, nodemailer, nested postcss, sharp) and ZERO are DEV-only per the --omit=dev reconciliation — so 47-09 has no dev-only acceptance available for any of them
+- [Phase 47]: 47-07: 15 RUNTIME-reachable packages moved version, so 47-08's rebuild is now LOAD-BEARING — the running container has neither the SQL-injection fix nor the three critical auth fixes
+- [Phase 47]: 47-07: next/image is never imported anywhere in src/ (0 files, 0 Image component usages) and next.config.ts declares no images block — sharp's reach is measurably narrow, which 47-08 should record
 
 ### Quick Tasks Completed
 
@@ -454,9 +492,10 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - 2026-08-17: Phase 37 COMPLETE (15 plans, 6 waves) — Trash & Restore. `/trash` with four scoped tabs, `/admin/trash` retention (1..365, default 30, seeded as data, fail-closed with NO `?? 30`), restore + ordered transactional purge for all four CRM entities, three REST endpoints, and a daily pruner PROVEN running in the container (`[trash-prune] Starting with initial delay of 60s, ticking daily`, all six processors announcing from the merged-master build). Suite 1549 -> 1703 passing, typecheck 0, lint 0 errors throughout. Verified 4/4 success criteria plus a live browser walkthrough (8/10 UAT steps, both "deleted by" strings, manual tab activation, restore with children intact, purge detaching a live child with both audit rows). Code review: 1 critical + 9 warnings, all in-scope findings fixed; CR-01 deliberately scoped to correcting a false comment. The 320px check found and fixed a real tablist overflow defect. Autonomous run STOPPED here by user — phases 38-43 remain.
 
 ## Current Position
+- 2026-08-25: 47-07 complete -- in-range advisory fixes: crit+high 24 -> 4, critical 3 -> 0, total 36 -> 14; drizzle-orm 0.45.2 (SQL injection), Auth.js trio (all 3 criticals), fast-xml-parser removed; residual 4 handed to 47-08/47-09; 15 runtime packages moved so 47-08's rebuild is load-bearing
 
-Phase: 46 (Migration Chain & Toolchain Floor) — EXECUTING
-Plan: 6 of 6
-Status: Phase complete — ready for verification
-Progress: [████░░░░░░] 42%
+Phase: 47 (Suite Trust & Supply Chain) — EXECUTING
+Plan: 5 of 13 complete (01, 02, 03, 04, 07)
+Status: Phase 46 complete — ready for verification; Phase 47 in progress
+Progress: [██████░░░░] 58%
 Last activity: 2026-08-25
