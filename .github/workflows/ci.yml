@@ -36,6 +36,47 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    # WHY THIS JOB NOW HAS A DATABASE.
+    # The from-zero migration check (DEPLOY-01) builds a throwaway database with
+    # `drizzle-kit migrate` alone and compares its catalog against the schema this
+    # repository claims to ship, so it needs a real PostgreSQL server. It lands HERE,
+    # on the required `ci` check, rather than in a workflow of its own: a new workflow
+    # publishes a new check-run name that is not in the master ruleset, so it could go
+    # red for weeks without blocking a single merge. A non-blocking gate is a gate that
+    # does not gate.
+    #
+    # A service container references an IMAGE, not an action, so there is no commit SHA
+    # to pin here. That is a deliberate exception to the rule at the top of this file,
+    # not an oversight: the tag below is the one docker-compose.yml already runs, and
+    # src/lib/mutations/__tests__/db-test-isolation.test.ts reads BOTH files and asserts
+    # the two values are equal, so they cannot drift apart. The container holds nothing
+    # but a database this job creates and drops within its own run.
+    #
+    # What this database does NOT do: it does not make the database-backed vitest
+    # project reachable from this check. That project is still excluded from the base
+    # project's glob, is still invoked by no step here, and that same gate now
+    # enumerates every step below to prove it — a suite that needs a database and is
+    # reachable from the required check would leave every pull request permanently
+    # pending, which is the failure mode the whole arrangement exists to avoid.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        # The runner starts this container before the first step, but the server inside
+        # it is not accepting connections yet. Without a health check the migration step
+        # races Postgres' own startup and fails intermittently on a correct chain — an
+        # intermittently-red required check is worse than no check at all.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,3 +119,25 @@ jobs:
       - name: Test
         if: ${{ !cancelled() }}
         run: npm test
+
+      - name: Migration chain check
+        # DEPLOY-01. Creates a throwaway database on the service above, migrates it from
+        # zero with `drizzle-kit migrate` and asserts its CATALOG against
+        # drizzle/meta/<last>_snapshot.json — 36 tables, 293 table.column pairs, 41
+        # declared indexes — then drops it in a `finally`. It never branches on the
+        # child's exit code: `drizzle-kit migrate` prints the same success line for 0
+        # applied migrations as for 20, which is exactly how a missing CREATE TABLE
+        # shipped undetected once already.
+        #
+        # The ten-dimension comparison against a POPULATED reference database prints an
+        # explicit `SKIPPED: reference equivalence` line on this runner, because there is
+        # no such database here — branch 4 of the script's documented reference-selection
+        # order. That is a STATED skip, not a silent pass: the snapshot assertions above
+        # still run and are fully authoritative here.
+        if: ${{ !cancelled() }}
+        env:
+          # The service publishes 5432 on the runner's localhost. The script resolves
+          # process.env.DATABASE_URL before it looks for a .env file, and there is no
+          # .env on a fresh checkout, so this is the only place the target is named.
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: npm run db:check-migrations
