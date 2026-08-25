@@ -1,11 +1,82 @@
-# Backlog
+# Backlog — the single register of deferred work
 
-Deferred items with their evidence. Each entry records where it was found and what is already
-known, so a later phase does not have to rediscover it.
+Deferred items with their evidence. Each entry records where it was found and what is already known,
+so a later phase does not have to rediscover it.
+
+> **Reconciled 2026-08-24.** Until this date the project kept deferred work in **three registers that
+> disagreed with each other**, and the disagreement ran in both directions:
+>
+> - `ROADMAP.md` held twelve open `999.x` items. **Zero of them appeared in this file.**
+> - This file held ~31 items, including `MIG-01` — which the v1.3 milestone audit's carry list
+>   **omitted entirely**, despite it defeating that milestone's own "recoverable deployment" goal.
+> - `milestones/v1.3-MILESTONE-AUDIT.md` closed with *"Carried into the next milestone — tracked in
+>   `BACKLOG.md`, nothing blocking"* and named seven items. **Four of the seven were not in this
+>   file** (`CR-01`, `D-45-02`, `D-45-03`, `D-45-04`), it **missed `D-45-01`** which the same phase
+>   recorded, and one of the seven — `D-45-03` — **had already been resolved by measurement six days
+>   before the audit was written**, so the carry list also carried a phantom.
+>
+> All three are now merged here. The `999.x` entries were moved from `ROADMAP.md` verbatim, with
+> their evidence intact; `ROADMAP.md` keeps only the promotion decision. **This file is the register;
+> the ROADMAP is the schedule.**
+>
+> This is the failure mode this file's own Phase 40 section names: *"a finding that lives only in a
+> phase artifact is a finding nobody will read again."* It had claimed three victims.
+
+## Index
+
+Status legend — **v1.4** promoted for scoping · **recorded** real but deliberately not scheduled ·
+**accepted** a decision, not work · **closed** fixed or disproven, kept for history.
+
+| ID | Item | Status |
+|---|---|---|
+| **MIG-01** | `drizzle-kit migrate` cannot build a fresh database | **v1.4** — tier 1 |
+| **WR-04** | View export reachable by any authenticated non-admin | **v1.4** — tier 1 |
+| **PERF-01** | `/deals` renders every deal on a pipeline, unpaginated | **v1.4** — tier 1 |
+| **F-39-08** | Enter inside a modal navigates the list behind it | **v1.4** — tier 2 |
+| **F-39-07** | 320px reachability — no height clamp on dialogs or popovers | **v1.4** — tier 2 |
+| **CR-01** | Purge leaves file attachments on disk and downloadable | **v1.4** — tier 2 |
+| **STATS-01** | `/activities` stats row states counts it cannot know | **v1.4** — tier 2 |
+| **FORM-01** | Merge never recalculates the survivor's own formula fields | **v1.4** — tier 2, dormant |
+| **999.13-999.23, 999.28** | The twelve former ROADMAP items | **v1.4** — tier 3 |
+| **D-45-01** | `toggle.test.ts` intermittent `beforeEach` timeout | **v1.4** — fold into `999.28` |
+| **D-45-02** | `ShortcutsHint` bar occludes actionable controls | **recorded** |
+| **D-45-04** | Admin drawer has no swipe-to-dismiss | **recorded** — needs `vaul`, and a doc fix |
+| — | Hydration mismatch on three list pages swallows clicks | **recorded** |
+| — | Scan-guard atomicity (needs migration 0018) | **recorded** |
+| — | e2e auth setup flaky; cold login exceeds the 30 s timeout | **recorded** |
+| — | Four copies of the CSV download idiom | **recorded** — blocked on a Phase 38 gate |
+| — | Three private brace/tag walkers, one with a latent bug | **recorded** |
+| — | `ICU_PLURAL_KEYS` has no completeness gate | **recorded** |
+| — | Two list surfaces not internationalised at all | **recorded** |
+| — | `replay.confirmBody` over-states a dry run's consequences | **recorded** |
+| — | `audit.run.action.merged` untranslated but reachable | **recorded** |
+| — | Merge loser's timeline row renders an empty name | **recorded** — currently unreachable |
+| — | `setViewDefault` returns `forbidden` where siblings return `failed` | **recorded** |
+| — | Dead `view=<id>` persists in the URL on two surfaces | **recorded** — cosmetic |
+| — | Locale-parity figures wrong in `40-UI-SPEC` / `40-CONTEXT` | **recorded** — doc drift |
+| — | `40-UI-SPEC` V-9 names the wrong helper | **recorded** — doc drift |
+| — | Soft-deleted users' private views are unreachable | **accepted** |
+| — | `/deals` pipeline-only views are saveable but not exportable | **accepted** |
+| **D-45-03** | `/deals` pipeline select empty label in dark mode | **closed** — disproven 2026-08-18 |
+| — | `/activities` accepted three filters that narrowed nothing | **closed** — by plan 40-13 |
+| — | CSV formula injection | **closed** — fixed 2026-08-22 |
+| **999.24** | CSV export dropped all custom-field columns | **closed** — Phase 34, plan 34-13 |
+| **999.25-27** | Three custom-field UI defects | **closed** — promoted to Phase 44 |
+
+---
+
+# Register
 
 ## From Phase 39 (Duplicate Detection & Merge)
 
-### F-39-07 — a 320px user cannot get past the duplicate advisory
+### F-39-07 — a 320px user cannot get past the duplicate advisory — **PROMOTE → v1.4, tier 2**
+
+> **Phase 45 did NOT close this, despite doing a 320px pass.** Verified 2026-08-24:
+> `src/components/ui/dialog.tsx` has **zero** `max-h` or `overflow` matches, and
+> `e2e/viewport-320.spec.ts` asserts only `document.documentElement.scrollWidth <= clientWidth`.
+> **The suite Phase 45 built reproduced the exact blind spot this entry warned about** — see the
+> last paragraph below, written before that suite existed.
+
 **Severity: functional dead-end on mobile.** Deferred by the user 2026-08-20 as app-wide rather
 than phase-39-specific.
 
@@ -43,7 +114,11 @@ sensitivity to it.
 Related: `e2e/auth.setup.ts` timed out on `waitForURL` in 2 of 8 invocations (recorded below) — the
 suite has two independent sources of flake, not one.
 
-### `popover.tsx` never consumes Radix's available-height, so filter popovers already overflow at 320px
+### `popover.tsx` never consumes Radix's available-height, so filter popovers already overflow at 320px — **PROMOTE → v1.4 with F-39-07**
+
+> **Re-verified 2026-08-24:** `src/components/ui/popover.tsx` still has zero `max-h`,
+> `overflow` or `available-height` matches.
+
 **Pre-existing; measured during phase-40 UI research.** `src/components/ui/popover.tsx:33` never
 consumes `--radix-popover-content-available-height`. Measured at 320x640: Radix computed the variable
 as **347px**, and the `/activities` filter popover rendered **388px tall at `top: -41`** with
@@ -85,7 +160,7 @@ Related footgun in the same module, worth watching in review: `withViewSelection
 lands you on page 1) while `withViewEscape` PRESERVES it (Load More). Both are correct; reaching for
 the wrong one for pagination inside a view is an easy mistake.
 
-### F-39-08 — Enter inside a modal navigates the list behind it
+### F-39-08 — Enter inside a modal navigates the list behind it — **PROMOTE → v1.4, tier 2**
 Pre-existing, shared by six surfaces. `data-table-keyboard.tsx` registers
 `useHotkeys("enter", …, { preventDefault: true })` with **no ref**, so it fires inside a portalled
 modal, and `isFormFocused` exempts only INPUT/TEXTAREA/SELECT/contenteditable — **not BUTTON**.
@@ -129,9 +204,26 @@ avoided adding a third by using call-site assertions instead. Real debt, small.
 
 ---
 
-## Cross-phase, found in Phase 39 — belongs to Phase 43
+## MIG-01 — the deployment cannot be built from its own migrations
 
-### `drizzle-kit migrate` cannot build a fresh database
+### `drizzle-kit migrate` cannot build a fresh database — **PROMOTE → v1.4, tier 1**
+
+> **Re-verified 2026-08-24 by running it, not by reading it.** Against an empty scratch database:
+> `PostgresError: relation "import_sessions" does not exist` / `code: '42P01'` on
+> `ALTER TABLE "import_sessions" ADD COLUMN "user_id";` — migration `0006`. Drizzle wraps the run
+> in a transaction, so the failure rolls everything back and **the fresh database ends up with 0
+> tables**, not a partial schema. Across all 20 migrations `import_sessions` is only ever `ALTER`ed
+> (`0006`) and referenced by a foreign key (`0014`) — **no migration creates it**.
+>
+> **The section heading used to read "belongs to Phase 43". Phase 43 shipped on 2026-08-24 and this
+> is still broken.** What Phase 43 delivered was a *dump-restore* runbook, exercised against a real
+> 34 MB dump — which works only for someone who already has a dump from a running install. A new
+> self-hoster still cannot bootstrap this product from the repository. v1.3's headline claim was
+> "the deployment became recoverable"; against the migration chain, it is not.
+>
+> **It is also absent from the v1.3 milestone audit's carry list entirely** — the one register that
+> was supposed to hand v1.3's residue to the next milestone never mentioned it.
+
 **This directly blocks Phase 43's stated goal, "a self-hoster can recover their data."** A
 self-hoster cannot bootstrap from the migration chain today.
 
@@ -141,7 +233,8 @@ An early migration runs `ALTER TABLE "import_sessions" ADD COLUMN "user_id"` aga
 `pg_dump --schema-only` of the dev database rather than from migrations
 (`scripts/dedup-db-test-setup.sh`).
 
-Raise this in Phase 43's discuss step; do not let it be rediscovered.
+~~Raise this in Phase 43's discuss step; do not let it be rediscovered.~~ Phase 43 shipped without
+addressing it. Promoted to v1.4 as **MIG-01**, tier 1.
 
 ---
 
@@ -353,7 +446,11 @@ at the omission.
 **Do not "fix" this by widening `hasExportableFilter`.** If the limitation is ever revisited, the
 change is a row cap or a background job, not a wider whitelist.
 
-### 10. `/deals` renders every deal on the selected pipeline, with no pagination — 88 seconds on the busiest board
+### 10. PERF-01 — `/deals` renders every deal on the selected pipeline, with no pagination — 88 seconds on the busiest board — **PROMOTE → v1.4, tier 1**
+
+> **Re-verified 2026-08-24:** the Closer pipeline holds **15,415** deals today, and
+> `src/app/deals/page.tsx` still has no `limit` — every row is pushed into `dealsByStage`. Figures
+> below unchanged.
 
 Measured by plan 40-16 against the running container, admin session, 320x640. Time is `page.goto` plus
 `h1` visible:
@@ -400,7 +497,10 @@ nine plans refusing to re-enter: **a red run has to mean a defect.** Note that t
 `setup` project and `workers: 1` are already in `playwright.config.ts` with their reasons; neither
 addresses these two.
 
-### 12. F-39-08 is NOT contained — Enter on a focused button inside a modal navigates the list behind it, discarding the draft
+### 12. F-39-08 is NOT contained — Enter on a focused button inside a modal navigates the list behind it, discarding the draft — **PROMOTE → v1.4, tier 2**
+
+> **Re-verified 2026-08-24:** the `test.fail()` marker is still live at
+> `e2e/saved-views-320.spec.ts:980`, byte-unchanged. Delete it in the same commit as the fix.
 
 Measured by plan 40-15 against the rebuilt container. Verbatim:
 
@@ -512,7 +612,7 @@ it into this file when the phase's other findings did. The phase's verifier caug
 (gap G-3). They are recorded here because a finding that lives only in a phase artifact is a
 finding nobody will read again.
 
-### Merge never recalculates the SURVIVOR's own formula fields (phases 39 x 34 seam)
+### FORM-01 — merge never recalculates the SURVIVOR's own formula fields (phases 39 x 34 seam) — **PROMOTE → v1.4, tier 2**
 
 **Filed 2026-08-24 by the v1.3 cross-phase integration audit.** Priority: medium, but **dormant
 today** — see below. This defect could not have been caught by either phase's own verification,
@@ -598,7 +698,17 @@ DATABASE_URL="postgresql://<creds>@localhost:5433/pipelite" \
 **Deliberately not fixed during phase 43**: giving CI a database is an infrastructure decision, not a
 drive-by edit on the last day of a milestone.
 
-### Export authorization is materially weaker than before Phase 38's gate (review WR-04)
+### WR-04 — export authorization is materially weaker than before Phase 38's gate — **PROMOTE → v1.4, tier 1**
+
+> **Re-measured 2026-08-24 against the live database: unchanged.** `search=a` matches **44,254 of
+> 46,054** organizations (96.1%), under `EXPORT_ROW_CAP = 50_000`. `view-export-guard.ts` is 139
+> lines with no admin branch and no selectivity rule.
+>
+> **The verifier's judgement below was overridden and the milestone shipped.** It reads: this
+> "*should* block milestone close and any deployment where non-admins are not trusted with the whole
+> customer table." `v1.3-MILESTONE-AUDIT.md` carried it as item 3 of seven under the heading
+> **"nothing blocking"** and v1.3 shipped 2026-08-24. That override should be confirmed as
+> deliberate rather than inherited.
 
 **Where:** `src/lib/export/view-export-guard.ts`, `src/lib/views/export-action.ts`
 **Status:** **STILL OPEN — now DETECTED, not PREVENTED.** 2026-08-22: the user chose visibility over
@@ -714,7 +824,7 @@ would have been the reverse, and that is what CR-01 fixed.
 
 ## Found by browser witnessing, 2026-08-22 (Phase 40 debt cleared during the Phase 41 run)
 
-### The `/activities` stats row asserts counts it cannot know, and they are wrong
+### STATS-01 — the `/activities` stats row asserts counts it cannot know, and they are wrong — **PROMOTE → v1.4, tier 2**
 
 **Where:** `src/app/activities/activities-client.tsx:270-277`, fed by `src/app/activities/page.tsx`
 **Severity: a user-facing false statement**, not merely a cosmetic gap.
@@ -763,3 +873,325 @@ latent trap rather than a compile error.
 Note the interaction with the phase-41 locale contract: adding `audit.run.action.merged` requires
 adding it to the relevant `REQUIRED_*_KEYS` array in the same commit, or the exact-contract `toEqual`
 fails.
+
+---
+
+## Imported from the v1.3 milestone audit's carry list, 2026-08-24
+
+These lived only in archived phase artifacts. The audit named them and said they were "tracked in
+`BACKLOG.md`" — they were not. Each was re-verified against the tree at `a58b9e1` before import.
+
+### CR-01 — a purge leaves the record's file attachments on disk and downloadable — **PROMOTE → v1.4**
+
+**Where:** the four `purge*Mutation` teardowns (`src/lib/mutations/{deals,people,organizations,activities}.ts`)
+and `src/app/api/files/[entityId]/[fieldName]/[filename]/route.ts`
+**Source:** `37-REVIEW.md` § Critical Issues. **Re-verified 2026-08-24 — still open.**
+
+The ordered teardown handles notes, join rows, FK detachments and the row itself. It does **not**
+touch uploaded files. File custom fields store bytes at `${UPLOAD_DIR}/${entityId}/${fieldName}/${storedName}`
+and are referenced only from the record's `customFields` JSONB, so a purge deletes the *reference*
+while the *blob* survives. Three consequences, worsening:
+
+1. Storage grows monotonically with every purge — the retention pruner is a leak generator.
+2. The file route authorizes on `session?.user` **alone, with no record lookup** (verified unchanged
+   2026-08-24). Anyone who ever held the URL can still download the file after an admin was told
+   "*{name} and its notes will be permanently deleted. This can't be undone.*"
+3. The URL does not even have to have been kept: the soft-delete tombstone diffs the whole pre-delete
+   row including `customFields`, and purge deliberately preserves prior `audit_log` rows — so the path
+   to a "permanently deleted" record's attachments is recoverable from the audit log by any admin,
+   indefinitely.
+
+**Half of this was already fixed, which is why it reads as closed and is not.** `src/lib/trash/prune.ts:66-73`
+now documents the gap honestly ("NOT COVERED — UPLOADED FILE BLOBS ARE NOT REMOVED"), replacing the
+comment that used to assert the opposite. The *documentation* defect is closed; **the leak and the
+record-less file route are untouched** — no `deleteEntityFiles` or `collectFileFieldRefs` helper
+exists anywhere in `src/`.
+
+**Fix shape**, from the review, unchanged: collect the file refs from `customFields`, delete them
+**after** the transaction commits so a storage failure cannot roll back a committed purge, and log a
+count mismatch. Independently of that, tighten the file route to resolve the entity before serving —
+that alone closes consequences 2 and 3 even while blobs remain on disk.
+
+### D-45-01 — `toggle.test.ts` intermittently times out its `beforeEach` — **PROMOTE → v1.4, folded into 999.28**
+
+`src/lib/execution/toggle.test.ts` fails `Hook timed out in 10000ms` at `:61` under parallel workers —
+**2 of 5** consecutive `npm run test` runs — while passing in 6.57 s in isolation, that one test taking
+3.75 s of vitest's 10 s default `hookTimeout`.
+
+**Absent from the audit's carry list**, though Phase 45 recorded it in the same document as D-45-02/03/04.
+It is the same class as `999.28` (`condition-evaluator.test.ts`, T-34-20): a wall-clock margin that
+fails under vitest's own workers and passes alone. Phase 45's own note says to **fix the two together**
+and explicitly warns *"do not chase either one per-phase."* Scope them as one item.
+
+### D-45-02 — the fixed `ShortcutsHint` bar occludes actionable controls — recorded
+
+`ShortcutsHint` renders as a fixed bottom bar and nothing reserves vertical space for it, so it sits
+on top of page content. Dark `/admin/audit` at 1280x900: it clips the sidebar's **Back to App**
+button. `/admin/audit` at 320x640 in **es-ES**: it wraps to two lines and covers **"Guardar período de
+retención"** — the save control for the retention setting.
+
+Vertical occlusion, so it fell outside Phase 45's SC-1 (horizontal overflow) and predates it.
+**Suggested fix, from the phase:** Phase 38 solved the identical class for the bulk action bar with an
+`h-40 sm:h-20` spacer that reserves the bar's height in normal flow. **Validate at 320px in es-ES** —
+that is where the bar wraps and the occlusion is worst; an en-US desktop check will not be enough.
+
+Recorded rather than promoted because it hides a control without making anything untrue, and the
+remedy is a known one-line pattern that any phase touching the global shell can absorb.
+
+### D-45-04 — the admin drawer cannot be dismissed by swiping — recorded, and it carries a documentation fix
+
+Found on a real phone, 2026-08-18 — the one item from `45-VALIDATION.md`'s manual table that did not
+pass. This is an **unimplemented capability, not a regression**: `src/components/ui/sheet.tsx` wraps
+Radix `Dialog`, which has no gesture layer, and `vaul` is not a dependency. Nothing removed it; it was
+never there. The drawer has four working dismissal paths (overlay tap, close button, navigation, Escape).
+
+**The more useful half of this item is the document defect it names.** `45-VALIDATION.md` instructed a
+human tester to verify swipe-dismissal without anyone checking whether the chosen primitive could do
+it — so it promised a capability the implementation never had and could not acquire without a new
+dependency. **A manual test that asserts an un-implementable behaviour fails forever and teaches the
+team to discount manual results.** When `45-VALIDATION.md` is next revised that row should be
+corrected, not silently dropped. Fix that whether or not swipe is ever built.
+
+### D-45-03 — `/deals` pipeline select renders an empty label on dark — **CLOSED, disproven 2026-08-18**
+
+Recorded here only because **the v1.3 milestone audit's carry list lists it as open and "UNCONFIRMED,
+needs a human look"** — it was already resolved six days before that audit was written, by direct
+measurement in a real Chromium at 1280x900 in both themes: one `[data-slot="select-trigger"]`,
+`innerText` `"BDR - Base Fria"`, boundingBox 200x36, **identical in light and dark**. The original
+observation was a capture-timing artefact — `/deals` populates its pipeline list from a client
+component and the screenshot preceded settle. No code change was needed or made.
+
+It also **rules in** 45-11's `min-w-0 max-w-full` addition to that trigger: the class is present in the
+measured `class` attribute and the label renders anyway.
+
+Do not re-investigate. If the carry list is ever used as a work source, this row must be struck.
+
+
+---
+
+## Moved from ROADMAP.md, 2026-08-24 — the former `999.x` register
+
+These twelve entries were the ROADMAP's own capture log and had **zero overlap** with the rest of this
+file. They are reproduced verbatim, including the re-verification notes added during the 2026-08-24
+review. The trailing history of items 999.1-999.27 is kept with them.
+
+**999.13 — Proper fix for the React Compiler lint findings** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24 and the register drifted.** Still six suppressions, but not the five
+> captured below: `src/app/import/import-wizard.tsx:91` (`preserve-manual-memoization`) is **gone**,
+> and two new `react-hooks/exhaustive-deps` suppressions have appeared at
+> `src/components/ui/entity-combobox.tsx:96` and
+> `src/app/workflows/[id]/edit/components/config-forms/webhook-response-config.tsx:39`. The other
+> four rows in the table below are unchanged and still live. **The Suppression Register in
+> `32-04-SUMMARY.md` is therefore out of date** — re-derive the set with the grep at the end of this
+> entry rather than trusting either document.
+
+Phase 32 suppressed five `react-hooks/*` errors with scoped `// eslint-disable-next-line <rule> -- <reason>`
+comments per D-02. The rules remain at `error` severity project-wide, so a sixth occurrence still fails CI —
+but these five need a real refactor in a UI-focused phase that has UI test coverage (per 32-CONTEXT.md
+§ Deferred Ideas). Full written justification for each is in `32-04-SUMMARY.md` § Suppression Register:
+
+| # | File:Line | Rule |
+|---|-----------|------|
+| 1 | `src/app/(auth)/reset-password/page.tsx:42` | `react-hooks/set-state-in-effect` |
+| 2 | `src/app/(auth)/verify-email/page.tsx:20` | `react-hooks/immutability` |
+| 3 | `src/app/settings/profile/profile-settings-form.tsx:38` | `react-hooks/set-state-in-effect` |
+| 4 | `src/components/ui/relative-time.tsx:17` | `react-hooks/set-state-in-effect` |
+| 5 | `src/app/import/import-wizard.tsx:91` | `react-hooks/preserve-manual-memoization` |
+
+Each is behaviour-adjacent (auth error UX, single-use token fetch, hydration guard, wizard step
+transitions), which is why none was mechanically "fixed" inside an infrastructure phase.
+Grep the live set with `grep -rn 'eslint-disable-next-line react-hooks/' src/`.
+
+**999.14 — Dockerfile pins `node:20-alpine`, below vite 7's engines floor** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24:** `node:20-alpine` is pinned at **all three** build stages
+> (`Dockerfile:2` deps, `:10` builder, `:74` runner) — a fix has to change all three, not one.
+
+`vite@7.3.1` declares `engines: ^20.19.0 || >=22.12.0`, reached transitively via vitest. The image tag
+currently resolves to something >= 20.19 (the container builds today), so this is latent rather than broken.
+CI pins Node 24 and does not inherit the Dockerfile's tag. Resolution: raise the base image, or pin the
+patch explicitly so a future `node:20-alpine` rebuild cannot drift below the floor.
+Source: `32-RESEARCH.md` Open Question 4 / Pitfall 6.
+
+**999.15 — `GET /api/v1/stages/:id` returns 403 to the legitimate owner** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24 — still open, with the exact mechanism.** `src/app/api/v1/stages/[id]/route.ts:60-62`
+> builds `const withOptions: StageWith = expand.has("pipeline") ? { pipeline: true as const } : undefined`,
+> so the relation is simply **not loaded** on a bare request. Line 74 then rejects on
+> `!stage.pipeline || stage.pipeline.ownerId !== ctx.userId || stage.pipeline.deletedAt` and returns
+> `Problems.forbidden()`. Note the file already carries an `ownershipWith` helper (line 35) that loads
+> the relation unconditionally for the PUT/DELETE paths — **the GET is the one path that does not use
+> it**, which is both the bug and the shape of the fix.
+
+The ownership check reads `stage.pipeline`, which is only loaded when `?expand=pipeline` is passed, so a
+request without that query parameter fails authorization for the resource owner. Found by plan 32-03 and
+deliberately left unchanged there because T-32-10 required that plan's typing work to be behaviour-neutral.
+This is a real pre-existing auth bug, not a typing artifact — fixing it changes runtime behaviour and needs
+its own test. See `32-03-SUMMARY.md` § Decisions Made.
+
+**999.16 — npm advisories in the committed lockfile (39 at capture, 38 today)** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-measured 2026-08-24: 38, not 39** — 3 low, 9 moderate, **22 high**, **4 critical**
+> (`npm audit --json`). One high dropped off since capture; the criticals are unchanged. The count is
+> not the point and should be re-measured at plan time rather than trusted from this line — the
+> decision the item asks for (triage, then whether an audit gate or an `.npmrc` policy belongs in CI)
+> is unaffected by the drift.
+
+`npm ci` reports 39 vulnerabilities (3 low, 9 moderate, 23 high, 4 critical). CI-04 does not ask for an
+audit gate, and adding `npm audit --audit-level=high` to `ci.yml` would make the required check red on day
+one, so it was deliberately not bolted on. Resolution: triage the criticals/highs, then decide whether an
+audit step or a `.npmrc` audit policy belongs in CI.
+
+**999.17 — SECURITY: `/api/v1/activities` has no ownership check (IDOR)** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24 — still open, and nothing has been added.** The only `ownerId` references
+> in either route file are a **user-supplied `owner_id` query filter** (`route.ts:50,61-62`, optional,
+> so an unfiltered list still returns every user's activities) and the **PUT that writes it**
+> (`[id]/route.ts:188-190`, confirming the reassignment vector). There is no authorization check on
+> any of GET / PUT / DELETE. Compare `pipelines/[id]/route.ts`, which does check `ownerId`.
+
+`src/app/api/v1/activities/[id]/route.ts` GET/PUT/DELETE and `src/app/api/v1/activities/route.ts` GET
+perform **no ownership check at all**. Any valid API key can read (`[id]:80-116`), modify
+(`[id]:126-216`, **including reassigning `owner_id`**) or soft-delete (`[id]:226-237`) *any* user's
+activity by id, and the list endpoint returns every user's activities. Compare `pipelines/[id]`,
+which does check `ownerId`. Pre-existing — Phase 32's diff only retyped `withOptions` — but surfaced
+by the Phase 32 code review, and **more severe than anything found in the phase itself**. These six
+route files have zero test coverage, so add tests with the fix. Prioritise ahead of the cosmetic
+backlog items. See `32-REVIEW.md` § "Pre-existing, out of diff scope".
+
+**999.18 — `stages/route.ts` passes a JS array into a raw `sql` fragment** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24:** unchanged at `src/app/api/v1/stages/route.ts:73`.
+
+`src/app/api/v1/stages/route.ts:73` uses ``sql`${pipelines.id} IN ${pipelineIds}` `` instead of
+`inArray()`. Unreachable with an empty array today (guarded by `stageList` being non-empty) but
+fragile — a future refactor removing that guard changes it from awkward to broken. Mechanical fix.
+
+**999.19 — Pipedrive importer hardcodes stage type `"open"`** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24:** unchanged at `src/lib/import/pipedrive-api-transformers.ts:167`
+> (`const type: "open" | "won" | "lost" = "open"`), with the union declared at `:43`.
+
+`src/lib/import/pipedrive-api-transformers.ts:164-167` reads
+`const type: "open" | "won" | "lost" = "open"` under a comment promising "Determine stage type based
+on `rotten_flag` and `deal_probability`". The won/lost mapping was never implemented; Phase 32's
+`let`→`const` change (L-06) removed the last hint that it is a placeholder. Deliberately deferred
+from the Phase 32 fix pass — it is a product decision about Pipedrive stage mapping, not a
+regression. Address alongside the import wizard's terminal-stage handling.
+
+**999.20 — `npm run db:migrate` cannot reach the DB from the host** (captured 2026-08-14, Phase 33) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24:** `.env.local:1` still reads
+> `DATABASE_URL="postgresql://pipelite:pipelite@localhost:5432/pipelite"` — the wrong port. Postgres
+> publishes on **5433**. Every phase since 33 that ran a migration paid this workaround, and
+> `.planning/BACKLOG.md` records the same footgun biting the live export test from the host
+> (`EAI_AGAIN postgres`), so fixing it closes two papercuts.
+
+`drizzle.config.ts` reads `DATABASE_URL`. `.env` sets it to `postgres:5432` (the Docker-network hostname —
+unresolvable from the host, fails `EAI_AGAIN`) and `.env.local` sets it to `localhost:5432` — the **wrong
+port**, since Postgres publishes on **5433**. So the documented migrate command fails from the host and has
+to be run with an inline `DATABASE_URL` override. Phase 33 worked around it without editing a tracked file.
+Fix: point `.env.local` at `localhost:5433`. This will bite every future phase that runs a migration
+(34, 35, 36, 37, 39, 40 all add schema). Cheap fix, high recurring cost if left.
+
+**999.28 — `condition-evaluator` linearity gate is contention-flaky** (captured 2026-08-15, Phase 44) — **PROMOTE → v1.4**
+`src/lib/execution/condition-evaluator.test.ts` › "resolveFieldPath — parsing is linear, not backtracking"
+(Phase 34 **T-34-20**) asserts a **wall-clock ratio**, so it misfires whenever the machine is loaded. It
+failed twice during Phase 44's parallel waves — once reported as `25.5 < 10` — while passing 70/70 in
+isolation and in every serial run.
+
+Not introduced by Phase 44 and deliberately not fixed there (editing a Phase 34 test from inside another
+phase hides the signal). But a timing-ratio assertion is a false-failure generator in any parallel
+execution, and a suite that cries wolf is how the three defects this phase repaired stayed invisible in the
+first place. Fix: assert on operation **counts** or algorithmic shape rather than elapsed time, or mark it
+serial-only.
+
+**999.25, 999.26, 999.27 — PROMOTED to Phase 44 (2026-08-15)** (captured 2026-08-15, E2E verification of v1.3)
+Three custom-field UI defects found by the browser end-to-end pass over the completed v1.3 phases:
+999.25 (BLOCKER — no UI path to add a custom field to Deals), 999.26 (formula display one save behind),
+999.27 (`#ERROR — Unknown field` on unset sources). Promoted together as **Phase 44: Custom Field UI
+Repair** → requirements CFUI-01/02/03. Full diagnosis, reproduction steps and the
+already-proven-working baseline live in `.planning/phases/44-custom-field-ui-repair/44-CONTEXT.md`.
+
+**999.24 — RESOLVED (Phase 34, plan 34-13) — CSV export silently drops ALL custom-field columns** (captured 2026-08-14, Phase 34)
+> Closed by `deriveCsvColumns` (`src/lib/export/csv-columns.ts`), which unions keys across all rows.
+> Verified live 2026-08-15 on a 38,345-row People CSV export: 8 `custom_*` columns present,
+> `custom_GSD Doubled = 100` carried correctly with row 1 blank for that column (the exact failure mode),
+> and zero `[object Object]` in the file. Retained here for history.
+
+`exportToCSV` calls `Papa.unparse(data, { header: true })`, and papaparse derives the header row from the
+**first object only**. Any key absent from row 1 is omitted for every row. Measured on the live data: a
+46,055-row organization export produced **zero `custom_*` columns**, even though **30,264 rows carry custom
+field values**. Users exporting their CRM are silently losing every custom field unless the very first row
+happens to populate them.
+
+Pre-existing and affects **all** custom fields, not just formulas — Phase 34 did not cause it. But it means
+Phase 34's SC-2 CSV half is **not observable on this dataset**: the unwrapping logic is correct (proven via
+the JSON export, which shares `flattenCustomFields`), yet the columns never reach the file. Fix: compute the
+header as the union of keys across all rows, or pass an explicit `columns` list to `unparse`. This is
+arguably the most user-visible defect found in the milestone so far. See `34-11-SUMMARY.md`.
+
+**999.23 — POST responses echo pre-recalculation formula values** (captured 2026-08-14, Phase 34) — **PROMOTE → v1.4**
+The create mutations return the raw `.returning()` row, so a `POST /api/v1/{organizations,people,deals,activities}`
+201 body carries the **un-computed** custom-field blob. The stored value, the emitted `crmBus` event and any
+subsequent `GET` are all correct — only the create response is stale, and `PUT` has no such gap.
+
+SC-1 is therefore satisfied ("a subsequent GET returns recomputed values"), which is why Phase 34 did not
+chase it: folding the recalc into the return value would break two plan 34-02 assertions that compare the
+result against a fixture, and weakening existing tests was forbidden. But it leaves an API inconsistency —
+a client that trusts the 201 body sees different data than the same client re-reading the record. Decide
+once for all four entities. See `34-07-SUMMARY.md`.
+
+**999.22 — Condition builder UI has no field picker for bracket paths** (captured 2026-08-14, Phase 34) — **PROMOTE → v1.4**
+
+> **Re-verified 2026-08-24:** no file under `src/app/workflows/` emits `customFields[` in any form —
+> the picker still does not exist, and `condition-config.tsx` is where it would land.
+
+Phase 34 plan 34-12 made `resolveFieldPath` accept bracket-quoted segments, so a workflow condition can now
+reach `customFields["Previsão de início operação"]`. But the condition builder UI offers no picker that
+emits that syntax — an operator has to hand-type both the bracket form and the exact accented field name,
+with no autocomplete and no validation. So the capability exists at the engine level while remaining
+effectively undiscoverable in the product. A field picker that emits the correct path is what stands
+between the fix and it being usable without documentation. Pairs with 999.21.
+
+Also from 34-12: **escaping is unsupported inside brackets** — a name containing the same quote character
+used to delimit it stops the parser at the first match. The other quote style works around it; a name
+containing *both* quote characters is unaddressable. None of the 169 live definitions hit this today.
+
+**999.21 — Workflow conditions cannot address 90% of custom fields — ENGINE FIXED in Phase 34 (34-12), UI GAP REMAINS** (captured 2026-08-14, Phase 34) — **PROMOTE → v1.4**
+`resolveFieldPath` splits a condition's field path on `.`, so any custom field whose **name contains a
+space or punctuation is unreachable from a workflow condition**. Measured against the live DB:
+**152 of 169 definitions (90%)** are affected — this dataset's field names are predominantly Portuguese
+with spaces and punctuation (`Código Mãe`, `Previsão de início operação`, `CNPJ / CPF`,
+`UUID UC (TYR Core)`, `Tem solução de solar?`).
+
+Pre-existing and affects **all** custom fields, not just formula fields — Phase 34 did not introduce it and
+explicitly scoped it out. But it materially limits Phase 34's SC-3: the formula value now normalises
+correctly into the trigger envelope, yet in practice a workflow condition can only reach a formula field
+whose name is a simple identifier. Fix needs a quoting/escaping syntax or an id-based field reference.
+Worth prioritising — it silently makes a headline feature inapplicable to most of the real data.
+See `34-05-SUMMARY.md`.
+
+---
+
+All 12 original backlog items (999.1-999.12, captured 2026-08-12 and 2026-08-13) were promoted
+into v1.3 on 2026-08-13 and now live as Phases 32-43 above:
+
+| Backlog item | Now |
+|--------------|-----|
+| 999.1 Formula reactivity | Phase 34 |
+| 999.2 Bulk operations | Phase 38 |
+| 999.3 Test infrastructure & CI | Phase 32 |
+| 999.4 Database indexes | Phase 33 |
+| 999.5 Notes & activity timeline | Phase 35 |
+| 999.6 Audit log | Phase 36 |
+| 999.7 Duplicate detection & merge | Phase 39 |
+| 999.8 Saved views & shared filters | Phase 40 |
+| 999.9 Trash & restore | Phase 37 |
+| 999.10 Workflow operator affordances | Phase 41 |
+| 999.11 Observability | Phase 42 |
+| 999.12 Type-safety & deployment-docs polish | Phase 43 |
+
+The evidence captured with each backlog item is preserved in the v1.3 requirement text
+(`.planning/REQUIREMENTS.md`) — each category there names its originating backlog item.
