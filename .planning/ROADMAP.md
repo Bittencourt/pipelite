@@ -135,7 +135,23 @@ fixing this also closes the `EAI_AGAIN postgres` papercut that bit the live expo
 `node:20-alpine` is pinned at `Dockerfile:2` (deps), `:10` (builder) and `:74` (runner) — a fix must
 change all three. Migration 0018 is already taken; a renumber may be needed (see the recorded
 scan-guard item).
-**Plans**: TBD
+
+**Corrected at plan time by 46-RESEARCH.md** — three of the notes above are superseded:
+`webhook_deliveries` is missing too and fails SILENTLY (migrate exits 0, 35 tables vs 36);
+`.env.local` is never read by drizzle-kit, so the DEPLOY-02 fix moves to `.env` / `.env.example` /
+`docker-compose.yml`; and NO renumber is needed, because the migrator skips by journal timestamp and
+never compares the stored hash. Node 20 is EOL (2026-04-30) and the binding floor has moved off vite
+onto `@napi-rs/lzma-linux-x64-gnu`.
+
+**Plans**: 6 plans in 4 waves
+
+Plans:
+- [ ] 46-01-PLAN.md — GATE A (static chain integrity, RED first) + repair migration 0006 by prepend + reconcile the dedup script's now-false comment · NC-5
+- [ ] 46-02-PLAN.md — `.env`/`.env.example` describe the host, compose constructs the container URL, docs reconciled, two gates re-anchored · SC-4, NC-4
+- [ ] 46-03-PLAN.md — all three Dockerfile pins to `node:24-alpine`, lockfile-derived `engines.node`, GATE C, ci.yml comment reconciled · NC-3
+- [ ] 46-04-PLAN.md — `scripts/migrate-from-zero.mjs` + `npm run db:check-migrations`: from-zero build with ten-dimension catalog equivalence · NC-1, NC-2
+- [ ] 46-05-PLAN.md — Route A CI wiring: the check runs on the required `ci` job; `db-test-isolation.test.ts` proxy replaced by direct assertions
+- [ ] 46-06-PLAN.md — behavioural proof: rebuilt container reports Node 24, `/api/health` 200 against a migration-built database · SC-2, SC-5
 
 ### Phase 47: Suite Trust & Supply Chain
 
