@@ -57,6 +57,7 @@ Status legend — **v1.4** promoted for scoping · **recorded** real but deliber
 | — | Locale-parity figures wrong in `40-UI-SPEC` / `40-CONTEXT` | **recorded** — doc drift |
 | — | `40-UI-SPEC` V-9 names the wrong helper | **recorded** — doc drift |
 | **SEC-47-A** | SMTP certificate verification disabled unconditionally | **recorded** — larger than any allowlisted nodemailer advisory |
+| **SEC-47-B** | `matches_regex` runs a user-supplied regex unbounded on the request path | **recorded** — the only remaining unbounded engine on the execution path |
 | — | Soft-deleted users' private views are unreachable | **accepted** |
 | — | `/deals` pipeline-only views are saveable but not exportable | **accepted** |
 | **D-45-03** | `/deals` pipeline select empty label in dark mode | **closed** — disproven 2026-08-18 |
@@ -1275,3 +1276,55 @@ one line here is worth more than the whole `nodemailer` 7 → 9 major bump that 
 
 **Suggested owner:** a follow-up plan touching `src/lib/email/client.ts` with a real send test
 against the compose stack. Do not fold it into an advisory-triage task; it is a behaviour change.
+
+---
+
+### SEC-47-B — `matches_regex` compiles and runs a user-supplied regex unbounded, on a real request path — **recorded**
+
+**Found during:** the Phase 47 code review (WR-09), and confirmed by the review-fix pass.
+
+**What:** `src/lib/execution/condition-evaluator.ts:164-171`
+
+```ts
+    case "matches_regex": {
+      try {
+        const regex = new RegExp(String(compareValue))
+        return regex.test(String(fieldValue))
+      } catch {
+        return false
+      }
+    }
+```
+
+`compareValue` is workflow-condition configuration and `fieldValue` is trigger data. There is no
+length bound on either, no step or timeout bound on the match, and **Node cannot interrupt a
+running `RegExp`**. A pattern such as `(a+)+$` against a long non-matching subject wedges the event
+loop for the entire process, taking every other request with it. The `catch` covers only a
+*malformed* pattern, never a catastrophic one.
+
+**Why it is in scope for Phase 47's review even though the phase did not touch these lines:** it
+directly contradicts the doc-comment 120 lines above it (`:36-38`), *"Implemented as a single
+forward scan with no backtracking and no regex, so cost is linear in path length even for
+adversarial input (T-34-20)"* — the field-path parser was hardened against exactly this class while
+the operator immediately below it was left with an unbounded engine. `condition-evaluator.test.ts`
+even uses this call site as a **live positive control** for its regex detector, so the phase looked
+directly at it.
+
+**Why the review-fix pass DECLINED to fix it rather than carrying it silently:** every available
+remedy is a product behaviour change on a user-facing feature, and none is verifiable inside a
+review-fix scope.
+
+- Bounding the pattern and subject lengths converts a match into a silent `false` above the bound,
+  which changes workflow ROUTING without telling the operator. A workflow that used to fire stops
+  firing, and the only symptom is an execution that took the other branch.
+- Adding the `u` flag, as the review sketched, rejects a number of legacy escapes and would turn
+  currently-working patterns into `catch`-and-`false` — the same silent routing change, applied to
+  whatever patterns are configured in the live database today.
+- The correct answer is probably the one this codebase already uses for formulas: run the match
+  inside the QuickJS sandbox under its `timeoutMs`, which bounds the cost without changing the
+  match's meaning. That is a real piece of work with its own verification, not a review-fix edit.
+
+**Suggested owner:** a follow-up plan that (a) measures what `matches_regex` patterns actually exist
+in the live `workflows` table, (b) picks between the sandbox route and an explicit, LOGGED bound,
+and (c) proves the wedge with a real `(a+)+$` payload before and after. Do not fold it into a test
+or tooling task; it is a behaviour change on the execution path.
