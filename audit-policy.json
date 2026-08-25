@@ -1,0 +1,291 @@
+{
+  "$comment": [
+    "The machine-readable half of this repository's advisory policy. The prose half is AUDIT-POLICY.md,",
+    "beside this file; a root SECURITY.md is a disclosure policy and is neither of them.",
+    "Enforced by `npm run security:audit` (scripts/audit-policy.mjs) and, offline, by",
+    "src/lib/__tests__/audit-policy.test.ts. Every entry needs a ghsa, a package, a reason of at least",
+    "80 characters that is not on FORBIDDEN_REASONS, a reach from {runtime, build, dev}, and a bare",
+    "YYYY-MM-DD expires that is still in the future. An EXPIRED entry FAILS the gate: that is the",
+    "mechanism that makes acceptance a decision which gets revisited rather than a permanent silence.",
+    "Two expiry horizons, and the rule is stated in AUDIT-POLICY.md: 30 days where a non-breaking fix",
+    "is measured available and blocked only by an in-repo gate, 90 days where the only fix is a",
+    "breaking major accepted on evidence that its input surface is never supplied.",
+    "Decision date for every entry below: 2026-08-25."
+  ],
+  "failOn": ["critical", "high"],
+  "allowlist": [
+    {
+      "ghsa": "GHSA-ggv3-7p47-pfv8",
+      "package": "next",
+      "reason": "HTTP request smuggling in rewrites. next.config.ts declares no `rewrites` at all — its whole body is `output: \"standalone\"` plus `serverExternalPackages`, wrapped by next-intl's plugin — so the affected surface is not configured in this project. Accepted until 2026-09-24 pending the split follow-up: the fix is next 16.1.6 -> 16.3.2 (npm reports it as fixAvailable and NOT isSemVerMajor), measured in 47-08 against a scratch lockfile to clear next/postcss/sharp and join nothing at any severity. It is blocked in-repo rather than upstream: next@16.3.2 forces sharp ^0.35.3, whose @img/sharp-win32-ia32 caps engines.node at ^20.9.0, and src/lib/__tests__/node-engines-floor.test.ts:335 and :379 walk that range platform-blind against package.json:6's \">=24.12.0\". The overrides{sharp:0.34.5} workaround was rejected because it contradicts next's own declared range and re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-3x4c-7xq6-9pq8",
+      "package": "next",
+      "reason": "Unbounded next/image disk cache growth can exhaust storage. Measured 2026-08-25 over 702 source files under src/: ZERO import `next/image` and ZERO use `<Image`; the only textual match for next/image in the tree is the middleware matcher exclusion string `_next/image` at src/middleware.ts:8. next.config.ts declares no `images` block, so no remotePatterns are configured and the optimizer rejects external URLs. Reach is narrow rather than zero because the /_next/image endpoint still exists on the standalone server. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2, blocked by the platform-blind engines walk at src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-h27x-g6w4-24gq",
+      "package": "next",
+      "reason": "Unbounded postponed resume buffering can lead to DoS — it requires Partial Prerendering. Measured 2026-08-25: zero of 702 src files reference `experimental_ppr`, and next.config.ts declares no `experimental` block at all, so PPR is off in this project. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2 (fixAvailable, non-major, measured in 47-08 to clear next/postcss/sharp and join nothing), blocked in-repo by the platform-blind engines walk at src/lib/__tests__/node-engines-floor.test.ts:335 and :379 against package.json:6, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-mq59-m269-xvcx",
+      "package": "next",
+      "reason": "A null Origin can bypass Server Actions CSRF checks. THIS ONE IS REACHABLE and is not being argued away: measured 2026-08-25, 23 files under src/ carry a top-level \"use server\" directive, so Server Actions are the project's primary mutation path. The disposition is therefore a scheduling decision, not a risk judgement: accepted until 2026-09-24 only because the fix is already measured and specified. next 16.3.2 clears it (47-08 resolved a candidate lockfile with `npm install --package-lock-only` and audited it: next/postcss/sharp all leave, nothing joins at any severity) and is blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379 reading @img/sharp-win32-ia32's ^20.9.0 engines.node platform-blind against package.json:6. The overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-jcc7-9wpm-mj36",
+      "package": "next",
+      "reason": "A null Origin can bypass the DEV HMR websocket CSRF checks. The HMR websocket exists only under `next dev`, which this project never runs — the documented workflow is Docker only, docker-entrypoint.sh:8 is `exec node server.js` against the `output: \"standalone\"` build declared at next.config.ts:7, and Dockerfile runs `npm run build` at image-build time. The `dev` script in package.json exists but is not the supported path. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2, blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-q4gf-8mx6-v5v3",
+      "package": "next",
+      "reason": "Denial of Service with Server Components, CVSS 7.5. REACHABLE — this is an App Router application and React Server Components are how every page renders; there is no `pages/` directory anywhere in the repository. Not argued away: the disposition is scheduling. Accepted until 2026-09-24 because next 16.3.2 is measured to clear it (47-08, scratch lockfile audited with `npm install --package-lock-only`: next/postcss/sharp leave, nothing joins at any severity) and is blocked in-repo by the platform-blind engines walk at src/lib/__tests__/node-engines-floor.test.ts:335 and :379 against package.json:6's \">=24.12.0\". The overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-8h8q-6873-q5fj",
+      "package": "next",
+      "reason": "Denial of Service with Server Components, CVSS 7.5 — the same family as GHSA-q4gf-8mx6-v5v3 and equally REACHABLE, since every page in this App Router application renders through RSC and no `pages/` directory exists. Not argued away; the disposition is scheduling. Accepted until 2026-09-24 because next 16.3.2 is measured to clear it (47-08 audited a candidate lockfile built with `npm install --package-lock-only`: next/postcss/sharp all leave, nothing joins at any severity) and is blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379 walking @img/sharp-win32-ia32's ^20.9.0 platform-blind against package.json:6. The overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-26hh-7cqf-hhc6",
+      "package": "next",
+      "reason": "Middleware / Proxy bypass in App Router applications via segment-prefetch routes, incomplete-fix follow-up, CVSS 7.5. REACHABLE and the most consequential of the 28: src/middleware.ts:3-5 exports the NextAuth `auth` middleware as this application's only authentication gate for pages, and its matcher at src/middleware.ts:8 covers every route except api, _next/static, _next/image and favicon.ico — so a middleware bypass is an authentication bypass for every gated page. Not argued away in any respect. Accepted until 2026-09-24 solely because the fix is measured and specified: next 16.3.2 clears it (47-08, scratch lockfile audited, nothing joins at any severity) and is blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379 against package.json:6. The overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj. This entry is the reason the horizon is 30 days rather than 90.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-3g8h-86w9-wvmq",
+      "package": "next",
+      "reason": "Middleware / Proxy redirects can be cache-poisoned, CVSS 3.7. REACHABLE — src/middleware.ts:3-5 is the NextAuth `auth` middleware and it redirects unauthenticated requests to /login for every route its matcher at src/middleware.ts:8 covers, which was observed directly in 47-08 (`GET /deals` -> HTTP 307 -> http://localhost:3001/login). Not argued away; the disposition is scheduling. Accepted until 2026-09-24 because next 16.3.2 is measured to clear it (47-08 scratch-lockfile audit: next/postcss/sharp leave, nothing joins) and is blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379. The overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-ffhc-5mcf-pf4q",
+      "package": "next",
+      "reason": "Cross-site scripting in App Router applications USING CSP NONCES. This project sets no Content-Security-Policy and issues no nonce: measured 2026-08-25, next.config.ts declares no `headers`, and the only two /nonce/i matches in all of src/ are in src/lib/execution/engine.test.ts and src/lib/execution/execution-processor.test.ts, both about the QuickJS sandbox rather than a response header. The advisory's precondition therefore does not hold here. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2 (measured in 47-08 to clear next/postcss/sharp and join nothing), blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-vfv6-92ff-j949",
+      "package": "next",
+      "reason": "Cache poisoning via collisions in React Server Component cache-busting, CVSS 3.7. REACHABLE — every page in this App Router application is an RSC render and there is no `pages/` directory in the repository. Not argued away; the disposition is scheduling. Accepted until 2026-09-24 because next 16.3.2 is measured to clear it (47-08 audited a candidate lockfile resolved with `npm install --package-lock-only`: next/postcss/sharp leave, nothing joins at any severity) and is blocked in-repo by the platform-blind engines walk at src/lib/__tests__/node-engines-floor.test.ts:335 and :379 against package.json:6. The overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-gx5p-jg67-6x7h",
+      "package": "next",
+      "reason": "Cross-site scripting in `beforeInteractive` scripts with untrusted input, CVSS 6.1. This project loads no next/script at all: measured 2026-08-25 over 702 src files, ZERO import from \"next/script\" and ZERO contain the string `beforeInteractive`. The advisory's entire surface is absent. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2 (fixAvailable, non-major; 47-08 measured it clearing next/postcss/sharp with nothing joining at any severity), blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379 reading @img/sharp-win32-ia32's ^20.9.0 platform-blind against package.json:6, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-mg66-mrh9-m8jx",
+      "package": "next",
+      "reason": "Denial of Service via connection exhaustion in applications USING CACHE COMPONENTS, CVSS 7.5. Cache Components are not enabled here: measured 2026-08-25, next.config.ts contains no `cacheComponents` key and no `experimental` block, and zero of 702 src files contain a \"use cache\" directive or an `unstable_cache` call. The advisory's precondition does not hold. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2, measured in 47-08 to clear next/postcss/sharp and join nothing at any severity, blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-h64f-5h5j-jqjh",
+      "package": "next",
+      "reason": "Denial of Service in the Image Optimization API, CVSS 5.9. Measured 2026-08-25: ZERO of 702 src files import next/image or use <Image, and next.config.ts declares no `images` block, so no remotePatterns are configured and the optimizer rejects external URLs. The /_next/image endpoint nevertheless still exists on the standalone server declared at next.config.ts:7, so this is NARROW rather than unreachable, and it is recorded as narrow rather than dismissed. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2, blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-c4j6-fc7j-m34r",
+      "package": "next",
+      "reason": "Server-side request forgery in applications USING WEBSOCKET UPGRADES, CVSS 8.6 — the highest-scoring of the 28. This application performs no WebSocket upgrade: measured 2026-08-25 over 702 src files, ZERO match /WebSocket|Sec-WebSocket/ or a quoted \"upgrade\" token, and there is no custom server file (server.ts/server.js/server.mjs are all absent from the repository root) — docker-entrypoint.sh:8 runs Next's own standalone `node server.js`. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2 (47-08 measured it clearing next/postcss/sharp, nothing joining), blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-492v-c6pp-mqqv",
+      "package": "next",
+      "reason": "Middleware / Proxy bypass through dynamic route parameter injection, CVSS 8.1. REACHABLE, and it is an authentication-bypass class here: src/middleware.ts:3-5 is the NextAuth `auth` middleware, the only page-level authentication gate, and its matcher at src/middleware.ts:8 covers every route except api, _next/static, _next/image and favicon.ico. The application is full of dynamic segments (src/app/deals/[id], src/app/api/webhooks/in/[workflowId]/[secret], and others). Not argued away in any respect. Accepted until 2026-09-24 solely because the fix is measured and specified: next 16.3.2 clears it (47-08 scratch-lockfile audit, nothing joins at any severity), blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379 against package.json:6, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-wfc6-r584-vfw7",
+      "package": "next",
+      "reason": "Cache poisoning in React Server Component responses, CVSS 5.4. REACHABLE — every page here is an RSC render in the App Router and there is no `pages/` directory in the repository. Not argued away; the disposition is scheduling. Accepted until 2026-09-24 because next 16.3.2 is measured to clear it (47-08 resolved a candidate lockfile with `npm install --package-lock-only` and audited it: next/postcss/sharp leave, nothing joins at any severity) and is blocked in-repo by the platform-blind engines walk at src/lib/__tests__/node-engines-floor.test.ts:335 and :379 against package.json:6's \">=24.12.0\". The overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-267c-6grr-h53f",
+      "package": "next",
+      "reason": "Middleware / Proxy bypass in App Router applications via segment-prefetch routes, CVSS 7.5 — the original of which GHSA-26hh-7cqf-hhc6 is the incomplete-fix follow-up. REACHABLE for exactly the same reason: src/middleware.ts:3-5 is the NextAuth `auth` middleware, this application's only page-level authentication gate, and src/middleware.ts:8's matcher covers every route but api, _next/static, _next/image and favicon.ico. Not argued away. Accepted until 2026-09-24 solely because the fix is measured and specified: next 16.3.2 clears it (47-08, scratch lockfile audited, nothing joins), blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-36qx-fr4f-26g5",
+      "package": "next",
+      "reason": "Middleware / Proxy bypass in PAGES ROUTER applications using i18n, CVSS 7.5. The Pages Router is not used at all here: measured 2026-08-25, no `pages/` directory exists anywhere in the repository (neither ./pages nor ./src/pages), and next.config.ts declares no `i18n` key. Localisation is App-Router next-intl driven by a cookie at src/i18n/request.ts:9-17 over the three locales declared at src/i18n/config.ts:1, which is a different mechanism from the Pages Router i18n routing this advisory concerns. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2, blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-6gpp-xcg3-4w24",
+      "package": "next",
+      "reason": "Middleware / Proxy bypass in App Router applications using Turbopack AND A SINGLE LOCALE. The single-locale precondition does not hold: src/i18n/config.ts:1 declares three locales ('en-US', 'pt-BR', 'es-ES'), all three message catalogues exist (src/messages/en-US.json, pt-BR.json, es-ES.json), and src/messages/locale-parity.test.ts gates them against each other. Recorded honestly: Next 16 builds with Turbopack by default, so the bundler half of the precondition DOES hold and only the locale half does not. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2, blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-m99w-x7hq-7vfj",
+      "package": "next",
+      "reason": "Denial of Service in App Router using Server Actions. REACHABLE — measured 2026-08-25, 23 files under src/ carry a top-level \"use server\" directive and Server Actions are this project's primary mutation path (src/app/deals/actions.ts, src/app/activities/actions.ts and twenty-one others). Not argued away; the disposition is scheduling. Accepted until 2026-09-24 because next 16.3.2 is measured to clear it (47-08 audited a candidate lockfile resolved with `npm install --package-lock-only`: next/postcss/sharp leave, nothing joins at any severity) and is blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379 against package.json:6. The overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-89xv-2m56-2m9x",
+      "package": "next",
+      "reason": "Server-Side Request Forgery in Server Actions ON CUSTOM SERVERS. This project does not run a custom server: next.config.ts:7 declares `output: \"standalone\"`, docker-entrypoint.sh:8 is `exec node server.js` against Next's own generated standalone server, and there is no server.ts/server.js/server.mjs at the repository root (measured 2026-08-25 — all three absent). The advisory's precondition does not hold. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2 (47-08 measured it clearing next/postcss/sharp with nothing joining at any severity), blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-68g3-v927-f742",
+      "package": "next",
+      "reason": "Cache confusion of response bodies for requests with bodies. REACHABLE — POST requests with bodies are how this application mutates data, through the 23 \"use server\" Server Action files and the route handlers under src/app/api. Not argued away; the disposition is scheduling. Accepted until 2026-09-24 because next 16.3.2 is measured to clear it (47-08 resolved a candidate lockfile with `npm install --package-lock-only` and audited it: next/postcss/sharp leave, nothing joins at any severity) and is blocked in-repo by the platform-blind engines walk at src/lib/__tests__/node-engines-floor.test.ts:335 and :379 against package.json:6. The overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-4633-3j49-mh5q",
+      "package": "next",
+      "reason": "Cache confusion of response bodies for requests with bodies containing invalid UTF-8 byte sequences — the same family as GHSA-68g3-v927-f742 and equally REACHABLE, since this application accepts file uploads at src/app/api/upload and CSV import payloads under src/app/import, both of which carry arbitrary bytes. Not argued away; the disposition is scheduling. Accepted until 2026-09-24 because next 16.3.2 is measured to clear it (47-08 scratch-lockfile audit: next/postcss/sharp leave, nothing joins at any severity) and is blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379. The overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-4c39-4ccg-62r3",
+      "package": "next",
+      "reason": "Unbounded Server Action payload in the EDGE RUNTIME. Nothing in this project runs on the Edge runtime: measured 2026-08-25 over 702 src files, ZERO declare `export const runtime = \"edge\"`, and next.config.ts:8 lists `serverExternalPackages: [\"argon2\", \"pipedrive\", \"quickjs-emscripten\"]` — native and CommonJS packages that could not load on Edge at all, which is independent corroboration that the Node runtime is the only one in use. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2, blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-p9j2-gv94-2wf4",
+      "package": "next",
+      "reason": "Server-Side Request Forgery in rewrites via an attacker-controlled destination hostname. next.config.ts declares no `rewrites` — its entire body is `output: \"standalone\"` plus `serverExternalPackages`, wrapped by next-intl's plugin — so there is no rewrite destination for an attacker to influence. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2 (fixAvailable, non-major; 47-08 measured it clearing next/postcss/sharp with nothing joining at any severity), blocked in-repo by the platform-blind engines walk at src/lib/__tests__/node-engines-floor.test.ts:335 and :379 against package.json:6, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-q8wf-6r8g-63ch",
+      "package": "next",
+      "reason": "Denial of Service in the Image Optimization API using SVGs. Measured 2026-08-25: ZERO of 702 src files import next/image or use <Image, and next.config.ts declares no `images` block, so `dangerouslyAllowSVG` is unset and no remotePatterns are configured. The /_next/image endpoint still exists on the standalone server declared at next.config.ts:7, so this is recorded as NARROW rather than unreachable. Accepted until 2026-09-24 pending the split follow-up; the fix is next 16.3.2, blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-955p-x3mx-jcvp",
+      "package": "next",
+      "reason": "Unauthenticated disclosure of internal Server Function endpoints. REACHABLE — measured 2026-08-25, 23 files under src/ carry a top-level \"use server\" directive, so this application has internal Server Function endpoints to disclose, and src/middleware.ts:8's matcher deliberately EXCLUDES the api path, so middleware is not a second gate in front of them. Not argued away. Accepted until 2026-09-24 solely because the fix is measured and specified: next 16.3.2 clears it (47-08, candidate lockfile resolved with `npm install --package-lock-only` and audited; nothing joins at any severity), blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, and the overrides{sharp:0.34.5} workaround was rejected because it re-opens GHSA-f88m-g3jw-g9cj.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-qx2v-qp2m-jg93",
+      "package": "postcss",
+      "reason": "XSS via an unescaped </style> in PostCSS's CSS stringify output, CVSS 6.1. The vulnerable node is node_modules/next/node_modules/postcss@8.4.31 — the ONLY vulnerable copy; the top-level node_modules/postcss is 8.5.26, raised by 47-07 and above the <=8.5.22 vulnerable range. It is reached only from Next's CSS pipeline during `next build` (Dockerfile's `RUN npm run build`); this application never compiles or stringifies user-supplied CSS — the only stylesheet in the tree is src/app/globals.css plus Tailwind's generated output, both authored in-repo. next@16.1.6 pins postcss at 8.4.31 EXACTLY, so no in-range instrument can move it: npm reports fixAvailable as {\"name\":\"next\",\"version\":\"16.3.2\"}, i.e. it moves only when next moves. Accepted until 2026-09-24 pending the split follow-up, which is blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379, not by postcss.",
+      "reach": "build",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-6g55-p6wh-862q",
+      "package": "postcss",
+      "reason": "Arbitrary file read and information disclosure via an attacker-controlled sourceMappingURL in CSS comments, CVSS 7.5. It requires PostCSS to process CSS an attacker wrote. This application never does: the only stylesheets in the tree are src/app/globals.css and Tailwind's generated output, both authored in-repo, and PostCSS runs only inside Next's build-time CSS pipeline (Dockerfile's `RUN npm run build`) — nothing in src/ passes request data to postcss. The vulnerable node is node_modules/next/node_modules/postcss@8.4.31, pinned EXACTLY by next@16.1.6, so npm reports fixAvailable as {\"name\":\"next\",\"version\":\"16.3.2\"} and no in-range instrument moves it; the top-level copy is already 8.5.26 from 47-07. Accepted until 2026-09-24 pending the next bump, blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379.",
+      "reach": "build",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-fxqj-rqcc-2cmp",
+      "package": "postcss",
+      "reason": "Incomplete fix of GHSA-6g55-p6wh-862q — an attacker-controlled sourceMappingURL reads arbitrary .map files when `from` is unset. Same precondition and same answer: PostCSS here runs only in Next's build-time CSS pipeline (Dockerfile's `RUN npm run build`) over src/app/globals.css and Tailwind's generated output, both authored in-repo, and nothing in src/ passes request data to postcss. Recorded rather than merged with its parent advisory because an incomplete fix is exactly the case where a reader needs to see both ids disposed. The vulnerable node is node_modules/next/node_modules/postcss@8.4.31, pinned EXACTLY by next@16.1.6 (fixAvailable {\"name\":\"next\",\"version\":\"16.3.2\"}). Accepted until 2026-09-24 pending the next bump, blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379.",
+      "reach": "build",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-r28c-9q8g-f849",
+      "package": "postcss",
+      "reason": "Path traversal in previous-source-map auto-loading (sourceMappingURL) leading to arbitrary .map file disclosure, CVSS 7.5. It needs a previous source map referenced from attacker-controlled CSS. PostCSS here only ever sees src/app/globals.css and Tailwind's generated output, both authored in-repo, and it runs only inside Next's build-time CSS pipeline (Dockerfile's `RUN npm run build`) — the lockfile entry carries no `dev` flag, so the package SHIPS in the image, but nothing in src/ passes request data to it. The vulnerable node is node_modules/next/node_modules/postcss@8.4.31, pinned EXACTLY by next@16.1.6; npm reports fixAvailable {\"name\":\"next\",\"version\":\"16.3.2\"}, so it moves only when next moves. Accepted until 2026-09-24 pending the next bump, blocked in-repo by src/lib/__tests__/node-engines-floor.test.ts:335 and :379.",
+      "reach": "build",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-f88m-g3jw-g9cj",
+      "package": "sharp",
+      "reason": "sharp's inherited libvips vulnerabilities (CVE-2026-33327, CVE-2026-33328, CVE-2026-35590, CVE-2026-35591). sharp@0.34.5 is an OPTIONAL dependency of next@16.1.6 and its reach here is measurably narrow: ZERO of 702 src files import next/image or use <Image (measured 2026-08-25), next.config.ts declares no `images` block so no remotePatterns are configured and the optimizer rejects external URLs, and the only textual match for next/image in the tree is the middleware matcher exclusion `_next/image` at src/middleware.ts:8. Narrow is not zero — the /_next/image endpoint still exists on the standalone server — so this is recorded as narrow rather than dismissed. next@16.1.6 declares optionalDependencies.sharp ^0.34.4, so the fixed 0.35.x is OUT OF RANGE and npm reports fixAvailable {\"name\":\"next\",\"version\":\"16.3.2\"}. Accepted until 2026-09-24 pending the split follow-up, whose blocker is this very package: every sharp 0.35.x caps @img/sharp-win32-ia32's engines.node at ^20.9.0, which src/lib/__tests__/node-engines-floor.test.ts:335 and :379 read platform-blind against package.json:6.",
+      "reach": "runtime",
+      "expires": "2026-09-24"
+    },
+    {
+      "ghsa": "GHSA-c7w3-x93f-qmm8",
+      "package": "nodemailer",
+      "reason": "SMTP command injection via an unsanitized `envelope.size` parameter. The `envelope` option is never supplied. There is exactly ONE sendMail call site in the repository, src/lib/email/send.ts:29-35, and it passes exactly { from, to, subject, html, text }; the transport is built once at src/lib/email/client.ts:36 from the config literal at src/lib/email/client.ts:9-21, which supplies only host, port, secure, auth and tls, all from environment variables. Measured 2026-08-25: exactly three files in src/ reference nodemailer/sendMail/Transporter/createTransport (client.ts, send.ts, send.test.ts) and ZERO of them supply raw, envelope, list, jsonTransport, disableFileAccess or disableUrlAccess. The only fix is nodemailer 7 -> 9 (npm: fixAvailable {\"name\":\"nodemailer\",\"version\":\"9.0.5\",\"isSemVerMajor\":true}), a two-major breaking bump that 47-CONTEXT excludes in a debt-paydown milestone; @auth/core@0.41.3 and next-auth@5.0.0-beta.32 both declare peerOptional nodemailer \"^7.0.7 || ^8.0.5\", which 9.x does not satisfy, so it would re-open the ERESOLVE conflict 47-07 eliminated.",
+      "reach": "runtime",
+      "expires": "2026-11-23"
+    },
+    {
+      "ghsa": "GHSA-vvjj-xcjg-gr5g",
+      "package": "nodemailer",
+      "reason": "SMTP command injection via CRLF in the transport `name` option (EHLO/HELO), CVSS 4.9. No transport `name` is supplied: the transport config literal at src/lib/email/client.ts:9-21 contains exactly host, port, secure, auth and tls, and it is passed to createTransport at src/lib/email/client.ts:36 — the only createTransport call in the repository. The single message-sending call site, src/lib/email/send.ts:29-35, passes only { from, to, subject, html, text } and no transport options at all. Measured 2026-08-25: three files in src/ reference nodemailer at all (client.ts, send.ts, send.test.ts) and ZERO supply raw, envelope, list, jsonTransport, disableFileAccess or disableUrlAccess. The only fix is nodemailer 7 -> 9 (fixAvailable {\"name\":\"nodemailer\",\"version\":\"9.0.5\",\"isSemVerMajor\":true}), a two-major breaking bump excluded by 47-CONTEXT's rule against trading a documented risk for an undocumented one; @auth/core@0.41.3 and next-auth@5.0.0-beta.32 declare peerOptional nodemailer \"^7.0.7 || ^8.0.5\", which 9.x does not satisfy.",
+      "reach": "runtime",
+      "expires": "2026-11-23"
+    },
+    {
+      "ghsa": "GHSA-268h-hp4c-crq3",
+      "package": "nodemailer",
+      "reason": "CRLF injection in List-* header comments allowing arbitrary message header injection, CVSS 5.4. The `list` option is never supplied: the single sendMail call site, src/lib/email/send.ts:29-35, passes exactly { from, to, subject, html, text }, and every caller reaches it through the seven typed helpers in the same file (sendVerificationEmail, sendApprovalEmail, sendPasswordResetEmail, sendInviteEmail, sendDealAssignedEmail, sendActivityReminderEmail, sendWeeklyDigestEmail), none of which accepts a header argument. The transport itself is built once from the literal at src/lib/email/client.ts:9-21, which carries no message defaults that could inject a List-* header either. Measured 2026-08-25: three files in src/ reference nodemailer and ZERO supply raw, envelope, list, jsonTransport, disableFileAccess or disableUrlAccess. The only fix is nodemailer 7 -> 9 (fixAvailable, isSemVerMajor true), excluded by 47-CONTEXT; and @auth/core@0.41.3 / next-auth@5.0.0-beta.32 declare peerOptional nodemailer \"^7.0.7 || ^8.0.5\", which 9.x does not satisfy.",
+      "reach": "runtime",
+      "expires": "2026-11-23"
+    },
+    {
+      "ghsa": "GHSA-wqvq-jvpq-h66f",
+      "package": "nodemailer",
+      "reason": "jsonTransport bypasses disableFileAccess and disableUrlAccess during message normalization, CVSS 5.4. jsonTransport is never selected: the transport config literal at src/lib/email/client.ts:9-21 supplies host, port, secure, auth and tls only, which makes it an SMTP transport, and it is the single createTransport call in the repository (src/lib/email/client.ts:36). The one message-sending call site, src/lib/email/send.ts:29-35, passes only { from, to, subject, html, text }, so no per-message normalization option is supplied either. Measured 2026-08-25: three files in src/ reference nodemailer (client.ts, send.ts, send.test.ts) and ZERO contain the string jsonTransport, disableFileAccess or disableUrlAccess. The only fix is nodemailer 7 -> 9 (fixAvailable {\"name\":\"nodemailer\",\"version\":\"9.0.5\",\"isSemVerMajor\":true}), a two-major breaking bump excluded by 47-CONTEXT in a debt-paydown milestone; @auth/core@0.41.3 and next-auth@5.0.0-beta.32 declare peerOptional nodemailer \"^7.0.7 || ^8.0.5\", which 9.x does not satisfy.",
+      "reach": "runtime",
+      "expires": "2026-11-23"
+    },
+    {
+      "ghsa": "GHSA-r7g4-qg5f-qqm2",
+      "package": "nodemailer",
+      "reason": "Improper TLS certificate validation in the OAuth2 token fetch, enabling credential interception, CVSS 6.5. The OAuth2 token fetch is never reached: src/lib/email/client.ts:13-19 sets `auth` to { user, pass } from SMTP_USER/SMTP_PASSWORD or to undefined, never to an OAuth2 object, and there are ZERO occurrences of OAuth2/oauth2 anywhere in src/ (measured 2026-08-25); Auth.js is configured with the Credentials provider ONLY at src/auth.ts:38-39, so no Nodemailer email provider exists to trigger it either; the only send path is src/lib/email/send.ts:29-35, which is plain SMTP delivery. STATED HONESTLY, because it cuts the other way: src/lib/email/client.ts:20 sets tls: { rejectUnauthorized: false }, disabling SMTP certificate verification unconditionally for the transport that IS used. That is a LARGER exposure than this advisory and it is recorded in .planning/BACKLOG.md with its file:line; it is not fixed here because this phase's scope is the advisory position, not the SMTP client. The only fix for this advisory is nodemailer 7 -> 9 (fixAvailable, isSemVerMajor true), excluded by 47-CONTEXT and blocked by @auth/core@0.41.3's peerOptional \"^7.0.7 || ^8.0.5\".",
+      "reach": "runtime",
+      "expires": "2026-11-23"
+    },
+    {
+      "ghsa": "GHSA-p6gq-j5cr-w38f",
+      "package": "nodemailer",
+      "reason": "The message-level `raw` option bypasses disableFileAccess/disableUrlAccess, enabling arbitrary file read and full-response SSRF in the delivered message — CVSS 7.1, the worst of nodemailer's six and the one that sets the package's `high` aggregate. It requires the caller to pass `raw`. There is exactly ONE sendMail call site in the repository, src/lib/email/send.ts:29-35, and it passes exactly { from, to, subject, html, text }; the seven exported helpers around it build subject/html/text from src/lib/email/templates and accept no message-option argument, so no caller can reach `raw` even indirectly. The transport it sends through is built once at src/lib/email/client.ts:36 from the literal at src/lib/email/client.ts:9-21, which sets neither disableFileAccess nor disableUrlAccess and therefore has no such protection for `raw` to bypass in the first place. Measured 2026-08-25: three files in src/ reference nodemailer at all and ZERO contain a `raw:` option in a nodemailer context. The only fix is nodemailer 7 -> 9 (npm: fixAvailable {\"name\":\"nodemailer\",\"version\":\"9.0.5\",\"isSemVerMajor\":true}) — a two-major breaking bump that 47-CONTEXT excludes in a debt-paydown milestone, and one that would re-open the ERESOLVE conflict 47-07 cluster 1b eliminated, since @auth/core@0.41.3 and next-auth@5.0.0-beta.32 both declare peerOptional nodemailer \"^7.0.7 || ^8.0.5\".",
+      "reach": "runtime",
+      "expires": "2026-11-23"
+    }
+  ]
+}

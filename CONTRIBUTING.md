@@ -208,6 +208,7 @@ gh api repos/Bittencourt/pipelite/branches/master/protection  # classic protecti
 
 ## More Information
 
+- **[Dependency Advisory Policy](./AUDIT-POLICY.md)** - What this project does about `npm audit` findings: the three dispositions, the allowlist rules, and why an accepted advisory carries an expiry date. Enforced by `npm run security:audit` on the required `ci` check. (Not a disclosure policy.)
 - **[Contributing Guide](./docs/development/contributing.md)** - Detailed contributing instructions
 - **[Code Style Guide](./docs/development/code-style.md)** - Coding conventions
 - **[Testing Guide](./docs/development/testing.md)** - Testing procedures

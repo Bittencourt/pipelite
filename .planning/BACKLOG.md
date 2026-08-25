@@ -56,6 +56,7 @@ Status legend — **v1.4** promoted for scoping · **recorded** real but deliber
 | — | Dead `view=<id>` persists in the URL on two surfaces | **recorded** — cosmetic |
 | — | Locale-parity figures wrong in `40-UI-SPEC` / `40-CONTEXT` | **recorded** — doc drift |
 | — | `40-UI-SPEC` V-9 names the wrong helper | **recorded** — doc drift |
+| **SEC-47-A** | SMTP certificate verification disabled unconditionally | **recorded** — larger than any allowlisted nodemailer advisory |
 | — | Soft-deleted users' private views are unreachable | **accepted** |
 | — | `/deals` pipeline-only views are saveable but not exportable | **accepted** |
 | **D-45-03** | `/deals` pipeline select empty label in dark mode | **closed** — disproven 2026-08-18 |
@@ -1232,3 +1233,45 @@ compares equal is the vacuity this whole milestone exists to remove.
 
 **Do not** close this by widening the `ci.yml` comment again. The comment is now accurate;
 the gap is real.
+
+---
+
+## Found in Phase 47 (Suite Trust & Supply Chain)
+
+### SEC-47-A — SMTP certificate verification is disabled unconditionally — **recorded**
+
+**Found during:** 47-09, while writing the `nodemailer` allowlist entries for `AUDIT-POLICY.md`.
+
+**What:** `src/lib/email/client.ts:20` sets
+
+```ts
+tls: { rejectUnauthorized: false },
+```
+
+on the one and only transport this application ever builds (`createTransport` at
+`src/lib/email/client.ts:36`, the sole call site in the repository). It is unconditional — not
+gated on `NODE_ENV`, not gated on the SMTP host, not gated on a flag. Every outbound message,
+including the password-reset and invite emails produced by `src/lib/email/send.ts`, is delivered
+over a TLS session whose server certificate is never validated. Any party positioned between the
+app and `SMTP_HOST` can present an arbitrary certificate, terminate the session, and read the
+message — and where `SMTP_USER` / `SMTP_PASSWORD` are set, harvest the SMTP credentials on the
+first `AUTH` exchange.
+
+**Why it is recorded here rather than fixed:** Phase 47's scope is the *advisory position* — a
+recorded disposition per critical/high advisory plus a CI gate that enforces it — not the SMTP
+client. Changing this line changes runtime delivery behaviour and needs its own verification
+(the local Mailhog at `localhost:8025` presents a self-signed certificate, so flipping the flag
+naively will break the documented local workflow; the fix is almost certainly an env-gated
+`rejectUnauthorized` that defaults to `true` and is relaxed only for the local compose stack).
+
+**Why it matters more than the advisories it sits next to:** `AUDIT-POLICY.md` accepts six
+`nodemailer` advisories with expiry `2026-11-23`, and the strongest of them —
+`GHSA-r7g4-qg5f-qqm2`, *Improper TLS Certificate Validation in OAuth2 Token Fetch*, CVSS 6.5 —
+is accepted precisely because this project never uses OAuth2 (measured: zero occurrences of
+`OAuth2` anywhere in `src/`, and Auth.js is Credentials-only at `src/auth.ts:38-39`). That
+acceptance is correct on its own terms and is also slightly absurd in context: **this project has
+the same class of exposure by explicit configuration, on the transport it actually uses.** Fixing
+one line here is worth more than the whole `nodemailer` 7 → 9 major bump that was rejected.
+
+**Suggested owner:** a follow-up plan touching `src/lib/email/client.ts` with a real send test
+against the compose stack. Do not fold it into an advisory-triage task; it is a behaviour change.
