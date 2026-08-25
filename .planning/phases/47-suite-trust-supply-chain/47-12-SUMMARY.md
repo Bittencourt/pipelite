@@ -479,6 +479,27 @@ Step **8 of 9** on the job whose `name: ci` is the required check-run name. That
 
 ## Self-Check: PASSED
 
+Re-run **after** the two doc commits landed, so these are the figures a reader will reproduce:
+
+```
+FOUND: .planning/phases/47-suite-trust-supply-chain/47-12-SUMMARY.md
+FOUND: .planning/phases/47-suite-trust-supply-chain/deferred-items.md
+FOUND: 65674d1        (docs — D-47-12-A, the operator's reproduction)
+FOUND: 224ed23        (docs — this SUMMARY + STATE/ROADMAP/REQUIREMENTS)
+git status --porcelain            -> (empty)
+git rev-list --count origin/master..HEAD -> 113
+git log --oneline -1 origin/master       -> a58b9e1 chore: archive v1.3 phase directories
+refs (heads + remotes)            -> 8, none matching /throwaway/
+git diff --exit-code -- package.json package-lock.json -> MANIFESTS PRISTINE
+npm run security:audit            -> EXIT=0
+docker compose ps                 -> pipelite-app-1 / mailhog / postgres all running
+```
+
+**113, not 111.** The `111` quoted throughout this document is the count measured *before* this plan's
+own two documentation commits. The plan's substantive count — commits carrying Phase 46 and Phase 47
+*work* — is 111; adding this SUMMARY and `D-47-12-A` made it 113. Neither number has been pushed, and
+`origin/master` is unchanged at `a58b9e1`.
+
 - `.planning/phases/47-suite-trust-supply-chain/47-12-SUMMARY.md` — FOUND
 - `.planning/phases/47-suite-trust-supply-chain/deferred-items.md` — FOUND, contains `D-47-12-A`
 - commit `65674d1` — FOUND
