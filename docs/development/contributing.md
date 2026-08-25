@@ -39,8 +39,10 @@ Before you begin, ensure you have the following installed:
 
 5. **Configure environment variables** (see [Configuration Reference](../admin/configuration.md) for details):
    ```bash
-   # Edit .env with your settings
-   DATABASE_URL=postgresql://user:password@localhost:5432/pipelite
+   # Edit .env with your settings.
+   # DATABASE_URL is the HOST-side string: `docker compose` publishes Postgres on 5433
+   # (docker-compose.yml maps 5433:5432), and step 6's migrate command runs from your shell.
+   DATABASE_URL=postgresql://pipelite:change-me@localhost:5433/pipelite
    AUTH_SECRET=your-secret-here-min-32
    SMTP_HOST=smtp.example.com
    SMTP_USER=your-smtp-user

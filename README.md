@@ -60,8 +60,11 @@ Services:
 npm install
 
 # Set up environment
-cp .env.example .env.local
-# Edit .env.local with your database URL and auth secret
+cp .env.example .env
+# Edit .env with your database URL and auth secret.
+# The filename must be exactly .env — drizzle-kit's dotenv loads that name and no
+# other, so any suffixed variant is invisible to `npm run db:migrate` below.
+# Use the HOST port 5433 in DATABASE_URL; compose publishes Postgres there.
 
 # Run migrations
 npm run db:migrate
@@ -76,7 +79,9 @@ npm run dev
 ## Environment Variables
 
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/pipelite"
+# Host-side: docker compose publishes Postgres on 5433. Inside the compose network the app
+# uses postgres:5432, but docker-compose.yml builds that URL itself — do not put it here.
+DATABASE_URL="postgresql://pipelite:change-me@localhost:5433/pipelite"
 AUTH_SECRET="generate-with-openssl-rand-base64-32"
 NEXTAUTH_URL="http://localhost:3001"
 
