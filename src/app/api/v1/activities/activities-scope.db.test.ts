@@ -92,7 +92,7 @@
  * no TRUNCATE, no DROP and no unfiltered DELETE anywhere in this file.
  * =============================================================================
  */
-import { eq, like, or, sql } from "drizzle-orm"
+import { and, eq, isNull, like, or, sql } from "drizzle-orm"
 import { NextRequest } from "next/server"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
@@ -101,6 +101,7 @@ import { activities, activityTypes, apiKeys, auditLog, users } from "@/db/schema
 
 import { mintApiKey, type MintedApiKey } from "../__tests__/api-key-fixture"
 import { GET } from "./route"
+import { PUT } from "./[id]/route"
 
 /* ---------------------------------------------------------------------------
  * The environment guard — evaluated at module scope, so a wrong target aborts
@@ -432,5 +433,191 @@ describe("authentication through the REAL withApiAuth — no mock anywhere on th
 
     expect(new Set(asA.data.map((r) => r.owner_id))).toEqual(new Set([USER_A]))
     expect(new Set(asB.data.map((r) => r.owner_id))).toEqual(new Set([USER_B]))
+  })
+})
+
+/** A direct SQL count, deliberately NOT routed through anything the route also uses. */
+async function sqlCountOwnedBy(userId: string): Promise<number> {
+  const rows = await db.execute(
+    sql`select count(*)::int as n from activities
+        where owner_id = ${userId} and deleted_at is null`,
+  )
+
+  return Number((rows as unknown as { n: number }[])[0].n)
+}
+
+/** The ids a given owner actually holds in the table, straight from SQL. */
+async function sqlIdsOwnedBy(userId: string): Promise<string[]> {
+  const rows = await db.execute(
+    sql`select id from activities
+        where owner_id = ${userId} and deleted_at is null order by id`,
+  )
+
+  return (rows as unknown as { id: string }[]).map((r) => r.id)
+}
+
+/* ---------------------------------------------------------------------------
+ * SC-3 — floor, ceiling, discriminator, cross-check
+ * ------------------------------------------------------------------------ */
+
+describe("SC-3 (amended) — GET /api/v1/activities returns exactly the caller's own activities", () => {
+  it(`CEILING: A's meta.total equals a direct SQL count scoped to A, and that number is ${A_OWNED}`, async () => {
+    const payload = await listAs(keyA.authorizationHeader)
+    const direct = await sqlCountOwnedBy(USER_A)
+
+    expect(payload.meta.total).toBe(direct)
+    // And the named literal, so a half-failed seed reddens here instead of agreeing with itself.
+    expect(payload.meta.total).toBe(A_OWNED)
+  })
+
+  it("FLOOR: A's own count is greater than zero — an empty response must FAIL, not pass", async () => {
+    const payload = await listAs(keyA.authorizationHeader)
+
+    expect(
+      payload.meta.total,
+      "an empty response proves nothing: every 'contains no foreign row' assertion in this file " +
+        "is satisfied by a response containing no rows at all. The floor is what makes them mean " +
+        "something.",
+    ).toBeGreaterThan(0)
+  })
+
+  it(`DISCRIMINATOR 1: A's total is NOT the seeded global total of ${SEEDED_TOTAL}`, async () => {
+    // THE ASSERTION THAT WOULD HAVE BEEN RED BEFORE PLAN 48-02'S FIX, and the one the ORIGINAL,
+    // unamended criterion could not make: on the live dataset the global total and the owner total
+    // are the same number, so the equality above held against the broken route.
+    const payload = await listAs(keyA.authorizationHeader)
+    const globalRows = await db.execute(
+      sql`select count(*)::int as n from activities where id like ${LIKE_PREFIX} and deleted_at is null`,
+    )
+    const seededGlobal = Number((globalRows as unknown as { n: number }[])[0].n)
+
+    expect(seededGlobal).toBe(SEEDED_TOTAL)
+    expect(payload.meta.total).not.toBe(seededGlobal)
+    expect(payload.meta.total).toBe(A_OWNED)
+  })
+
+  it(`DISCRIMINATOR 2: B's total is ${B_OWNED}, is above the floor, and is not the global total`, async () => {
+    const payload = await listAs(keyB.authorizationHeader)
+    const direct = await sqlCountOwnedBy(USER_B)
+
+    expect(payload.meta.total).toBe(direct)
+    expect(payload.meta.total).toBe(B_OWNED)
+    expect(payload.meta.total).toBeGreaterThan(0)
+    expect(payload.meta.total).not.toBe(SEEDED_TOTAL)
+  })
+
+  it("CROSS-CHECK direction 1: A sees exactly A's ids, none of B's — while B's rows DO exist", async () => {
+    const payload = await listAs(keyA.authorizationHeader, "?limit=100")
+    const returned = payload.data.map((r) => r.id).sort()
+
+    expect(returned).toEqual([...A_ACTIVITY_IDS].sort())
+    for (const foreign of B_ACTIVITY_IDS) {
+      expect(returned).not.toContain(foreign)
+    }
+
+    // The other half of the pair, and the reason absence above is evidence: B's rows are IN THE
+    // TABLE right now, by direct SQL. Without this, "A cannot see B's rows" is equally satisfied by
+    // B's rows never having been created.
+    expect(await sqlIdsOwnedBy(USER_B)).toEqual([...B_ACTIVITY_IDS].sort())
+  })
+
+  it("CROSS-CHECK direction 2: B sees exactly B's ids, none of A's — while A's rows DO exist", async () => {
+    const payload = await listAs(keyB.authorizationHeader, "?limit=100")
+    const returned = payload.data.map((r) => r.id).sort()
+
+    expect(returned).toEqual([...B_ACTIVITY_IDS].sort())
+    for (const foreign of A_ACTIVITY_IDS) {
+      expect(returned).not.toContain(foreign)
+    }
+
+    expect(await sqlIdsOwnedBy(USER_A)).toEqual([...A_ACTIVITY_IDS].sort())
+  })
+
+  it(`PAGE AND TOTAL AGREE: with a limit above ${A_OWNED}, A's data.length is ${A_OWNED} and equals meta.total`, async () => {
+    // The F3-shaped failure applied to activities: a route can report a non-zero total while
+    // returning an empty page, and a test that only reads `meta.total` would not notice.
+    const payload = await listAs(keyA.authorizationHeader, "?limit=100")
+
+    expect(payload.meta.limit).toBeGreaterThan(A_OWNED)
+    expect(payload.data).toHaveLength(A_OWNED)
+    expect(payload.data).toHaveLength(payload.meta.total)
+  })
+
+  it("NARROWING FILTER: A asking for ?owner_id=<B> gets 200 with total 0 and an empty page", async () => {
+    // The caller-supplied filter composes UNDER the scope, so it can only narrow within A's own
+    // records. If it REPLACED the scope, this would return B's three rows — which is what the
+    // pre-48-02 route did.
+    const payload = await listAs(keyA.authorizationHeader, `?owner_id=${USER_B}`)
+
+    expect(payload.meta.total).toBe(0)
+    expect(payload.data).toHaveLength(0)
+    // Its own anti-vacuity anchor: the same caller with their OWN id in the filter is not empty, so
+    // the emptiness above is the scope working rather than the filter breaking every query.
+    const own = await listAs(keyA.authorizationHeader, `?owner_id=${USER_A}`)
+    expect(own.meta.total).toBe(A_OWNED)
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * Assumption A1 — a real write through the real handler
+ * ------------------------------------------------------------------------ */
+
+describe("assumption A1 — a real PUT through the real handler writes only where expected", () => {
+  it("A updating A's own activity returns 200 and changes the title", async () => {
+    const target = A_ACTIVITY_IDS[0]
+    const response = await PUT(
+      new NextRequest(`http://localhost/api/v1/activities/${target}`, {
+        method: "PUT",
+        headers: { Authorization: keyA.authorizationHeader, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: `${PREFIX}renamed-by-a` }),
+      }),
+      { params: Promise.resolve({ id: target }) },
+    )
+
+    expect(response.status).toBe(200)
+
+    const body = (await response.json()) as { data: { id: string; title: string; owner_id: string } }
+    expect(body.data.id).toBe(target)
+    expect(body.data.title).toBe(`${PREFIX}renamed-by-a`)
+    expect(body.data.owner_id).toBe(USER_A)
+    // Whatever side effects this write had — the crmBus emit above all — are confined to the tables
+    // in TOUCHED_TABLES, which `afterAll`'s baseline re-assert proves table by table.
+  })
+
+  it("B attempting the same write on A's activity is refused with 403 and changes nothing", async () => {
+    const target = A_ACTIVITY_IDS[1]
+    const before = await db.select().from(activities).where(eq(activities.id, target))
+
+    const response = await PUT(
+      new NextRequest(`http://localhost/api/v1/activities/${target}`, {
+        method: "PUT",
+        headers: { Authorization: keyB.authorizationHeader, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "HIJACKED BY B" }),
+      }),
+      { params: Promise.resolve({ id: target }) },
+    )
+
+    expect(response.status).toBe(403)
+
+    const after = await db.select().from(activities).where(eq(activities.id, target))
+    expect(after[0].title).toBe(before[0].title)
+    expect(after[0].ownerId).toBe(USER_A)
+    expect(after[0].updatedAt.getTime()).toBe(before[0].updatedAt.getTime())
+  })
+
+  it("the list A reads afterwards still holds exactly A's seven, so the writes above leaked nothing", async () => {
+    const payload = await listAs(keyA.authorizationHeader, "?limit=100")
+
+    expect(payload.meta.total).toBe(A_OWNED)
+    expect(payload.data.map((r) => r.id).sort()).toEqual([...A_ACTIVITY_IDS].sort())
+
+    // And the count the route reports still agrees with SQL, after a real write went through.
+    expect(await sqlCountOwnedBy(USER_A)).toBe(A_OWNED)
+    expect(
+      await db
+        .select({ id: activities.id })
+        .from(activities)
+        .where(and(like(activities.id, LIKE_PREFIX), isNull(activities.deletedAt))),
+    ).toHaveLength(SEEDED_TOTAL)
   })
 })
