@@ -138,7 +138,7 @@ activities, and custom fields. Advanced features can be built externally via the
 
 ### Quality gates — a gate that cannot fail is not a gate
 
-- [ ] **QG-01**: No test asserts on wall-clock time in a way that fails under parallel workers.
+- [x] **QG-01**: No test asserts on wall-clock time in a way that fails under parallel workers.
       *Source: `999.28` **and `D-45-01` — one item, not two.** `condition-evaluator.test.ts` (T-34-20)
       asserts a wall-clock ratio and failed twice in Phase 44's parallel waves (once as `25.5 < 10`);
       `toggle.test.ts:61` times out its `beforeEach` in 2 of 5 runs. Phase 45 explicitly said to fix
@@ -212,7 +212,7 @@ Which phases cover which requirements. Filled in during roadmap creation.
 | DEPLOY-01 | Phase 46 | Complete |
 | DEPLOY-02 | Phase 46 | Pending |
 | DEPLOY-03 | Phase 46 | Complete |
-| QG-01 | Phase 47 | Pending |
+| QG-01 | Phase 47 | Complete |
 | SEC-05 | Phase 47 | In Progress |
 | SEC-01 | Phase 48 | Pending |
 | SEC-02 | Phase 48 | Pending |

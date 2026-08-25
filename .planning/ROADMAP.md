@@ -234,7 +234,7 @@ Plans:
 
 **Wave 5** *(alone in its wave — the AFTER margin must be measured on an idle machine)*
 
-- [ ] 47-06-PLAN.md — the AFTER margin at the same induced load, the before/after table, and the ten-run guard · SC-1 evidence · QG-01
+- [x] 47-06-PLAN.md — the AFTER margin at the same induced load, the before/after table, and the ten-run guard · SC-1 evidence · QG-01
 
 **Wave 6** *(blocked on Wave 4)*
 
@@ -512,7 +512,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 46. Migration Chain & Toolchain Floor | 6/6 | Complete   | 2026-08-25 |
-| 47. Suite Trust & Supply Chain | 7/13 | In Progress|  |
+| 47. Suite Trust & Supply Chain | 8/13 | In Progress|  |
 | 48. REST API Authorization | 0/? | Not started | - |
 | 49. Mutation-Layer Truth After Commit | 0/? | Not started | - |
 | 50. Export Authorization | 0/? | Not started | - |

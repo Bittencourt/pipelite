@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
 status: executing
-last_updated: "2026-08-25T10:55:23.310Z"
+last_updated: "2026-08-25T14:25:59.784Z"
 last_activity: 2026-08-25
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 19
-  completed_plans: 13
-  percent: 11
+  completed_plans: 14
+  percent: 74
 ---
 
 # Session State
@@ -21,9 +21,35 @@ See: .planning/PROJECT.md (updated 2026-08-24)
 
 **Core value:** API-complete CRM core that handles fundamentals well
 **Current focus:** Phase 47 — Suite Trust & Supply Chain (13 plans)
-**Plans 01-05, 07 and 08 of 13 executed** (2026-08-25) — 7 SUMMARYs on disk. Next: plan 06 (the SC-1
-AFTER margin, which must be run on an otherwise idle machine with the same instrument 47-02 used).
+**Plans 01-08 of 13 executed** (2026-08-25) — 8 SUMMARYs on disk. Next: plan 09.
 Phase 46 remains owed a `/gsd:verify-phase 46`.
+
+**47-06 closed SC-1 as amended — and found the defect class is NOT closed.** The margin moved by two
+orders of magnitude on the two assertions the criterion names, measured with 47-02's committed
+instrument at a HARSHER load than the BEFORE half (sampled runnable medians **3.75x and 4.25x**
+against 47-02's 3.50x, peaks **9.00x and 7.75x**, wall-time inflation 3.9x/4.9x):
+`toggle.test.ts`'s `beforeEach` **49.6% → 0.7%** of its 10 000 ms hookTimeout (worst-case margin
+2.02x → **133.84x**); `recursion.test.ts`'s **35.3% → 0.4%** (2.83x → **268.94x**). The linearity row
+is a **category change, not a smaller ratio**: 47-02's own instrument FATAL'd on the deleted probe
+(recorded verbatim), and both sides were then measured at the same load — the deleted elapsed ratio
+still spans **11.44-55.85 (4.88x spread, 69.8% of its old threshold)** while its counted replacement
+gives **ONE distinct integer, 23 730, across 400 repeats**. SC-1b reads 0 and 0 from the two gates,
+hit lists empty. Ten-run diff **10/10 IDENTICAL, 4853 identities**, its +106 delta against 47-02
+reconciled exactly (39 hook-gate + 46 timing-gate + 21 condition-evaluator net), and labelled a
+regression guard, not evidence. The differ's floor re-proven red (exit 1).
+
+**BLOCKER opened by 47-06 — `npm test` goes RED at >=3x.** Three of six loaded base runs were red;
+**four distinct assertions timed out**, none of them the two the phase fixed:
+`src/app/api/health/__tests__/route.test.ts` at **186.8%** of testTimeout 5000 ms,
+`src/app/workflows/__tests__/replay-carries-dry-run.test.ts` at **118.7%**, and
+`src/lib/execution/engine.test.ts` at **115.6%**. Same mechanism 47-03 fixed — a first-test dynamic
+import paying module load — but in test **BODIES**, billed against testTimeout **5000 ms** instead of
+hookTimeout 10 000 ms, i.e. **half the budget**, across **~146 sites in 21 files**. 47-03's gate is
+green and non-vacuous but its corpus is **lifecycle hooks only**, so this population is ungated. Logged
+as **D-47-06-A** with the three-part fix (hoist the three observed files; extend the gate corpus from
+hooks to bodies — it must NOT blanket-forbid test-body `await import(`, since 21 files use it
+legitimately with `vi.resetModules()`/`vi.doMock`; re-measure). `measure/extract-margins.mjs` already
+probes the three subjects, so the re-measure is a one-command re-run.
 
 **47-08 paid the phase's single Docker rebuild, and it was load-bearing.** The running container now
 carries all 15 of 47-07's runtime bumps, proved from INSIDE the container rather than from the
@@ -56,9 +82,12 @@ and the bound-variable ratio, with the v1 inline-matcher ablation measured at **
 that provably contained a live ratio assertion. Baseline moved to **4845 passed / 32 skipped**, RSC
 8/8, typecheck 0, lint **0 errors** / 124 warnings.
 
-**QG-01 stays Pending in REQUIREMENTS.md, deliberately.** SC-2 (47-04) and SC-1b (47-05) are closed,
-but SC-1's AFTER margin is 47-06's and SEC-05 is 47-08 to 47-13's. Checking QG-01 off now would be a
-false claim about the phase.
+**QG-01 is now checked off in REQUIREMENTS.md, as 47-05's note said it would be once 47-06 landed.**
+SC-2 (47-04), SC-1b (47-05) and SC-1's AFTER margin (47-06) are all closed. **Read it as
+met-as-scoped:** QG-01 names the two wall-clock assertions that failed under parallel workers, and
+both are fixed and measured at 0.7% and 0.4% of budget. It does not name the ~146 test-body import
+sites D-47-06-A opened, which are a different population that no requirement covered. SEC-05 remains
+47-09 to 47-13's and is still Pending.
 
 **For 47-10:** the audit-policy expiry assertion must keep the shape
 `expect(new Date(x).getTime()).toBeGreaterThan(Date.now())`. It is already a passing KNOWN_NEGATIVE
@@ -69,9 +98,10 @@ correctly, since that is a clock delta against a margin.
 (runnable/cores from `/proc/loadavg`, cross-checked against 2.7x-3.4x wall-time inflation):
 the `condition-evaluator.test.ts` linearity ratio reached **63.92 against its 80 threshold — 79.9% of
 budget consumed by contention alone**; `toggle.test.ts`'s `beforeEach` **49.6%** of its 10 000 ms
-hookTimeout; `recursion.test.ts`'s **35.3%**. 47-06 must beat these with the same instrument at
-`.planning/phases/47-suite-trust-supply-chain/measure/`. The ten-run pass-set diff was **10/10
-identical on the unfixed tree** and is a regression guard, **not** the evidence.
+hookTimeout; `recursion.test.ts`'s **35.3%**. **47-06 beat these with that same instrument** — see the
+47-06 paragraph above. The ten-run pass-set diff was **10/10 identical on the unfixed tree** and is a
+regression guard, **not** the evidence; 47-06 re-confirmed 10/10 on the fixed tree and re-stated the
+label.
 
 ## Position
 
@@ -254,6 +284,7 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 | Phase 47 P07 | 20min | 2 tasks | 2 files |
 | Phase 47 P05 | 34min | 3 tasks | 3 files |
 | Phase 47 P08 | 22min | 2 tasks | 0 files |
+| Phase 47 P06 | 51m | 2 tasks | 2 files |
 
 ## Decisions
 
@@ -447,6 +478,8 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 - [Phase 47]: 47-05: SC-1b enforced by a parsed-AST taint sweep to a FIXPOINT — the fixpoint's necessity is proven by ABLATION (capped at one pass it misses the bound-variable ratio; a v1-style inline matcher measured 0 on a real file containing one)
 - [Phase 47]: 47-05: the timing gate's clock-call floor is Date.now ONLY, scoped to test files. performance.now is proven by fixture AND by a live control over src/app/api/health/route.ts (2 call sites, 0 expect) — reads a clock is not asserts on a clock delta
 - [Phase 47]: 47-05: a fourth AST gate should SHARE one corpus parse. Measured: typescript costs ~525 ms per worker PROCESS and 0.2 ms on re-import, so the import does not scale with gate count; the ~850 ms corpus parse does
+- [Phase ?]: 47-06: SC-1 (amended) closed on a measured margin table, not the ten-run check — toggle 49.6%->0.7% of hookTimeout, recursion 35.3%->0.4%, at a HARSHER measured load (runnable medians 3.75x/4.25x vs 47-02's 3.50x)
+- [Phase ?]: 47-06: the linearity row is a CATEGORY CHANGE not a smaller ratio — the deleted elapsed ratio still spans 11.44-55.85 (4.88x spread, 69.8% of its old threshold) under load while its counted replacement gives ONE integer (23730) across 400 repeats
 
 ### Quick Tasks Completed
 
@@ -497,6 +530,7 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - **47-08 SPLIT RECOMMENDED (OPEN):** `next` 16.1.6 → 16.3.2 needs its own follow-up. It would clear **28 GHSAs on `next`** (incl. GHSA-c4j6-fc7j-m34r CVSS 8.6 SSRF via WebSocket upgrades and GHSA-492v-c6pp-mqqv CVSS 8.1 middleware bypass) plus `next`'s exact-pinned `postcss@8.4.31` and its `sharp` range — measured as clearing `[next, postcss, sharp]` from the crit+high set with **nothing joining at any severity** (14 → 11 total, 4 high → 1). Blocked solely by `src/lib/__tests__/node-engines-floor.test.ts`, which walks `engines.node` platform-blind and so rejects `@img/sharp-win32-ia32@0.35.x`'s `^20.9.0` (os `win32`, cpu `ia32`, optional — uninstallable here) against the `>=24.12.0` floor. **Scope of the fix:** make `nodeFloorViolations` skip entries whose `os`/`cpu` exclude linux/x64, and add a two-direction negative control (a `win32` fixture asserted skipped, a `linux` fixture with the same range asserted reported). Proved safe: the filter takes violations to 0 on both trees and NC-3's `@napi-rs/lzma-linux-x64-gnu` (`os:["linux"] cpu:["x64"]`) survives it and still fires at 20.20.2.
 - **47-08 human render OWED:** an authenticated page load against image `sha256:8f07a18e` is still unperformed. It now gates **47-07's Auth.js trio and `drizzle-orm` 0.45.2** (which entered the container for the first time in this rebuild), not `next` — `next` is unchanged at 16.1.6. Needed: sign-in; `/deals` rendering real data; a drag-and-persist round trip (the only write path through the bumped `drizzle-orm`); `/organizations`; `/admin/audit` (confirms the Auth.js bump did not change the *authorization* result); a clean application console. An unauthenticated `/deals` → `/login` 307 plus a rendering login form was observed and is explicitly a PARTIAL signal, not the sign-off.
 - Phase 46 GAP **CLOSED 2026-08-25** (orchestrator, Claude-in-Chrome against the rebuilt image): authenticated `/deals` renders the real board — 3,466 deals in *Base Fria - Lead* ($1,165,182) and 288 in *Base Fria - Parceiro*; `/organizations` renders against the 46k-org table; `/api/health` returns `status:"ok"`, `db.ok:true`, `latencyMs:2`, **10/10 processors alive**; browser console carries **zero application errors** (only two MetaMask extension warnings). No credentials were entered — the operator's existing Chrome session was already authenticated.
+- D-47-06-A: npm test goes RED at >=3x oversubscription. Four assertions in three files timed out (health route.test.ts 186.8%, replay-carries-dry-run 118.7%, engine.test.ts 115.6% of testTimeout 5000ms). Same import-cost defect 47-03 fixed in two HOOKS, but in ~146 test BODIES against HALF the budget; 47-03's gate scans hooks only. Not fixed in 47-06 (measurement-only). Needs its own plan: hoist + extend the gate corpus + re-measure.
 
 ## Session Log
 
@@ -545,9 +579,10 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 ## Current Position
 
 - 2026-08-25: 47-07 complete -- in-range advisory fixes: crit+high 24 -> 4, critical 3 -> 0, total 36 -> 14; drizzle-orm 0.45.2 (SQL injection), Auth.js trio (all 3 criticals), fast-xml-parser removed; residual 4 handed to 47-08/47-09; 15 runtime packages moved so 47-08's rebuild is load-bearing
+- 2026-08-25: 47-06 complete -- SC-1 AFTER margin measured with 47-02's committed instrument at a HARSHER load than the BEFORE half (runnable medians 3.75x/4.25x vs 3.50x, peaks 9.00x/7.75x): toggle 49.6% -> 0.7% of hookTimeout (margin 2.02x -> 133.84x), recursion 35.3% -> 0.4% (2.83x -> 268.94x); linearity row closed as a CATEGORY CHANGE proven by the BEFORE instrument's own FATAL plus both sides measured at the same load (deleted ratio 11.44-55.85, 4.88x spread; counted replacement ONE integer 23730 across 400 repeats); SC-1b 0 and 0 from the gates; ten-run 10/10 IDENTICAL at 4853 with the +106 delta reconciled exactly and labelled a guard; differ floor re-proven red. BLOCKER D-47-06-A opened: npm test goes RED at >=3x, four assertions timed out in three files (up to 186.8% of testTimeout), the same import-cost defect in ~146 test BODIES against half the budget, ungated because 47-03's gate scans hooks only.
 
 Phase: 47 (Suite Trust & Supply Chain) — EXECUTING
-Plan: 7 of 13 complete (01, 02, 03, 04, 05, 07, 08) — next unexecuted is 06
-Status: Ready to execute
-Progress: [███████░░░] 68%
+Plan: 8 of 13 complete (01, 02, 03, 04, 05, 06, 07, 08) — next unexecuted is 09
+Status: Ready to execute (BLOCKED for suite trust: D-47-06-A — npm test is RED at >=3x)
+Progress: [███████░░░] 74%
 Last activity: 2026-08-25
