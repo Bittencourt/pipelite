@@ -510,12 +510,28 @@ const CONTAINER_HOSTNAME = "@postgres:5432"
  *                                    own copy of the same setup snippet.
  *   - `README.md`                  — the "Environment Variables" block under Manual Setup.
  *   - `docs/development/contributing.md` — step 5 of the developer setup.
+ *   - `docs/admin/deployment/docker.md`  — ADDED AFTER THE FACT, and the omission was the
+ *                                    blocking defect of the phase-46 review. This is the
+ *                                    document that walks a self-hoster through `cp .env.example
+ *                                    .env`, and its Step 3 block told the reader to write
+ *                                    `@postgres:5432` into `.env` — the exact value
+ *                                    `.env.example`'s own header warns against, and the one that
+ *                                    breaks every host-side `npm run db:migrate`. It is a
+ *                                    host-perspective document because the reader is standing on
+ *                                    the host when they edit `.env`; the CONTAINER's string is
+ *                                    built by `docker-compose.yml` and overridden, when an
+ *                                    external database is wanted, by `APP_DATABASE_URL` — a
+ *                                    different key, which this matcher deliberately does not
+ *                                    match. See the Option B assertion in
+ *                                    `compose-uploads-persistence.test.ts`, which pins the
+ *                                    override variable's name across compose and this guide.
  */
 const HOST_PERSPECTIVE_DOCS = [
   ".env.example",
   "CONTRIBUTING.md",
   "README.md",
   "docs/development/contributing.md",
+  DOCKER_GUIDE_PATH,
 ] as const
 
 /**

@@ -49,6 +49,8 @@ const REPO_ROOT = process.cwd()
 const COMPOSE_PATH = "docker-compose.yml"
 const DOCKERFILE_PATH = "Dockerfile"
 const ENV_EXAMPLE_PATH = ".env.example"
+/** The deployment guide whose "External PostgreSQL" option names the container-side override. */
+const DOCKER_GUIDE_PATH = "docs/admin/deployment/docker.md"
 const UPLOAD_ROUTE_PATH = "src/app/api/upload/route.ts"
 const FILE_DOWNLOAD_ROUTE_PATH =
   "src/app/api/files/[entityId]/[fieldName]/[filename]/route.ts"
@@ -222,16 +224,23 @@ describe("uploads persistence: docker-compose.yml is a real compose file (anti-v
     expect(appEnvironment()).toContain("UPLOAD_DIR=/app/uploads")
   })
 
-  it("constructs the app's DATABASE_URL itself, naming @postgres:5432", () => {
-    // DEPLOY-02. The container's connection string is BUILT HERE from the POSTGRES_* variables,
-    // never inherited from `${DATABASE_URL}`, because `.env` now carries the HOST url
-    // (localhost:5433, the port docker-compose.yml publishes at `5433:5432`). drizzle-kit on the
-    // host reads ONLY `.env` — its bundled dotenv resolves `path.resolve(cwd, ".env")` and the
-    // string `.env.local` does not occur anywhere in `drizzle-kit/bin.cjs` — so `.env` must hold
-    // the host url or every documented host-side `npm run db:migrate` fails with
-    // `getaddrinfo EAI_AGAIN postgres`. Re-pointing this line back at an interpolation would
-    // therefore either re-break the host command or push `@postgres:5432` back into `.env`; both
-    // re-open the papercut every phase since 33 has paid with an inline `DATABASE_URL=` override.
+  it("builds the app's DATABASE_URL as an override with a bundled-service fallback", () => {
+    // DEPLOY-02 plus the phase-46 review's BL-01. The container's connection string DEFAULTS to a
+    // value built HERE from the POSTGRES_* variables, never inherited from an interpolated
+    // host-side value, because `.env` carries the HOST url (localhost:5433, the port
+    // docker-compose.yml publishes at `5433:5432`). drizzle-kit on the host reads ONLY `.env` —
+    // its bundled dotenv resolves `path.resolve(cwd, ".env")` and the string `.env.local` does
+    // not occur anywhere in `drizzle-kit/bin.cjs` — so `.env` must hold the host url or every
+    // documented host-side `npm run db:migrate` fails with `getaddrinfo EAI_AGAIN postgres`.
+    //
+    // But a bare constructed value removed the ONLY supported route to an external database:
+    // `docs/admin/deployment/docker.md` Option B told the reader to edit the host key, which the
+    // container no longer saw at all, so an operator migrating to RDS/Neon/Supabase came up green
+    // while writing to the throwaway bundled container. The entry is therefore an
+    // override-with-fallback, and BOTH halves are asserted: the override key must exist (so the
+    // external route is reachable), it must NOT be the host key (so DEPLOY-02 cannot be
+    // reintroduced by renaming), and the fallback must still name the compose service.
+    //
     // Read through the YAML-parsed accessor rather than a regex over the compose text: a regex
     // over YAML passes on a malformed file and cannot tell which service a block belongs to.
     const entries = appEnvironment().filter((entry) => /^DATABASE_URL=/.test(entry))
@@ -241,11 +250,53 @@ describe("uploads persistence: docker-compose.yml is a real compose file (anti-v
         `saw: ${appEnvironment().join(", ") || "(empty environment list)"}`,
     ).toHaveLength(1)
     const value = entries[0].slice("DATABASE_URL=".length)
-    expect(value.startsWith("postgresql://")).toBe(true)
-    expect(value).toContain("@postgres:5432")
-    // `postgres` is the compose service name; it resolves only inside this network. An
-    // interpolated `${DATABASE_URL}` here is the exact regression this assertion exists to catch.
-    expect(value).not.toContain("${DATABASE_URL}")
+
+    const override = /^\$\{([A-Z0-9_]+):-([\s\S]*)\}$/.exec(value)
+    expect(
+      override,
+      `services.app.environment's DATABASE_URL entry must be \`\${OVERRIDE:-fallback}\` so an ` +
+        `operator can point the container at an external database. Saw: ${value}`,
+    ).not.toBeNull()
+
+    const overrideVar = override![1]
+    const fallback = override![2]
+
+    // The regression this exists to catch: naming the override DATABASE_URL puts the container
+    // form back into `.env` and re-breaks every host-side migrate command — the papercut every
+    // phase since 33 paid for with an inline override on the command line.
+    expect(
+      overrideVar,
+      `the override variable must not be DATABASE_URL: that key in .env is the HOST-side ` +
+        `string and one name cannot describe both sides of the network boundary`,
+    ).not.toBe("DATABASE_URL")
+    expect(overrideVar.endsWith("DATABASE_URL")).toBe(true)
+
+    // `postgres` is the compose service name; it resolves only inside this network.
+    expect(fallback.startsWith("postgresql://")).toBe(true)
+    expect(fallback).toContain("@postgres:5432")
+  })
+
+  it("documents the external-database override where an operator will look for it", () => {
+    // The compose file and the Docker deployment guide have to agree on the variable's NAME, and
+    // nothing but a cross-file assertion can hold them together. This is the exact drift that made
+    // Option B inert: `docker-compose.yml` changed and `docs/admin/deployment/docker.md` did not.
+    // Renaming the override here without updating the guide now goes red.
+    const entries = appEnvironment().filter((entry) => /^DATABASE_URL=/.test(entry))
+    const override = /^\$\{([A-Z0-9_]+):-/.exec(entries[0]?.slice("DATABASE_URL=".length) ?? "")
+    expect(override, "no override variable to look for — see the assertion above").not.toBeNull()
+    const overrideVar = override![1]
+
+    const guide = readRepoFile(DOCKER_GUIDE_PATH)
+    expect(
+      guide.includes(`${overrideVar}=`),
+      `${DOCKER_GUIDE_PATH} never shows \`${overrideVar}=\`, so its "External PostgreSQL" ` +
+        `option tells the reader to edit a key the app container does not read. That edit has ` +
+        `no effect: the app comes up green against the bundled throwaway container while the ` +
+        `operator believes they are on their managed database.`,
+    ).toBe(true)
+
+    // And the same key must be documented in the one env file a self-hoster can actually see.
+    expect(envExampleKeys()).toContain(overrideVar)
   })
 })
 

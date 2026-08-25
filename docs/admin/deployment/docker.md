@@ -116,16 +116,25 @@ cp .env.example .env
 ```bash
 # Required variables (see Configuration Reference for details)
 
-# The host part MUST be the compose service name. docker-compose.yml defines
-# `app`, `postgres` and `mailhog`, so inside the compose network PostgreSQL is
-# reachable as `postgres` — not as `localhost`, and not as any other name.
-DATABASE_URL=postgresql://pipelite:yourpassword@postgres:5432/pipelite
+# THIS IS THE HOST-SIDE STRING — the one you use from a shell on this machine.
+# docker-compose.yml publishes Postgres at `5433:5432`, so from the host the port
+# is 5433. It is also the value `npm run db:migrate` and `npx drizzle-kit migrate`
+# pick up: drizzle-kit's bundled dotenv reads `.env` and only `.env`.
+#
+# The APP CONTAINER does NOT use this value. docker-compose.yml builds the
+# container's own connection string from the three POSTGRES_* variables below,
+# naming the compose service `postgres` — a name that resolves only inside the
+# compose network. Writing `@postgres:5432` here instead would break every
+# host-side migrate command with `getaddrinfo EAI_AGAIN postgres`.
+DATABASE_URL=postgresql://pipelite:yourpassword@localhost:5433/pipelite
 
 # These three configure the postgres container itself, and docker-compose.yml
 # passes all three through. Without them the database container starts with no
 # user, no password and no database, and the app cannot connect.
 # DATABASE_URL above must AGREE with them: its user, password and database name
-# are these same three values.
+# are these same three values. POSTGRES_PASSWORD is also interpolated into the
+# container's URL without percent-encoding, so keep it to unreserved characters
+# (A-Za-z0-9-._~) — `openssl rand -hex 32` generates a safe one.
 POSTGRES_USER=pipelite
 POSTGRES_PASSWORD=yourpassword
 POSTGRES_DB=pipelite
@@ -146,6 +155,7 @@ EMAIL_FROM=noreply@example.com
 #### Option A: Use Docker PostgreSQL (Recommended for testing)
 
 The `docker-compose.yml` includes a PostgreSQL container. No additional setup needed.
+Leave `APP_DATABASE_URL` empty and the app container connects to it automatically.
 
 #### Option B: External PostgreSQL
 
@@ -157,11 +167,26 @@ CREATE USER pipelite WITH ENCRYPTED PASSWORD 'yourpassword';
 GRANT ALL PRIVILEGES ON DATABASE pipelite TO pipelite;
 ```
 
-2. **Update DATABASE_URL in .env:**
+2. **Set `APP_DATABASE_URL` in .env — NOT `DATABASE_URL`:**
 
 ```bash
-DATABASE_URL=postgresql://pipelite:yourpassword@your-db-host:5432/pipelite
+APP_DATABASE_URL=postgresql://pipelite:yourpassword@your-db-host:5432/pipelite
 ```
+
+`APP_DATABASE_URL` is the app **container's** connection string. `docker-compose.yml`
+reads it and falls back to the bundled `postgres` service only when it is unset or
+empty, so setting it is the supported — and the only — way to point a compose
+deployment at a database compose does not manage.
+
+Editing `DATABASE_URL` instead does **not** work and fails silently: that key is the
+host-side string, it is never passed to the container, and the app comes up green
+while writing to the bundled throwaway container rather than your managed database.
+Set `DATABASE_URL` to the same external server as well if you want to run
+`npm run db:migrate` from the host; unlike the bundled path, its host part is then
+your database host rather than `localhost:5433`.
+
+Because this value is used verbatim, percent-encode any reserved character in the
+password (`/ # ? % : @`) yourself.
 
 3. **Run migrations:**
 

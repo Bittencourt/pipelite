@@ -18,7 +18,27 @@ services:
       # src/lib/__tests__/compose-uploads-persistence.test.ts now goes red on the revert.
       # Nothing is lost by not interpolating: all three POSTGRES_* are already required by the
       # postgres service below, so a .env that can start the database can start the app.
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      #
+      # THE EXTERNAL-DATABASE ROUTE IS APP_DATABASE_URL, and it is deliberately a SEPARATE name.
+      # An operator running Postgres somewhere else (RDS, Neon, Supabase, another host) sets
+      # APP_DATABASE_URL in .env and this container connects there instead; unset or empty falls
+      # back to the bundled service on the line below, which is the default path. It cannot be
+      # DATABASE_URL itself, because that key in .env is the HOST-side string drizzle-kit reads
+      # and the two describe opposite sides of the network boundary. Between phase 46 landing and
+      # this line, `docs/admin/deployment/docker.md` "Option B: External PostgreSQL" was silently
+      # inert: the reader edited DATABASE_URL, the container ignored it, and the app came up green
+      # while writing to the throwaway local container. Option B now sets APP_DATABASE_URL, and
+      # src/lib/__tests__/compose-uploads-persistence.test.ts asserts that this entry is an
+      # override-with-fallback whose override variable is NOT DATABASE_URL, and that the Docker
+      # guide names the same variable this line reads.
+      #
+      # PASSWORD ENCODING (applies to the fallback below): POSTGRES_PASSWORD is interpolated into
+      # a URL here with no percent-encoding, so a password containing / # ? % : or @ produces a
+      # malformed DSN and a connection error that points at the URL rather than at the password.
+      # Use unreserved characters only (A-Za-z0-9-._~); `openssl rand -hex 32` is a safe
+      # generator. An operator who needs a reserved character sets APP_DATABASE_URL and does the
+      # encoding themselves. .env.example carries the same warning above POSTGRES_PASSWORD.
+      - DATABASE_URL=${APP_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
       - AUTH_SECRET=${AUTH_SECRET}
       - NEXTAUTH_URL=${NEXTAUTH_URL}
       - AUTH_TRUST_HOST=true
