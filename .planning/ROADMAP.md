@@ -177,10 +177,23 @@ repeated full-suite runs are only meaningful against a schema that can be rebuil
 **Requirements**: QG-01, SEC-05
 **Success Criteria** (what must be TRUE):
 
-  1. Ten consecutive full-suite runs at the default parallel worker count produce the same pass set.
-     No test fails on elapsed time; `condition-evaluator.test.ts`'s linearity assertion and
-     `toggle.test.ts:61`'s `beforeEach` are among them. (Baseline to beat: the linearity gate failed
-     twice in Phase 44's waves, once as `25.5 < 10`; `toggle.test.ts` timed out in 2 of 5 runs.)
+  1. **AMENDED 2026-08-25 — the original criterion could not fail.** It read: *"Ten consecutive
+     full-suite runs at the default parallel worker count produce the same pass set."* Phase 47
+     research measured **16 full-suite runs (10 idle, 3 at 2x CPU oversubscription, 3 at 3x) — 16/16
+     identical pass sets, 4739 passed / 32 skipped, zero failures — on the UNFIXED tree.** The proof
+     was already green before any work; it discriminates nothing. Keeping it would have shipped a
+     seventh vacuous gate inside the phase built to delete them.
+
+     **What actually moves is the MARGIN**, and that is now the criterion. Under induced load
+     (>=3x CPU oversubscription): no timing-sensitive assertion may consume a dangerous share of its
+     budget, measured and recorded per assertion. Baseline to beat, measured at 3x on the unfixed
+     tree: the linearity assertion's ratio reaches **52.5 against its 80 threshold — 66% of budget
+     consumed by contention alone**; `toggle.test.ts:61`'s `beforeEach` consumes **4121-4850 ms of
+     10 000 ms**; `recursion.test.ts:82` reaches **2453-3263 ms** and is the next to fail. After the
+     fix, every one of these must sit at a small, stated fraction of budget — and the *structural*
+     gate (SC-1b) must hold: no test asserts on an elapsed-time delta or ratio anywhere in the suite.
+     The ten-run pass-set check is retained as a cheap regression guard, but it is explicitly NOT the
+     evidence.
 
   2. The property those two tests existed to defend is still defended, and provably: reintroduce a
      backtracking `resolveFieldPath` and the replacement assertion goes red on operation count or
