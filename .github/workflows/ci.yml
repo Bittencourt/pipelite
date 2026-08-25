@@ -158,3 +158,89 @@ jobs:
           # .env on a fresh checkout, so this is the only place the target is named.
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
         run: npm run db:check-migrations
+
+      - name: Security audit policy
+        # SEC-05. Runs `npm audit` over package-lock.json and applies the root audit-policy.json:
+        # every critical and high advisory must either be FIXED or carry an unexpired, reasoned
+        # allowlist entry. AUDIT-POLICY.md states the policy itself, including what a reason has to
+        # do to count as one.
+        #
+        # The verdict is the POLICY's, never npm's own exit code. `npm audit` exits 1 whenever ANY
+        # advisory exists at ANY severity, so its exit code cannot distinguish a fully-disposed
+        # tree from one carrying an unallowlisted critical, and a gate built on it is either always
+        # red or has been silenced.
+        #
+        # THIS STEP NEEDS NETWORK, and there is no way around that. Advisory data lives at the
+        # registry's bulk endpoint; there is no offline advisory database to fall back to, and
+        # `--package-lock-only` changes the TREE source, not the ADVISORY source. It therefore FAILS
+        # CLOSED, deliberately: empty stdout, unparseable JSON, a missing `vulnerabilities` object,
+        # or a document reporting fewer than 500 audited packages is FATAL rather than a pass,
+        # because a network failure, a proxy interception and an `npm audit --json` schema change ALL
+        # otherwise produce zero offenders and a clean green. A gate that passes when it could not
+        # fetch the data it judges is worse than no gate: it reports confidence it does not have.
+        #
+        # That is MEASURED, not assumed. Pointed at an unreachable registry
+        # (`npm_config_registry=http://127.0.0.1:9/`) on 2026-08-25 the advisory POST returns
+        # ECONNREFUSED and the gate exits 1 with `FATAL: the audit document has no
+        # `vulnerabilities` object`. On the real registry the same day it exits 0: 47 advisories
+        # across 14 vulnerable packages, 39 at critical/high, all 39 dispositioned, 1285
+        # dependencies audited.
+        #
+        # WHAT THIS STEP PROVES, EXACTLY.
+        #
+        #   PROVED HERE     the advisory position of package-lock.json — the exact tree `npm ci`
+        #                   installs, which is this job's tree and every contributor's.
+        #   NOT PROVED HERE the tree inside the published Docker image. Dockerfile:24 installs with
+        #                   `npm install --legacy-peer-deps`, which is not lockfile-exact by
+        #                   contract; measured 2026-08-25 it produced a strict SUBSET of the
+        #                   lockfile tree (41 packages fewer, zero version differences, none of the
+        #                   41 carrying a critical or high advisory), and the runtime image narrows
+        #                   further still via Next's standalone trace. So this gate is a
+        #                   conservative over-approximation of the image's advisory surface: it can
+        #                   report an advisory in a package the image never ships, and it cannot by
+        #                   itself prove which version the image resolved. Converting Dockerfile:24
+        #                   to `npm ci --legacy-peer-deps` would collapse the two trees into one and
+        #                   retire this caveat; that is BACKLOG, not this step's job. Until then, do
+        #                   not describe this step as auditing production.
+        #
+        # No `env:` and no secret: it reads two files already in the checkout and posts a dependency
+        # tree the registry resolved in the first place. No action, so no new SHA pin.
+        if: ${{ !cancelled() }}
+        run: npm run security:audit
+
+      - name: Registry signature verification
+        # The TAMPER half of SEC-05, and the reason it is a step of its own rather than folded into
+        # the policy gate above: advisory data describes known vulnerabilities in the versions a
+        # lockfile names, and says nothing whatever about whether the tarball the registry served is
+        # the one its publisher signed. This is the only check in this repository that looks at
+        # that. Two questions, two steps, so a failure in one cannot mask or be mistaken for the
+        # other.
+        #
+        # Measured against a fully installed tree, 2026-08-25: 1100 packages audited, 1100 with
+        # verified registry signatures, 175 with verified attestations, zero failures, 20 s on a warm
+        # npm cache. An earlier cold-cache run on a slightly earlier lockfile measured 1104/1104 with
+        # 169 attestations in 102 s. Both are recorded because the SPREAD is the useful number: the
+        # cost is dominated by cache state, not by the tree.
+        #
+        # IT ORDERS AFTER `Install dependencies` FOR A REASON, and the reason is not cosmetic. This
+        # subcommand reads the INSTALLED tree, not package-lock.json, and `--package-lock-only` does
+        # not change that. Run with no node_modules present it exits 1 with `found no dependencies to
+        # audit that were installed from a supported registry` — measured. So it fails closed rather
+        # than vacuously reporting "0 packages verified, no failures", but only because a real
+        # install precedes it. If these steps are ever reordered ahead of `npm ci`, this one stops
+        # being a gate and starts being an error.
+        #
+        # COST, in the same register as the "deliberately no path filter" note at the top of this
+        # file: up to ~102 s cold, taking this job from ~95 s to ~200 s against a
+        # `timeout-minutes: 15` budget, which has ample room. That price was accepted deliberately —
+        # a minute of runner time for the only tamper-detection gate in the repository is a good
+        # trade — and the numbers are recorded here so the next person weighing it does not have to
+        # measure them again.
+        #
+        # IF IT PROVES FLAKY ON NETWORK: say so, with the failing runs as evidence, and re-decide in
+        # the open. Do not quietly delete the step, because a deleted gate is indistinguishable from
+        # a gate that never existed, and the next reader will assume signatures were never checked.
+        #
+        # No `env:` and no secret; no action, so no new SHA pin.
+        if: ${{ !cancelled() }}
+        run: npm audit signatures
