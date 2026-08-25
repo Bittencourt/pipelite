@@ -693,11 +693,22 @@ describe("resolveFieldPath — parsing is linear, not backtracking (T-34-20)", (
             }
             if (key === "length") return raw.length
             if (key === "indexOf") {
+              // WR-10: the span is implemented honestly rather than assuming a
+              // one-character needle. `raw[k] === needle` compared a single
+              // character, so any multi-character needle returned -1 always.
+              // `tokenizeFieldPath` only searches for a quote today, so the
+              // facade was correct in practice — but it was a silent trapdoor:
+              // if a future parser searched for `"]"` preceded by a quote, or any
+              // two-character token, every parse through the counted seam would
+              // return null early, the counted total would collapse, and the
+              // FLOOR would go red with a message blaming the parser rather than
+              // the instrument.
               return (needle: string, from = 0) => {
                 ops.calls++
-                for (let k = Math.max(0, from); k < raw.length; k++) {
-                  ops.chars++
-                  if (raw[k] === needle) return k
+                const start = Math.min(Math.max(0, from), raw.length)
+                for (let k = start; k + needle.length <= raw.length; k++) {
+                  ops.chars += needle.length
+                  if (raw.startsWith(needle, k)) return k
                 }
                 return -1
               }
@@ -878,6 +889,26 @@ describe("resolveFieldPath — parsing is linear, not backtracking (T-34-20)", (
       expect(scanned.path.indexOf("j")).toBe(9)
       expect(scanned.ops.chars, "indexOf must count the span it walked").toBe(10)
       expect(scanned.ops.calls).toBe(1)
+
+      // WR-10. The MULTI-CHARACTER case, which the facade got wrong and nothing
+      // covered: it compared `raw[k] === needle`, so any needle longer than one
+      // character always returned -1. `tokenizeFieldPath` only searches for a
+      // quote today, so the facade was correct in practice — but a future parser
+      // searching for a two-character token would have every parse return null
+      // early and the counted total collapse, surfacing as a red on the FLOOR
+      // with a message blaming the parser rather than the instrument.
+      const multi = makeCountingPath(raw)
+      expect(multi.path.indexOf("hij")).toBe(7)
+      expect(multi.ops.chars, "indexOf must count the span it compared").toBe(24)
+
+      // The miss, and the `from` boundary the spec defines rather than one
+      // reached by clamping.
+      const missed = makeCountingPath(raw)
+      expect(missed.path.indexOf("xyz")).toBe(-1)
+      const late = makeCountingPath(raw)
+      expect(late.path.indexOf("ab", 5)).toBe(-1)
+      const offset = makeCountingPath(raw)
+      expect(offset.path.indexOf("de", 2)).toBe(3)
 
       const sliced = makeCountingPath(raw)
       expect(sliced.path.slice(2, 6)).toBe("cdef")
