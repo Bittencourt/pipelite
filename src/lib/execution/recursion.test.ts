@@ -1,9 +1,51 @@
+/**
+ * Recursion-depth tracking, and `createWorkflowRun`'s enforcement of it.
+ *
+ * WHAT IS MOCKED AND WHY
+ *   - `@/db` — throws at import time without DATABASE_URL, and this suite must not touch Postgres.
+ *              Only `insert` is stubbed, because that is the only call `createWorkflowRun` makes.
+ * WHAT IS DELIBERATELY NOT MOCKED
+ *   - `./recursion` itself. It is the subject; the `AsyncLocalStorage` behaviour is the assertion.
+ *
+ * BOTH SUBJECTS ARE IMPORTED STATICALLY, AND THAT IS DELIBERATE — DO NOT "RESTORE" A DYNAMIC
+ * IMPORT. `vi.mock` is hoisted above imports by vitest's transform, so the module-scope import of
+ * `createWorkflowRun` below already sees the `@/db` mock. This file previously loaded it with
+ * `await import()` inside `beforeEach`, on the stated belief that the import had to follow the mock
+ * setup. That belief was false and it was expensive: measured, the first test of the depth-
+ * enforcement block cost 879-1314 ms idle and 2453-3263 ms at 3x CPU oversubscription against a
+ * 10 000 ms `hookTimeout`, which made this the next file in the suite due to time out after
+ * `toggle.test.ts`. At module scope the cost moves to vitest's untimed collect phase: measured with
+ * `--reporter=json`, that first test went 1100.02 ms -> 2.82 ms and the whole file 1120 ms -> 23.7 ms,
+ * with all thirteen tests unchanged.
+ *
+ * `vi.hoisted` and `vi.mock` are at module scope for the same reason, and NOT inside the `describe`
+ * where they used to sit. The transform hoisted them regardless, but vitest 4.1 warns on the nested
+ * form and states it will become an error — and the static import above is only safe BECAUSE that
+ * hoisting happens, so the guarantee it depends on should be visible rather than implicit.
+ *
+ * Do NOT move any import to `beforeAll`: it is a lifecycle hook under the same budget.
+ * `src/lib/__tests__/suite-hook-hygiene.test.ts` is the suite-wide gate that keeps this true.
+ */
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import {
   getCurrentExecutionDepth,
   runWithExecutionDepth,
   MAX_RECURSION_DEPTH,
 } from "./recursion"
+import { createWorkflowRun } from "@/lib/triggers/create-run"
+
+const { mockReturning, mockValues, mockInsert } = vi.hoisted(() => {
+  const mockReturning = vi.fn()
+  const mockValues = vi.fn(() => ({ returning: mockReturning }))
+  const mockInsert = vi.fn<(table?: unknown) => { values: typeof mockValues }>(() => ({ values: mockValues }))
+  return { mockReturning, mockValues, mockInsert }
+})
+
+vi.mock("@/db", () => ({
+  db: {
+    insert: (table: unknown) => mockInsert(table),
+  },
+}))
 
 describe("recursion depth tracking", () => {
   describe("getCurrentExecutionDepth", () => {
@@ -60,27 +102,8 @@ describe("recursion depth tracking", () => {
 
 // Tests for createWorkflowRun depth enforcement
 describe("createWorkflowRun with depth enforcement", () => {
-  // Use vi.hoisted so mocks are available when vi.mock factory runs
-  const { mockReturning, mockValues, mockInsert } = vi.hoisted(() => {
-    const mockReturning = vi.fn()
-    const mockValues = vi.fn(() => ({ returning: mockReturning }))
-    const mockInsert = vi.fn<(table?: unknown) => { values: typeof mockValues }>(() => ({ values: mockValues }))
-    return { mockReturning, mockValues, mockInsert }
-  })
-
-  vi.mock("@/db", () => ({
-    db: {
-      insert: (table: unknown) => mockInsert(table),
-    },
-  }))
-
-  // Need to import after mock setup
-  let createWorkflowRun: typeof import("@/lib/triggers/create-run").createWorkflowRun
-
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks()
-    const mod = await import("@/lib/triggers/create-run")
-    createWorkflowRun = mod.createWorkflowRun
   })
 
   const triggerEnvelope = { trigger_type: "crm_event" as const, trigger_id: "test-trigger", timestamp: new Date().toISOString(), data: { event: "deal.created" } }
