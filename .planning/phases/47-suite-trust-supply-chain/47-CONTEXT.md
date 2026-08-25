@@ -3,6 +3,8 @@
 **Gathered:** 2026-08-25
 **Status:** Ready for planning
 **Mode:** Smart discuss (autonomous)
+**Amended:** 2026-08-25 — corrected by 47-RESEARCH.md. Three factual corrections plus one criterion
+replacement (ROADMAP SC-1). Corrections are on *mechanism and evidence*; the phase goal is unchanged.
 
 <domain>
 ## Phase Boundary
@@ -47,12 +49,37 @@ for `QG-01`, and do not let its presence justify weakening the repeatability cri
   three defects Phase 44 repaired stayed hidden.
 
 ### The property must still be defended, provably
-- The replacement assertion is itself verified by **reintroducing a backtracking implementation on
-  purpose and watching it go red**, then reverting. Recorded verbatim in the SUMMARY. An assertion that
+- **CORRECTED: no backtracking implementation ever existed** — both prior git versions of
+  `resolveFieldPath` are `split(".")`. SC-2 therefore means *write* one, not restore one. Research
+  supplies two working ones.
+- **The gate needs a FLOOR as well as a ceiling.** Measured: a hand-written backtracker reports
+  1307 ops/char (fails the ceiling), but a **regex backtracker reports ZERO ops** — catastrophic
+  backtracking is invisible to any JS-level counter, so a ceiling-only gate passes the worst case.
+  Pair the counter with a TypeScript-AST structural assertion, proven red against a regex rewrite.
+  Current parser measures **1.71 ops/char, flat across a 500x input span, one distinct integer over
+  20 repeats** — deterministic under load.
+- The replacement is verified by writing a backtracking implementation on purpose and watching it go
+  red, then reverting. Recorded verbatim in the SUMMARY. An assertion that
   survives load by asserting nothing is the failure mode this phase exists to prevent — a green suite
   is not evidence that the replacement works.
 
-### Repeatability proof (SC-1)
+### Repeatability proof (SC-1) — AMENDED, the original could not fail
+- **AMENDED 2026-08-25.** The original text locked "ten consecutive full-suite runs produce the same
+  pass set". Measured: **16 runs (10 idle, 3 at 2x, 3 at 3x oversubscription) → 16/16 identical pass
+  sets, 4739 passed / 32 skipped, zero failures — on the UNFIXED tree.** The proof was already green
+  before any work. Shipping it would have been the seventh vacuous gate, inside the phase built to
+  delete them. ROADMAP SC-1 has been amended to match.
+- **The criterion is now MARGIN under induced load.** At >=3x CPU oversubscription, record what
+  fraction of its budget each timing-sensitive assertion consumes. Measured baselines to beat on the
+  unfixed tree: linearity ratio **52.5 / 80 threshold (66% consumed by contention alone)**;
+  `toggle.test.ts:61` `beforeEach` **4121-4850 ms / 10 000 ms**; `recursion.test.ts:82`
+  **2453-3263 ms** — the next to fail. Reaching a real timeout needs ~7x, i.e. the multi-worktree
+  executor environment, which is exactly where this bit before.
+- **Plus a structural gate (SC-1b):** no test asserts on an elapsed-time delta or ratio, suite-wide.
+- The ten-run pass-set check is retained as a cheap regression guard but is **explicitly not the
+  evidence**. Do not present it as proof of anything.
+
+### Superseded — original repeatability wording
 - **Ten consecutive full-suite runs at the DEFAULT parallel worker count** must produce the same pass
   set. Not ten runs of the two files; not ten serial runs; not a reduced worker count. The point is the
   configuration developers and CI actually use.
@@ -86,6 +113,27 @@ for `QG-01`, and do not let its presence justify weakening the repeatability cri
 - The gate belongs on the **required** CI job, consistent with Phase 46's Route A reasoning: a
   non-blocking gate is a vacuous gate.
 
+### Resolved open questions (decided so the plan does not stall)
+- **The four `vi.resetModules()` files get an explicit, documented carve-out** from the static-import
+  gate — with the reason recorded inline, so the exemption is a stated decision rather than a silent
+  hole. Converting them is not in scope.
+- **`next@16.1.6 → 16.3.2` is its own task with its own gate**, splittable to a follow-up if it needs
+  code changes. Do not let a framework bump ride along inside an advisory-triage task.
+- **`nodemailer` 7→9 is a breaking major for an advisory that can be accepted with reason** — take the
+  accept-with-reason path and record it with an expiry, per the CONTEXT rule against trading a
+  documented risk for an undocumented one in a debt-paydown milestone.
+- **`npm audit signatures` is included as a separate CI step** despite ~+102 s. Registry signature
+  verification is exactly the supply-chain half of SEC-05, and a ~95 s → ~200 s required check is an
+  acceptable price. If it proves flaky on network, say so and re-decide with evidence.
+- **`npm audit fix` is FORBIDDEN as the remediation instrument** — measured, it adds
+  `rolldown`/`tsx`/`esbuild` and moves `vite` 7→8. Remediate per-advisory, deliberately.
+- **Audit tooling: an in-repo policy evaluator with ZERO new dependencies.** `audit-ci` depends on
+  `event-stream@4.0.1` (the 2018 backdoor package) and was last published 2024-07-03;
+  `better-npm-audit` is 23 months stale on deprecated `lodash.get`; `osv-scanner` is not on npm.
+  Adding a stale supply-chain tool to fix a supply-chain requirement is self-defeating.
+- **Policy document at repo root** (`AUDIT-POLICY.md` or equivalent) — a root `SECURITY.md` is a
+  different document and must not be conflated with it.
+
 ### Claude's Discretion
 - The exact operation-counting mechanism (an injected counter, a spy, a complexity probe over growing
   inputs, or an AST/shape assertion) — whichever most directly falsifies backtracking.
@@ -102,9 +150,14 @@ for `QG-01`, and do not let its presence justify weakening the repeatability cri
 - `src/lib/execution/condition-evaluator.test.ts` › "resolveFieldPath — parsing is linear, not
   backtracking" — asserts a wall-clock **ratio**. Failed twice in Phase 44's parallel waves, once
   reported as `25.5 < 10`, while passing 70/70 in isolation and in every serial run.
-- `src/lib/execution/toggle.test.ts:61` — `Hook timed out in 10000ms` in **2 of 5** consecutive
-  `npm run test` runs; passes in 6.57 s in isolation with that one test taking 3.75 s of the 10 s
-  default `hookTimeout`.
+- `src/lib/execution/toggle.test.ts:61` — recorded as `Hook timed out in 10000ms` in **2 of 5** runs
+  (Phase 45). **CORRECTED 2026-08-25: 0 of 16 today.** The failure does not reproduce on the current
+  tree at up to 3x oversubscription; only the margin moves. **The cause is module import cost, not DB
+  I/O, not fake timers, not a sleep, and NOT a poll interval** — 521 ms of 778 ms (67%) is
+  `drizzle-orm/pg-core` alone. Hoisting to a static top-level import (`vi.mock` hoists above imports)
+  drops the first test **1258 ms → 3.0 ms**, all 5 still passing — applied to a copy and measured.
+  **An AST sweep found the same defect in 5 more files**; `recursion.test.ts:82` is next to fail and
+  must be fixed in the same change.
 - `resolveFieldPath` is a dot-notation walker reused by the condition evaluator and the delay resolver
   (Phase 26 decision), so its complexity property is load-bearing in more than one place.
 
@@ -156,7 +209,7 @@ for `QG-01`, and do not let its presence justify weakening the repeatability cri
 - The cold `auth.setup.ts` flake (30.1 s vs 1.9 s on retry) — a separate flake source, explicitly out of
   v1.4 scope.
 - Broad dependency refresh or major-version upgrades not required by a specific advisory disposition.
-- Converting `Dockerfile:7`'s `npm install --legacy-peer-deps` to `npm ci` (deferred from Phase 46) —
+- Converting **`Dockerfile:24`**'s (corrected from `:7`) `npm install --legacy-peer-deps` to `npm ci` (deferred from Phase 46) —
   note that it weakens any lockfile-derived guarantee, including this phase's audit gate, since the
   image tree is not lockfile-exact.
 
