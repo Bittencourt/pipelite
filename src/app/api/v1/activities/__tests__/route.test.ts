@@ -15,8 +15,12 @@ type ApiRouteHandler = (
  * query, so the `where` step must return a thenable. Capturing its argument is the only way
  * to observe the count predicate: a mocked builder never renders SQL on its own.
  */
-const countWhere = vi.fn((_condition: unknown) => Promise.resolve([{ count: 0 }]))
-const countFrom = vi.fn((_table: unknown) => ({ where: countWhere }))
+const countWhere = vi.fn<(condition: unknown) => Promise<{ count: number }[]>>(() =>
+  Promise.resolve([{ count: 0 }])
+)
+const countFrom = vi.fn<(table: unknown) => { where: typeof countWhere }>(() => ({
+  where: countWhere,
+}))
 
 vi.mock("@/db", () => ({
   db: {

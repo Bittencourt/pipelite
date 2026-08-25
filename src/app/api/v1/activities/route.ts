@@ -49,8 +49,17 @@ export async function GET(request: NextRequest) {
     const dealId = searchParams.get("deal_id")
     const ownerId = searchParams.get("owner_id")
 
-    // Build where conditions
-    const conditions = [isNull(activities.deletedAt)]
+    // Build where conditions.
+    //
+    // SEC-01: the owner equality below is the caller scope, and that ONE line scopes
+    // BOTH queries below — the page query and the count query each consume this same `conditions`
+    // array, so `meta.total` is a ceiling on what this caller may see rather than an independent
+    // count of everybody's rows.
+    //
+    // The caller-supplied `?owner_id=` filter pushed below is a FILTER, not a scope. Composed
+    // under `and(...)` after this line it can only narrow within the caller's own records; it can
+    // never widen them. Do not delete it, and do not move it above this line.
+    const conditions = [isNull(activities.deletedAt), eq(activities.ownerId, ctx.userId)]
 
     if (typeId) {
       conditions.push(eq(activities.typeId, typeId))
@@ -150,17 +159,17 @@ export async function POST(request: NextRequest) {
 
     const { title, type_id, deal_id, owner_id, due_at, notes, custom_fields } = parsed.data
 
-    // If owner_id provided, verify owner exists
-    if (owner_id) {
-      const owner = await db.query.users.findFirst({
-        where: eq(users.id, owner_id),
-      })
-      if (!owner) {
-        return Problems.validation([{ field: "owner_id", code: "not_found", message: "Owner not found" }])
-      }
+    // SEC-01: a caller may only create activities they own. `owner_id` stays declared in the
+    // schema so a caller who sends one is TOLD it was refused — silently coercing it to the
+    // caller would leave them believing the write landed as sent.
+    if (owner_id && owner_id !== ctx.userId) {
+      return Problems.validation([
+        { field: "owner_id", code: "forbidden", message: "owner_id cannot be set to another user" },
+      ])
     }
 
-    // Determine owner - use provided owner_id or authenticated user
+    // Determine owner - after the guard above, `owner_id` can only ever be the caller's own id,
+    // so this is provably equal to `ctx.userId`.
     const activityOwnerId = owner_id || ctx.userId
 
     // Use mutation (handles insert + validation + event emission)
