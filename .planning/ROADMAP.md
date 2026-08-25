@@ -302,7 +302,27 @@ something). These four route files have **zero** test coverage today, so tests s
 the relation unconditionally for PUT/DELETE — the GET is the one path that does not use it, which is
 both the bug and the shape of the fix. `stages/route.ts:73` is the `IN` site. Compare
 `pipelines/[id]/route.ts`, which does check `ownerId`, as the reference shape.
-**Plans**: TBD
+**Plans:** 10 plans in 4 waves
+
+Plans:
+
+**Wave 1** *(five parallel plans, zero `files_modified` overlap)*
+- [ ] 48-01-PLAN.md — activities/[id] IDOR: GET, PUT and DELETE ownership checks asserted separately, plus the loud `owner_id` reassignment rejection · SEC-01
+- [ ] 48-02-PLAN.md — activities list scope and create-as-another-user rejection, with a rendered-predicate assertion in CI · SEC-01
+- [ ] 48-03-PLAN.md — stages/[id] GET calls the file's own `verifyStageOwnership` helper; all four SC-4 cells with the three guards labelled · SEC-02
+- [ ] 48-04-PLAN.md — stages list rewritten to join, scope, then paginate; the raw `IN` fragment deleted at the root; `ownedStagesPredicate` extracted · QG-03, SEC-02
+- [ ] 48-05-PLAN.md — the Q10 detector: AST matcher, KNOWN_POSITIVE/KNOWN_NEGATIVE fixtures with parse floors, corpus reach floors and WR-11 token floors · SEC-01, SEC-02
+
+**Wave 2** *(blocked on Wave 1)*
+- [ ] 48-06-PLAN.md — the first two-user API-key fixture in the repo, and the seeded SC-3 proof with floor, ceiling, discriminator and cross-check; controls D and E · SEC-01
+- [ ] 48-08-PLAN.md — the Q10 gate: exemptions as live controls, the offender assertion, and controls A, A-prime, B and C — the direct answer to SEC-48-B · SEC-01, SEC-02
+
+**Wave 3** *(blocked on Wave 2)*
+- [ ] 48-07-PLAN.md — the behavioural SC-5 proof against real PostgreSQL, F3 from both directions, and control F · QG-03, SEC-02
+- [ ] 48-09-PLAN.md — OpenAPI 403/422 coverage behind a parsing gate, and the three stale prose claims corrected · SEC-01, SEC-02, QG-03
+
+**Wave 4** *(blocked on Wave 3)*
+- [ ] 48-10-PLAN.md — negative-control register, vacuity hunt, criterion verdicts, exploit re-checked over real HTTP against a rebuilt image, phase gate · SEC-01, SEC-02, QG-03
 
 ### Phase 49: Mutation-Layer Truth After Commit
 
