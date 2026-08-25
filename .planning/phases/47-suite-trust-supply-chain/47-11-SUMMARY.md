@@ -475,6 +475,15 @@ Plan 47-10 owns `src/lib/__tests__/audit-policy.test.ts` and plan 47-14 owns `su
 - **Two BACKLOG items are now argued in-file:** converting `Dockerfile:24` to `npm ci --legacy-peer-deps` (which would collapse trees #1 and #2 and retire the `NOT PROVED HERE` caveat), and MIG-02.
 - No blockers.
 
+## Self-Check: PASSED
+
+- `.planning/phases/47-suite-trust-supply-chain/47-11-SUMMARY.md` — FOUND
+- `.github/workflows/ci.yml` — FOUND
+- commit `c1f677d` — FOUND
+- commit `951db4a` — FOUND
+- `git status --porcelain` — clean
+- `STATE.md` / `ROADMAP.md` — untouched, as instructed (orchestrator owns them)
+
 ---
 *Phase: 47-suite-trust-supply-chain*
 *Completed: 2026-08-25*
