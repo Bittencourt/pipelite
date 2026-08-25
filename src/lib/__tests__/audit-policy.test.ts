@@ -760,6 +760,32 @@ describe("NC-D: the policy checker can produce a red", () => {
   })
 })
 
+describe("an allowlist entry cannot misname the package it silences (WR-05)", () => {
+  it("reports an entry whose package differs from the one npm reports the advisory under", () => {
+    // WR-05. Matching is on `ghsa` alone and `entry.package` was only ever checked for being a
+    // non-empty string, so this returned [] before the reconciliation existed — verified.
+    //
+    // The load-bearing consequence is not the misleading failure message. It is that the prose/JSON
+    // cross-check below keys `reach` and `expires` on this self-declared, unverified field: an
+    // entry whose `package` says `postcss` (reach `build`, the reach a reader discounts fastest)
+    // while its GHSA actually belongs to `next` (reach `runtime`) satisfies that cross-check
+    // perfectly and misrepresents the risk to every human reader.
+    const problems = evaluatePolicy(
+      SYNTHETIC_AUDIT,
+      fixturePolicy({ allowlist: [fixtureEntry({ package: "totally-unrelated" })] }),
+      NOW
+    )
+    expect(problems, `reported: ${problems.join(" | ")}`).toHaveLength(1)
+    expect(problems[0]).toContain('under package "totally-unrelated"')
+    expect(problems[0]).toContain('npm reports it against "widget"')
+  })
+
+  it("THE COMPLEMENT: the same entry naming the right package is clean", () => {
+    // Without this, a reconciliation that reported EVERY entry would satisfy the control above.
+    expect(evaluatePolicy(SYNTHETIC_AUDIT, fixturePolicy(), NOW)).toEqual([])
+  })
+})
+
 describe("an advisory with no recorded disposition is a failure", () => {
   it("reports the unallowlisted advisory, and names it", () => {
     const problems = evaluatePolicy(

@@ -687,6 +687,27 @@ export function evaluatePolicy(auditJson, policy, now = new Date()) {
           `the fix, or add an entry to ${POLICY_FILE} with a reason, a reach and an expiry, and ` +
           `record it in ${POLICY_DOC}.`
       )
+      continue
+    }
+
+    // WR-05. RECONCILE the entry's self-declared `package` against the package npm actually
+    // reports the advisory under. Matching is on `ghsa` alone, and `entry.package` was only ever
+    // checked for being a non-empty string — so an entry could key a real GHSA while naming a
+    // different package entirely and `evaluatePolicy` returned []. Two consequences, the second
+    // load-bearing: every failure message and `staleAllowlistProblems` report `entry.package`, so a
+    // diagnosis can name the wrong package; and the prose/JSON cross-check in
+    // src/lib/__tests__/audit-policy.test.ts keys `reach` and `expires` on that same unverified
+    // field. An entry whose `package` says `postcss` (reach `build`, the reach a reader discounts
+    // fastest) while its GHSA actually belongs to `next` (reach `runtime`) satisfies that
+    // cross-check perfectly and misrepresents the risk to every human reader.
+    const entry = allowed.get(row.ghsa)
+    if (entry && entry.package !== row.package) {
+      problems.push(
+        `${POLICY_FILE} allowlists ${row.ghsa} under package ${JSON.stringify(entry.package)}, ` +
+          `but npm reports it against ${JSON.stringify(row.package)}. The prose cross-reference ` +
+          `in ${POLICY_DOC} keys reach and expiry on the entry's package name, so a mismatch ` +
+          `means the document describes a different risk from the one being suppressed.`
+      )
     }
   }
 
