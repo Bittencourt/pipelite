@@ -277,6 +277,25 @@ function setDifference(expected, actual) {
   }
 }
 
+/**
+ * Differing values, by NAME and never as a bare count, capped.
+ *
+ * The cap is not cosmetic. When the chain aborts, every dimension differs by its whole
+ * contents at once — 293 columns, 83 constraints, 38 functions — and an uncapped report
+ * buries the one line that actually diagnoses the run (the child's 42P01) under 50KB of
+ * derived noise. The count is always stated in full; only the enumeration is trimmed.
+ */
+const DIFF_SAMPLE_LIMIT = 20
+
+function sampleDifference(values, prefix) {
+  if (values.length === 0) return []
+  const shown = values.slice(0, DIFF_SAMPLE_LIMIT).map((v) => `      ${prefix}: ${v}`)
+  if (values.length > DIFF_SAMPLE_LIMIT) {
+    shown.push(`      … and ${values.length - DIFF_SAMPLE_LIMIT} more`)
+  }
+  return shown
+}
+
 // ---------------------------------------------------------------------------
 // The always-available reference: the LAST journal entry's snapshot.
 // ---------------------------------------------------------------------------
@@ -600,13 +619,15 @@ async function main() {
     if (columnDiff.missing.length) {
       record(
         `${columnDiff.missing.length} table.column pair(s) the snapshot declares are ` +
-          `absent from the built database: ${columnDiff.missing.slice(0, 40).join(", ")}`
+          `absent from the built database:\n` +
+          sampleDifference(columnDiff.missing, "absent").join("\n")
       )
     }
     if (columnDiff.unexpected.length) {
       record(
         `${columnDiff.unexpected.length} table.column pair(s) exist in the built database ` +
-          `that the snapshot does not declare: ${columnDiff.unexpected.slice(0, 40).join(", ")}`
+          `that the snapshot does not declare:\n` +
+          sampleDifference(columnDiff.unexpected, "unexpected").join("\n")
       )
     }
 
@@ -657,10 +678,12 @@ async function main() {
         if (!identical) {
           record(
             `catalog dimension "${dimension}" differs between ${reference.name} and the ` +
-              `migration-built database.\n` +
-              diff.missing.map((v) => `      only in ${reference.name}: ${v}`).join("\n") +
-              (diff.missing.length && diff.unexpected.length ? "\n" : "") +
-              diff.unexpected.map((v) => `      only in ${scratchName}: ${v}`).join("\n")
+              `migration-built database — ${diff.missing.length} only in ${reference.name}, ` +
+              `${diff.unexpected.length} only in the built database:\n` +
+              [
+                ...sampleDifference(diff.missing, `only in ${reference.name}`),
+                ...sampleDifference(diff.unexpected, "only in the built database"),
+              ].join("\n")
           )
         }
       }
