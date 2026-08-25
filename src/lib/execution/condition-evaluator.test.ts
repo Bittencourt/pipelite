@@ -1436,6 +1436,37 @@ describe("resolveFieldPath — the parser's SHAPE is asserted, not only its cost
     ).toBeGreaterThan(MIN_TOKENIZE_BODY_NODES)
   })
 
+  it("names every whole-string scanner the check was written for, BY VALUE", () => {
+    // WR-04. Asserted by value rather than by length, so a DELETION is as loud as
+    // a RENAME. Only `.exec` and `.split` are held by a KNOWN_POSITIVE fixture
+    // (`:1331` and `:1316-1317`); tracing the other six found nothing guarding
+    // them at all, so `.test`, `.match`, `.matchAll`, `.replace`, `.replaceAll`
+    // and `.search` could each be dropped from the array and this gate would keep
+    // reporting a clean pass over a shorter list — while the list's own
+    // doc-comment above says "an emptied forbidden list is a gate that cannot
+    // fail".
+    //
+    // This is the identical self-weakening shape 47-10 found and fixed for
+    // `FORBIDDEN_REASONS` in this same phase (`audit-policy.test.ts`'s "names
+    // every forbidden reason the check was written for, BY VALUE", with the
+    // comment "a RENAME is as loud as a DELETION"). The lesson was not carried
+    // across to its sibling gate; this carries it.
+    //
+    // `GATED_FUNCTIONS` needs no equivalent: emptying it takes the
+    // KNOWN_POSITIVE fixture assertions red, which was verified rather than
+    // assumed.
+    expect([...FORBIDDEN_BULK_SCANNERS].sort()).toEqual([
+      ".exec",
+      ".match",
+      ".matchAll",
+      ".replace",
+      ".replaceAll",
+      ".search",
+      ".split",
+      ".test",
+    ])
+  })
+
   it("the call extractor still extracts calls — the WR-11 permitted-token floor", () => {
     // Phase 46 WR-11: a scan that floors its verb but not its search token goes
     // green BECAUSE it broke. An extractor that stopped extracting satisfies "no
