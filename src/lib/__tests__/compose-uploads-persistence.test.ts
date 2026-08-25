@@ -423,6 +423,37 @@ describe("uploads persistence: .env.example is level with what compose requires"
     ).toEqual([])
   })
 
+  it("keeps POSTGRES_PASSWORD URL-safe, because compose interpolates it without encoding", () => {
+    // docker-compose.yml builds the container's fallback DSN as
+    // `postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}` and
+    // performs NO percent-encoding. Before that construction existed the operator wrote the
+    // whole URL themselves and could encode reserved characters; now they cannot, and a
+    // strong generated password containing / # ? % : or @ produces a malformed DSN. `/` is
+    // the worst case: the authority parse terminates early and the connection targets a host
+    // derived from the username, so the error names the URL and never the password.
+    //
+    // This asserts the SHIPPED example, which is what a self-hoster copies and what a future
+    // "use a stronger default" edit would change. The escape hatch for a password that must
+    // carry a reserved character is APP_DATABASE_URL, which is used verbatim.
+    const line = envExampleRaw.split("\n").find((l) => l.startsWith("POSTGRES_PASSWORD="))
+    expect(line, ".env.example no longer declares POSTGRES_PASSWORD at column 0").toBeDefined()
+    const password = line!
+      .slice("POSTGRES_PASSWORD=".length)
+      .trim()
+      .replace(/^"(.*)"$/, "$1")
+      .replace(/^'(.*)'$/, "$1")
+    // Anti-vacuity: an empty value satisfies any character-class assertion.
+    expect(password.length, "POSTGRES_PASSWORD is empty in .env.example").toBeGreaterThan(0)
+    const reserved = [...password].filter((ch) => !/[A-Za-z0-9\-._~]/.test(ch))
+    expect(
+      reserved,
+      `POSTGRES_PASSWORD contains character(s) docker-compose.yml would interpolate into a ` +
+        `URL unencoded: ${reserved.join(" ")}. Use only unreserved characters ` +
+        `(A-Za-z0-9-._~) — \`openssl rand -hex 32\` is a safe generator — or document ` +
+        `APP_DATABASE_URL as the route for a password that needs more.`,
+    ).toEqual([])
+  })
+
   it("documents UPLOAD_DIR", () => {
     // Deliberately NOT part of the subset check above: compose hardcodes the value rather than
     // interpolating it, so UPLOAD_DIR never appears as a ${VAR}. It still has to be documented,
