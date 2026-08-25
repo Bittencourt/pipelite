@@ -180,8 +180,12 @@
  *
  *   - KNOWN_POSITIVE fixture (iv) is a `performance.now` ratio, so that branch of the detector is
  *     proven live by fixture;
- *   - section 3 runs the detector over the health route itself and asserts it still finds both real
- *     call sites there — which proves the branch against REAL source, not only a fixture.
+ *   - section 3 DISCOVERS the non-test source under `src/` that reads that clock and runs the
+ *     detector over each such file, asserting it still finds call sites — which proves the branch
+ *     against REAL source, not only a fixture. The subject is discovered rather than named, and
+ *     floored at ONE FILE rather than at a call-site count in one named file, because the property
+ *     is "the branch works against real source" and not "the health route still has two probes"
+ *     (WR-08). Today the discovery finds exactly `src/app/api/health/route.ts`, with 2 call sites.
  *
  * That same control is where "reads a clock" and "asserts on a clock delta" are shown to be
  * different things. The health route computes a clock-derived delta on purpose and contains ZERO
@@ -248,10 +252,20 @@ const SUBJECT_PATHS = [
 
 /**
  * Non-test source that READS a clock, deliberately outside this corpus. See the header: this is the
- * concrete case that makes "reads a clock" and "asserts on a clock delta" different claims, and it is
- * where the `performance.now` branch of the detector is proven against real source.
+ * concrete case that makes "reads a clock" and "asserts on a clock delta" different claims, and it
+ * is where the `performance.now` branch of the detector is proven against real source.
+ *
+ * NOT a hard-coded subject. WR-08: the previous form named `src/app/api/health/route.ts` and
+ * floored its call sites at 2 — the exact measurement — so extracting `probeDb` to a helper,
+ * computing latency from one reading plus a monotonic source, or dropping the latency field all
+ * turned this gate red with a message that led "the detector's performance.now branch broke",
+ * which is the wrong diagnosis in every one of those cases. The property being proved is "the
+ * performance.now branch works against REAL source", and that does not depend on any one file
+ * keeping exactly two probes. So the subject is DISCOVERED. Measured 2026-08-25: 525 non-test
+ * source files under `src/`, read in 24 ms, of which exactly 1 reads that clock (the health route,
+ * 2 call sites).
  */
-const CLOCK_READING_NON_TEST_SOURCE = "src/app/api/health/route.ts"
+const CLOCK_READING_SOURCE_MARKER = "performance.now"
 
 /** The qualified clock-call names this gate taints from. */
 const CLOCK_CALL_NAMES = new Set(["Date.now", "performance.now"])
@@ -328,11 +342,27 @@ const MIN_DATE_NOW_CALLS = 25
 const MIN_EXPLICIT_TIMEOUTS = 20
 
 /**
- * Floor on `performance.now` CallExpressions in `CLOCK_READING_NON_TEST_SOURCE`. Measured exactly 2
- * (`probeDb`'s start reading and the latency computation), both introduced in Phase 42, both
- * untouched by this phase. Floored rather than pinned at 2 so adding a third probe is not a failure.
+ * Floor on the number of NON-TEST source files under `src/` that still read `performance.now`, each
+ * of which the detector must find at least one call site in.
+ *
+ * Floored at ONE FILE rather than at two call sites in one named file — see
+ * `CLOCK_READING_SOURCE_MARKER`. Measured 2026-08-25: 1 file (`src/app/api/health/route.ts`), 2
+ * call sites.
+ *
+ * IF THIS GOES RED, the diagnosis is "no non-test source in this repository reads that clock any
+ * more", NOT "the detector broke" — and the correct response is a deliberate decision about whether
+ * KNOWN_POSITIVE fixture (iv) is now the only proof of that branch, not lowering a number.
  */
-const MIN_NON_TEST_PERFORMANCE_NOW = 2
+const MIN_NON_TEST_PERFORMANCE_NOW_FILES = 1
+
+/**
+ * Anti-vacuity floor on the discovery walk above. Measured 525 non-test source files under `src/`;
+ * 300 is set below it. Without this, a wrong root or a broken recursion enumerates nothing, finds
+ * no clock-reading file, and the control above fails for a reason that has nothing to do with the
+ * detector — or, worse, a future `.filter` bug makes the discovered set empty and the failure reads
+ * as a health-route change.
+ */
+const MIN_NON_TEST_SOURCE_FILES = 300
 
 /**
  * Measured fixpoint iterations for KNOWN_POSITIVE fixture (i): 3. Two productive passes, then one
@@ -377,6 +407,28 @@ function walkTestFiles(relativeDir: string): string[] {
 }
 
 const TEST_FILES = walkTestFiles(SRC_ROOT).sort()
+
+/**
+ * Every NON-test source file under `src/`, as repo-relative POSIX paths — the complement of
+ * `walkTestFiles` over the same tree. Used only by section 3's discovery of the real source that
+ * reads a clock; nothing in the sweep parses these.
+ */
+function walkSourceFiles(relativeDir: string): string[] {
+  const out: string[] = []
+  for (const entry of readdirSync(path.join(REPO_ROOT, relativeDir), { withFileTypes: true })) {
+    const rel = `${relativeDir}/${entry.name}`
+    if (entry.isDirectory()) out.push(...walkSourceFiles(rel))
+    else if (
+      /\.(c|m)?[jt]sx?$/.test(entry.name) &&
+      !/\.(test|spec)\.(c|m)?[jt]sx?$/.test(entry.name)
+    ) {
+      out.push(rel)
+    }
+  }
+  return out
+}
+
+const NON_TEST_SOURCE_FILES = walkSourceFiles(SRC_ROOT).sort()
 
 /**
  * How the matcher applied to a delta or ratio is classified. Reported on every hit and asserted by
@@ -1443,35 +1495,69 @@ describe("the corpus boundary is stated and asserted, not assumed", () => {
     expect(TEST_FILES.filter((file) => file.includes(".planning"))).toEqual([])
   })
 
+  it(`enumerates at least ${MIN_NON_TEST_SOURCE_FILES} non-test source files — the discovery floor`, () => {
+    // The anti-vacuity floor for the control below. A discovery walk that enumerates nothing finds
+    // no clock-reading source, and the control below then fails with a message about a health route
+    // that never changed. Measured 525 on 2026-08-25.
+    expect(
+      NON_TEST_SOURCE_FILES.length,
+      `the non-test walk found ${NON_TEST_SOURCE_FILES.length} files under ${SRC_ROOT}/. Measured ` +
+        `525. A count this low means the walk or its filter is wrong, not that the repository ` +
+        `shrank.`
+    ).toBeGreaterThanOrEqual(MIN_NON_TEST_SOURCE_FILES)
+    expect(
+      NON_TEST_SOURCE_FILES.filter((file) => TEST_FILES.includes(file)),
+      "the non-test walk and the test walk overlap, so one of the two filters is wrong"
+    ).toEqual([])
+  })
+
   it("excludes non-test source that legitimately reads a clock, and proves the distinction", () => {
     // THE CONCRETE CASE THAT MAKES "reads a clock" AND "asserts on a clock delta" DIFFERENT CLAIMS,
     // and simultaneously the live proof of the detector's performance.now branch against REAL source
     // rather than a fixture.
     //
-    // `src/app/api/health/route.ts` reads that clock twice and computes a delta from it — Phase 42's
-    // DB-probe latency field. It contains no assertion at all, so it cannot violate SC-1b, and it is
-    // deliberately outside this corpus. If this gate's scope were widened to all of `src/**` its
-    // floor would be `>= 2` and this file would need an exemption; that is a worse design, because
-    // the exemption would be indistinguishable from the exemption a real defect would ask for.
-    expect(TEST_FILES).not.toContain(CLOCK_READING_NON_TEST_SOURCE)
+    // The subject is DISCOVERED, not named (WR-08). What is being proved is that the
+    // `performance.now` branch works against real source and that such source is correctly out of
+    // scope — neither of which is a property of `src/app/api/health/route.ts` keeping exactly two
+    // probes. Today the discovery finds that one file (Phase 42's DB-probe latency field, 2 call
+    // sites); an extraction, a refactor to a single reading, or a move to another module all keep
+    // this green, and only "no non-test source reads that clock at all" turns it red — which is a
+    // true statement that deserves a deliberate decision.
+    //
+    // If this gate's scope were widened to all of `src/**`, such a file would need an exemption;
+    // that is a worse design, because the exemption would be indistinguishable from the exemption a
+    // real defect would ask for.
+    const clockReading = NON_TEST_SOURCE_FILES.map((file) => ({
+      file,
+      source: readRepoFile(file),
+    })).filter((entry) => entry.source.includes(CLOCK_READING_SOURCE_MARKER))
 
-    const result = scanSource(
-      CLOCK_READING_NON_TEST_SOURCE,
-      readRepoFile(CLOCK_READING_NON_TEST_SOURCE)
-    )
     expect(
-      result.clockCalls["performance.now"],
-      `${CLOCK_READING_NON_TEST_SOURCE} no longer reads that clock. Either the latency field was ` +
-        `removed — in which case delete this control deliberately — or the detector's ` +
-        `performance.now branch broke, in which case KNOWN_POSITIVE fixture (iv) is the only thing ` +
-        `still proving it and this file was the second, independent proof.`
-    ).toBeGreaterThanOrEqual(MIN_NON_TEST_PERFORMANCE_NOW)
-    expect(
-      result.expectCalls,
-      `${CLOCK_READING_NON_TEST_SOURCE} now contains assertions, so the argument for keeping it out ` +
-        `of the corpus no longer holds`
-    ).toBe(0)
-    expect(result.hits.map(formatHit)).toEqual([])
+      clockReading.length,
+      `no non-test source file under ${SRC_ROOT}/ reads ${CLOCK_READING_SOURCE_MARKER} any more. ` +
+        `That is NOT a detector failure — the detector's ${CLOCK_READING_SOURCE_MARKER} branch is ` +
+        `separately proven by KNOWN_POSITIVE fixture (iv). It means this repository no longer has ` +
+        `real source to prove that branch against, and the decision to make is whether the fixture ` +
+        `alone is enough. Do not lower this floor to go green. Measured 2026-08-25: 1 file, ` +
+        `src/app/api/health/route.ts, 2 call sites.`
+    ).toBeGreaterThanOrEqual(MIN_NON_TEST_PERFORMANCE_NOW_FILES)
+
+    for (const { file, source } of clockReading) {
+      const result = scanSource(file, source)
+      expect(
+        result.clockCalls["performance.now"],
+        `${file} contains the text "${CLOCK_READING_SOURCE_MARKER}" but the AST detector found ` +
+          `zero call sites in it. THIS one IS a detector failure: re-anchor clockCallName onto ` +
+          `whatever shape the parser now produces for a PropertyAccessExpression callee.`
+      ).toBeGreaterThan(0)
+      expect(
+        result.expectCalls,
+        `${file} now contains assertions, so the argument for keeping non-test source out of the ` +
+          `corpus no longer holds for it`
+      ).toBe(0)
+      expect(TEST_FILES, `${file} is enumerated by the test walk as well`).not.toContain(file)
+      expect(result.hits.map(formatHit)).toEqual([])
+    }
   })
 })
 
