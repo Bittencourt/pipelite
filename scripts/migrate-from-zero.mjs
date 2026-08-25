@@ -70,6 +70,14 @@
  *
  *   The reference database is opened READ ONLY and only ever receives SELECT.
  *
+ * WHAT IT REQUIRES OF THE SERVER
+ *   PostgreSQL 13 or newer. `DROP DATABASE ... WITH (FORCE)` is a 13 feature, and it is the
+ *   FIRST statement this script runs, so on an older managed server the run fails before
+ *   `CREATE DATABASE` and nothing is left behind. That first DROP catches syntax error
+ *   42601 and re-raises it naming the version requirement, because a bare "syntax error at
+ *   or near WITH" gives the operator no way to reach that conclusion. This repository pins
+ *   `postgres:16-alpine`, so the local and CI paths are unaffected.
+ *
  * HOW IT REACHES THE SERVER
  *   Over TCP with the `postgres` driver, using DATABASE_URL from the environment or, if
  *   it is not there, from the ONE file drizzle-kit's bundled dotenv reads:
@@ -785,9 +793,11 @@ function record(problem) {
 }
 
 async function main() {
-  const requireReference =
-    process.argv.slice(2).includes("--require-reference") ||
-    process.env.npm_config_require_reference === "true"
+  // The flag, and only the flag. An `npm_config_require_reference` route also existed; it
+  // appeared in no document, no npm script and no test, and the exact name mangling npm
+  // applies to `--require-reference` is version-dependent — so it was a second entry point
+  // that nobody could rely on and nobody would think to check when a run skipped.
+  const requireReference = process.argv.slice(2).includes("--require-reference")
 
   const { url: sourceUrl, origin } = resolveConnectionString()
   const REFERENCE_DB = process.env.REFERENCE_DATABASE_URL
@@ -820,8 +830,24 @@ async function main() {
     await sweepLeakedScratchDatabases(admin, REFERENCE_DB, scratchName)
 
     // A previously leaked database must not be able to poison this run.
+    //
+    // This is the FIRST statement the script runs against the cluster, which makes it the
+    // right place to diagnose a server too old for `WITH (FORCE)` (PostgreSQL 13+). It fails
+    // before CREATE DATABASE, so nothing leaks; without the re-raise the operator sees a bare
+    // "syntax error at or near WITH" and no route to the version as the cause.
     assertScratchName(scratchName, REFERENCE_DB)
-    await admin.unsafe(`DROP DATABASE IF EXISTS "${scratchName}" WITH (FORCE)`)
+    try {
+      await admin.unsafe(`DROP DATABASE IF EXISTS "${scratchName}" WITH (FORCE)`)
+    } catch (error) {
+      if (error?.code === "42601") {
+        fatal(
+          "this server rejected `DROP DATABASE ... WITH (FORCE)` as a syntax error. That " +
+            "form requires PostgreSQL 13 or newer; this script has not run anything else " +
+            `yet, so nothing was created or dropped. Server said: ${error.message}`
+        )
+      }
+      throw error
+    }
 
     // Set BEFORE the CREATE, not after: an interrupt landing mid-CREATE can leave the
     // database behind, and a name printed for a database that turned out not to exist
@@ -878,15 +904,17 @@ async function main() {
     if (tableDiff.missing.length) {
       record(
         `the migration chain does not create ${tableDiff.missing.length} table(s) the ` +
-          `snapshot declares: ${tableDiff.missing.join(", ")}. A from-zero install is ` +
-          "short these tables; application code touching them raises 42P01 at runtime, " +
-          "behind a migrate that may well have exited 0."
+          `snapshot declares. A from-zero install is short these tables; application ` +
+          "code touching them raises 42P01 at runtime, behind a migrate that may well " +
+          "have exited 0:\n" +
+          sampleDifference(tableDiff.missing, "absent").join("\n")
       )
     }
     if (tableDiff.unexpected.length) {
       record(
         `the migration chain creates ${tableDiff.unexpected.length} table(s) the snapshot ` +
-          `does not declare: ${tableDiff.unexpected.join(", ")}.`
+          `does not declare:\n` +
+          sampleDifference(tableDiff.unexpected, "unexpected").join("\n")
       )
     }
 
