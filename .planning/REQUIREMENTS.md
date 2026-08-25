@@ -81,6 +81,15 @@ activities, and custom fields. Advanced features can be built externally via the
 - [ ] **SEC-05**: The committed lockfile's advisories are triaged, and CI has a stated audit policy.
       *Source: `999.16`. 4 critical / 22 high as of 2026-08-24. Re-measure at plan time — the count is
       not the requirement, the decision is.*
+      *47-09: the FIRST half is discharged — all 39 remaining critical/high advisories carry exactly
+      one evidenced disposition with a reach and an expiry in `audit-policy.json`, `AUDIT-POLICY.md`
+      states the policy in prose, and `npm run security:audit` enforces it at exit 0 with zero new
+      dependencies. The SECOND half is NOT: `.github/workflows/ci.yml` still has no audit step, so
+      nothing on the required `ci` check fails on an advisory, and the required check has never been
+      observed going red for one. `requirements mark-complete SEC-05` set this box to `[x]`; it was
+      reverted, for the same reason 47-07 reverted it — 47-CONTEXT § "CI audit policy (SC-4)" says a
+      policy whose gate has never been observed failing is a stated intention, not a policy. Owners:
+      47-11 (the ci.yml step) and 47-12 (the observed red on the real GitHub check).*
 
 ### Performance
 

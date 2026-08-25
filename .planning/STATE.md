@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
 status: executing
-last_updated: "2026-08-25T14:25:59.784Z"
+last_updated: "2026-08-25T15:04:04.851Z"
 last_activity: 2026-08-25
 progress:
   total_phases: 9
   completed_phases: 1
-  total_plans: 19
-  completed_plans: 14
-  percent: 74
+  total_plans: 20
+  completed_plans: 15
+  percent: 11
 ---
 
 # Session State
@@ -20,8 +20,8 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-24)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 47 — Suite Trust & Supply Chain (13 plans)
-**Plans 01-08 of 13 executed** (2026-08-25) — 8 SUMMARYs on disk. Next: plan 09.
+**Current focus:** Phase 47 — Suite Trust & Supply Chain (14 plans — plan 14 was added to close D-47-06-A)
+**Plans 01-09 of 14 executed** (2026-08-25) — 9 SUMMARYs on disk. Next: plan 10.
 Phase 46 remains owed a `/gsd:verify-phase 46`.
 
 **47-06 closed SC-1 as amended — and found the defect class is NOT closed.** The margin moved by two
@@ -285,6 +285,7 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 | Phase 47 P05 | 34min | 3 tasks | 3 files |
 | Phase 47 P08 | 22min | 2 tasks | 0 files |
 | Phase 47 P06 | 51m | 2 tasks | 2 files |
+| Phase 47 P09 | 26min | 3 tasks | 7 files |
 
 ## Decisions
 
@@ -478,8 +479,12 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 - [Phase 47]: 47-05: SC-1b enforced by a parsed-AST taint sweep to a FIXPOINT — the fixpoint's necessity is proven by ABLATION (capped at one pass it misses the bound-variable ratio; a v1-style inline matcher measured 0 on a real file containing one)
 - [Phase 47]: 47-05: the timing gate's clock-call floor is Date.now ONLY, scoped to test files. performance.now is proven by fixture AND by a live control over src/app/api/health/route.ts (2 call sites, 0 expect) — reads a clock is not asserts on a clock delta
 - [Phase 47]: 47-05: a fourth AST gate should SHARE one corpus parse. Measured: typescript costs ~525 ms per worker PROCESS and 0.2 ms on re-import, so the import does not scale with gate count; the ~850 ms corpus parse does
-- [Phase ?]: 47-06: SC-1 (amended) closed on a measured margin table, not the ten-run check — toggle 49.6%->0.7% of hookTimeout, recursion 35.3%->0.4%, at a HARSHER measured load (runnable medians 3.75x/4.25x vs 47-02's 3.50x)
-- [Phase ?]: 47-06: the linearity row is a CATEGORY CHANGE not a smaller ratio — the deleted elapsed ratio still spans 11.44-55.85 (4.88x spread, 69.8% of its old threshold) under load while its counted replacement gives ONE integer (23730) across 400 repeats
+- [Phase 47]: 47-06: SC-1 (amended) closed on a measured margin table, not the ten-run check — toggle 49.6%->0.7% of hookTimeout, recursion 35.3%->0.4%, at a HARSHER measured load (runnable medians 3.75x/4.25x vs 47-02's 3.50x)
+- [Phase 47]: 47-06: the linearity row is a CATEGORY CHANGE not a smaller ratio — the deleted elapsed ratio still spans 11.44-55.85 (4.88x spread, 69.8% of its old threshold) under load while its counted replacement gives ONE integer (23730) across 400 repeats
+- [Phase 47]: 47-09: the audit policy is applied at PACKAGE severity, not per-advisory severity — 39 dispositions instead of 16, because nodemailer is high with 1 of 6 advisories individually high and next is high with 12 of 28; the per-advisory reading would leave 21 advisories undisposed behind a green gate
+- [Phase 47]: 47-09: MIN_ADVISORIES_PARSED is 3 against a measurement of 47 — the fully-remediated residual is 8, so any floor above 8 fatals on SUCCESS; empty-document detection is carried by MIN_PACKAGES_AUDITED plus a histogram reconciliation instead
+- [Phase 47]: 47-09: D-47-01-A CLOSED — overrides.vite defended by semver.subset(range, <8.0.0), observed red with the block deleted, with the range widened to ^8.0.0, and with the subset call itself unit-tested against a union range and *
+- [Phase 47]: 47-09: SEC-05 deliberately NOT marked complete — the advisory-triage half is discharged and the policy is stated, but .github/workflows/ci.yml has no audit step, so the required check has never gone red for an advisory (47-11 and 47-12 own that)
 
 ### Quick Tasks Completed
 
@@ -578,11 +583,12 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 
 ## Current Position
 
+- 2026-08-25: 47-09 complete -- SEC-05's decision half is discharged. AUDIT-POLICY.md (27,542 chars) at the repo root states the policy in prose including the three-trees limitation verbatim ("It is NOT evaluated against the production image"); audit-policy.json carries failOn [critical,high] plus 39 allowlist entries, EXACTLY 1:1 against a fresh npm audit's critical/high advisory set (two-way set difference empty), each with an evidenced reason (654-1377 chars), a reach (35 runtime / 4 build / 0 dev -- no dev-only acceptance was available) and an expiry (33 at 2026-09-24, 6 at 2026-11-23, with the two-horizon rule written down). scripts/audit-policy.mjs is 812 lines with ZERO dependencies, never branches on npm audit's exit code (which was 1 on every green run and is printed on line 2), and floors what it parses -- MIN_PACKAGES_AUDITED plus a histogram reconciliation that catches the emptied-vulnerabilities and deleted-total shapes 47-01 measured. `npm run security:audit` GREEN at exit 0, which is the precondition 47-12's red control depends on. ELEVEN falsifications observed red and recorded verbatim (7 doctored documents, an emptied failOn, a dev-only reason, a back-dated expiry, a deleted entry, a stale entry, a removed prose id, overrides.vite deleted and widened). D-47-01-A CLOSED. SEC-05 deliberately NOT marked complete: ci.yml still has no audit step. New SEC-47-A in BACKLOG.md -- src/lib/email/client.ts:20's unconditional tls.rejectUnauthorized:false. Suite 4845 -> 4897/32, RSC 8/8, tsc 0, lint 0 errors.
 - 2026-08-25: 47-07 complete -- in-range advisory fixes: crit+high 24 -> 4, critical 3 -> 0, total 36 -> 14; drizzle-orm 0.45.2 (SQL injection), Auth.js trio (all 3 criticals), fast-xml-parser removed; residual 4 handed to 47-08/47-09; 15 runtime packages moved so 47-08's rebuild is load-bearing
 - 2026-08-25: 47-06 complete -- SC-1 AFTER margin measured with 47-02's committed instrument at a HARSHER load than the BEFORE half (runnable medians 3.75x/4.25x vs 3.50x, peaks 9.00x/7.75x): toggle 49.6% -> 0.7% of hookTimeout (margin 2.02x -> 133.84x), recursion 35.3% -> 0.4% (2.83x -> 268.94x); linearity row closed as a CATEGORY CHANGE proven by the BEFORE instrument's own FATAL plus both sides measured at the same load (deleted ratio 11.44-55.85, 4.88x spread; counted replacement ONE integer 23730 across 400 repeats); SC-1b 0 and 0 from the gates; ten-run 10/10 IDENTICAL at 4853 with the +106 delta reconciled exactly and labelled a guard; differ floor re-proven red. BLOCKER D-47-06-A opened: npm test goes RED at >=3x, four assertions timed out in three files (up to 186.8% of testTimeout), the same import-cost defect in ~146 test BODIES against half the budget, ungated because 47-03's gate scans hooks only.
 
 Phase: 47 (Suite Trust & Supply Chain) — EXECUTING
-Plan: 8 of 13 complete (01, 02, 03, 04, 05, 06, 07, 08) — next unexecuted is 09
-Status: Ready to execute (BLOCKED for suite trust: D-47-06-A — npm test is RED at >=3x)
-Progress: [███████░░░] 74%
+Plan: 9 of 14 complete (01, 02, 03, 04, 05, 06, 07, 08, 09) — next unexecuted is 10
+Status: Executing
+Progress: [████████░░] 75%
 Last activity: 2026-08-25
