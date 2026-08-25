@@ -183,7 +183,11 @@ export const GHSA_PATTERN = /^GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/
 
 /** `expires` must be a bare calendar date. A full timestamp, `"never"`, or `"2026-13-40"` would
  *  each parse or fail in a different way, and an expiry the reader cannot compare at a glance is
- *  an expiry nobody revisits. */
+ *  an expiry nobody revisits.
+ *
+ *  This pattern is NOT a calendar check and must not be read as one: it admits `2026-02-31`, which
+ *  `Date.parse` then rolls over to 2026-03-03. `evaluatePolicy` round-trips the parse for exactly
+ *  that reason (WR-12). */
 export const EXPIRES_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 /**
@@ -617,8 +621,23 @@ export function evaluatePolicy(auditJson, policy, now = new Date()) {
       )
     } else {
       const expiresMs = Date.parse(`${expires}T00:00:00Z`)
-      if (!Number.isFinite(expiresMs)) {
-        problems.push(`${where} has an unparseable \`expires\`: ${JSON.stringify(expires)}.`)
+      // ROUND-TRIPPED, not trusted (WR-12). `EXPIRES_PATTERN` accepts any `\d{4}-\d{2}-\d{2}`, and
+      // `Date.parse` rejects month 00 and 13 but silently ROLLS OVER an out-of-range day:
+      // "2026-02-31" parses as 2026-03-03 and "2026-11-31" as 2026-12-01. So an impossible date was
+      // accepted as an expiry three days later than any reader believes it says, while the failure
+      // message quoted the impossible date back verbatim. Low impact on its own; it matters because
+      // `expires` is the field the whole acceptance mechanism rests on, and a policy field a reader
+      // cannot trust at a glance is the failure `expires` exists to prevent.
+      if (
+        !Number.isFinite(expiresMs) ||
+        new Date(expiresMs).toISOString().slice(0, 10) !== expires
+      ) {
+        problems.push(
+          `${where} has an impossible or unparseable \`expires\`: ${JSON.stringify(expires)}. ` +
+            `Date.parse ROLLS OVER an out-of-range day — "2026-02-31" becomes 2026-03-03 — so the ` +
+            `parse is round-tripped rather than trusted, and a date that does not survive the ` +
+            `round trip is not a date.`
+        )
       } else if (expiresMs <= nowMs) {
         problems.push(
           `${where} EXPIRED on ${expires}. Acceptance is a decision that gets revisited, not a ` +

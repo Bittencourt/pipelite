@@ -684,6 +684,17 @@ const NC_D_CASES = [
     expected: 1,
     fragments: [`more than ${MAX_EXPIRY_DAYS}`, "9999-12-31"],
   },
+  {
+    // WR-12. EXPIRES_PATTERN accepts any `\d{4}-\d{2}-\d{2}` and `Date.parse` was then trusted to
+    // reject the impossible ones. It rejects month 00 and 13 but silently ROLLS OVER an
+    // out-of-range day: 2026-02-31 parsed as 2026-03-03 and was reported "EXPIRED on 2026-02-31",
+    // quoting a date that does not exist. Written the other way — 2027-02-31 — it was a live
+    // acceptance three days past what any reader believed it said. The parse is now round-tripped.
+    label: "(g) an impossible calendar date — Date.parse rolls it over rather than rejecting it",
+    broken: fixturePolicy({ allowlist: [fixtureEntry({ expires: "2026-02-31" })] }),
+    expected: 1,
+    fragments: ["impossible or unparseable", "2026-02-31", "ROLLS OVER"],
+  },
 ] as const
 
 describe("NC-D: the policy checker can produce a red", () => {
@@ -700,7 +711,7 @@ describe("NC-D: the policy checker can produce a red", () => {
     }
   })
 
-  it("still carries all six cases, in order — deleting one is a red-going act", () => {
+  it("still carries all seven cases, in order — deleting one is a red-going act", () => {
     // The register's own floor. `it.each` over a table that lost an entry silently registers one
     // fewer test and reports a clean run; nothing above would notice. This is the same reasoning
     // as the `MIN_ALLOWLIST_ENTRIES` floor, applied to the controls themselves.
@@ -711,6 +722,7 @@ describe("NC-D: the policy checker can produce a red", () => {
       "(d)",
       "(e)",
       "(f)",
+      "(g)",
     ])
   })
 
