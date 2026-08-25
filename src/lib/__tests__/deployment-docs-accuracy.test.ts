@@ -645,6 +645,50 @@ describe("host-perspective docs print the host port, not the container port", ()
     ).toEqual([])
   })
 
+  it(".env.example's DATABASE_URL agrees with its own POSTGRES_* values", () => {
+    // THE INVARIANT THE COMPOSE CHANGE MADE LOAD-BEARING, AND NOTHING ENFORCED IT.
+    //
+    // The whole DEPLOY-02 argument is that `.env` carries the HOST string while
+    // docker-compose.yml builds the CONTAINER string from POSTGRES_USER / POSTGRES_PASSWORD /
+    // POSTGRES_DB, and that the two describe the same database from two sides. The scans
+    // above assert the URL's PORT and never its credentials, so a self-hoster who edits
+    // POSTGRES_PASSWORD and forgets the URL ten lines up gets a working container and a
+    // broken `npm run db:migrate` — the same class of failure DEPLOY-02 exists to remove,
+    // and the single most likely thing to rot on the next credential rename.
+    //
+    // `.env.example`'s own header instructs the reader to keep them "in AGREEMENT". This is
+    // that instruction, executed.
+    const value = (key: string): string => {
+      const line = read(".env.example")
+        .split("\n")
+        .find((l) => new RegExp(`^${key}=`).test(l))
+      if (line === undefined) {
+        // Anti-vacuity: a renamed or deleted key must fail here rather than compare
+        // undefined-to-undefined further down and report a clean pass.
+        throw new Error(`.env.example no longer declares ${key} at column 0`)
+      }
+      return line
+        .slice(key.length + 1)
+        .trim()
+        .replace(/^"(.*)"$/, "$1")
+        .replace(/^'(.*)'$/, "$1")
+    }
+
+    const url = new URL(value("DATABASE_URL"))
+    expect(url.username, "DATABASE_URL's user disagrees with POSTGRES_USER").toBe(
+      value("POSTGRES_USER"),
+    )
+    expect(
+      decodeURIComponent(url.password),
+      "DATABASE_URL's password disagrees with POSTGRES_PASSWORD — the container would " +
+        "connect and every host-side drizzle-kit command would fail authentication",
+    ).toBe(value("POSTGRES_PASSWORD"))
+    expect(
+      decodeURIComponent(url.pathname.slice(1)),
+      "DATABASE_URL's database name disagrees with POSTGRES_DB",
+    ).toBe(value("POSTGRES_DB"))
+  })
+
   it.each(OPERATOR_POSTGRES_DOCS)("%s deliberately still prints 5432", (file) => {
     // A live control on the exclusion list above, not a comment. These describe a Postgres the
     // operator installed themselves on its own default port; rewriting them to 5433 would be a
