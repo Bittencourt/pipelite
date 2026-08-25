@@ -39,6 +39,11 @@
  * precisely so the expiry semantics can be asserted deterministically without faking timers and
  * without writing a back-dated entry into the shipped file to prove the mechanism works.
  *
+ * `NC-D` below is those three collected into the single payload table 47-VALIDATION's
+ * negative-control row D asks for, plus the fourth axis they were missing (a malformed `ghsa`). It
+ * does not replace NC-1..NC-3 — they are organised by axis and carry more cases than row D names —
+ * it is the one place a reviewer asking "can this checker produce a red at all?" will look.
+ *
  * ── THE TWO ANCHORS, AND WHY THEY ARE ANCHORED THE WAY THEY ARE ────────────────────────────────
  *
  * `failOn` is asserted with an ARRAY EQUALITY, never with a containment matcher. An emptied
@@ -48,6 +53,21 @@
  * length, so quietly dropping `"dev-only"` from the forbidden set is exactly as loud as deleting
  * the check that reads it. Both anchors are themselves asserted from this file's own source below,
  * so weakening either one is a red-going act rather than a diff nobody reads.
+ *
+ * ── THE SC-1b PAIRING: THE TWO GATES THIS PHASE ADDED DO NOT FIGHT ─────────────────────────────
+ *
+ * The per-entry expiry assertion below is written as
+ * `expect(new Date(entry.expires).getTime()).toBeGreaterThan(Date.now())`, which is structurally
+ * identical to `src/app/admin/users/actions.test.ts:59` — and that expression is KNOWN_NEGATIVE
+ * fixture (c) of `suite-timing-hygiene.test.ts`'s SC-1b taint rule, which 47-05 shipped naming this
+ * file explicitly. That rule flags an `expect()` over a clock call which is the LEFT operand of a
+ * subtraction, or a division of two tainted values, and deliberately NOT a comparison against a
+ * bare clock call. If it is ever widened, THIS file becomes its first false positive, and the
+ * correct response is to fix the rule and add a fixture — never to exclude this path, and never to
+ * reword the assertion into something that asserts less. `suite-timing-hygiene.test.ts:1158-1169`
+ * asserts its own exclusion list is empty for exactly that reason. The pairing was verified from
+ * both sides when this gate landed: that gate holds the expression as a fixture, and its sweep was
+ * re-run over this file with an empty hit list.
  *
  * ── IF AN EXPIRY ASSERTION GOES RED ────────────────────────────────────────────────────────────
  *
@@ -530,6 +550,132 @@ describe("NC-3: an emptied or narrowed failOn is a failure", () => {
     )
     expect(problems.length).toBeGreaterThanOrEqual(1)
     expect(problems[0]).toContain("unexpected moderate")
+  })
+})
+
+/**
+ * NC-D — THE ONE TABLE THAT ANSWERS "CAN THIS CHECKER PRODUCE A RED AT ALL?"
+ *
+ * 47-VALIDATION's negative-control row D names three breakages — a `reason` of `"dev-only"`, a
+ * back-dated `expires`, an emptied `failOn` — and requires all three to be kept PERMANENTLY
+ * in-file, in the register `node-engines-floor.test.ts`'s NC-3 established, because a control that
+ * lives only in a plan's SUMMARY stops running the moment the plan is finished.
+ *
+ * NC-1, NC-2 and NC-3 above already carry all three, and more besides. This block does NOT
+ * re-implement them. It exists because those live in three separate `describe`s organised by AXIS,
+ * and the phase's central claim — that this gate is capable of failing — deserves one table that
+ * states it. It also adds the fourth axis the three were missing: a malformed `ghsa`. Until now
+ * only the PATTERN was unit-tested, never what `evaluatePolicy` does when it meets an entry keyed
+ * on a CVE id — an entry that covers nothing while reading as a live, reasoned exception.
+ *
+ * Every case goes through the SAME `evaluatePolicy` the script calls, with the INJECTED clock, so
+ * these controls exercise production logic rather than a re-implementation of it in a test, and no
+ * case rots into a time bomb. Each asserts an exact problem COUNT and the message fragments, so a
+ * change that started reporting a DIFFERENT problem for the same input goes red here instead of
+ * passing on a technicality.
+ *
+ * IF ONE OF THESE GOES RED, THE CHECKER CHANGED. Re-anchor the case onto what the evaluator now
+ * reports — never delete it. A control removed because it became inconvenient is indistinguishable,
+ * six months later, from a control that was never written.
+ */
+const NC_D_CASES = [
+  {
+    label: "(a) a forbidden bare reason — the exact string 47-CONTEXT prohibits",
+    broken: fixturePolicy({ allowlist: [fixtureEntry({ reason: "dev-only" })] }),
+    expected: 1,
+    fragments: ["FORBIDDEN_REASONS", "GHSA-aaaa-bbbb-cccc"],
+  },
+  {
+    label: "(b) a reason of `n/a` — forbidden, and below the length floor as well",
+    broken: fixturePolicy({ allowlist: [fixtureEntry({ reason: "n/a" })] }),
+    expected: 1,
+    fragments: ["FORBIDDEN_REASONS", '"n/a"'],
+  },
+  {
+    label: "(c) a back-dated expiry, decided by the injected clock and not the wall clock",
+    broken: fixturePolicy({ allowlist: [fixtureEntry({ expires: "2020-01-01" })] }),
+    expected: 1,
+    fragments: ["EXPIRED on 2020-01-01"],
+  },
+  {
+    // TWO problems, and the count is asserted exactly rather than `>= 1` on purpose. A malformed
+    // id is two distinct failures, not one: the entry is unusable, AND the advisory it was meant
+    // to cover now has no disposition at all. If a refactor ever reported only the first, this
+    // case goes red — which is the honest outcome, because the second is the one that matters.
+    label: "(d) a malformed GHSA id — an entry keyed on a CVE covers nothing",
+    broken: fixturePolicy({ allowlist: [fixtureEntry({ ghsa: "CVE-2024-1234" })] }),
+    expected: 2,
+    fragments: ["CVE-2024-1234", "NO recorded disposition"],
+  },
+  {
+    // Pitfall 9. With `failOn: []` the offender loop skips every advisory, so "no unallowlisted
+    // critical or high advisory" becomes trivially true and every other assertion in this file
+    // still passes. It is the cheapest possible way to silence this gate completely.
+    label: "(e) an emptied failOn — the gate's own configuration as the escape hatch",
+    broken: fixturePolicy({ failOn: [] }),
+    expected: 1,
+    fragments: ["missing critical, high"],
+  },
+] as const
+
+describe("NC-D: the policy checker can produce a red", () => {
+  it.each(NC_D_CASES)("rejects $label", ({ broken, expected, fragments }) => {
+    const problems = evaluatePolicy(SYNTHETIC_AUDIT, broken, NOW)
+    expect(
+      problems,
+      `the checker reported ${problems.length} problem(s) for a deliberately broken policy where ` +
+        `${expected} was expected. If the evaluator's reporting changed, re-anchor this case; if ` +
+        `it stopped reporting, this gate is no longer a gate. Reported: ${problems.join(" | ")}`
+    ).toHaveLength(expected)
+    for (const fragment of fragments) {
+      expect(problems.join(" | "), `no problem mentioned ${fragment}`).toContain(fragment)
+    }
+  })
+
+  it("still carries all five cases, in order — deleting one is a red-going act", () => {
+    // The register's own floor. `it.each` over a table that lost an entry silently registers one
+    // fewer test and reports a clean run; nothing above would notice. This is the same reasoning
+    // as the `MIN_ALLOWLIST_ENTRIES` floor, applied to the controls themselves.
+    expect(NC_D_CASES.map((entry) => entry.label.slice(0, 3))).toEqual([
+      "(a)",
+      "(b)",
+      "(c)",
+      "(d)",
+      "(e)",
+    ])
+  })
+
+  it("THE COMPLEMENT: accepts the VALID fixture unchanged", () => {
+    // Without this, a validator that rejected EVERYTHING would pass all five cases above and this
+    // whole block would certify a checker that could never let a legitimate policy through. It is
+    // the `node-engines-floor.test.ts:332-336` lesson, and it is not optional.
+    expect(
+      evaluatePolicy(SYNTHETIC_AUDIT, fixturePolicy(), NOW),
+      "the VALID fixture — the same entry every case above breaks in exactly one field — is being " +
+        "rejected. Every rejection above is therefore uninformative."
+    ).toEqual([])
+  })
+
+  it("THE EXPIRY COMPLEMENT: accepts the same entry expiring one day AFTER the clock", () => {
+    // The expiry axis needs its own complement, because "rejects 2020-01-01" is also satisfied by
+    // a check that rejects every date. Same entry, same injected clock, one day later.
+    expect(
+      evaluatePolicy(
+        SYNTHETIC_AUDIT,
+        fixturePolicy({ allowlist: [fixtureEntry({ expires: "2026-08-26" })] }),
+        NOW
+      ),
+      "the control does not distinguish an expired date from a future one — it rejects both"
+    ).toEqual([])
+  })
+
+  it("THE CROSS-FILE COMPLEMENT: accepts the SHIPPED policy against a clean audit document", () => {
+    // Fixtures prove the rules; this proves the rules admit the real file. Deterministic, because
+    // it uses the injected clock rather than the wall clock — the shipped expiries (2026-09-24 and
+    // 2026-11-23) are both after NOW, so this case does not rot on the day they run out. The
+    // time-dependent version of the same fact is asserted per entry against the real clock, which
+    // is where a red is the intended behaviour.
+    expect(evaluatePolicy({ vulnerabilities: {} }, policy(), NOW)).toEqual([])
   })
 })
 
