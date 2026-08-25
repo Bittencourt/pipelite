@@ -3,6 +3,7 @@
 **Gathered:** 2026-08-24
 **Status:** Ready for planning
 **Mode:** Smart discuss (autonomous) — infrastructure phase, minimal context
+**Amended:** 2026-08-24 — three decisions corrected by 46-RESEARCH.md §Corrections to CONTEXT.md (C1, C2, C3). Corrections are on *mechanism* only; no success criterion changed.
 
 <domain>
 ## Phase Boundary
@@ -22,23 +23,26 @@ behaviour; CI topology beyond wiring the new check in.
 <decisions>
 ## Implementation Decisions
 
-### Migration chain repair (DEPLOY-01)
-- The defect is concrete and singular: `import_sessions` is `ALTER`ed by `0006` and FK-referenced by
-  `0014`, but **no migration ever creates it**. A fresh `drizzle-kit migrate` dies `42P01` at `0006`
-  and, because drizzle wraps the run in a transaction, leaves **0 tables** behind.
-- **Recommended repair:** make the missing `CREATE TABLE` land *before* `0006` needs it, without
-  renumbering the existing chain. Prepending the `import_sessions` DDL to `0006` itself is the
-  preferred shape — drizzle's migrator skips already-applied entries by the journal `when` timestamp,
-  not by re-hashing the file, so an existing database is untouched while a fresh one is fixed. The
-  planner must **verify that skip semantics against the installed drizzle-orm version** before
-  committing to it; if the installed migrator does hash-verify, fall back to a renumber
-  (`0006`…`0019` → `0007`…`0020`, new `0006_create_import_sessions`) and update `_journal.json`
-  in the same commit.
-- The generated DDL must match what `src/db/schema/` declares for `importSessions` today, minus the
-  `user_id` column and FK that `0006` itself adds — verified column-by-column against
-  `pg_dump --schema-only` of the working database, not inferred from a clean exit.
-- Never hand-write index SQL into a migration (established Phase 33 rule) — indexes come from the
-  Drizzle schema files and `generate`.
+### Migration chain repair (DEPLOY-01) — AMENDED by RESEARCH C1
+
+- **AMENDED 2026-08-24.** The original text called the defect "concrete and singular". It is not.
+  `drizzle/0006_import-sessions-user-id.sql` is a hand-written two-line file (every other tag in the
+  chain is a drizzle-generated random name) and it lost **two** `CREATE TABLE`s, not one.
+  `drizzle/meta/0006_snapshot.json` jumps 18 → 20 tables while the SQL holds only two `ALTER`s.
+- **`import_sessions`** fails loudly: `42P01` at `0006`, whole run rolls back, 0 tables.
+- **`webhook_deliveries`** fails **silently**: no migration creates it and none references it, so
+  `drizzle-kit migrate` exits **0** and produces **35** tables where the live database has 36. Runtime
+  blast radius: `src/lib/api/webhooks/deliver.ts:61` does `db.insert(webhookDeliveries)` — on a
+  migration-built install every webhook delivery raises `42P01` behind a green migrate.
+- **Both tables must be restored.** This is precisely why SC-1 demands a table-by-table comparison
+  rather than a clean exit — a clean exit is exactly what the silent half already produces.
+- **Prepend is verified safe; no renumber.** `PgDialect.migrate`
+  (`node_modules/drizzle-orm/pg-core/dialect.js:44-71`) skips on `last.created_at < entry.when` and
+  **never compares the stored hash**; cross-checked against this deployment's ledger (12 rows,
+  high-water `1787441440793` ≫ `0006`'s `1774267074360`). The whole loop is one transaction,
+  confirming SC-1's rollback claim. The "0018 is already taken" renumber problem never arises.
+- The restored DDL must match what `src/db/schema/` declares, minus the `user_id` column and FK that
+  `0006` itself adds. Never hand-write index SQL into a migration (Phase 33 rule).
 
 ### Equivalence proof (DEPLOY-01 SC-1, SC-2)
 - Equivalence is proved by a **table-by-table, column-by-column diff** of two `pg_dump --schema-only`
@@ -59,25 +63,47 @@ behaviour; CI topology beyond wiring the new check in.
 - Prefer behavioural assertions over raw-token greps (standing v1.4 rule) — assert on the catalog
   (`information_schema` / `pg_dump` output) and on process exit codes, never on a grep of the SQL text.
 
-### Host connection string (DEPLOY-02)
-- `.env.local:1` points at `localhost:5432`; Postgres publishes on **5433**. Fix it to `5433`.
-- The docs' migrate command must succeed from the host **exactly as printed** — no inline
-  `DATABASE_URL` override, no port edit by the reader. Whatever deployment doc prints that command is
-  updated in the same commit so doc and reality agree.
-- Keep the Docker-internal `postgresql://…@postgres:5432` in `.env` untouched — that one is correct
-  inside the compose network. Both are correct; the failure was only ever the host-side file. Add a
-  short comment at each site saying which context it serves, so the next reader does not "fix" one
-  into the other.
+### Host connection string (DEPLOY-02) — AMENDED by RESEARCH C2
 
-### Node floor (DEPLOY-03)
-- All three `node:20-alpine` pins (`Dockerfile:2` deps, `:10` builder, `:74` runner) move together —
-  a fix that changes one is not a fix.
-- **The gate reads the declared floors rather than comparing against a number written into the gate.**
-  It walks `package-lock.json` `packages[*].engines.node`, resolves the highest floor any entry
-  declares, and asserts the container's actual `node --version` satisfies it. A dependency raising its
-  floor later must make this check go red, not go stale.
-- Target version: the lowest **Active LTS** major that satisfies the computed floor. Do not chase
-  Current. Pin the major only (`node:22-alpine` style), consistent with how the file pins today.
+- **AMENDED 2026-08-24. The original decision does not work and would have shipped a no-op.** It
+  locked "fix `.env.local:1` to 5433" and "keep `.env` untouched". Both halves are wrong for the goal.
+- **drizzle-kit never reads `.env.local`.** Its bundled dotenv resolves only `path.resolve(cwd, ".env")`
+  (`node_modules/drizzle-kit/bin.cjs:754`, invoked at `:93321`); the string `.env.local` does not occur
+  anywhere in `bin.cjs`. Measured: `npm run db:migrate` from the host fails `getaddrinfo EAI_AGAIN
+  postgres` — it resolved the **`.env`** value. Editing `.env.local` to 5433 changes nothing.
+- **Neither file is shippable.** `.gitignore:34` → `.env`, `:35` → `.env.local`; `git ls-files` returns
+  only `.env.example`, whose line 2 also prints `5432`. A self-hoster cloning this repo gets the wrong
+  port from the one file they can actually see.
+- **The correct edit is `.env.example` (tracked — the actual deliverable), `.env` (this machine), and
+  `docker-compose.yml`.** `.env.local` is not the target.
+- Host and container are already cleanly separated and must stay that way: `/app/.env` and
+  `/app/.env.local` do **not exist** inside `pipelite-app-1` (the runner stage copies only named
+  paths), so the entrypoint's `drizzle-kit migrate` reads the compose-injected `DATABASE_URL` and finds
+  no dotenv file. Nothing about a host-side `.env` can reach the container.
+- The docs' migrate command must still succeed from the host **exactly as printed** — no inline
+  `DATABASE_URL=` override (the workaround every phase since 33 has paid), no port edit by the reader.
+- Add a short comment at each site naming which context it serves, so the next reader does not "fix"
+  one into the other.
+
+### Node floor (DEPLOY-03) — AMENDED by RESEARCH C3
+
+- **AMENDED 2026-08-24.** BACKLOG 999.14 called this "latent rather than broken" and named `vite@7.3.1`
+  as the binding constraint. Both are stale. **Node 20 reached EOL on 2026-04-30** — this is a live
+  unpatched-runtime item, not a latent one. The binding floor has moved off vite onto
+  `@napi-rs/lzma-linux-x64-gnu` (`^22.20 || ^24.12 || >=25`), which arrives via `rollup` as an optional
+  dep with **no `libc` field**, so npm does not filter it out on alpine/musl.
+- Measured across all **834** declared `engines.node` ranges in `package-lock.json`:
+  v20.20.2 → **1 violation**; v22.11.0 → 3; v22.12.0 → 2; v22.23.2 → 0; **v24.19.0 → 0**.
+- **Target `node:24-alpine`** (resolves v24.19.0). It is the lowest **Active LTS** satisfying the
+  computed floor, it is major-only per this file's own pinning rule, and it equals what `ci.yml:52`
+  already pins — closing the container/CI divergence 999.14 named.
+- All three pins (`Dockerfile:2` deps, `:10` builder, `:74` runner) move together.
+- **The gate reads the declared floors, never a number written into the gate.** It walks
+  `package-lock.json` `packages[*].engines.node`, and asserts the container's actual `node --version`
+  satisfies every range with `semver.satisfies`. A major-only pin is NOT sufficient proof on its own —
+  lzma's `^24.12` term means "major 24" alone does not satisfy it; the gate must check the image's
+  *actual* resolved version.
+- `package.json` currently has **no** `engines` field. Recompute the floor at plan time and add one.
 
 ### Claude's Discretion
 - Exact script language (bash vs Node) for the migration gate, its file name, and the npm script name.
@@ -119,12 +145,40 @@ behaviour; CI topology beyond wiring the new check in.
   and it exists because v1.3 shipped six vacuous gates.
 - Fixing DEPLOY-02 also closes the `getaddrinfo EAI_AGAIN postgres` papercut that bit the live export
   test from the host.
-- Migration `0018` is already taken — any renumber must account for that.
+- Migration `0018` is already taken — but no renumber is needed (see the amended DEPLOY-01 block).
+
+### Same-commit traps found by research — both go red on a correct fix unless handled
+
+- `src/lib/__tests__/compose-uploads-persistence.test.ts:210` asserts the literal
+  `DATABASE_URL=${DATABASE_URL}` — the exact `docker-compose.yml` line the DEPLOY-02 fix touches. It is
+  an anti-vacuity anchor, so it must be **re-anchored to the new invariant, never deleted**.
+- `src/lib/mutations/__tests__/db-test-isolation.test.ts:137-141` asserts `ci.yml` contains neither
+  `services:` nor `postgres`. Adding a Postgres service to CI turns it red.
+
+### Resolved open questions (decided here so the plan does not stall)
+
+- **CI wiring: Route A.** Amend `db-test-isolation.test.ts` so it asserts the *real* invariant it was
+  protecting rather than the proxy string, and keep the from-zero migration check on the existing
+  required job. Route B (a separate non-blocking workflow) is rejected — a non-blocking gate is a
+  vacuous gate, which is the one thing this milestone exists to stop shipping.
+- **`Dockerfile:7` uses `npm install --legacy-peer-deps`, not `npm ci`.** The image tree is therefore
+  not lockfile-exact, which weakens the lockfile-derived floor gate's input. Note it and keep the gate
+  asserting against the container's **actual** `node --version`; converting to `npm ci` is out of scope
+  for this phase — record it as a deferred item.
+- **`scripts/dedup-db-test-setup.sh:22-30`** carries a 9-line comment asserting the chain cannot
+  replay. That becomes false on landing — reconcile the comment in the same commit. Converting the
+  script itself to use the repaired chain is deferred.
+- **Add an `engines` field to `package.json`**, computed from the lockfile floors at plan time.
 
 </specifics>
 
 <deferred>
 ## Deferred Ideas
+
+- Converting `Dockerfile:7` from `npm install --legacy-peer-deps` to `npm ci` so the image tree is
+  lockfile-exact.
+- Converting `scripts/dedup-db-test-setup.sh` to build its database from the repaired migration chain
+  instead of a `pg_dump --schema-only` (only its now-false comment is reconciled in this phase).
 
 - Broader CI restructuring beyond wiring in the new check — out of scope here.
 - Any schema change not strictly required to make the migration chain self-consistent.
