@@ -56,27 +56,29 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id } = await params
     const expand = parseExpand(req)
 
-    // Build with options based on expand
-    const withOptions: StageWith = expand.has("pipeline")
-      ? { pipeline: true as const }
-      : undefined
-
-    const stage = await db.query.stages.findFirst({
-      where: eq(stages.id, id),
-      with: withOptions,
-    }) as StageExpanded | undefined
+    // The rule this fix encodes (SEC-02): the AUTHORIZATION read is unconditional — the helper
+    // always loads the `pipeline` relation its predicate compares against — and only the RESPONSE
+    // PROJECTION below is caller-controlled. Previously the GET built its own `with` from
+    // `?expand=pipeline`, so the relation the check reads was loaded only when the caller asked for
+    // it, and the stage's legitimate owner got a 403. No input may decide what a predicate can see.
+    // PUT (:93) and DELETE (:149) already reach the check through this same call.
+    const { stage, owned } = await verifyStageOwnership(id, ctx.userId)
 
     if (!stage) {
       return Problems.notFound("Stage")
     }
 
-    // Verify ownership through pipeline
-    if (!stage.pipeline || stage.pipeline.ownerId !== ctx.userId || stage.pipeline.deletedAt) {
+    if (!owned) {
       return Problems.forbidden()
     }
 
     const serialized: Record<string, unknown> = serializeStage(stage)
-    
+
+    // LOAD-BEARING, not belt-and-braces: `stage.pipeline` is now ALWAYS populated, so this
+    // `expand.has("pipeline") &&` guard is the only thing preventing a bare GET from leaking the
+    // pipeline object. Held by SC-4c in
+    // src/app/api/v1/stages/[id]/__tests__/route.test.ts ("does not project the pipeline object
+    // when the caller did not ask to expand it"), and ablated in plan 48-03 Task 3.
     if (expand.has("pipeline") && stage.pipeline) {
       serialized.pipeline = serializePipeline(stage.pipeline)
     }
