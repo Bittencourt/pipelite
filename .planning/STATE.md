@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
-status: planning
-last_updated: "2026-08-25T01:30:27.926Z"
+status: active
+last_updated: "2026-08-25T02:10:00.000Z"
 last_activity: 2026-08-25
 progress:
-  total_phases: 0
+  total_phases: 9
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,17 +20,35 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 43 — type-safety-deployment-docs
-wave 1 of 4 merged. Phase 43 is still `Plans: TBD`.
+**Current focus:** v1.4 Debt Paydown — roadmap created, Phase 46 next.
+No plans written yet. Next command: `/gsd:plan-phase 46`.
 
 ## Position
 
-**No milestone active.** v1.3 "Foundation & CRM Depth" SHIPPED 2026-08-24 — 14 phases (32-45),
-190 plans, 42/42 requirements, audit `passed`, tagged `v1.3`.
+**v1.4 Debt Paydown is active.** Requirements defined (19) and roadmap created 2026-08-25:
+**9 phases, 46-54**, all 19 requirements mapped, zero orphans. Phase numbering continues from v1.3,
+which ended at Phase 45.
 
-Next: `/gsd:new-milestone` to scope v1.4.
+| Phase | Requirements |
+|---|---|
+| 46. Migration Chain & Toolchain Floor | DEPLOY-01, DEPLOY-02, DEPLOY-03 |
+| 47. Suite Trust & Supply Chain | QG-01, SEC-05 |
+| 48. REST API Authorization | SEC-01, SEC-02, QG-03 |
+| 49. Mutation-Layer Truth After Commit | SEC-04, DATA-01, DATA-02 |
+| 50. Export Authorization | SEC-03 |
+| 51. Board & List Volume | PERF-01, UX-03 |
+| 52. 320px Reachability & Modal Keyboard Ownership | UX-01, UX-02 |
+| 53. Workflow Field Picker & the Suppressed Hooks | WF-01, QG-02 |
+| 54. Pipedrive Stage Semantics | DATA-03 |
 
-Archive: [roadmap](milestones/v1.3-ROADMAP.md) · [requirements](milestones/v1.3-REQUIREMENTS.md) ·
+**Phase 46 is not negotiable as the first phase.** `DEPLOY-01` (a fresh database can be built from
+the migration chain) must hold before any later phase can verify itself against a clean database —
+that is exactly why Phase 39 had to provision its test database from a `pg_dump --schema-only`.
+
+Next: `/gsd:plan-phase 46`.
+
+v1.3 "Foundation & CRM Depth" SHIPPED 2026-08-24 — 14 phases (32-45), 190 plans, 42/42 requirements,
+audit `passed`, tagged `v1.3`. Archive: [roadmap](milestones/v1.3-ROADMAP.md) · [requirements](milestones/v1.3-REQUIREMENTS.md) ·
 [audit](milestones/v1.3-MILESTONE-AUDIT.md) · [integration](milestones/v1.3-INTEGRATION.md)
 
 **State at ship:** 4,605 passed / 32 skipped · RSC 8/8 · `tsc --noEmit` 0 · lint 0 errors ·
@@ -38,14 +56,39 @@ Archive: [roadmap](milestones/v1.3-ROADMAP.md) · [requirements](milestones/v1.3
 
 ## ► IF YOU ARE PICKING THIS UP COLD
 
-Read `.planning/MILESTONES.md`'s v1.3 entry first — it carries the seven open items and the one
-process lesson worth keeping. The two structural ones:
+Read `.planning/BACKLOG.md` — it is the **single register of record** and carries per-item measured
+evidence with file paths and line numbers for every v1.4 requirement. `.planning/ROADMAP.md` holds
+only the schedule. `.planning/MILESTONES.md`'s v1.3 "Known Gaps" list is **stale by construction**
+(it says seven items, none blocking; it was 19 items and one was a live authorization regression) —
+`PROJECT.md` § *What actually carried forward from v1.3* records the correction.
 
-- **Merge does not recalculate the survivor's own formula fields** (phases 39 × 34). Dormant while
-  zero `type='formula'` definitions exist; live the moment an admin adds one.
+**The one rule that applies to every v1.4 phase.** v1.3 shipped **six gates that could not fail** —
+a grep with a malformed bracket class, a credential grep matching its own file paths, count gates
+counting prose the plan ordered written, a `--build` that hit the layer cache, operator docs printing
+the same line for 0 or 20 migrations, and a 24-test suite CI never runs. None was a product bug;
+every one was a bug in the checking. **Break your own gate on purpose and watch it go red before you
+trust it.** Prefer behavioural assertions and call-site / parsed-structure checks over raw-token
+greps — the comment explaining a rule trips that rule's own grep gate (fifteen times across Phases
+37-38, once in reverse).
 
-- **`formatters-live.test.ts` never runs in CI.** 24 tests guarding the export path, skipped in every
-  normal run. The "4,605 passing" figure says nothing about it.
+**Three v1.4 traps that will silently break a gate if missed:**
+
+- `UX-02` / Phase 52: the failing assertion already exists as `test.fail()` at
+  `e2e/saved-views-320.spec.ts:980`. **Delete the marker in the same commit as the fix** or the suite
+  goes RED on success.
+- `UX-01` / Phase 52: `e2e/viewport-320.spec.ts` asserts only `scrollWidth <= clientWidth`. It must
+  gain a clickability assertion, or the fix ships green over a live defect — which is what Phase 45
+  did.
+- `DATA-02` / Phase 49: two plan 34-02 fixture assertions compare against the current create-response
+  shape and must be amended in the same commit.
+
+Plus the standing one: **any new locale key must be added to the matching `REQUIRED_*_KEYS` array in
+the same commit** — those contracts use an exact `toEqual`.
+
+**Two ordering constraints inside phases**, both because a rollback would be worse than the defect:
+`SEC-04`'s file-route fix precedes blob deletion (the route fix closes the exposure alone) and blob
+deletion runs POST-commit; `DATA-01` must run POST-commit because `recalculateFormulas` uses the
+module-level `db` and cannot take a `tx`.
 
 **Environment gotcha that cost this milestone two debugging detours:** `.env`'s `DATABASE_URL` is
 `postgresql://…@postgres:5432` — the Docker-internal hostname. From the HOST it fails with
@@ -275,6 +318,7 @@ process lesson worth keeping. The two structural ones:
 - Deferred v1.1 scope captured as backlog 2026-08-12: 999.1 formula reactivity, 999.2 bulk operations
 - Post-v1.2 codebase review 2026-08-13: 10 findings captured as backlog 999.3-999.12 (CI, indexes, notes timeline, audit log, dedup, saved views, trash/restore, workflow ops, observability, polish)
 - v1.3 roadmap created 2026-08-13: all 12 backlog items promoted into Phases 32-43, 37 requirements mapped, backlog now empty
+- v1.4 roadmap created 2026-08-25: 9 phases (46-54), all 19 seeded requirements mapped, no orphans, no research phase (every requirement already carries measured evidence with a file and line, so there was nothing to discover). Phases cut by shared blast radius and shared verification setup rather than by theme — a pure-remediation milestone has no capability to sequence, so the useful grouping is the one where one container rebuild and one suite run cover a whole phase. DEPLOY-01 forced into Phase 46; PERF-01 (Phase 51) deliberately sequenced ahead of the 320px e2e work (Phase 52) because it is the named amplifier of Playwright flakiness and those gates are untrustworthy until it lands. Three open decisions flagged rather than assumed: SEC-03's bound, DATA-02's create-response shape, DATA-03's won/lost signal
 - Phase 45 added 2026-08-18: Cross-Cutting UI Repair and UAT Closure. Not a feature phase — it collects the five app-wide defects found on 2026-08-18 when the outstanding Phase 36-38 human UAT was finally re-run in a real authenticated browser (header overflow at 320px, admin sidebar not collapsing, dark mode unreachable because no ThemeProvider is mounted, untranslated admin/dialog shell strings, and a bulk failure panel that claims records are still selected when they are not), plus the one deals-drag check no available tool can drive. Depends on nothing and can run in parallel with Phases 39-43. That same sweep took cross-phase UAT debt from 10 items to 1 and fixed regression G1 (commit c413198).
 
 ### Research Flags
@@ -331,11 +375,14 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 - 2026-08-18: 45-11 task 1 complete -- the phase's Docker rebuild landed and the e2e suite went 23/23. All 18 viewport pairs now measure scrollWidth 305 == clientWidth 305 (baseline 508 pt-BR / 526 es-ES on /admin/audit; 45-08 measured 518/537 RED; both now 305). Rebuild 1 turned 12 of 18 green including all three /admin/audit locales and the theme spec, and left 6 red on /deals and /activities. Three real layout defects were then found by measurement and fixed: non-wrapping page toolbars (412 and 356/425/430), a Radix Checkbox position:absolute bubble input whose offsetParent is <body> and so escaped the kanban board's overflow-x-auto (351, self-healing after ~2s once dnd-kit's transforms create a containing block), and -- beyond the spec's coverage -- the won/lost summary row with no scroll container at all (608 vs 305, permanent, on the one pipeline defining both stages). Four rebuilds paid against a budget of one. No assertion weakened, ignoreDefaultArgs still at 2 occurrences, ci.yml still at 0 occurrences of playwright, e2e/.auth clean, 0 fixture deals and 0 orphan stage-history rows left behind. SC-1/3/4/5 closed; SC-2's automated half closed and its human half PENDING.
 - 2026-08-18: 45-11 COMPLETE, and with it Phase 45 -- the visual checkpoint was APPROVED. Verified by an AGENT driving a real Chromium against the rebuilt image (not by the user personally, and not self-certified from source), reusing the plan's own storageState so no password was handled; the capture spec was temporary and e2e/ is back to exactly the three specs 45-08 created. Observed: the three theme rows exist and only after the menu opens, documentElement.className='dark' with body background lab(2.75381 0 0) on /organizations, /deals and /admin/audit, no light-mode island on any of the four required surfaces including an open Delete dialog, C-1's logout red readable on the dark popover, the admin drawer translated in all three locales (Close / Cerrar / Fechar -- which is the runtime proof that 45-04's common.close default reaches the Sheet, something no source gate could establish), the drawer navigating to /admin/users AND closing, and /admin/audit measuring 305/305 at all three locales through an independent path. Two NEW UAT debt items raised, both outside SC-1 and neither a Phase 45 regression: D-45-02/F-1 the fixed ShortcutsHint bar occluding 'Back to App' at 1280px and 'Guardar periodo de retencion' at 320px es-ES (vertical occlusion; Phase 38's h-40 sm:h-20 spacer is the likely remedy), and D-45-03/F-2 an UNCONFIRMED empty pipeline-select label on dark /deals, recorded for someone to confirm rather than asserted as broken.
 
+- 2026-08-25: v1.4 Debt Paydown roadmap created — 9 phases (46-54), 19/19 requirements mapped, zero orphans and zero duplicates. Numbering continued from Phase 45 rather than reset. Traceability written into REQUIREMENTS.md; ROADMAP.md keeps the shipped-milestone details blocks, the v1.3 progress table and the v1.4 seed section, with the v1.4 phase details and an active progress table added. Next: `/gsd:plan-phase 46`.
+
 - 2026-08-17: Phase 37 COMPLETE (15 plans, 6 waves) — Trash & Restore. `/trash` with four scoped tabs, `/admin/trash` retention (1..365, default 30, seeded as data, fail-closed with NO `?? 30`), restore + ordered transactional purge for all four CRM entities, three REST endpoints, and a daily pruner PROVEN running in the container (`[trash-prune] Starting with initial delay of 60s, ticking daily`, all six processors announcing from the merged-master build). Suite 1549 -> 1703 passing, typecheck 0, lint 0 errors throughout. Verified 4/4 success criteria plus a live browser walkthrough (8/10 UAT steps, both "deleted by" strings, manual tab activation, restore with children intact, purge detaching a live child with both audit rows). Code review: 1 critical + 9 warnings, all in-scope findings fixed; CR-01 deliberately scoped to correcting a false comment. The 320px check found and fixed a real tablist overflow defect. Autonomous run STOPPED here by user — phases 38-43 remain.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 46 — Migration Chain & Toolchain Floor (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-08-25 — Milestone v1.4 started
+Status: Roadmap created, awaiting `/gsd:plan-phase 46`
+Progress: 0/9 phases · 0 plans
+Last activity: 2026-08-25 — v1.4 roadmap created (9 phases 46-54, 19/19 requirements mapped)

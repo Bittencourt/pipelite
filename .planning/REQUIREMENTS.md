@@ -193,36 +193,60 @@ Which phases cover which requirements. Filled in during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DEPLOY-01 | TBD | Pending |
-| DEPLOY-02 | TBD | Pending |
-| DEPLOY-03 | TBD | Pending |
-| SEC-01 | TBD | Pending |
-| SEC-02 | TBD | Pending |
-| SEC-03 | TBD | Pending |
-| SEC-04 | TBD | Pending |
-| SEC-05 | TBD | Pending |
-| PERF-01 | TBD | Pending |
-| UX-01 | TBD | Pending |
-| UX-02 | TBD | Pending |
-| UX-03 | TBD | Pending |
-| DATA-01 | TBD | Pending |
-| DATA-02 | TBD | Pending |
-| DATA-03 | TBD | Pending |
-| WF-01 | TBD | Pending |
-| QG-01 | TBD | Pending |
-| QG-02 | TBD | Pending |
-| QG-03 | TBD | Pending |
+| DEPLOY-01 | Phase 46 | Pending |
+| DEPLOY-02 | Phase 46 | Pending |
+| DEPLOY-03 | Phase 46 | Pending |
+| QG-01 | Phase 47 | Pending |
+| SEC-05 | Phase 47 | Pending |
+| SEC-01 | Phase 48 | Pending |
+| SEC-02 | Phase 48 | Pending |
+| QG-03 | Phase 48 | Pending |
+| SEC-04 | Phase 49 | Pending |
+| DATA-01 | Phase 49 | Pending |
+| DATA-02 | Phase 49 | Pending |
+| SEC-03 | Phase 50 | Pending |
+| PERF-01 | Phase 51 | Pending |
+| UX-03 | Phase 51 | Pending |
+| UX-01 | Phase 52 | Pending |
+| UX-02 | Phase 52 | Pending |
+| WF-01 | Phase 53 | Pending |
+| QG-02 | Phase 53 | Pending |
+| DATA-03 | Phase 54 | Pending |
 
 **Coverage:**
 - v1.4 requirements: 19 total
-- Mapped to phases: 0 (roadmap not yet created)
-- Unmapped: 19 ⚠️
+- Mapped to phases: 19 ✓
+- Unmapped: 0
 
-**Sequencing constraint for the roadmapper.** `DEPLOY-01` should land first. Until a fresh database
-can be built from migrations, no later phase can verify itself against a clean database — which is
-exactly the position Phase 39 was in when it had to provision its test database from a
-`pg_dump --schema-only` instead. This mirrors v1.3's own "CI lands first" note, and for the same
-reason.
+**Phases (46-54).** Numbering continues from v1.3, which ended at Phase 45.
+
+| Phase | Goal | Requirements |
+|-------|------|--------------|
+| 46. Migration Chain & Toolchain Floor | A clone of this repo builds its own database, and the documented commands work from the host | DEPLOY-01, DEPLOY-02, DEPLOY-03 |
+| 47. Suite Trust & Supply Chain | A red run means a defect, and the project has a stated position on its own advisories | QG-01, SEC-05 |
+| 48. REST API Authorization | Every `/api/v1` route that touches a record authorizes the caller against that record | SEC-01, SEC-02, QG-03 |
+| 49. Mutation-Layer Truth After Commit | A purge removes the bytes, a merge leaves the survivor consistent, a create response matches a read | SEC-04, DATA-01, DATA-02 |
+| 50. Export Authorization | A non-admin cannot walk the customer table out through a filter that narrows nothing | SEC-03 |
+| 51. Board & List Volume | The busiest board opens without loading every deal, and list counts describe the table | PERF-01, UX-03 |
+| 52. 320px Reachability & Modal Keyboard Ownership | Every dialog's primary control is reachable at 320px, and Enter inside a modal stays inside it | UX-01, UX-02 |
+| 53. Workflow Field Picker & the Suppressed Hooks | Custom fields are selectable in a condition, and the hook suppressions are gone because the components are tested | WF-01, QG-02 |
+| 54. Pipedrive Stage Semantics | An imported stage carries the type the source describes, not a hardcoded default | DATA-03 |
+
+**Phases are cut by shared blast radius and shared verification setup, not by theme** — a
+pure-remediation milestone has no capability to sequence, so the grouping that matters is the one
+where a single container rebuild and a single suite run can cover the whole phase.
+
+**Sequencing constraint for the roadmapper.** `DEPLOY-01` should land first — **honoured: it is
+in Phase 46, the first phase.** Until a fresh database can be built from migrations, no later phase
+can verify itself against a clean database — which is exactly the position Phase 39 was in when it
+had to provision its test database from a `pg_dump --schema-only` instead. This mirrors v1.3's own
+"CI lands first" note, and for the same reason.
+
+**Three requirements carry an open decision that a plan must not assume.** `SEC-03` (minimum
+selectivity vs a lower non-admin cap vs restoring the admin gate), `DATA-02` (recompute-before-return
+vs canonical read, decided once for all four entities) and `DATA-03` (which Pipedrive signal
+determines won/lost). Each is flagged in its phase's detail section in `ROADMAP.md`.
 
 ---
 *Requirements defined: 2026-08-24*
+*Traceability filled in: 2026-08-25 — all 19 requirements mapped to Phases 46-54*
