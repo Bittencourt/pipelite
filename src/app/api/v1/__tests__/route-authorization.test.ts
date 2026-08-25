@@ -51,16 +51,19 @@
  * caller. A presence gate is structurally incapable of seeing that. Behavioural tests own it —
  * plans 48-03 and 48-06 — and verify-work must not over-read this file as covering it.
  *
- * ── SCOPE OF THIS PLAN (48-05) vs PLAN 48-08 ──────────────────────────────────────────────────
+ * ── HOW THIS FILE GOT HERE: 48-05 BUILT THE DETECTOR, 48-08 MADE IT A GATE ────────────────────
  *
- * This file, as shipped by plan 48-05, contains the detector, its fixture self-tests, the corpus
- * walk, the reach floors and the WR-11 token floors. It deliberately contains **no corpus offender
- * assertion and no exemption lists**: the four in-scope routes are still unfixed while this lands in
- * wave 1, so `expect(offenders).toEqual([])` would be red and asserting the pre-fix set would go red
- * the moment wave 1 merges. The pre-fix offender list is therefore LOGGED as this gate's RED-first
- * evidence, in an `it` that asserts only `MIN_ROUTE_FILES`. **A log line is not a gate.** Plan 48-08
- * deletes that `it`, adds the exemption lists as live controls, and replaces it with the array-form
- * `expect(offenders).toEqual([])`, plus the falsification controls that prove this gate can fail.
+ * Plan 48-05 (wave 1) shipped the detector, its fixture self-tests, the corpus walk, the reach
+ * floors and the WR-11 token floors — and deliberately NO offender assertion and no exemption
+ * lists, because the four in-scope routes were still unfixed alongside it and
+ * `expect(offenders).toEqual([])` would have been red on arrival. The pre-fix offender list was
+ * LOGGED instead, in an `it` whose only assertion was `MIN_ROUTE_FILES`. **A log line is not a
+ * gate**, and that was said out loud rather than left for a reader to discover.
+ *
+ * Plan 48-08 (wave 2) deleted that `it` and its `console.log`, added the four exemption lists as
+ * LIVE CONTROLS (section 0 and section 5), added rule R5, and replaced the log with the array-form
+ * `expect(GATE_OFFENDERS).toEqual([])` in section 6. Its falsification transcripts — a deleted
+ * predicate, a renamed detector, a new unauthorized handler — are in `48-08-SUMMARY.md`.
  *
  * ── PARSE, NEVER GREP ─────────────────────────────────────────────────────────────────────────
  *
@@ -82,8 +85,14 @@
 import { readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 
+import { getTableColumns } from "drizzle-orm"
 import ts from "typescript"
 import { describe, expect, it } from "vitest"
+
+// The REAL drizzle table objects, so `NO_OWNER_COLUMN_ROUTES`'s stated reason is checked against
+// the schema rather than against a comment. Importing `@/db/schema` pulls in table DEFINITIONS
+// only — `drizzle-orm/pg-core` builders — and never opens a connection.
+import { customFieldDefinitions, workflowTemplates } from "@/db/schema"
 
 const REPO_ROOT = process.cwd()
 
@@ -138,7 +147,11 @@ const MIN_WITH_API_AUTH_CALLS = 50
 
 /**
  * WR-11 token floors: the identifiers this detector MATCHES ON must still be FOUND in the corpus.
- * Measured `context.userId` **55**, `ctx.userId` **22**, owner-like property accesses **123**.
+ * Measured by plan 48-05, pre-fix: `context.userId` **55**, `ctx.userId` **22**, owner-like
+ * property accesses **123**. Re-measured by plan 48-08 after wave 1 merged: **55 / 28 / 130** —
+ * both movements are the four route fixes adding `ctx.userId` comparisons, and the floors below
+ * were deliberately NOT raised to the new numbers, for the same
+ * do-not-false-RED-on-consolidation reason as the four floors above.
  *
  * Phase 46's lesson, restated: a scan that never asserts its own search term still matches goes
  * green precisely when it breaks. If `context.userId` were renamed repo-wide and `IDENTITY_OBJECTS`
@@ -181,21 +194,21 @@ const IDENTITY_OBJECTS = new Set(["ctx", "context"])
  * Functions that perform the ownership check on a handler's behalf. A call to one of these that
  * RECEIVES an identity expression as an argument satisfies rule R3.
  *
- * Measured calls that receive an identity expression, at the time this gate was written:
- *   - `verifyStageOwnership`  2   (local to `stages/[id]/route.ts`)
- *   - `authorizeNoteMutation` 2   (local to the notes routes)
+ * Measured calls that receive an identity expression, re-counted after wave 1 merged:
+ *   - `verifyStageOwnership`  3   (local to `stages/[id]/route.ts`; was 2 before plan 48-03)
+ *   - `authorizeNoteMutation` 2   (`notes/[noteId]/route.ts`)
  *   - `authorizeAuditRead`    1   (local to `audit/route.ts`)
- *   - `resolveActorRole`      3   (imported)
+ *   - `resolveActorRole`      3   (imported, the three trash routes)
  *   - `getWorkflow`           4   (imported)
- *   - `ownedStagesPredicate`  **0 today, becoming 2 once plan 48-04 lands**
+ *   - `ownedStagesPredicate`  2   (was 0 before plan 48-04 landed)
  *
  * `getWorkflowTemplate` is DELIBERATELY ABSENT: measured **0** calls that receive an identity
  * argument, and the workflow-templates routes are exempt on a different ground entirely (their
- * schema table has no owner column). Including it would put a dead entry in this set, which plan
- * 48-08's live control — "every name here is actually reached" — would then fail on.
+ * schema table has no owner column). Including it would put a dead entry in this set — a rule that
+ * exempts nothing today and exempts anything sharing its name tomorrow.
  *
- * That live control is 48-08's, not this plan's. Until it exists, this set is asserted only
- * indirectly, by the negative fixtures N3 and N4.
+ * That is not left to a comment: the AUTHORIZERS reach control asserts every one of these six is
+ * called with an identity at least once, THROUGH `matchesR3` itself, so a dead entry goes red.
  */
 const AUTHORIZERS = new Set([
   "verifyStageOwnership",
@@ -205,6 +218,110 @@ const AUTHORIZERS = new Set([
   "getWorkflow",
   "ownedStagesPredicate",
 ])
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 0. THE EXEMPTIONS. FOUR CATEGORIES, ELEVEN PATHS, EVERY ONE OF THEM A LIVE CONTROL.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// An exclusion list is a LIVE CONTROL, never a comment. Each list below carries three things: a
+// written reason, an assertion that every path in it is still present in `ROUTE_FILES` (so a rename
+// cannot silently widen the carve-out), and an assertion that the excluded item STILL EXHIBITS the
+// property it was excluded for. The precedent is `deployment-docs-accuracy.test.ts:537-556`
+// (the named list with its reasoning) plus `:692-700` (the still-exhibits control) plus `:593-600`
+// (the disjointness assertion).
+//
+// The failure being defended against is the one this whole milestone exists to eliminate: a route
+// stops being reported because it was TOLD not to be, rather than because it is safe.
+
+/**
+ * DELEGATED — the four note collection routes, which export NO `FunctionDeclaration` at all.
+ *
+ * Each is seventeen lines that hand the entire GET and POST body to `noteCollectionHandlers`
+ * (`src/lib/api/notes-collection.ts`). Their authorization lives in that shared factory, which a
+ * single-file AST parse structurally cannot see, so this gate defers to it and asserts the target
+ * instead.
+ *
+ * ⚠ Record the number, because it is the anti-gate shape this milestone exists to eliminate: a
+ * `FunctionDeclaration`-only walker sees ZERO handlers in these four files, therefore zero
+ * offenders, therefore a permanently green sweep over eight live handlers with no exemption entry,
+ * no reason and no record. The detector plan 48-05 built sees them as **8 binding-form handlers**,
+ * and `MIN_BINDING_HANDLERS` floors that at 4.
+ */
+const DELEGATED_ROUTES = [
+  "src/app/api/v1/activities/[id]/notes/route.ts",
+  "src/app/api/v1/deals/[id]/notes/route.ts",
+  "src/app/api/v1/organizations/[id]/notes/route.ts",
+  "src/app/api/v1/people/[id]/notes/route.ts",
+] as const
+
+/**
+ * NO OWNER COLUMN — the underlying tables have no per-record owner, so there is no per-record
+ * ownership to check. `custom_field_definitions` is admin-managed schema metadata and
+ * `workflow_templates` is a read-mostly catalogue; neither row belongs to a user.
+ *
+ * The live control does not take that on faith: it reads the real drizzle table objects with
+ * `getTableColumns` and asserts neither exposes a column named in `OWNER_PROPS`. Adding an owner
+ * column to either table turns this exemption RED — which is the correct outcome, because at that
+ * moment the routes would need checks and the carve-out would have become a hole.
+ */
+const NO_OWNER_COLUMN_ROUTES = [
+  "src/app/api/v1/custom-field-definitions/[id]/route.ts",
+  "src/app/api/v1/custom-field-definitions/route.ts",
+  "src/app/api/v1/workflow-templates/[id]/route.ts",
+  "src/app/api/v1/workflow-templates/route.ts",
+] as const
+
+/**
+ * PUBLIC — `docs/route.ts` serves the OpenAPI document and is deliberately outside `withApiAuth`,
+ * so external tooling can discover the API. It reads a file off disk and no database row at all.
+ *
+ * The live control asserts it STILL has no `withApiAuth` wrapper. The two directions are covered by
+ * different mechanisms on purpose: a route that quietly LOSES the wrapper is caught by the general
+ * offender sweep, and `docs` quietly GAINING one — which would mean it stopped being public and the
+ * reason written here stopped being true — is caught here.
+ */
+const PUBLIC_ROUTES = ["src/app/api/v1/docs/route.ts"] as const
+
+/**
+ * ACCEPTED KNOWN — two real, measured, unscoped reads, deferred out of phase 48 as BACKLOG item
+ * **SEC-48-A**. Both read workflow-run records with no per-record ownership check whatsoever. They
+ * are the same defect class as SEC-01; they are simply in a different subsystem, and folding them
+ * in would widen a security fix past what one phase can verify.
+ *
+ * **An accepted hole with no name is indistinguishable from an oversight. This list is the name.**
+ *
+ * SEC-48-A's own text says: *"Run that gate against these two routes first; it should name them."*
+ * It does — see the live control, which asserts both are STILL FLAGGED by the detector. That
+ * inverts the usual polarity on purpose: when a later phase actually fixes SEC-48-A, this control
+ * goes RED and forces whoever fixed it to shrink this list. An accepted hole that quietly stops
+ * being a hole, and quietly stays on the list, is how a carve-out becomes permanent.
+ */
+const ACCEPTED_KNOWN_ROUTES = [
+  "src/app/api/v1/workflows/[id]/runs/route.ts",
+  "src/app/api/v1/workflows/[id]/runs/[runId]/route.ts",
+] as const
+
+/**
+ * Total exempt paths, matched **by path** against `ROUTE_FILES`. Measured: **11** — 4 delegated,
+ * 4 with no owner column, 1 public, 2 accepted-known.
+ *
+ * Pinned exactly rather than floored. Every other number in this file is a floor because the tree
+ * may legitimately grow; this one may not drift in EITHER direction without someone writing a
+ * reason, because each direction is a distinct failure. Up means the sweep silently narrowed; down
+ * means a carve-out was deleted without its route being fixed, and the offender assertion would
+ * then be doing the work of a `git blame`.
+ */
+const MIN_EXEMPT_MATCHED = 11
+
+/** The four lists flattened, for the offender computation and the disjointness assertion. */
+const EXEMPT_LISTS = [
+  { name: "DELEGATED_ROUTES", paths: DELEGATED_ROUTES },
+  { name: "NO_OWNER_COLUMN_ROUTES", paths: NO_OWNER_COLUMN_ROUTES },
+  { name: "PUBLIC_ROUTES", paths: PUBLIC_ROUTES },
+  { name: "ACCEPTED_KNOWN_ROUTES", paths: ACCEPTED_KNOWN_ROUTES },
+] as const
+
+const ALL_EXEMPT_PATHS: readonly string[] = EXEMPT_LISTS.flatMap((list) => [...list.paths])
 
 /** Which syntactic shape an exported handler takes. */
 export type HandlerForm = "declaration" | "binding"
@@ -950,7 +1067,29 @@ const TOTAL_OWNER_LIKE_ACCESSES = CORPUS.reduce(
   (sum, entry) => sum + entry.counters.ownerLikeAccesses,
   0
 )
-const CORPUS_OFFENDERS = CORPUS.flatMap((entry) => entry.offenders)
+/**
+ * Every offender the DETECTOR produces, before a single exemption is applied.
+ *
+ * Kept separate from the gated list on purpose. `ACCEPTED_KNOWN_ROUTES`'s live control reads THIS
+ * one, because it must assert that the two SEC-48-A routes are still flagged — an assertion that
+ * would be unsatisfiable against a list those routes have already been subtracted from.
+ *
+ * Measured after wave 1 merged: **13** — the 1 `activities` POST that rule R5 resolves below, 5
+ * `custom-field-definitions`, 1 `docs`, 4 `workflow-templates` and the 2 `workflows/[id]/runs`.
+ * Before wave 1 it was 17: the three `activities/[id]` verbs and the `activities` list GET dropped
+ * out when plans 48-01 and 48-02 fixed them, which is this detector observing its own subject
+ * being repaired.
+ */
+const RAW_OFFENDERS = CORPUS.flatMap((entry) => entry.offenders)
+
+/** The scanned corpus entry for a repo-relative path. Throws rather than returning a silent hole. */
+function corpusEntry(file: string): (typeof CORPUS)[number] {
+  const entry = CORPUS.find((candidate) => candidate.file === file)
+  if (entry === undefined) {
+    throw new Error(`${file} is not in the ${CORPUS.length}-file /api/v1 corpus`)
+  }
+  return entry
+}
 
 describe("the sweep reaches the tree it claims to scan", () => {
   it(`enumerates at least ${MIN_ROUTE_FILES} route files under ${API_ROOT}/`, () => {
@@ -1049,37 +1188,236 @@ describe("the gate does not sweep itself, and that is structural rather than an 
     expect(ROUTE_FILES).not.toContain(GATE_PATH)
     expect(ROUTE_FILES.some((file) => file.includes("__tests__"))).toBe(false)
   })
+
+  it("is NOT named by any of the four exemption lists", () => {
+    // The second half of the SAME single mitigation, not a second one. The filename predicate is
+    // what keeps this file out of the sweep; this asserts nobody has quietly added a BACKUP reason.
+    //
+    // If this file ever appeared in a carve-out list, the mitigation would stop being one thing and
+    // become two, and there would be no way to tell which of them was doing the work — so a later
+    // change to the filename predicate could silently start relying on the carve-out instead.
+    for (const list of EXEMPT_LISTS) {
+      expect(
+        list.paths as readonly string[],
+        `${GATE_PATH} must not appear in ${list.name}. The corpus predicate ` +
+          `\`entry.name === "route.ts"\` is the SINGLE load-bearing mitigation against ` +
+          `self-collision. A carve-out entry here would be a second, redundant, unprovable one.`
+      ).not.toContain(GATE_PATH)
+    }
+  })
 })
 
-describe("PRE-FIX OBSERVATION — plan 48-05 wave 1", () => {
-  /**
-   * ⚠ TEMPORARY OBSERVATION SLOT. THIS `it` IS NOT A GATE.
-   *
-   * Its only assertion is the `MIN_ROUTE_FILES` floor. The offender list is PRINTED, not asserted,
-   * and a log line is not a gate — that is deliberate and it is stated here so no reader mistakes
-   * the console output for a control.
-   *
-   * Why it exists: this file lands in wave 1, alongside plans 48-01 through 48-04, which are fixing
-   * four of the routes below. `expect(CORPUS_OFFENDERS).toEqual([])` would be red today, and
-   * asserting the pre-fix set exactly would go red the moment those four plans merge. So wave 1
-   * records the RED-first evidence — the direct answer to SEC-48-B, which measured 5237 passing
-   * tests failing to notice three deleted ownership predicates — and wave 2 turns it into a gate.
-   *
-   * **PLAN 48-08 DELETES THIS `it`**, adds the four exemption lists as live controls, and replaces
-   * it with the array-form `expect(CORPUS_OFFENDERS).toEqual([])` plus the falsification controls
-   * that prove this gate can fail.
-   */
-  it("records the offender list the detector produces today", () => {
-    console.log(
-      `\n[48-05] ${CORPUS_OFFENDERS.length} unauthorized /api/v1 handlers, pre-fix, no exemptions:\n` +
-        CORPUS_OFFENDERS.map((offender) => `  ${offender}`).join("\n") +
-        `\n[48-05] corpus: ${ROUTE_FILES.length} route files, ` +
-        `${TOTAL_DECLARATION_HANDLERS} declaration-form + ${TOTAL_BINDING_HANDLERS} binding-form ` +
-        `handlers, ${TOTAL_WITH_API_AUTH_CALLS} withApiAuth calls, ` +
-        `${TOTAL_IDENTITY_HITS.context} context.userId + ${TOTAL_IDENTITY_HITS.ctx} ctx.userId, ` +
-        `${TOTAL_OWNER_LIKE_ACCESSES} owner-like accesses\n`
-    )
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 5. THE EXEMPTIONS, AS LIVE CONTROLS.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// Plan 48-05 shipped this file with a TEMPORARY observation `it` that printed the pre-fix offender
+// list and asserted only `MIN_ROUTE_FILES`, because the four in-scope routes were still unfixed in
+// wave 1 and a real assertion would have been red on arrival. **A log line is not a gate.** Plan
+// 48-08 deleted that `it` and its `console.log`; what follows, plus the offender assertion in
+// section 6, is what replaced it.
 
-    expect(ROUTE_FILES.length).toBeGreaterThanOrEqual(MIN_ROUTE_FILES)
+describe("every exemption is a live control, not a comment", () => {
+  it(`matches exactly ${MIN_EXEMPT_MATCHED} exempt paths against the real corpus`, () => {
+    // Matched BY PATH against the enumerated corpus, so a carve-out entry for a file that no longer
+    // exists — a rename, a consolidation, a deletion — cannot sit in this file forever looking like
+    // it still protects something. Every missing path is reported by name rather than as a count.
+    const missing = ALL_EXEMPT_PATHS.filter((exempt) => !ROUTE_FILES.includes(exempt))
+    expect(
+      missing,
+      `these exempt paths are not in the ${ROUTE_FILES.length}-file corpus. An exemption naming a ` +
+        `path that no longer exists is dead weight, and the route it was written for may have been ` +
+        `renamed out from under this gate — which widens the carve-out silently. Re-point or delete.`
+    ).toEqual([])
+
+    expect(
+      ALL_EXEMPT_PATHS.length,
+      `the four exemption lists total ${ALL_EXEMPT_PATHS.length} paths, measured 11 ` +
+        `(4 delegated + 4 no-owner-column + 1 public + 2 accepted-known). Pinned in BOTH ` +
+        `directions: up means the sweep silently narrowed, down means a carve-out was deleted ` +
+        `without its route being fixed.`
+    ).toBe(MIN_EXEMPT_MATCHED)
+  })
+
+  it("keeps the four exemption lists pairwise disjoint", () => {
+    // A path in two lists would be justified by two different reasons at once, and each live
+    // control would then be asserting a different thing about the same file. That is the kind of
+    // contradiction that gets "resolved" by deleting an assertion.
+    const overlaps: string[] = []
+    for (let i = 0; i < EXEMPT_LISTS.length; i += 1) {
+      for (let j = i + 1; j < EXEMPT_LISTS.length; j += 1) {
+        const left = EXEMPT_LISTS[i]
+        const right = EXEMPT_LISTS[j]
+        for (const candidate of left.paths) {
+          if ((right.paths as readonly string[]).includes(candidate)) {
+            overlaps.push(`${candidate} is in both ${left.name} and ${right.name}`)
+          }
+        }
+      }
+    }
+    expect(overlaps).toEqual([])
+  })
+
+  it.each(DELEGATED_ROUTES)("DELEGATED: %s still delegates wholesale, and never inlines", (file) => {
+    // Half one of the control. If a rewrite inlines a handler back into one of these four files,
+    // the file stops being a pure delegation and this goes RED — at which point the inlined body
+    // needs its own check and the exemption needs deleting.
+    const entry = corpusEntry(file)
+    expect(
+      entry.counters.declarationHandlers,
+      `${file} now exports a FunctionDeclaration handler. It was exempt on the grounds that it ` +
+        `exports NONE and delegates wholesale; an inlined body authorizes nothing on its own and ` +
+        `must be swept, so remove this path from DELEGATED_ROUTES.`
+    ).toBe(0)
+    expect(entry.counters.bindingHandlers).toBeGreaterThan(0)
+    for (const handler of entry.handlers) {
+      expect(
+        handler.delegatedTo,
+        `${file}'s ${handler.verb} no longer delegates to noteCollectionHandlers`
+      ).toBe("noteCollectionHandlers")
+    }
+  })
+
+  it("DELEGATED: the delegation target still authorizes", () => {
+    // Half two. The four files above are exempt because something else does the work; this asserts
+    // that something else still does it. Scanned with the SAME `scanSource` the corpus uses, so a
+    // detector regression cannot make this pass by finding nothing.
+    const target = "src/lib/api/notes-collection.ts"
+    const result = scanSource(target, readRepoFile(target))
+
+    expect(
+      result.counters.withApiAuthCalls,
+      `${target} contains ${result.counters.withApiAuthCalls} withApiAuth calls, measured 2 — one ` +
+        `per handler it manufactures. Eight /api/v1 handlers are exempt from this sweep on the ` +
+        `grounds that this factory authenticates them.`
+    ).toBeGreaterThanOrEqual(2)
+
+    const identityHits = result.counters.identityHits.ctx + result.counters.identityHits.context
+    expect(
+      identityHits,
+      `${target} reaches an identity expression ${identityHits} times, measured 1 — ` +
+        `\`authorId: context.userId\`, which is what stops a key holder forging attribution to ` +
+        `another user. If this fell to zero the factory stopped constraining by caller identity ` +
+        `and the eight handlers it serves are unauthorized.`
+    ).toBeGreaterThanOrEqual(1)
+  })
+
+  it.each([
+    { label: "customFieldDefinitions", table: customFieldDefinitions },
+    { label: "workflowTemplates", table: workflowTemplates },
+  ])("NO OWNER COLUMN: the $label table still has no owner column", ({ label, table }) => {
+    // Read off the REAL drizzle table object, not off a comment. Adding an owner column to either
+    // table turns this exemption red — correctly, because at that moment the four routes carved out
+    // on this ground acquire per-record ownership and need checks.
+    const columns = Object.keys(getTableColumns(table))
+    const ownerish = columns.filter((column) => OWNER_PROPS.has(column))
+    expect(
+      ownerish,
+      `${label} now has ${ownerish.join(", ")}. The four routes over this table are exempt from ` +
+        `the ownership sweep precisely because its rows belong to nobody. They now belong to ` +
+        `someone: remove the paths from NO_OWNER_COLUMN_ROUTES and add real checks.`
+    ).toEqual([])
+    expect(columns.length, `${label} parsed to zero columns`).toBeGreaterThan(0)
+  })
+
+  it.each(PUBLIC_ROUTES)("PUBLIC: %s is still deliberately outside withApiAuth", (file) => {
+    const entry = corpusEntry(file)
+    expect(entry.handlers.length, `${file} exports no handler at all`).toBeGreaterThan(0)
+    for (const handler of entry.handlers) {
+      expect(
+        handler.withApiAuthSeen,
+        `${file}'s ${handler.verb} now calls withApiAuth. It is exempt from the ownership sweep on ` +
+          `the grounds that it is PUBLIC — it serves the OpenAPI document to external tooling and ` +
+          `reads no database row. If it is authenticated now, that reason stopped being true.`
+      ).toBe(false)
+    }
+    expect(entry.counters.withApiAuthCalls).toBe(0)
+  })
+
+  it.each(ACCEPTED_KNOWN_ROUTES)("ACCEPTED KNOWN: %s is STILL an unscoped read (SEC-48-A)", (file) => {
+    // ⚠ INVERTED POLARITY, DELIBERATELY. Every other control here asserts that a reason to be
+    // exempt still holds. This one asserts that the HOLE still exists.
+    //
+    // SEC-48-A says: "Run that gate against these two routes first; it should name them." It does.
+    // When a later phase fixes them, this goes RED and forces the list to shrink — which is the
+    // point. An accepted hole that quietly stops being a hole, and quietly stays on the list, is
+    // how a deferral becomes a permanent carve-out nobody can justify.
+    const flagged = RAW_OFFENDERS.filter((offender) => offender.startsWith(`${file}:`))
+    expect(
+      flagged.length,
+      `${file} is no longer flagged by the detector. Either it was FIXED — in which case delete ` +
+        `it from ACCEPTED_KNOWN_ROUTES, close SEC-48-A in BACKLOG.md and let the offender sweep ` +
+        `cover it — or the DETECTOR regressed and stopped seeing it, which is worse.`
+    ).toBeGreaterThan(0)
+  })
+
+  it("counts the accepted-known holes as exactly 2", () => {
+    // Named AND counted. "Some workflow routes are unscoped" is a sentence; "these two, and only
+    // these two" is a control.
+    expect(ACCEPTED_KNOWN_ROUTES.length).toBe(2)
+  })
+})
+
+describe("every name in AUTHORIZERS is actually reached by the corpus", () => {
+  /**
+   * `AUTHORIZERS` is the only rule that exempts a handler by NAME rather than by shape: R3 accepts
+   * any call to one of these six as long as it receives the caller identity. A dead entry is
+   * therefore a rule that silently covers nothing while looking like it covers something — and the
+   * day someone writes a helper with the same name, it starts exempting for free.
+   *
+   * Measured across the corpus after this phase's fixes, by an independent AST count:
+   *   verifyStageOwnership  3   stages/[id]/route.ts:65, :95, :151
+   *   authorizeNoteMutation 2   notes/[noteId]/route.ts:75, :134
+   *   authorizeAuditRead    1   audit/route.ts:150
+   *   resolveActorRole      3   trash/[type]/[id]/restore:98, trash/[type]/[id]:91, trash:222
+   *   getWorkflow           4   workflows/[id]:29, :68, :93, workflows/[id]/run:24
+   *   ownedStagesPredicate  2   stages/route.ts:62, :73   (0 before plan 48-04 landed)
+   *
+   * `getWorkflowTemplate` is DELIBERATELY ABSENT from `AUTHORIZERS`: measured 0 calls receiving an
+   * identity argument. It would fail this control on arrival, which is exactly why it is not there.
+   */
+  const AUTHORIZER_CALLS = ((): Map<string, number> => {
+    const counts = new Map<string, number>()
+    for (const name of AUTHORIZERS) counts.set(name, 0)
+
+    for (const file of ROUTE_FILES) {
+      const src = ts.createSourceFile(
+        file,
+        readRepoFile(file),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS
+      )
+      const visit = (node: ts.Node): void => {
+        if (matchesR3(node) && ts.isCallExpression(node)) {
+          const callee = calleeName(node.expression)
+          if (callee !== null) counts.set(callee, (counts.get(callee) ?? 0) + 1)
+        }
+        ts.forEachChild(node, visit)
+      }
+      ts.forEachChild(src, visit)
+    }
+    return counts
+  })()
+
+  it.each([...AUTHORIZERS])("%s is called with the caller identity at least once", (name) => {
+    expect(
+      AUTHORIZER_CALLS.get(name) ?? 0,
+      `\`${name}\` is in AUTHORIZERS but no /api/v1 route calls it with ctx.userId or ` +
+        `context.userId. A dead entry in this set exempts nothing today and exempts anything ` +
+        `sharing its name tomorrow. Delete it, or fix the caller that stopped passing the identity.`
+    ).toBeGreaterThanOrEqual(1)
+  })
+
+  it("reaches every authorizer through R3 itself, not through a parallel counter", () => {
+    // The counts above go through `matchesR3` — the same predicate the sweep uses. A regression in
+    // R3 makes this control red rather than making it agree with a broken rule.
+    const total = [...AUTHORIZER_CALLS.values()].reduce((sum, n) => sum + n, 0)
+    expect(
+      total,
+      `R3 fired ${total} times across the corpus, measured 15 (3+2+1+3+4+2). A collapse here means ` +
+        `delegation stopped being recognised and nine correctly-authorized handlers are about to ` +
+        `be reported as offenders.`
+    ).toBeGreaterThanOrEqual(12)
   })
 })
