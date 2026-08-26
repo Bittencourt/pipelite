@@ -1199,4 +1199,177 @@ describe("CRM action handler", () => {
       expect(source.match(/ownerColumn: \w+\.ownerId/g) ?? []).toHaveLength(4)
     })
   })
+
+  /* -----------------------------------------------------------------------
+   * WR-12 — the three `if (!x) throw` guards the CR-02 design leans on as its
+   * backstop for an unregistered entity, which were not the guards the header said
+   * they were.
+   * -------------------------------------------------------------------- */
+
+  describe("WR-12 — the runtime backstop is not satisfied by a prototype key", () => {
+    /*
+     * `mutationMap` and `lookupDefs` were object literals, so `mutationMap[entity]` and
+     * `lookupDefs[entity]` walked `Object.prototype`. With `entity: "constructor"`:
+     *
+     *   - `mutationMap["constructor"]` was the `Object` constructor — truthy, so
+     *     `if (!mutations) throw` did NOT fire;
+     *   - `mutations["create"]` was then `Object.create` — truthy, so the operation guard did not
+     *     fire either, and the handler CALLED it. `res.success` on a fresh object is `undefined`,
+     *     so the caller got the generic "CRM create failed";
+     *   - `def.fields["constructor"]` was `Object.prototype.constructor` — truthy, so the
+     *     "Unsupported lookup field" throw did not fire and an arbitrary string became a lookup
+     *     column.
+     *
+     * No authorization impact: every branch still failed closed, which is why this was a WARNING.
+     * What was wrong was the CLAIM that these three `if (!x) throw` guards are the backstop the
+     * CR-02 header says they are. All three reads are now `Map.get`, and `operation` is checked
+     * against a closed list rather than used as an index.
+     *
+     * MEASURED RED against the object-literal version, and ONE OF THE REVIEW'S OWN CLAIMS IS
+     * CORRECTED BY THE MEASUREMENT — recorded here rather than quietly matched to whatever passed:
+     *
+     *     ❯ src/lib/execution/actions/__tests__/crm.test.ts (46 tests | 3 failed)
+     *         × `entity: "constructor"` on CREATE …
+     *             expected … 'Unknown CRM entity type: constructor' but got 'CRM create failed'
+     *         × `entity: "constructor"` on UPDATE …
+     *             expected … 'Unknown CRM entity type: constructor' but got 'Unknown CRM operation: update'
+     *         × `lookupField: "constructor"` …
+     *             promise resolved "{ output: { success: true, …(2) } }" instead of rejecting
+     *
+     * WR-12 states that `entity: "constructor", operation: "update"` reached
+     * `db.select({id: undefined}).from(undefined)` and surfaced an unmapped driver TypeError. IT
+     * DID NOT. `typeof Object.update === "undefined"` (and so is `Object.delete`), so the operation
+     * guard fired first and produced `Unknown CRM operation: update` — a MAPPED error, just one
+     * that blames the wrong field: the operation was valid and the entity was not. Only `create`
+     * slipped both guards, because `Object.create` is the one of the three that exists. The finding
+     * is real and the third cell is the strongest of them — a truthy prototype value became a
+     * lookup column and the update SUCCEEDED — but the update-path stack trace it describes is not
+     * reproducible and is not claimed here.
+     */
+
+    it("`entity: \"constructor\"` on CREATE fails closed with the INTENDED message, not a generic one", async () => {
+      await expect(
+        executeAction(
+          "crm_action",
+          {
+            actionType: "crm_action",
+            entity: "constructor",
+            operation: "create",
+            fieldMapping: { title: "x" },
+          },
+          makeContext(),
+          "run-proto"
+        )
+      ).rejects.toThrow("Unknown CRM entity type: constructor")
+
+      // And it never reached the mutation layer, which is the half a message assertion alone
+      // would not cover.
+      expect(mockCreateDeal).not.toHaveBeenCalled()
+      expect(mockCreateActivity).not.toHaveBeenCalled()
+    })
+
+    it("`entity: \"constructor\"` on UPDATE names the ENTITY, not the operation", async () => {
+      await expect(
+        executeAction(
+          "crm_action",
+          {
+            actionType: "crm_action",
+            entity: "constructor",
+            operation: "update",
+            fieldMapping: {},
+            targetId: "x",
+          },
+          makeContext(),
+          "run-proto"
+        )
+      ).rejects.toThrow("Unknown CRM entity type: constructor")
+
+      expect(mockUpdateDeal).not.toHaveBeenCalled()
+    })
+
+    it("`operation: \"constructor\"` is refused rather than resolving to `Object.create`", async () => {
+      await expect(
+        executeAction(
+          "crm_action",
+          {
+            actionType: "crm_action",
+            entity: "deal",
+            operation: "constructor",
+            fieldMapping: { title: "x" },
+          },
+          makeContext(),
+          "run-proto"
+        )
+      ).rejects.toThrow("Unknown CRM operation: constructor")
+
+      expect(mockCreateDeal).not.toHaveBeenCalled()
+    })
+
+    it("`lookupField: \"constructor\"` is refused rather than resolving off the prototype", async () => {
+      await expect(
+        executeAction(
+          "crm_action",
+          {
+            actionType: "crm_action",
+            entity: "deal",
+            operation: "update",
+            fieldMapping: {},
+            lookupField: "constructor",
+            lookupValue: "%",
+          },
+          makeContext(),
+          "run-proto"
+        )
+      ).rejects.toThrow("Unsupported lookup field 'constructor' for entity 'deal'")
+
+      expect(mockUpdateDeal).not.toHaveBeenCalled()
+    })
+
+    it("THE ANTI-VACUITY ANCHOR: the four real entities and three real operations still dispatch", async () => {
+      // Without this, every cell above is satisfied by a handler that refuses every entity and
+      // every operation — which is what a `Map` built from the wrong source would produce.
+      mockUpdateDeal.mockResolvedValue({ success: true })
+      mockUpdatePerson.mockResolvedValue({ success: true })
+      mockUpdateOrganization.mockResolvedValue({ success: true })
+      mockUpdateActivity.mockResolvedValue({ success: true })
+
+      for (const entity of ["deal", "person", "organization", "activity"]) {
+        const result = await executeAction(
+          "crm_action",
+          {
+            actionType: "crm_action",
+            entity,
+            operation: "update",
+            fieldMapping: { notes: "ok" },
+            targetId: "target-owned-by-caller",
+          },
+          makeContext(),
+          "run-proto"
+        )
+        expect(result.output).toMatchObject({ success: true })
+      }
+
+      expect(mockUpdateDeal).toHaveBeenCalledOnce()
+      expect(mockUpdatePerson).toHaveBeenCalledOnce()
+      expect(mockUpdateOrganization).toHaveBeenCalledOnce()
+      expect(mockUpdateActivity).toHaveBeenCalledOnce()
+
+      // And the lookup field map still resolves its real keys off the `Map`.
+      mockLimit.mockResolvedValue([{ id: "deal-found" }])
+      await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "deal",
+          operation: "update",
+          fieldMapping: { notes: "ok" },
+          lookupField: "title",
+          lookupValue: "Acme",
+        },
+        makeContext(),
+        "run-proto"
+      )
+      expect(mockUpdateDeal).toHaveBeenCalledWith("deal-found", { notes: "ok" }, "user-abc")
+    })
+  })
 })

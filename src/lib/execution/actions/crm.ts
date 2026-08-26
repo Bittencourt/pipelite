@@ -14,7 +14,9 @@ import {
 } from "@/lib/mutations"
 import { db } from "@/db"
 import { deals, people, organizations, activities } from "@/db/schema"
-import { and, eq, ilike, isNull } from "drizzle-orm"
+import { and, eq, ilike, isNull, type SQL } from "drizzle-orm"
+import type { AnyPgColumn, PgTable } from "drizzle-orm/pg-core"
+import { requireScopedPredicate } from "@/lib/api/stage-scope"
 import { interpolate, interpolateDeep } from "./interpolate"
 import {
   getCurrentExecutionDepth,
@@ -29,8 +31,31 @@ type CreateFn = (input: Record<string, unknown>) => Promise<{ success: boolean; 
 type UpdateFn = (id: string, data: Record<string, unknown>, userId: string) => Promise<{ success: boolean; error?: string; [key: string]: unknown }>
 type DeleteFn = (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
 
-const mutationMap: Record<
-  string,
+/**
+ * The three operations a `crm_action` node may name, as a closed list.
+ *
+ * WR-12. `config.operation` is verbatim caller input (`nodes` is
+ * `z.array(z.record(z.string(), z.unknown()))` on both workflow write routes), and the previous
+ * shape indexed the mutation record with it directly: `mutations[operation as keyof typeof
+ * mutations]`. `operation: "constructor"` therefore resolved to `Object.create` — truthy, so the
+ * `if (!mutations[operation])` guard did not fire — and the handler went on to call it. Validating
+ * the string against a list is what makes the guard the guard the header claims it is.
+ */
+const CRM_OPERATIONS = ["create", "update", "delete"] as const
+type CrmOperation = (typeof CRM_OPERATIONS)[number]
+
+function isCrmOperation(value: string): value is CrmOperation {
+  return (CRM_OPERATIONS as readonly string[]).includes(value)
+}
+
+/**
+ * The four entities, spelled as a `Record` over a closed key union so that the compiler — not a
+ * comment — is what requires a fifth entity to be registered in both maps.
+ */
+type CrmEntity = "deal" | "person" | "organization" | "activity"
+
+const mutationDefs: Record<
+  CrmEntity,
   { create: CreateFn; update: UpdateFn; delete: DeleteFn }
 > = {
   deal: {
@@ -55,60 +80,86 @@ const mutationMap: Record<
   },
 }
 
+/**
+ * WR-12. A `Map`, and the conversion from the literal above is the fix, not a style choice.
+ *
+ * `mutationMap[entity]` on an object literal walks `Object.prototype`, so
+ * `entity: "constructor"` returned the `Object` constructor — truthy, so `if (!mutations) throw`
+ * did not fire, and `mutations["create"]` was then `Object.create`, also truthy, so the second
+ * guard did not fire either. `Map.get` has no prototype chain, so both guards now mean what the
+ * CR-02 header says they mean. The `Record` above stays as the SOURCE so a fifth entity is a
+ * compile error rather than a runtime `undefined`.
+ */
+const mutationMap = new Map(Object.entries(mutationDefs))
+
 // ---- Field lookup tables ----
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DrizzleTable = any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DrizzleColumn = any
-
 interface LookupDef {
-  table: DrizzleTable
-  idColumn: DrizzleColumn
+  table: PgTable
+  idColumn: AnyPgColumn
   /**
    * CR-02. The per-record authorization column, and the reason this interface gained two fields.
    *
    * Every one of the four tables carries `owner_id text NOT NULL REFERENCES users.id` and a
    * nullable `deleted_at` — verified column by column in `src/db/schema/{deals,people,
    * organizations,activities}.ts`. They are declared here, once, rather than spelled at each
-   * query, so a fifth entity added to `mutationMap` cannot reach the mutation layer through an
-   * unscoped resolution: `LookupDef` requires both, so omitting either is a compile error.
+   * query, so a fifth entity added to `mutationDefs` cannot reach the mutation layer through an
+   * unscoped resolution.
+   *
+   * WR-12 CORRECTED THE CLAIM THAT USED TO SIT HERE. It read "`LookupDef` requires both, so
+   * omitting either is a compile error", which was only half true: omitting a required property IS
+   * a compile error (TS2741), but these two fields were typed `DrizzleColumn = any`, and a required
+   * property of type `any` happily accepts `undefined`. `ownerColumn: undefined` compiled, and
+   * `and(eq(undefined, userId), isNull(undefined))` is not a shape any test would notice. The types
+   * are now `AnyPgColumn` and `PgTable`, which is what makes the sentence true. `lookupDefs` is
+   * also keyed by the closed `CrmEntity` union, so an entity present in `mutationDefs` and absent
+   * here no longer merely fails closed at runtime — it does not compile.
    */
-  ownerColumn: DrizzleColumn
-  deletedAtColumn: DrizzleColumn
-  fields: Record<string, DrizzleColumn>
+  ownerColumn: AnyPgColumn
+  deletedAtColumn: AnyPgColumn
+  /**
+   * A `Map` for the same prototype reason as `mutationMap`: `def.fields[lookupField]` on an object
+   * literal made `lookupField: "constructor"` truthy and walked past the "Unsupported lookup
+   * field" throw.
+   */
+  fields: Map<string, AnyPgColumn>
 }
 
-const lookupDefs: Record<string, LookupDef> = {
+const lookupDefsByEntity: Record<CrmEntity, LookupDef> = {
   deal: {
     table: deals,
     idColumn: deals.id,
     ownerColumn: deals.ownerId,
     deletedAtColumn: deals.deletedAt,
-    fields: { title: deals.title },
+    fields: new Map<string, AnyPgColumn>([["title", deals.title]]),
   },
   person: {
     table: people,
     idColumn: people.id,
     ownerColumn: people.ownerId,
     deletedAtColumn: people.deletedAt,
-    fields: { email: people.email, firstName: people.firstName },
+    fields: new Map<string, AnyPgColumn>([
+      ["email", people.email],
+      ["firstName", people.firstName],
+    ]),
   },
   organization: {
     table: organizations,
     idColumn: organizations.id,
     ownerColumn: organizations.ownerId,
     deletedAtColumn: organizations.deletedAt,
-    fields: { name: organizations.name },
+    fields: new Map<string, AnyPgColumn>([["name", organizations.name]]),
   },
   activity: {
     table: activities,
     idColumn: activities.id,
     ownerColumn: activities.ownerId,
     deletedAtColumn: activities.deletedAt,
-    fields: { title: activities.title },
+    fields: new Map<string, AnyPgColumn>([["title", activities.title]]),
   },
 }
+
+const lookupDefs = new Map(Object.entries(lookupDefsByEntity))
 
 // ---- Field type coercion ----
 
@@ -335,14 +386,37 @@ function assertNoForbiddenMappingKeys(
 /**
  * The caller-scope predicate every target resolution below rides on.
  *
- * `and(...)` returns `SQL | undefined` and `.where(undefined)` is an UNFILTERED query, so this is
- * never spread into a `.where()` on its own — both call sites nest it inside a further `and()` with
- * a non-optional term, which is what makes an accidental collapse a type error rather than a
- * silent full-table read. (Same hazard `src/lib/api/stage-scope.ts` documents at length for
- * `ownedStagesPredicate`; the shape here is different enough not to reuse that helper.)
+ * WR-12/WR-11. THE SENTENCE THAT USED TO BE HERE WAS FALSE, and it was the only thing standing
+ * where a check should be. It claimed that nesting this inside a further `and()` with a
+ * non-optional term "makes an accidental collapse a type error rather than a silent full-table
+ * read". It does not. `drizzle-orm`'s `and` is typed
+ * `(...conditions: (SQLWrapper | undefined)[]) => SQL | undefined` and its body is
+ * `unfilteredConditions.filter((c) => c !== void 0)` — passing a possibly-`undefined` value in is
+ * the DOCUMENTED CALLING CONVENTION and an `undefined` argument is SILENTLY DROPPED. So
+ * `and(ilike(column, lookupValue), undefined)` compiles, renders as `where <col> ilike $1`, and is
+ * precisely the unscoped query CR-02 was.
+ *
+ * The guard `stage-scope.ts` built for exactly this hazard is now reached from here rather than
+ * described. It checks BOTH halves, and the second is the one a non-null check would miss: a
+ * conjunction can be non-`undefined` and still have LOST the owner term, which is what
+ *
+ *     and(...(userId ? [eq(def.ownerColumn, userId)] : []), isNull(def.deletedAtColumn))
+ *
+ * — the edit `stage-scope.ts`'s own header names as the future hazard — produces. `tsc --noEmit`
+ * exits 0 through that edit and every existing cell stays green, because they all pass a real
+ * `userId`. `terms` is declared `SQL[]`, so `terms.length` is a count of real terms BY TYPE rather
+ * than by inspection, and `MANDATORY_SCOPE_TERMS` is 2 here for the same two reasons it is 2 there.
+ *
+ * HONEST LABEL ON THE EVIDENCE: this guard CANNOT be driven red from production code, because
+ * `eq()` and `isNull()` both always return `SQL`. It protects a shape that does not exist yet. The
+ * proof is therefore an ABLATION — `crm.test.ts`'s WR-11 describe reproduces the collapsing edit
+ * against the real helper and shows it throws — plus the guard's own red/green pair in
+ * `stages/__tests__/in-clause.test.ts`. It is not presented as a reproduction of a live hole.
  */
-function callerScope(def: LookupDef, userId: string) {
-  return and(eq(def.ownerColumn, userId), isNull(def.deletedAtColumn))
+function callerScope(def: LookupDef, userId: string): SQL {
+  const terms: SQL[] = [eq(def.ownerColumn, userId), isNull(def.deletedAtColumn)]
+
+  return requireScopedPredicate(and(...terms), terms.length, "crm_action's callerScope")
 }
 
 /**
@@ -355,15 +429,15 @@ async function resolveIdByLookup(
   lookupValue: string,
   userId: string
 ): Promise<string> {
-  const def = lookupDefs[entity]
+  const def = lookupDefs.get(entity)
   if (!def) {
     throw new Error(`Cannot look up entity type: ${entity}`)
   }
 
-  const column = def.fields[lookupField]
+  const column = def.fields.get(lookupField)
   if (!column) {
     throw new Error(
-      `Unsupported lookup field '${lookupField}' for entity '${entity}'. Supported: ${Object.keys(def.fields).join(", ")}`
+      `Unsupported lookup field '${lookupField}' for entity '${entity}'. Supported: ${[...def.fields.keys()].join(", ")}`
     )
   }
 
@@ -379,7 +453,12 @@ async function resolveIdByLookup(
     )
   }
 
-  return rows[0].id
+  // `String(...)` and not a cast. `def.idColumn` is `AnyPgColumn` (WR-12), whose data type is
+  // generic, so drizzle infers this projection as `unknown` — every one of the four id columns is
+  // `text` and NOT NULL, and the row was just returned by a `length === 0` check, so the value is a
+  // string. Coercing rather than asserting keeps the compiler out of the position of being told
+  // something it cannot see.
+  return String(rows[0].id)
 }
 
 /**
@@ -394,7 +473,7 @@ async function assertCallerOwnsTarget(
   targetId: string,
   userId: string
 ): Promise<void> {
-  const def = lookupDefs[entity]
+  const def = lookupDefs.get(entity)
   if (!def) {
     throw new Error(`Cannot look up entity type: ${entity}`)
   }
@@ -494,12 +573,24 @@ async function handleCrmAction(
   const operation = config.operation as string
   const fieldMapping = (config.fieldMapping as Record<string, unknown>) ?? {}
 
-  const mutations = mutationMap[entity]
+  // WR-12. `Map.get` and an explicit operation whitelist, not two indexed reads on object
+  // literals. `entity: "constructor"` used to make `mutationMap["constructor"]` the `Object`
+  // constructor — truthy, so the first guard was skipped — and `mutations["create"]` was then
+  // `Object.create`, also truthy, so the handler CALLED it: `res.success` on a fresh object is
+  // `undefined`, reporting the generic "CRM create failed" for an ordinary bad-input case.
+  //
+  // MEASURED, and narrower than WR-12 states: `update` and `delete` did NOT reach the query, because
+  // `typeof Object.update === "undefined"`, so the second guard fired and produced
+  // `Unknown CRM operation: update` — mapped, but blaming the operation when the entity was the
+  // problem. No authorization impact either way; what was wrong is that these are the guards the
+  // CR-02 header leans on as its backstop for an unregistered entity, and they were not the guards
+  // it said they were. See the WR-12 describe in `__tests__/crm.test.ts` for the verbatim red.
+  const mutations = mutationMap.get(entity)
   if (!mutations) {
     throw new Error(`Unknown CRM entity type: ${entity}`)
   }
 
-  if (!mutations[operation as keyof typeof mutations]) {
+  if (!isCrmOperation(operation)) {
     throw new Error(`Unknown CRM operation: ${operation}`)
   }
 

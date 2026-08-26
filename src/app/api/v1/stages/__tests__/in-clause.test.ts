@@ -352,6 +352,77 @@ describe("requireScopedPredicate — the checked narrowing that replaced `as SQL
     // the owner term was gone.
     expect(MANDATORY_SCOPE_TERMS).toBe(2)
   })
+
+  it("carries the subject through, so a caller other than this helper names ITSELF in the throw", () => {
+    // WR-11. `src/lib/execution/actions/crm.ts` and `src/lib/triggers/matcher.ts` both reach this
+    // guard now. A throw that said "ownedStagesPredicate" from inside the workflow engine would
+    // send a reader to the wrong file.
+    expect(() => requireScopedPredicate(undefined, MANDATORY_SCOPE_TERMS, "crm_action's callerScope")).toThrow(
+      /crm_action's callerScope produced no predicate at all/,
+    )
+    expect(() => requireScopedPredicate(and(isNull(pipelines.deletedAt)), 1, "matchAndFireTriggers' owner scope")).toThrow(
+      /matchAndFireTriggers' owner scope built 1 term/,
+    )
+    // The default is unchanged, which is what the two cells above this one read.
+    expect(() => requireScopedPredicate(undefined, MANDATORY_SCOPE_TERMS)).toThrow(
+      /ownedStagesPredicate produced no predicate/,
+    )
+  })
+})
+
+describe("WR-11 — `and(...)` does NOT make a collapse a type error, which is why the guard exists", () => {
+  /*
+   * `crm.ts`'s `callerScope` used to carry a docstring asserting that nesting a possibly-collapsed
+   * `and()` inside a further `and()` with a non-optional term "makes an accidental collapse a type
+   * error rather than a silent full-table read". These cells are the counter-proof, measured
+   * against the REAL drizzle in this repository's own `node_modules` rather than argued from its
+   * type signature — `drizzle-orm`'s `and` is
+   * `(...conditions: (SQLWrapper | undefined)[]) => SQL | undefined` and its body filters
+   * `undefined` out.
+   *
+   * They belong in THIS file because it is the one place in the repo that compiles predicates
+   * without a database and without mocking `drizzle-orm`.
+   */
+
+  it("silently DROPS an `undefined` argument instead of rejecting it", () => {
+    // The shape `crm.ts` nested: a scope term that collapsed, inside an outer `and` with a real
+    // term. It compiles — `tsc --noEmit` exits 0 over this file — and it renders as the unscoped
+    // query CR-02 was.
+    const collapsed = and(eq(stages.pipelineId, "pipeline-1"), undefined)
+
+    expect(collapsed).not.toBeUndefined()
+    expect(renderPredicate(collapsed)).toContain('"pipeline_id"')
+    // AND THE POINT: the term that vanished left no trace of itself.
+    expect(renderPredicate(collapsed)).not.toContain('"owner_id"')
+  })
+
+  it("returns `undefined` — not an error — when every argument was `undefined`", () => {
+    // `.where(undefined)` is drizzle's NO WHERE CLAUSE, which is the whole reason
+    // `requireScopedPredicate` refuses this value rather than casting it away.
+    expect(and(undefined, undefined)).toBeUndefined()
+  })
+
+  it("ABLATION: the conditional-owner-term edit is REJECTED once the guard is on the path", () => {
+    // `callerScope` cannot be driven red from production code — `eq()` and `isNull()` both always
+    // return `SQL` — so the evidence for WR-11 is this ablation and not a reproduction. This
+    // rebuilds the exact edit `stage-scope.ts`'s header names as the future hazard, in the shape
+    // `crm.ts` would take it, and shows the guard now catches it.
+    const ablatedCallerScope = (userId: string | undefined) => {
+      const terms = [
+        ...(userId ? [eq(pipelines.ownerId, userId)] : []),
+        isNull(pipelines.deletedAt),
+      ]
+      return requireScopedPredicate(and(...terms), terms.length, "crm_action's callerScope")
+    }
+
+    expect(() => ablatedCallerScope(undefined)).toThrow(/mandatory/)
+    expect(() => ablatedCallerScope(undefined)).toThrow(/callerScope/)
+
+    // THE ANTI-VACUITY HALF: with a real caller id the same function returns a predicate that
+    // names `owner_id`. A guard that threw unconditionally would satisfy the two lines above and
+    // would take every target resolution in the engine down with it.
+    expect(renderPredicate(ablatedCallerScope("user-1"))).toContain('"owner_id"')
+  })
 })
 
 describe("ownedStagesPredicate still names owner_id for degenerate caller ids", () => {
