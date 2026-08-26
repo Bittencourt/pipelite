@@ -327,7 +327,18 @@ lever, not an oversight.
 Surfaced while building this system; listed here so they reach a backlog rather than being
 rediscovered. **None of these are acted on by the formula system.**
 
-- `PUT /api/v1/activities/[id]` performs no ownership check (pre-existing IDOR, backlog 999.17).
+- ~~`PUT /api/v1/activities/[id]` has no ownership check (pre-existing IDOR, backlog 999.17).~~
+  **CLOSED by Phase 48 (2026-08-25).** GET, PUT and DELETE on `/api/v1/activities/[id]` each fetch
+  the row, compare its `ownerId` to the caller's `ctx.userId`, and return **403** to a non-owner
+  (`route.ts:106`, `:157`, `:308`). PUT additionally rejects a payload carrying a foreign `owner_id`
+  with **422** naming the field (`route.ts:185-187`), which closes the reassignment escalation
+  separately from the read. Held by
+  `src/app/api/v1/activities/[id]/__tests__/route.test.ts` — two distinct identities against a
+  genuinely foreign-owned fixture — and by the corpus-wide gate in
+  `src/app/api/v1/__tests__/route-authorization.test.ts`, which reddens if any of the three guards is
+  deleted whether or not that route has a test of its own. The published contract now declares both
+  statuses (`public/openapi.yaml`), gated by
+  `src/app/api/v1/__tests__/openapi-error-coverage.test.ts`.
 - `POST /api/custom-fields/save` performs no per-entity ownership check on `entityId`.
 - CSV formula injection: a cell value beginning with `=`, `+`, `-` or `@` can execute on open. This
   affects every text column in the export, not only formula fields, and wants a dedicated pass.

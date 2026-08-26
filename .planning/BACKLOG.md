@@ -1046,30 +1046,69 @@ audit gate, and adding `npm audit --audit-level=high` to `ci.yml` would make the
 one, so it was deliberately not bolted on. Resolution: triage the criticals/highs, then decide whether an
 audit step or a `.npmrc` audit policy belongs in CI.
 
-**999.17 — SECURITY: `/api/v1/activities` has no ownership check (IDOR)** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+**999.17 — SECURITY: `/api/v1/activities` has no ownership check (IDOR)** (captured 2026-08-14, Phase 32) — **CLOSED by Phase 48 (2026-08-25)**
 
-> **Re-verified 2026-08-24 — still open, and nothing has been added.** The only `ownerId` references
-> in either route file are a **user-supplied `owner_id` query filter** (`route.ts:50,61-62`, optional,
-> so an unfiltered list still returns every user's activities) and the **PUT that writes it**
-> (`[id]/route.ts:188-190`, confirming the reassignment vector). There is no authorization check on
-> any of GET / PUT / DELETE. Compare `pipelines/[id]/route.ts`, which does check `ownerId`.
+> **Closed 2026-08-25 by plans 48-01 and 48-02.** GET, PUT and DELETE on
+> `src/app/api/v1/activities/[id]/route.ts` now fetch the row, compare `ownerId` to `ctx.userId` and
+> return **403** (`:106`, `:157`, `:308`); PUT rejects a foreign `owner_id` with **422** naming the
+> field (`:185-187`); and `src/app/api/v1/activities/route.ts` GET scopes the list in the `WHERE`
+> (`:62`), with the caller-supplied `?owner_id=` filter composed *under* that scope so it can only
+> narrow. The route-level regression gate in
+> `src/app/api/v1/__tests__/route-authorization.test.ts` reddens if any of those guards is deleted.
+
+> **Correction to the original text below (recorded rather than silently edited):** the claim *"these
+> six route files have zero test coverage"* was wrong on both halves. The in-scope count is **four**
+> route files — `activities/route.ts`, `activities/[id]/route.ts`, `stages/route.ts`,
+> `stages/[id]/route.ts` — and the fifth file under those two trees,
+> `src/app/api/v1/activities/[id]/notes/route.ts`, was **already covered** by
+> `src/lib/api/__tests__/notes-collection.test.ts:53`, which imports it directly. Miscounting the
+> corpus is how a phase scopes a security fix to the wrong number of files.
 
 `src/app/api/v1/activities/[id]/route.ts` GET/PUT/DELETE and `src/app/api/v1/activities/route.ts` GET
-perform **no ownership check at all**. Any valid API key can read (`[id]:80-116`), modify
+performed **no ownership check at all**. Any valid API key could read (`[id]:80-116`), modify
 (`[id]:126-216`, **including reassigning `owner_id`**) or soft-delete (`[id]:226-237`) *any* user's
-activity by id, and the list endpoint returns every user's activities. Compare `pipelines/[id]`,
-which does check `ownerId`. Pre-existing — Phase 32's diff only retyped `withOptions` — but surfaced
-by the Phase 32 code review, and **more severe than anything found in the phase itself**. These six
-route files have zero test coverage, so add tests with the fix. Prioritise ahead of the cosmetic
-backlog items. See `32-REVIEW.md` § "Pre-existing, out of diff scope".
+activity by id, and the list endpoint returned every user's activities. Compare `pipelines/[id]`,
+which did check `ownerId`. Pre-existing — Phase 32's diff only retyped `withOptions` — but surfaced
+by the Phase 32 code review, and **more severe than anything found in the phase itself**. See
+`32-REVIEW.md` § "Pre-existing, out of diff scope".
 
-**999.18 — `stages/route.ts` passes a JS array into a raw `sql` fragment** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
+**999.18 — `stages/route.ts` passes a JS array into a raw `sql` fragment** (captured 2026-08-14, Phase 32) — **CLOSED by Phase 48 (2026-08-25)**
 
-> **Re-verified 2026-08-24:** unchanged at `src/app/api/v1/stages/route.ts:73`.
+> **THE ORIGINAL SEVERITY ASSESSMENT WAS WRONG.** This item was recorded as a *"mechanical fix"* for
+> a defect it claimed could not be triggered, on the stated grounds that the array feeding the
+> fragment could never be empty. **There was no such guard, and the empty case was a live HTTP 500
+> reachable from the public API with one query parameter.** Measured 2026-08-25 against
+> `b51398d:src/app/api/v1/stages/route.ts`, the last pre-fix revision:
+>
+> - `:51` — with no `?pipeline_id=`, `stageConditions` is `[]`, so `:60` passes `where: undefined`
+>   and `:59-65` pages **the whole `stages` table**, not the caller's stages.
+> - `:69` — the branch containing the fragment is entered on exactly `if (!pipelineId)`. That is the
+>   only condition on it. Nothing tests the length of anything.
+> - `:70` — `pipelineIds` is derived straight from that page with no length check, and `:73` splices
+>   it into ``sql`${pipelines.id} IN ${pipelineIds}` ``.
+> - `src/lib/api/pagination.ts:28` — `parsePagination` computes `Math.max(0, rawOffset)` and applies
+>   **no upper bound**, so `offset` is caller-controlled without limit.
+>
+> Therefore `GET /api/v1/stages?offset=<global stage count>` emptied the page, emptied the array,
+> rendered the statement text `"pipelines"."id" IN ()`, and PostgreSQL rejected it with
+> **`42601 syntax error at or near ")"`** — a 500. **Behavioural proof (500 before / 200 with
+> `data: []` after, through real HTTP against a real PostgreSQL) is owned by plan 48-07 and recorded
+> in `48-07-SUMMARY.md`;** the structural proof and the full autopsy are in the header of
+> `src/lib/api/stage-scope.ts` and in `48-04-SUMMARY.md`.
+>
+> **Fixed at the root, not mechanically.** Plan 48-04 replaced the whole shape with an `innerJoin` on
+> `pipelines` scoped by `ownedStagesPredicate`, paginating **after** authorizing. The JavaScript array
+> no longer exists, so there is no runtime-sized list to render and no empty case to guard —
+> `inArray()` never appears either. The same edit closed the drift where `?limit=5` returned
+> `data: []` beside `meta.total: 1` for the stage's own owner.
+>
+> **The lesson worth keeping:** the item asserted a guard by name without checking that it existed,
+> and that assertion is what demoted a reachable 500 to a cosmetic cleanup. A claim that a defect
+> cannot be triggered is a measurement, not a reading.
 
-`src/app/api/v1/stages/route.ts:73` uses ``sql`${pipelines.id} IN ${pipelineIds}` `` instead of
-`inArray()`. Unreachable with an empty array today (guarded by `stageList` being non-empty) but
-fragile — a future refactor removing that guard changes it from awkward to broken. Mechanical fix.
+`src/app/api/v1/stages/route.ts:73` used ``sql`${pipelines.id} IN ${pipelineIds}` `` instead of
+`inArray()`. For non-empty arrays drizzle expanded the values into placeholders rather than splicing
+them, so this was an **availability** defect, not a SQL-injection one — do not restate it as one.
 
 **999.19 — Pipedrive importer hardcodes stage type `"open"`** (captured 2026-08-14, Phase 32) — **PROMOTE → v1.4**
 
@@ -1338,10 +1377,33 @@ defect class as SEC-01.
 **Deliberately left out of Phase 48's scope**, and recorded here rather than silently dropped: it is a
 different subsystem from activities/stages, and folding it in would widen a security fix past what one
 phase can verify. Phase 48 fixes activities + stages and — more importantly — ships the route-level
-authorization regression gate that would have caught all of these. **Run that gate against these two
-routes first; it should name them.**
+authorization regression gate that would have caught all of these.
 
-### SEC-48-B — nothing in this repo detects removing an authorization check — **BEING FIXED in Phase 48**
+> **MEASURED OUTCOME (2026-08-25, plan 48-08).** The instruction that used to close this item — *run
+> the gate against these two routes; it should name them* — has been carried out. **The detector
+> flags both**, as offenders 12 and 13 of the 13 it reports across all 36 `/api/v1` route files:
+>
+> ```
+> src/app/api/v1/workflows/[id]/runs/[runId]/route.ts:14: GET
+> src/app/api/v1/workflows/[id]/runs/route.ts:23: GET
+> ```
+>
+> They are the only two of the 13 classified as `ACCEPTED_KNOWN_ROUTES` in
+> `src/app/api/v1/__tests__/route-authorization.test.ts`; the other 11 are structural exemptions
+> (`NO_OWNER_COLUMN_ROUTES`, `PUBLIC_ROUTES`, `DELEGATED_ROUTES`).
+>
+> **The exemption has inverted polarity on purpose.** The control does not merely skip these two — it
+> asserts the detector **STILL FLAGS** them, i.e. that the hole is still open. So whoever fixes
+> SEC-48-A will find that control **RED** and be forced to remove the entry. An accepted hole that
+> quietly stops being a hole and quietly stays on the exemption list is how a deferral becomes a
+> permanent carve-out nobody can justify. A second assertion, `SUPPRESSED_BY_EXEMPTION`, writes all 12
+> exemption-hidden handlers out by file and verb and compares the set exactly, so neither route can
+> vanish from the report by being swallowed rather than fixed.
+>
+> **Closing this item therefore means:** add the ownership scope, watch `ACCEPTED_KNOWN_ROUTES` go
+> red, delete both entries, and update `SUPPRESSED_BY_EXEMPTION` — in that order.
+
+### SEC-48-B — nothing in this repo detects removing an authorization check — **CLOSED by Phase 48 (2026-08-25)**
 
 Measured 2026-08-25. All **three** `eq(organizations.ownerId, context.userId)` predicates were deleted
 from `src/app/api/v1/organizations/[id]/route.ts` (GET, PUT, DELETE) and the full base suite was run:
@@ -1350,8 +1412,20 @@ from `src/app/api/v1/organizations/[id]/route.ts` (GET, PUT, DELETE) and the ful
 removed.
 
 This is the tenth gate-that-cannot-fail found in milestone v1.4, and the most consequential: it means
-every REST authorization check in the repo is currently unprotected against silent regression.
+every REST authorization check in the repo was unprotected against silent regression.
 Phase 48 makes the Q10 route-level gate its central deliverable for exactly this reason.
+
+> **CLOSED. The one number that answers this item: 0 → 1.** Plan 48-08 re-ran the identical
+> three-predicate ablation against the tree carrying the new gate. **Base-suite failure count before
+> this phase: 0. After: exactly 1** — `1 failed | 5338 passed | 32 skipped`, 176 files still passing,
+> and the single red test is
+> `src/app/api/v1/__tests__/route-authorization.test.ts › finds no unauthorized handler outside the
+> documented exemptions`, which names the file, the line and the verb for all three deletions.
+>
+> `organizations/[id]/__tests__/route.test.ts` **still does not notice** — the original finding
+> reproduces unchanged. What changed is that something else does, and it does not require anyone to
+> have written a test for the route in question. Full transcripts, including a matching ablation
+> against this phase's own `activities/[id]` fix, are in `48-08-SUMMARY.md` § Negative controls.
 
 ### DEF-48-01 — `npm run test:db` exits NON-ZERO on a fully green suite — **found by Phase 48, plan 48-06**
 
@@ -1374,3 +1448,49 @@ Under control E2 (empty database) **21 of 23 assertions in that file pass**.
 
 **Rule:** a cross-check needs a non-emptiness floor on **each side independently**, exactly as a
 counting gate needs a floor as well as a ceiling. Symmetry is not sufficiency.
+
+### DOC-48-01 — `public/openapi.yaml` is gated for 9 of its 59 operations — **DEFERRED from Phase 48**
+
+Measured 2026-08-25 by plan 48-09, by parsing the published document rather than reading it.
+
+`src/app/api/v1/__tests__/openapi-error-coverage.test.ts` holds the error-response declarations for
+**exactly the 9 operations Phase 48 changed** — `/activities` GET+POST, `/activities/{id}`
+GET+PUT+DELETE, `/stages` GET, `/stages/{id}` GET+PUT+DELETE. The document contains **27 path items
+and 59 operations**, so **50 operations are ungated**, and the drift across them is measured, not
+suspected:
+
+| Status | Operations declaring it | Operations that can return it |
+|---|---|---|
+| `401` | **22 of 59** | **all 59** — `withApiAuth` returns `Problems.unauthorized()` for a missing or invalid Bearer token before any handler runs |
+| `429` | **12 of 59** | **all 59** — `withApiAuth` returns `Problems.rateLimited()` from the same wrapper |
+| `403` | **8 of 59** | at least **12** (see below) |
+
+**The 403 gap, by route file.** 9 of the 36 `/api/v1` route files call `Problems.forbidden()`. Three
+are now documented — `activities/[id]`, `stages/[id]` (this phase) and `notes/[noteId]` (already
+declared). The remaining six are split two ways:
+
+- **In the spec, undeclared — 6 operations:** `pipelines/{id}` GET/PUT/DELETE and `webhooks/{id}`
+  GET/PUT/DELETE. Both route files return 403 to a non-owner today and neither says so.
+- **Absent from the spec entirely — 4 route files:** `audit/route.ts`, `trash/route.ts`,
+  `trash/[type]/[id]/route.ts`, `trash/[type]/[id]/restore/route.ts`. These are a different and
+  larger defect than an undeclared status: they are undocumented endpoints. 36 route files against 27
+  documented path items is the headline number for that.
+
+**Correction to this item's own first draft, recorded rather than quietly fixed:** the phase plan that
+commissioned it listed `organizations/{id}`, `people/{id}` and `deals/{id}` among the routes
+"returning 403 today". They do **not** — none of the three calls `Problems.forbidden()`; a foreign
+record gets a **404** from the `eq(<table>.ownerId, context.userId)` predicate, which is the shape the
+SEC-48-B ablation deleted. Their spec entries are therefore not wrong about 403. Writing them into a
+backlog item would have sent the next author looking for a defect that is not there — the same failure
+mode as 999.18, one level up.
+
+**Deliberately not widened in Phase 48.** Declaring `401` and `429` on 37 and 47 more operations is a
+large mechanical diff over a published artifact, inside a security phase whose reviewable unit is nine
+operations. Doing it silently is how scope stops being auditable.
+
+**Suggested owner:** a documentation plan that (a) adds `401` + `429` to every operation, since the
+wrapper makes both universal, (b) adds `403` to the six `pipelines/{id}` and `webhooks/{id}`
+operations, (c) documents or explicitly excludes the `audit` and `trash` route files, and (d) raises
+the gate's subject list from 9 to the full 59 with the same both-polarity structure it already uses —
+`REQUIRE_*_OPERATIONS` for what a route can return, `MUST_NOT_DECLARE_403_OPERATIONS` for what it
+cannot. Step (d) is the point; (a)-(c) without it just resets the clock on the same drift.

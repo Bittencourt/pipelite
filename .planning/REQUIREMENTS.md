@@ -186,9 +186,19 @@ activities, and custom fields. Advanced features can be built externally via the
       `webhook-response-config.tsx:39` are new. Each is behaviour-adjacent, which is why none was
       mechanically fixed inside an infrastructure phase — this needs UI test coverage.*
 - [ ] **QG-03**: No query builds a SQL `IN` clause by interpolating a JavaScript array.
-      *Source: `999.18`. `stages/route.ts:73` uses ``sql`${pipelines.id} IN ${pipelineIds}` `` instead
-      of `inArray()`. Unreachable today because `stageList` is guarded non-empty; a future refactor
-      removing that guard turns it from awkward into broken.*
+      *Source: `999.18`. `stages/route.ts:73` used ``sql`${pipelines.id} IN ${pipelineIds}` `` instead
+      of `inArray()`.*
+      *__Correction 2026-08-25 (plan 48-09):__ this note previously called the empty case
+      unreachable, on the grounds of a non-emptiness guard on the array's source. **No such guard
+      existed.** Measured against `b51398d:src/app/api/v1/stages/route.ts`: the branch holding the
+      fragment was entered on exactly `if (!pipelineId)` (`:69`), the array was derived from the page
+      with no length check (`:70`), the page itself was unscoped when no `?pipeline_id=` was supplied
+      (`:51`, `:60`), and `parsePagination` clamps `offset` at zero with no upper bound
+      (`src/lib/api/pagination.ts:28`). So `GET /api/v1/stages?offset=<global stage count>` rendered
+      `"pipelines"."id" IN ()` and returned **HTTP 500 / SQLSTATE `42601`** to any caller who asked.
+      Closed at the root by plan 48-04 — the array no longer exists. Behavioural proof is owned by
+      plan 48-07 (`48-07-SUMMARY.md`); the autopsy is in the header of `src/lib/api/stage-scope.ts`.
+      A claim that a defect is unreachable is a measurement, not a reading.*
 
 ## Future Requirements
 
