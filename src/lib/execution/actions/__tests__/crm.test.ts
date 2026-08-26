@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs"
+import path from "node:path"
+
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { ExecutionContext } from "../../types"
 
@@ -48,18 +51,45 @@ beforeEach(() => {
   mockWhere.mockReturnValue({ limit: mockLimit })
 })
 
-// Mock drizzle-orm operators
+// Mock drizzle-orm operators. `and`/`isNull` are here because CR-02's caller scope is built from
+// them: without the two entries every target resolution in this file dies with
+// `No "and" export is defined on the "drizzle-orm" mock`, which is how the guard's arrival was
+// noticed rather than assumed.
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((col, val) => ({ _type: "eq", col, val })),
   ilike: vi.fn((col, val) => ({ _type: "ilike", col, val })),
+  and: vi.fn((...terms: unknown[]) => ({ _type: "and", terms })),
+  isNull: vi.fn((col) => ({ _type: "isNull", col })),
 }))
 
-// Mock schema tables
+// Mock schema tables. `ownerId`/`deletedAt` are CR-02's two new `LookupDef` columns; the strings
+// are what the predicate assertions below read back out of the captured `where` argument.
 vi.mock("@/db/schema", () => ({
-  deals: { id: "deals.id", title: "deals.title" },
-  people: { id: "people.id", email: "people.email", firstName: "people.firstName" },
-  organizations: { id: "organizations.id", name: "organizations.name" },
-  activities: { id: "activities.id", title: "activities.title" },
+  deals: {
+    id: "deals.id",
+    title: "deals.title",
+    ownerId: "deals.ownerId",
+    deletedAt: "deals.deletedAt",
+  },
+  people: {
+    id: "people.id",
+    email: "people.email",
+    firstName: "people.firstName",
+    ownerId: "people.ownerId",
+    deletedAt: "people.deletedAt",
+  },
+  organizations: {
+    id: "organizations.id",
+    name: "organizations.name",
+    ownerId: "organizations.ownerId",
+    deletedAt: "organizations.deletedAt",
+  },
+  activities: {
+    id: "activities.id",
+    title: "activities.title",
+    ownerId: "activities.ownerId",
+    deletedAt: "activities.deletedAt",
+  },
 }))
 
 // Mock recursion
@@ -92,6 +122,13 @@ describe("CRM action handler", () => {
     vi.clearAllMocks()
     mockFrom.mockReturnValue({ where: mockWhere })
     mockWhere.mockReturnValue({ limit: mockLimit })
+    // CR-02: a `targetId` update/delete now runs an owner-scoped existence SELECT before the
+    // mutation, so the default has to be "the caller owns it" or every pre-existing cell here
+    // would be asserting the refusal path by accident. Cells that want the refusal override this
+    // with `[]`, and `crm-ownership.db.test.ts` is what proves the predicate against real rows —
+    // this default is a HARNESS decision, and it is exactly why the behavioural proof cannot live
+    // in this file.
+    mockLimit.mockResolvedValue([{ id: "target-owned-by-caller" }])
     vi.resetModules()
     const mod = await import("../index")
     executeAction = mod.executeAction
@@ -972,6 +1009,194 @@ describe("CRM action handler", () => {
         "user-abc"
       )
       expect(result.output).toEqual({ success: true })
+    })
+  })
+
+  /**
+   * CR-02 — the STRUCTURE of the caller scope. The BEHAVIOUR is proven against real rows in
+   * `src/lib/execution/actions/crm-ownership.db.test.ts`; what these cells add is the claim that
+   * the scope is in the STATEMENT rather than applied afterwards in JavaScript, which is the
+   * difference between "a foreign record cannot be written" and "a foreign record cannot even be
+   * shown to exist".
+   *
+   * These are falsifiable in both directions: deleting `callerScope(...)` from either query reds
+   * the two predicate cells, and deleting `assertCallerOwnsTarget`'s throw reds the two refusal
+   * cells while the positive anchor keeps a route that refused everything from satisfying them.
+   */
+  describe("CR-02 — the owner scope on target resolution", () => {
+    /** The mocked `and`/`eq`/`isNull` combinators build plain objects; this flattens them. */
+    function flatten(node: unknown): unknown[] {
+      if (node && typeof node === "object" && (node as { _type?: string })._type === "and") {
+        return (node as { terms: unknown[] }).terms.flatMap(flatten)
+      }
+      return [node]
+    }
+
+    function capturedWhereTerms(): unknown[] {
+      expect(mockWhere).toHaveBeenCalled()
+      return flatten(mockWhere.mock.calls[0]?.[0])
+    }
+
+    it("the targetId branch SELECTs on (id, owner_id, deleted_at is null) before the mutation runs", async () => {
+      mockUpdateActivity.mockResolvedValue({ success: true })
+
+      await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "activity",
+          operation: "update",
+          fieldMapping: { title: "renamed" },
+          targetId: "act-1",
+        },
+        makeContext(),
+        "run-scope"
+      )
+
+      const terms = capturedWhereTerms()
+
+      expect(terms).toEqual(
+        expect.arrayContaining([
+          { _type: "eq", col: "activities.id", val: "act-1" },
+          // THE LOAD-BEARING TERM. `user-abc` is `_workflowUserId`, i.e. `workflow.createdBy`.
+          { _type: "eq", col: "activities.ownerId", val: "user-abc" },
+          { _type: "isNull", col: "activities.deletedAt" },
+        ])
+      )
+      // FLOOR: exactly the three terms, so a fourth predicate silently widening the scope
+      // (or the owner term being replaced by a second id term) is caught.
+      expect(terms).toHaveLength(3)
+    })
+
+    it("the lookup branch carries the SAME owner terms alongside the ilike", async () => {
+      mockLimit.mockResolvedValue([{ id: "act-found" }])
+      mockUpdateActivity.mockResolvedValue({ success: true })
+
+      await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "activity",
+          operation: "update",
+          fieldMapping: { title: "renamed" },
+          lookupField: "title",
+          lookupValue: "%",
+        },
+        makeContext(),
+        "run-scope"
+      )
+
+      const terms = capturedWhereTerms()
+
+      expect(terms).toEqual(
+        expect.arrayContaining([
+          { _type: "ilike", col: "activities.title", val: "%" },
+          { _type: "eq", col: "activities.ownerId", val: "user-abc" },
+          { _type: "isNull", col: "activities.deletedAt" },
+        ])
+      )
+      expect(terms).toHaveLength(3)
+    })
+
+    it("a targetId whose scoped SELECT returns nothing is refused, and the mutation is NEVER called", async () => {
+      // The scoped SELECT finding no row is the only signal the guard has: it cannot tell
+      // "does not exist" from "belongs to somebody else", by design.
+      mockLimit.mockResolvedValue([])
+
+      await expect(
+        executeAction(
+          "crm_action",
+          {
+            actionType: "crm_action",
+            entity: "activity",
+            operation: "update",
+            fieldMapping: { title: "pwned" },
+            targetId: "someone-elses-activity",
+          },
+          makeContext(),
+          "run-scope"
+        )
+      ).rejects.toThrow(/No activity found with id 'someone-elses-activity'/)
+
+      expect(mockUpdateActivity).not.toHaveBeenCalled()
+    })
+
+    it("the refusal message names no field of the row — it is not an existence oracle", async () => {
+      mockLimit.mockResolvedValue([])
+
+      // The two refusals must be INDISTINGUISHABLE. This asserts the message is derived only from
+      // the entity name and the id the caller already supplied.
+      await expect(
+        executeAction(
+          "crm_action",
+          {
+            actionType: "crm_action",
+            entity: "deal",
+            operation: "delete",
+            fieldMapping: {},
+            targetId: "deal-x",
+          },
+          makeContext(),
+          "run-scope"
+        )
+      ).rejects.toThrow("No deal found with id 'deal-x'")
+
+      expect(mockDeleteDeal).not.toHaveBeenCalled()
+    })
+
+    it("THE POSITIVE ANCHOR: a targetId the scoped SELECT does return reaches the mutation", async () => {
+      // Without this, all four cells above are satisfied by a handler that refuses everything.
+      mockLimit.mockResolvedValue([{ id: "act-1" }])
+      mockUpdateActivity.mockResolvedValue({ success: true })
+
+      const result = await executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "activity",
+          operation: "update",
+          fieldMapping: { title: "renamed" },
+          targetId: "act-1",
+        },
+        makeContext(),
+        "run-scope"
+      )
+
+      expect(mockUpdateActivity).toHaveBeenCalledWith("act-1", { title: "renamed" }, "user-abc")
+      expect(result.output).toEqual({ success: true })
+    })
+
+    it("every entity in the lookup table declares both scope columns — a fifth entity cannot be added unscoped", async () => {
+      // `LookupDef` requires `ownerColumn` and `deletedAtColumn`, so this is enforced by the
+      // compiler for a new entry. Asserted here as well because the compile error is invisible in
+      // a test report, and because the SOURCE is what a reader checks.
+      const source = readFileSync(
+        path.join(process.cwd(), "src/lib/execution/actions/crm.ts"),
+        "utf-8"
+      )
+
+      // Spelled out rather than pluralized: `person` -> `people` and `activity` -> `activities`
+      // are both irregular, and a naive `${entity}s` produced `activitys` and a RED cell on the
+      // first run — which is at least a demonstration that this assertion reads the real file.
+      const TABLE_OF: Record<string, string> = {
+        deal: "deals",
+        person: "people",
+        organization: "organizations",
+        activity: "activities",
+      }
+
+      for (const [, table] of Object.entries(TABLE_OF)) {
+        expect(source).toContain(`ownerColumn: ${table}.ownerId`)
+        expect(source).toContain(`deletedAtColumn: ${table}.deletedAt`)
+      }
+
+      // And the four mutationMap entries are the four lookupDefs entries: a mutation reachable
+      // without a lookup def would resolve its target through a `Cannot look up entity type`
+      // throw, not through an unscoped query — but the counts drifting is worth catching here.
+      // `ownerColumn: <table>.ownerId`, i.e. the ASSIGNMENTS. A bare /ownerColumn:/ counts 5,
+      // because the `LookupDef` interface declares the field too — measured, and the reason this
+      // pattern is narrowed rather than left loose.
+      expect(source.match(/ownerColumn: \w+\.ownerId/g) ?? []).toHaveLength(4)
     })
   })
 })

@@ -97,7 +97,6 @@ import {
   users,
   workflowRuns,
   workflowRunSteps,
-  workflows,
 } from "@/db/schema"
 import { crmBus, type CrmEventName, type CrmEventPayload } from "@/lib/events"
 import { executeRun } from "@/lib/execution/engine"
