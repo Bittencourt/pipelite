@@ -124,6 +124,37 @@ fields**:
   must never share a wave.** This phase shares "one live-DB test setup" by the roadmap's own
   description, which makes it the likeliest phase in the milestone to trip it.
 
+### Decisions taken AFTER research (2026-08-26)
+
+Research overturned two upstream claims. Both were put to the user and answered.
+
+- **SC-1 holds for LOCAL STORAGE ONLY, and the ROADMAP has been amended to say so.** Under
+  `FILE_STORAGE=s3`, `src/app/api/upload/route.ts:89` stores `publicUrl` as
+  `${S3_PUBLIC_URL}/${key}`, so reads never traverse `/api/files/...` and the ownership guard this
+  phase adds protects nothing in an S3 deployment. **Fix the local path, prove SC-1 there, and do NOT
+  attempt the S3 path in this phase** — closing it means deciding the URL contract (proxy vs signed
+  URL) and migrating every stored `publicUrl`. Recorded as **SEC-49-A** in `.planning/BACKLOG.md`.
+  A plan must not quietly widen SC-1 back to "all storage backends".
+- **The audit tombstone retains for 90 days, not "indefinitely"** (`audit.retention_days = 90`).
+  SC-1's ordering argument still holds — 90 days is ample — but the ROADMAP text was wrong and is
+  corrected. Do not repeat the "indefinitely" claim in a plan or SUMMARY.
+- **DEF-48-05 / SEC-48-C stays OUT of Phase 49.** Phase 48's records assign it here, but it is not
+  one of this phase's three requirements and it is requirement-shaped work of its own (the
+  mutation-helper ownership contract for `fieldMapping` reference columns and the two assignee
+  fields). It keeps its backlog owner and evidence. **No plan in this phase may absorb it**, and the
+  sign-off must not claim it.
+- **There are SIX suite-breakers, not the two the ROADMAP named**, in three sets — and the named pair
+  is not the one that necessarily breaks. See `49-RESEARCH.md` and the amended ROADMAP note. Set B
+  (`deals/__tests__/formula-recalc.test.ts:367`, `people/__tests__/formula-recalc.test.ts:354`) are
+  the guaranteed breakers and inverting them yields SC-4's proof for two entities.
+- **DATA-02 is a purely LATENT defect — nothing diverges today.** The 201 serializes the pre-recalc
+  `.returning()` row; the only divergence source is `recalculateFormulas`, which requires at least one
+  `type='formula'` definition, of which there are zero. **An SC-4 test written against live
+  definitions is green before AND after the fix.** The proof must manufacture the divergence. This is
+  the SC-3 trap arriving in SC-4, and the ROADMAP does not warn about it.
+- **Re-measure at plan time**, because three proofs depend on them being zero: the `formula` and
+  `file` definition counts, and the count of records carrying a stored file descriptor.
+
 ### Claude's Discretion
 
 - Helper signatures, file layout within `src/lib/trash/`, and how `collectFileFieldRefs` walks the
