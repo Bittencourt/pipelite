@@ -1656,6 +1656,112 @@ describe("CR-01 — a restore between the pre-fetch and the DELETE must not dest
 })
 
 /* ---------------------------------------------------------------------------
+ * WR-03 — a descriptor written to the trashed row after the pre-fetch
+ * ------------------------------------------------------------------------ */
+
+/** The blob added in the pre-fetch window. A THIRD descriptor, so nothing here is about a pair. */
+const STORED_LATE_ARRIVAL = "3f1c0d4e-6b21-4f77-a0aa-000000000401.pdf"
+/**
+ * A named-integer floor for the post-window ref list. The purge must collect THREE refs from the
+ * organization once the late arrival lands (its two seeded blobs plus this one), and asserting the
+ * literal is what makes "both are gone" a claim about a set the window actually grew.
+ */
+const REFS_AFTER_LATE_ARRIVAL = ORG_REF_COUNT + 1
+
+describe("WR-03 — a blob written to the trashed row after the pre-fetch is still collected", () => {
+  it("unlinks a descriptor that arrived between the pre-fetch and the transaction", async () => {
+    const seededPaths = [STORED_ORG_MAIN, STORED_ORG_SECOND].map((stored) =>
+      blobPath(ORG, FIELD_ORG, stored),
+    )
+    const latePath = blobPath(ORG, FIELD_ORG, STORED_LATE_ARRIVAL)
+
+    // The late arrival's bytes, written by hand: this is a real file the record will really
+    // reference, so an orphan here is a real orphan.
+    mkdirSync(path.dirname(latePath), { recursive: true })
+    writeFileSync(latePath, bytesFor("LATE-ARRIVAL"))
+
+    // POSITIVE ANCHORS.
+    for (const target of [...seededPaths, latePath]) {
+      expect(existsSync(target), `positive anchor: ${target} must exist BEFORE the purge`).toBe(true)
+    }
+    expect(await countById("organizations", ORG)).toBe(1)
+
+    // THE INJECTION: after the real pre-fetch resolves, a client's
+    // `POST /api/custom-fields/save` lands on the still-existing trashed row and appends a
+    // descriptor. Written by direct SQL so the subject is the PURGE's ref collection and not
+    // `saveFieldValues`' own behaviour, which has its own cells in `src/lib/custom-fields.test.ts`.
+    const target = PRE_FETCH_FOR.organization
+    const realFindFirst = target.findFirst.bind(target)
+    const spy = vi.spyOn(target, "findFirst")
+    let appended = false
+    spy.mockImplementationOnce(async (...args: never[]) => {
+      const row = await realFindFirst(...args)
+
+      const grown = {
+        [FIELD_ORG]: [
+          ...(CUSTOM_FIELDS_ORG[FIELD_ORG] as unknown[]),
+          descriptor(ORG, FIELD_ORG, STORED_LATE_ARRIVAL, bytesFor("LATE-ARRIVAL")),
+        ],
+      }
+      await db
+        .update(organizations)
+        .set({ customFields: grown })
+        .where(sql`${organizations.id} = ${ORG}`)
+      appended = true
+
+      return row
+    })
+
+    let result: Awaited<ReturnType<typeof purgeRecordByType>>
+    try {
+      result = await purgeRecordByType("organization", ORG)
+    } finally {
+      spy.mockRestore()
+    }
+
+    // THE INJECTION TOOK, and the row really did grow by one ref. Without the FLOOR this cell
+    // could pass on a blob the window never changed.
+    expect(
+      appended,
+      "the pre-fetch spy never fired, so no descriptor landed in the window and this cell is not " +
+        "exercising WR-03 at all",
+    ).toBe(true)
+
+    expect(result).toEqual({ success: true, detached: ORG_DETACHED })
+    expect(await countById("organizations", ORG)).toBe(0)
+
+    // THE CRITERION. Every blob the row referenced AT THE MOMENT THE ROW DIED is gone, not just
+    // the ones it referenced when the function started.
+    expect(
+      existsSync(latePath),
+      "WR-03: the descriptor that arrived after the pre-fetch was never collected. Its bytes are " +
+        "an orphan nothing will ever name again — no route can serve it, no verb can delete it, " +
+        "and `deleted === expected` held so nothing was logged.",
+    ).toBe(false)
+
+    for (const seeded of seededPaths) {
+      expect(existsSync(seeded), `the originally-collected blob survived: ${seeded}`).toBe(false)
+    }
+  })
+
+  it("FLOOR: the injected window really does grow the ref list, so the cell above is not about a pair", () => {
+    // The arithmetic, pinned. Stated as a named integer rather than left implicit in the cell
+    // above, because "all three are gone" and "both are gone" are different claims and only a
+    // literal tells them apart.
+    const grown = {
+      [FIELD_ORG]: [
+        ...(CUSTOM_FIELDS_ORG[FIELD_ORG] as unknown[]),
+        descriptor(ORG, FIELD_ORG, STORED_LATE_ARRIVAL, bytesFor("LATE-ARRIVAL")),
+      ],
+    }
+
+    expect(collectFileFieldRefs(ORG, CUSTOM_FIELDS_ORG)).toHaveLength(ORG_REF_COUNT)
+    expect(collectFileFieldRefs(ORG, grown)).toHaveLength(REFS_AFTER_LATE_ARRIVAL)
+    expect(REFS_AFTER_LATE_ARRIVAL).toBeGreaterThan(ORG_REF_COUNT)
+  })
+})
+
+/* ---------------------------------------------------------------------------
  * CR-02 — a merge must not re-home a file descriptor without its bytes
  * ------------------------------------------------------------------------ */
 
