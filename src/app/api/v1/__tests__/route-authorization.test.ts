@@ -327,8 +327,15 @@ const EXEMPT_LISTS = [
 
 const ALL_EXEMPT_PATHS: readonly string[] = EXEMPT_LISTS.flatMap((list) => [...list.paths])
 
-/** Which syntactic shape an exported handler takes. */
-export type HandlerForm = "declaration" | "binding"
+/**
+ * Which of the THREE syntactic shapes Next.js accepts an exported handler takes.
+ *
+ * `arrow` covers `export const GET = async (req) => { ... }` and its function-expression twin. It was
+ * missing until WR-05, and a missing shape is not a narrower gate — it is a hole: a handler in an
+ * unrecognised shape is neither authorized nor an offender, so it leaves the sweep with no exemption
+ * entry, no reason and no record.
+ */
+export type HandlerForm = "declaration" | "binding" | "arrow"
 
 export interface HandlerInfo {
   /** One of `VERBS`. */
@@ -352,6 +359,14 @@ export interface ScanCounters {
   declarationHandlers: number
   /** Handlers seen via `export const { GET, POST } = factory(...)`. */
   bindingHandlers: number
+  /**
+   * Handlers seen via `export const GET = async (req) => { ... }` (or a function expression).
+   * Measured **0** across the corpus when WR-05 was fixed — which is why this shape was a hole
+   * rather than a live defect, and why the fixtures P10/P11 and N9/N10 are the only thing proving
+   * the branch works. There is deliberately no corpus FLOOR on this counter: a floor above zero
+   * would be red today, and a floor at zero cannot fail.
+   */
+  arrowHandlers: number
   /** `withApiAuth(...)` call expressions seen anywhere in the file. */
   withApiAuthCalls: number
   /** Identity property accesses, counted per spelling — the WR-11 floors read these. */
@@ -668,10 +683,25 @@ function hasExportModifier(statement: ts.Statement): boolean {
  * which is why this gate's own file cannot be flagged by its own rules even if the corpus predicate
  * were widened.
  *
- * BOTH handler forms are collected. The binding form is not decoration: four `/api/v1` files export
- * `const { GET, POST } = noteCollectionHandlers(...)` and export no `FunctionDeclaration` at all, so
- * a `FunctionDeclaration`-only walker sees eight live handlers as ZERO and they leave the sweep with
- * no exemption entry and no record.
+ * ALL THREE handler forms Next.js accepts are collected, and the count is the point — a shape this
+ * walker does not recognise is a HOLE, not a narrower gate: an unrecognised handler is neither
+ * authorized nor an offender, so it leaves the sweep with no exemption entry, no reason and no
+ * record.
+ *
+ *   form 1  `export async function GET(...) { ... }`               measured 62 across the corpus
+ *   form 2  `export const { GET, POST } = noteCollectionHandlers(...)`  measured 8, across 4 files
+ *   form 3  `export const GET = async (req) => { ... }`            measured 0 (WR-05)
+ *
+ * Form 2 is not decoration: four `/api/v1` files export handlers that way and export no
+ * `FunctionDeclaration` at all, so a `FunctionDeclaration`-only walker sees eight live handlers as
+ * ZERO.
+ *
+ * Form 3 was missing until WR-05 and, at zero occurrences, was a hole rather than a live defect —
+ * but the `noHandler` control only catches it when the file has NO other handler. A file MIXING
+ * shapes slipped through completely: one authorized `export async function GET` satisfied
+ * `handlers.length > 0`, and an unauthenticated `export const DELETE` beside it was invisible.
+ * Fixtures P10/P11 and N9/N10 are the ONLY evidence this branch works, because the corpus contains
+ * nothing in that shape to sweep.
  */
 export function scanSource(fileName: string, sourceText: string): ScanResult {
   const src = ts.createSourceFile(
@@ -688,6 +718,7 @@ export function scanSource(fileName: string, sourceText: string): ScanResult {
   const counters: ScanCounters = {
     declarationHandlers: 0,
     bindingHandlers: 0,
+    arrowHandlers: 0,
     withApiAuthCalls: 0,
     identityHits: { ctx: 0, context: 0 },
     ownerLikeAccesses: 0,
@@ -716,7 +747,7 @@ export function scanSource(fileName: string, sourceText: string): ScanResult {
   for (const statement of src.statements) {
     if (!hasExportModifier(statement)) continue
 
-    // Form 1 of 2 — `export async function GET(...) { ... }`. Measured: 62 across the corpus.
+    // Form 1 of 3 — `export async function GET(...) { ... }`. Measured: 62 across the corpus.
     if (ts.isFunctionDeclaration(statement)) {
       const name = statement.name?.text
       if (name === undefined || !VERBS.has(name)) continue
@@ -732,10 +763,45 @@ export function scanSource(fileName: string, sourceText: string): ScanResult {
       continue
     }
 
-    // Form 2 of 2 — `export const { GET, POST } = noteCollectionHandlers({ ... })`. Measured: 8
-    // handlers across exactly 4 files, every one of which exports zero FunctionDeclarations.
     if (!ts.isVariableStatement(statement)) continue
     for (const declaration of statement.declarationList.declarations) {
+      // Form 3 of 3 — `export const GET = async (request: NextRequest) => { ... }`, and the
+      // function-expression spelling of the same thing. A `VariableStatement` whose declaration name
+      // is a plain `Identifier`. Measured: 0 across the corpus, so this is a HOLE rather than a live
+      // defect — but it fell through `if (!ts.isObjectBindingPattern(...)) continue` below and was
+      // never added to `handlers` at all, meaning it could be neither authorized nor an offender.
+      // A file mixing shapes satisfied `noHandler` on its other handler and the gate went green over
+      // an unauthenticated verb. Fixtures P10/P11 (flagged) and N9/N10 (not flagged) are what prove
+      // this branch classifies rather than merely counts, because the corpus cannot.
+      if (ts.isIdentifier(declaration.name) && VERBS.has(declaration.name.text)) {
+        const initializer = declaration.initializer
+        if (
+          initializer === undefined ||
+          !(ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))
+        ) {
+          // `export const GET = somethingElse` is not a handler body this single-file parse can
+          // classify. Deliberately NOT silently skipped as "fine": it falls through to the binding
+          // check below, which will not match either, and the file's `noHandler` control is then the
+          // backstop. If such a shape ever appears, that control is what surfaces it.
+          continue
+        }
+
+        counters.arrowHandlers += 1
+        handlers.push({
+          verb: declaration.name.text,
+          line: lineOf(statement),
+          form: "arrow",
+          delegatedTo: null,
+          // Classified by the SAME rules as form 1. The body is right here, so there is no reason to
+          // treat it as delegated and no reason to exempt it.
+          authorized: handlerAuthorizes(initializer),
+          withApiAuthSeen: subtreeCallsWithApiAuth(initializer),
+        })
+        continue
+      }
+
+      // Form 2 of 3 — `export const { GET, POST } = noteCollectionHandlers({ ... })`. Measured: 8
+      // handlers across exactly 4 files, every one of which exports zero FunctionDeclarations.
       if (!ts.isObjectBindingPattern(declaration.name)) continue
       const initializer = declaration.initializer
       const delegatedTo =
@@ -987,6 +1053,62 @@ const KNOWN_POSITIVE = [
     ].join("\n"),
     expected: ["POST:1"],
   },
+  {
+    // ⚠ WR-05 — THE THIRD EXPORT SHAPE, and the hole this fixture closes.
+    //
+    // Next.js accepts THREE forms for a route handler export, and `scanSource` collected two:
+    // `FunctionDeclaration` (form 1) and a `VariableStatement` whose declaration name is an
+    // `ObjectBindingPattern` (form 2). `export const DELETE = async (...) => { ... }` is the third —
+    // a `VariableStatement` whose declaration name is a plain `Identifier`. It hit
+    // `if (!ts.isObjectBindingPattern(declaration.name)) continue` and was never added to `handlers`
+    // at all, so it could be neither authorized NOR an offender.
+    //
+    // The `noHandler` control only catches this when the file has NO other handler. A file that
+    // MIXES shapes — one authorized `export async function GET`, one unauthenticated
+    // `export const DELETE` — slipped through entirely: `declarationHandlers` 1, `handlers.length` 1
+    // so `noHandler` is satisfied, `GATE_OFFENDERS` empty, every floor still clearing. The gate would
+    // have been green over a live unauthenticated DELETE. That is precisely the "eight handlers seen
+    // as ZERO, with no exemption entry, no reason and no record" failure this file's header says it
+    // exists to eliminate — inside the gate built to prevent it.
+    //
+    // So this fixture MIXES the shapes on purpose. Only the DELETE may be flagged; a detector that
+    // flagged the GET too fails this fixture just as hard, because `expected` is the extracted
+    // `VERB:line` list rather than a boolean.
+    label: "P10 arrow-function export const DELETE with no auth, beside an authorized function GET",
+    source: [
+      `export async function GET(request: NextRequest, { params }: RouteParams) {`,
+      `  return withApiAuth(request, async (req: NextRequest, ctx: ApiAuthContext) => {`,
+      `    const { id } = await params`,
+      `    const deal = await db.query.deals.findFirst({`,
+      `      where: and(eq(deals.id, id), eq(deals.ownerId, ctx.userId)),`,
+      `    })`,
+      `    if (!deal) {`,
+      `      return Problems.notFound("Deal")`,
+      `    }`,
+      `    return singleResponse(serializeDeal(deal))`,
+      `  })`,
+      `}`,
+      `export const DELETE = async (request: NextRequest) => {`,
+      `  const { id } = await request.json()`,
+      `  await db.delete(deals).where(eq(deals.id, id))`,
+      `  return new NextResponse(null, { status: 204 })`,
+      `}`,
+    ].join("\n"),
+    expected: ["DELETE:13"],
+  },
+  {
+    // The same shape written as a function EXPRESSION rather than an arrow, because "arrow only"
+    // would be a second, narrower hole in the same position.
+    label: "P11 function-expression export const PUT with no auth",
+    source: [
+      `export const PUT = async function (request: NextRequest) {`,
+      `  const { id, title } = await request.json()`,
+      `  await db.update(deals).set({ title }).where(eq(deals.id, id))`,
+      `  return new NextResponse(null, { status: 204 })`,
+      `}`,
+    ].join("\n"),
+    expected: ["PUT:1"],
+  },
 ] as const
 
 /**
@@ -1165,6 +1287,54 @@ const KNOWN_NEGATIVE = [
       `}`,
     ].join("\n"),
   },
+  {
+    // WR-05's negative counterpart to P10/P11. The third export shape, AUTHORIZED — so the new
+    // branch is proven to CLASSIFY rather than merely to flag. Without this, form 3 could have been
+    // added as "always an offender", which would be a false-positive generator rather than a
+    // detector: no `/api/v1` file uses this shape today, so nothing in the corpus would have
+    // contradicted it.
+    label: "N9 arrow-function export const GET that authorizes via fetch-then-compare",
+    source: [
+      `export const GET = async (request: NextRequest, { params }: RouteParams) => {`,
+      `  return withApiAuth(request, async (req: NextRequest, ctx: ApiAuthContext) => {`,
+      `    const { id } = await params`,
+      `    const pipeline = await db.query.pipelines.findFirst({`,
+      `      where: and(eq(pipelines.id, id), isNull(pipelines.deletedAt)),`,
+      `    })`,
+      `    if (!pipeline) {`,
+      `      return Problems.notFound("Pipeline")`,
+      `    }`,
+      `    if (pipeline.ownerId !== ctx.userId) {`,
+      `      return Problems.forbidden()`,
+      `    }`,
+      `    return singleResponse(serializePipeline(pipeline))`,
+      `  })`,
+      `}`,
+    ].join("\n"),
+  },
+  {
+    // The R1 form of the same shape, so form 3 is not accidentally coupled to R2 alone.
+    label: "N10 arrow-function export const DELETE that authorizes via a where-scoped predicate",
+    source: [
+      `export const DELETE = async (request: NextRequest, { params }: RouteParams) => {`,
+      `  return withApiAuth(request, async (req: NextRequest, context: ApiAuthContext) => {`,
+      `    const { id } = await params`,
+      `    const org = await db.query.organizations.findFirst({`,
+      `      where: and(`,
+      `        eq(organizations.id, id),`,
+      `        eq(organizations.ownerId, context.userId),`,
+      `        isNull(organizations.deletedAt)`,
+      `      ),`,
+      `    })`,
+      `    if (!org) {`,
+      `      return Problems.notFound("Organization")`,
+      `    }`,
+      `    await db.update(organizations).set({ deletedAt: new Date() }).where(eq(organizations.id, id))`,
+      `    return new NextResponse(null, { status: 204 })`,
+      `  })`,
+      `}`,
+    ].join("\n"),
+  },
 ] as const
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -1215,6 +1385,66 @@ describe("the authorization matcher, unit-tested against fixtures FIRST", () => 
       expect(handler.delegatedTo, "the delegation target is what 48-08's live control keys on")
         .toBe("noteCollectionHandlers")
     }
+  })
+
+  it("sees the ARROW form as a first-class handler shape, and classifies it in both directions (WR-05)", () => {
+    // The blind spot this closes, stated as a number: before WR-05 this file's MIXED-shape fixture
+    // produced `handlers.length` 1 and `offenders` [] — one authorized GET seen, one unauthenticated
+    // DELETE invisible — and every floor in this file still cleared. The gate was green over a live
+    // unauthenticated DELETE.
+    const p10 = KNOWN_POSITIVE.find((fixture) => fixture.label.startsWith("P10"))
+    const mixed = scanSource("known-positive.ts", p10?.source ?? "")
+
+    // BOTH handlers are now seen, each in its own form.
+    expect(mixed.handlers.map((handler) => `${handler.form} ${handler.verb}`)).toEqual([
+      "declaration GET",
+      "arrow DELETE",
+    ])
+    expect(mixed.counters.declarationHandlers).toBe(1)
+    expect(mixed.counters.arrowHandlers).toBe(1)
+    expect(mixed.counters.bindingHandlers).toBe(0)
+
+    // And only the DELETE is flagged. A branch that classified form 3 as "always an offender" would
+    // pass P10 and P11 and fail here — which is exactly why N9/N10 exist beside them, given that no
+    // file in the corpus uses this shape to contradict it.
+    expect(mixed.handlers.find((handler) => handler.verb === "GET")?.authorized).toBe(true)
+    expect(mixed.handlers.find((handler) => handler.verb === "DELETE")?.authorized).toBe(false)
+    expect(flaggedVerbLines(mixed)).toEqual(["DELETE:13"])
+
+    // `withApiAuthSeen` is scoped to the handler, not the file: the DELETE has no wrapper even
+    // though its neighbour does, so the offender list can distinguish unauthenticated from merely
+    // unauthorized.
+    expect(mixed.handlers.find((handler) => handler.verb === "GET")?.withApiAuthSeen).toBe(true)
+    expect(mixed.handlers.find((handler) => handler.verb === "DELETE")?.withApiAuthSeen).toBe(false)
+
+    // The negative direction, on the same shape: an arrow-form handler that DOES authorize is not
+    // flagged, and is still counted — so form 3 is classified rather than exempted.
+    const n9 = KNOWN_NEGATIVE.find((fixture) => fixture.label.startsWith("N9"))
+    const authorized = scanSource("known-negative.ts", n9?.source ?? "")
+
+    expect(authorized.counters.arrowHandlers).toBe(1)
+    expect(authorized.handlers).toHaveLength(1)
+    expect(authorized.handlers[0].form).toBe("arrow")
+    expect(authorized.handlers[0].authorized).toBe(true)
+    expect(authorized.offenders).toEqual([])
+  })
+
+  it("does not invent an arrow handler out of a non-function `export const VERB`", () => {
+    // The boundary of the new branch. `export const GET = handlers.GET` has no body this
+    // single-file parse can classify, so it must not be counted as an arrow handler — counting it
+    // would make `authorized: false` a false positive on a shape that may well be authorized
+    // elsewhere. The file-level `noHandler` control is the backstop that surfaces such a file.
+    const result = scanSource(
+      "odd.ts",
+      ["import { handlers } from \"./impl\"", "export const GET = handlers.GET"].join("\n")
+    )
+
+    expect(result.counters.arrowHandlers).toBe(0)
+    expect(result.handlers).toEqual([])
+    expect(result.offenders).toEqual([])
+    // Floor: the parse did happen, so the emptiness above is a classification decision rather than
+    // a failed parse.
+    expect(result.counters.nodesSeen).toBeGreaterThan(0)
   })
 
   it("distinguishes the five rules by which one fires, not just by the verdict", () => {
