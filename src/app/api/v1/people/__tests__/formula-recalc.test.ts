@@ -425,8 +425,8 @@ describe("POST /api/v1/people — recalculates before emitting", () => {
 
     await POST(postRequest({ first_name: "Ada", last_name: "Lovelace" }))
 
-    const lines = errorSpy.mock.calls.map((call) => String(call[0]))
-    const canonical = lines.filter((line) => line.includes('"scope":"api/v1/people"'))
+    const lines = errorSpy.mock.calls.map((call: unknown[]) => String(call[0]))
+    const canonical = lines.filter((line: string) => line.includes('"scope":"api/v1/people"'))
 
     expect(
       canonical,

@@ -254,10 +254,30 @@ export async function POST(request: NextRequest) {
     // The owner term is `activityOwnerId` rather than `ctx.userId` because that is the identifier
     // the insert actually wrote; the 422 above proves the two are equal.
     //
-    // The fallback keeps a create from FAILING on a read. It is unreachable — the insert just
-    // committed a row whose `ownerId` is the value being matched — and it is LOGGED rather than
-    // silent, because an unlogged fallback is a path that reproduces this very defect and says
-    // nothing about it.
+    // WR-02 — THE FALLBACK IS REACHABLE, AND THE COMMENT HERE USED TO SAY IT WAS NOT.
+    //
+    // The claim was "unreachable — the insert just committed a row whose `ownerId` is the value
+    // being matched". THREE THINGS DEFEAT IT, one per predicate term:
+    //
+    //  - `isNull(deletedAt)`: `createActivityMutation` emits `activity.created` ON THE BUS, INSIDE
+    //    the mutation, BEFORE this read. `crmBus.emit` is a synchronous `EventEmitter` and its
+    //    workflow subscriber calls `matchAndFireTriggers(...)` fire-and-forget
+    //    (`src/lib/events/subscribers/workflow-trigger.ts:76-78`), so a `crm_action` with
+    //    `operation: "delete"` targeting `{{trigger.entityId}}` races this read and soft-deletes
+    //    the row.
+    //  - `eq(activities.ownerId, …)`: a BULK-03 owner reassign landing in the same window.
+    //  - `eq(activities.id, …)`: a concurrent `DELETE /api/v1/activities/:id`.
+    //
+    // A comment asserting a property the code does not have is worse than no comment: it sends the
+    // next reader looking for an impossible database state instead of for the workflow that
+    // deleted the record.
+    //
+    // WHAT IS *NOT* IMPROVED HERE, AND WHY. people/deals now fall back to
+    // `{ ...row, customFields: <post-recalc blob> }`. THIS route cannot: the recalculation happens
+    // inside `createActivityMutation` (which needs it for its own emit) and the post-recalc blob is
+    // not in this scope. Returning it would mean widening the mutation's return type, a change with
+    // its own blast radius. So this route's fallback still ships `result.activity` — the pre-recalc
+    // blob — and the LOG is what changes. Recorded as the remaining half of WR-02.
     const canonical = await db.query.activities.findFirst({
       where: and(
         eq(activities.id, result.id),
@@ -267,9 +287,12 @@ export async function POST(request: NextRequest) {
     })
 
     if (!canonical) {
-      log.error("api/v1/activities", "canonical read after create found no row", {
-        id: result.id,
-      })
+      log.error(
+        "api/v1/activities",
+        "canonical read after create found no row; the record was reassigned, trashed or deleted " +
+          "between the insert and the read, so this 201 body carries the PRE-recalc blob",
+        { id: result.id }
+      )
     }
 
     return createdResponse(serializeActivity(canonical ?? result.activity))

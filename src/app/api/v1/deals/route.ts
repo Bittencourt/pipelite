@@ -367,10 +367,29 @@ export async function POST(request: NextRequest) {
     // `stripCallerFormulaKeys` still runs BEFORE the insert (T-34-04), so what this read returns is
     // the server's own value for a formula key and never the caller's.
     //
-    // The fallback keeps a create from FAILING on a read. It is unreachable — the insert just
-    // committed a row whose `ownerId` is the value being matched — and it is LOGGED rather than
-    // silent, because an unlogged fallback is a path that reproduces this very defect and says
-    // nothing about it.
+    // WR-02 — THE FALLBACK IS REACHABLE, AND THE COMMENT HERE USED TO SAY IT WAS NOT.
+    //
+    // The claim was "unreachable — the insert just committed a row whose `ownerId` is the value
+    // being matched". THREE THINGS DEFEAT IT, one per predicate term:
+    //
+    //  - `isNull(deletedAt)`: the `crmBus.emit` above is SYNCHRONOUS (`EventEmitter`), and its
+    //    workflow subscriber calls `matchAndFireTriggers(...)` fire-and-forget
+    //    (`src/lib/events/subscribers/workflow-trigger.ts:76-78`). A `crm_action` with
+    //    `operation: "delete"` targeting `{{trigger.entityId}}` on `deal.created` therefore races
+    //    this read and soft-deletes the row.
+    //  - `eq(deals.ownerId, …)`: a BULK-03 owner reassign landing in the same window.
+    //  - `eq(deals.id, …)`: a concurrent `DELETE /api/v1/deals/:id`.
+    //
+    // A comment asserting a property the code does not have is worse than no comment: it sends the
+    // next reader looking for an impossible database state instead of for the workflow that
+    // deleted the record.
+    //
+    // SO THE FALLBACK IS NOW THE BEST AVAILABLE TRUTH RATHER THAN THE WORST. It used to be
+    // `serializeDeal(deal)` — the raw `.returning()` row, i.e. the PRE-recalc blob — which is
+    // exactly the DATA-02 drift the canonical read exists to remove, shipped by the one path that
+    // is allowed to skip the read. The in-process merge is still REJECTED as the PRIMARY path for
+    // the reason stated above; as the FALLBACK it is strictly better than a row that is wrong about
+    // the one column the recalc definitely DID write.
     const canonical = await db.query.deals.findFirst({
       where: and(
         eq(deals.id, deal.id),
@@ -380,9 +399,16 @@ export async function POST(request: NextRequest) {
     })
 
     if (!canonical) {
-      log.error("api/v1/deals", "canonical read after create found no row", { id: deal.id })
+      log.error(
+        "api/v1/deals",
+        "canonical read after create found no row; the record was reassigned, trashed or deleted " +
+          "between the insert and the read",
+        { id: deal.id }
+      )
     }
 
-    return createdResponse(serializeDeal(canonical ?? deal))
+    return createdResponse(
+      serializeDeal(canonical ?? { ...deal, customFields: recalculatedCustomFields })
+    )
   })
 }

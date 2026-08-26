@@ -431,8 +431,8 @@ describe("POST /api/v1/deals — recalculates before emitting", () => {
 
     await POST(postRequest({ title: "Acme renewal", stage_id: "stage-1" }))
 
-    const lines = errorSpy.mock.calls.map((call) => String(call[0]))
-    const canonical = lines.filter((line) => line.includes('"scope":"api/v1/deals"'))
+    const lines = errorSpy.mock.calls.map((call: unknown[]) => String(call[0]))
+    const canonical = lines.filter((line: string) => line.includes('"scope":"api/v1/deals"'))
 
     expect(
       canonical,
