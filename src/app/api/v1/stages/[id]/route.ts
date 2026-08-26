@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { withApiAuth, ApiAuthContext } from "@/lib/api/auth"
 import { Problems } from "@/lib/api/errors"
+import { mapDeleteError, mapWriteError } from "@/lib/api/db-errors"
 import { parseExpand } from "@/lib/api/expand"
 import { singleResponse, noContentResponse } from "@/lib/api/response"
 import { serializeStage, serializePipeline } from "@/lib/api/serialize"
@@ -10,12 +11,21 @@ import { stages, pipelines } from "@/db/schema"
 import { eq, and } from "drizzle-orm"
 import { z } from "zod"
 
+/** The `int4` range. `stages.position` is an `integer` column, so this is its literal domain. */
+const INT4_MIN = -2_147_483_648
+const INT4_MAX = 2_147_483_647
+
 const updateStageSchema = z.object({
   name: z.string().min(1).optional(),
   color: z.string().optional(),
   type: z.enum(["open", "won", "lost"]).optional(),
   description: z.string().nullable().optional(),
-  position: z.number().optional(),
+  // WR-01: `stages.position` is an `integer` column and this declared a bare `z.number()`, so
+  // `{"position": 1e12}` passed zod and returned `22003 numeric field overflow` as a 500. A
+  // non-integer such as `1.5` failed the same way. The column's domain is now the schema's domain,
+  // which makes both unrepresentable rather than caught — the caller gets a field name and a zod
+  // code instead of a mapped database error.
+  position: z.number().int().gte(INT4_MIN).lte(INT4_MAX).optional(),
 })
 
 interface RouteParams {
@@ -159,10 +169,24 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (updates.description !== undefined) updateData.description = updates.description
     if (updates.position !== undefined) updateData.position = updates.position
 
-    const [updatedStage] = await db.update(stages)
-      .set(updateData)
-      .where(eq(stages.id, id))
-      .returning()
+    // WR-01: `withApiAuth` has no `try`/`catch`, so an unwrapped rejection here is a 500 with no
+    // problem document. `stages` carries a unique `(pipeline_id, name)` index, so renaming a stage
+    // to a name already used in the same pipeline is a real `23505` and a real 409 — reachable with
+    // a body that passes zod, and the one case the schema above cannot make unrepresentable because
+    // uniqueness spans two columns and depends on other rows.
+    let updatedStage: typeof stages.$inferSelect
+    try {
+      const [row] = await db.update(stages)
+        .set(updateData)
+        .where(eq(stages.id, id))
+        .returning()
+      updatedStage = row
+    } catch (error) {
+      return mapWriteError("api/v1/stages/[id]", error, {
+        conflict: "A stage with that name already exists in this pipeline",
+        field: "name",
+      })
+    }
 
     return singleResponse(serializeStage(updatedStage))
   })
@@ -183,8 +207,20 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return Problems.forbidden()
     }
 
-    // Hard delete (stages don't have soft delete in the schema)
-    await db.delete(stages).where(eq(stages.id, id))
+    // Hard delete (stages don't have soft delete in the schema).
+    //
+    // WR-01, and a case the review did not enumerate: `deals.stage_id` REFERENCES `stages.id`
+    // (`src/db/schema/deals.ts`), so deleting a stage that still holds deals is `23503` — and it was
+    // an unhandled 500 on an entirely ordinary request. On a DELETE that code means a child row is
+    // blocking the operation, which is a 409, not a 422: nothing about the request was malformed.
+    // `mapDeleteError` exists to keep those two readings of one SQLSTATE apart.
+    try {
+      await db.delete(stages).where(eq(stages.id, id))
+    } catch (error) {
+      return mapDeleteError("api/v1/stages/[id]", error, {
+        referenced: "This stage still has deals and cannot be deleted",
+      })
+    }
 
     return noContentResponse()
   })

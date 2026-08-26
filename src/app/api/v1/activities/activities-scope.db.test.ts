@@ -920,3 +920,100 @@ describe("CR-01 — ?expand=deal does not serialize a deal the caller does not o
     await db.update(activities).set({ dealId: null }).where(eq(activities.id, target))
   })
 })
+
+/* ---------------------------------------------------------------------------
+ * WR-01 — the 500s, reproduced against real PostgreSQL and then closed
+ *
+ * `withApiAuth` has no `try`/`catch` and this route wrapped nothing, so a database error propagated
+ * out as a rejected promise and Next.js rendered it as a 500. Three bodies that PASSED zod reached
+ * that state:
+ *
+ *   {"due_at": null}            -> 23502 null value in column "due_date" violates not-null constraint
+ *   {"due_at": "not-a-date"}    -> RangeError: Invalid time value, thrown inside postgres.js's
+ *                                  serializer, carrying no SQLSTATE at all
+ *   {"type_id": "nope"}         -> 23503, while POST answered a clean 422 for the identical input
+ *
+ * The unit suite asserts the NEW answer with a substituted write. These cells are the reason we know
+ * the OLD answer was a real database error rather than a hypothesis: real handler, real
+ * `withApiAuth`, real minted key, real PostgreSQL.
+ * ------------------------------------------------------------------------ */
+
+describe("WR-01 — bodies that passed zod and reached PostgreSQL now answer 422", () => {
+  it("refuses `due_at: null` with 422, where the column's NOT NULL constraint gave a 500", async () => {
+    const target = A_ACTIVITY_IDS[6]
+    const before = await db.select().from(activities).where(eq(activities.id, target))
+
+    const response = await PUT(putRequest(keyA.authorizationHeader, target, { due_at: null }), {
+      params: Promise.resolve({ id: target }),
+    })
+
+    expect(response.status).toBe(422)
+
+    const problem = (await response.json()) as { errors: { field: string }[] }
+    expect(problem.errors.map((e) => e.field)).toContain("due_at")
+
+    // Read back by direct SQL: the row is untouched, `updated_at` included.
+    const after = await db.select().from(activities).where(eq(activities.id, target))
+    expect(after[0].dueDate.getTime()).toBe(before[0].dueDate.getTime())
+    expect(after[0].updatedAt.getTime()).toBe(before[0].updatedAt.getTime())
+  })
+
+  it("refuses an unparseable `due_at` with 422, where postgres.js threw a RangeError", async () => {
+    const target = A_ACTIVITY_IDS[6]
+
+    const response = await PUT(
+      putRequest(keyA.authorizationHeader, target, { due_at: "not-a-date" }),
+      { params: Promise.resolve({ id: target }) },
+    )
+
+    expect(response.status).toBe(422)
+  })
+
+  it("refuses an unknown `type_id` with 422 — the same answer POST already gave", async () => {
+    const target = A_ACTIVITY_IDS[6]
+    const before = await db.select().from(activities).where(eq(activities.id, target))
+
+    const response = await PUT(
+      putRequest(keyA.authorizationHeader, target, { type_id: `${PREFIX}no-such-type` }),
+      { params: Promise.resolve({ id: target }) },
+    )
+
+    expect(response.status).toBe(422)
+
+    const problem = (await response.json()) as { errors: { field: string; code: string }[] }
+    expect(problem.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "type_id", code: "invalid_reference" }),
+      ]),
+    )
+    expect(
+      (await db.select().from(activities).where(eq(activities.id, target)))[0].typeId,
+    ).toBe(before[0].typeId)
+  })
+
+  it("still accepts a well-formed ISO due_at and the SEEDED type_id with 200", async () => {
+    // The anti-vacuity anchor for all three refusals above. Without it they are satisfied by a route
+    // that refuses every PUT carrying either field — which would break rescheduling entirely.
+    const target = A_ACTIVITY_IDS[6]
+    const original = (await db.select().from(activities).where(eq(activities.id, target)))[0]
+
+    const response = await PUT(
+      putRequest(keyA.authorizationHeader, target, {
+        due_at: "2026-06-01T09:00:00.000Z",
+        type_id: TYPE_ID,
+      }),
+      { params: Promise.resolve({ id: target }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(
+      (await db.select().from(activities).where(eq(activities.id, target)))[0].dueDate.toISOString(),
+    ).toBe("2026-06-01T09:00:00.000Z")
+
+    // Restored, so the fixture is the one `afterAll`'s baseline re-assert was written against.
+    await db
+      .update(activities)
+      .set({ dueDate: original.dueDate, updatedAt: original.updatedAt })
+      .where(eq(activities.id, target))
+  })
+})

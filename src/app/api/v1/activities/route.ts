@@ -16,7 +16,15 @@ const createActivitySchema = z.object({
   type_id: z.string().min(1, "Type ID is required"),
   deal_id: z.string().optional().nullable(),
   owner_id: z.string().optional().nullable(),
-  due_at: z.string().optional().nullable(),
+  // WR-01: `.datetime()`. Without it `{"due_at": "not-a-date"}` reached `new Date("not-a-date")`,
+  // which is an `Invalid Date`; postgres.js serializes via `toISOString()` and throws
+  // `RangeError: Invalid time value` — a 500 carrying no SQLSTATE.
+  //
+  // NULLABLE HERE, unlike the PUT schema, and the asymmetry is deliberate rather than an oversight:
+  // this route reads `due_at ? new Date(due_at) : now`, so `null` means "default it to now" and
+  // never reaches the `.notNull()` column. On PUT there is no such default and no way to clear the
+  // column, so `null` is refused there.
+  due_at: z.string().datetime().optional().nullable(),
   notes: z.string().optional().nullable(),
   custom_fields: z.record(z.string(), z.unknown()).optional(),
 })

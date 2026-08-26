@@ -91,9 +91,25 @@ const withAwareFindFirst = vi.hoisted(() => (state: { currentStage: unknown }) =
   }
 })
 
-// `update` and `delete` are chainable stubs so this file can be extended to PUT/DELETE later
-// without a second mock shape. DELETE on a stage is a HARD delete (stages/[id]/route.ts:160),
-// which is why `delete` is present at all.
+/**
+ * The write outcomes, so the WR-01 assertions can make a write FAIL.
+ *
+ * `withApiAuth` has no `try`/`catch`, so before WR-01 a rejected write left the handler as a rejected
+ * promise and Next.js rendered a 500. "Mapped to a problem document" and "escaped the handler" are
+ * only distinguishable if the write genuinely rejects, which is what these carry.
+ */
+const writeState = vi.hoisted(() => ({
+  /** Rows `db.update(...).returning()` resolves to. */
+  updateRows: [] as unknown[],
+  /** Thrown by the UPDATE when set. */
+  updateError: undefined as unknown,
+  /** Thrown by the hard DELETE when set. */
+  deleteError: undefined as unknown,
+}))
+
+// `update` and `delete` are chainable stubs. DELETE on a stage is a HARD delete
+// (stages/[id]/route.ts), which is why `delete` is present at all and why it can reject with a
+// foreign-key violation: `deals.stage_id` references `stages.id`.
 vi.mock("@/db", () => ({
   db: {
     query: {
@@ -101,10 +117,20 @@ vi.mock("@/db", () => ({
     },
     update: vi.fn(() => ({
       set: vi.fn(() => ({
-        where: vi.fn(() => ({ returning: vi.fn(async () => []) })),
+        where: vi.fn(() => ({
+          returning: vi.fn(async () => {
+            if (writeState.updateError !== undefined) throw writeState.updateError
+            return writeState.updateRows
+          }),
+        })),
       })),
     })),
-    delete: vi.fn(() => ({ where: vi.fn(async () => undefined) })),
+    delete: vi.fn(() => ({
+      where: vi.fn(async () => {
+        if (writeState.deleteError !== undefined) throw writeState.deleteError
+        return undefined
+      }),
+    })),
   },
 }))
 
@@ -195,6 +221,11 @@ beforeEach(() => {
   // every assertion in this file vacuous.
   mockFindFirst.mockImplementation(withAwareFindFirst(mockState))
   mockState.currentStage = ownedStage
+  // Writes succeed by default and return the row, so a WR-01 assertion about a FAILING write has to
+  // say so explicitly and cannot pass because every write happens to be broken.
+  writeState.updateRows = [{ ...ownedStage, pipeline: undefined }]
+  writeState.updateError = undefined
+  writeState.deleteError = undefined
   vi.spyOn(console, "error").mockImplementation(() => {})
 })
 
@@ -487,5 +518,124 @@ describe("SC-4d — owner, pipeline soft-deleted → 404 not 403 [THE WR-06 PROO
     const response = await GET(getRequest("stage-1"), paramsFor("stage-1"))
 
     expect(response.status).toBe(200)
+  })
+})
+
+/* ---------------------------------------------------------------------------------------------
+ * WR-01 — valid-per-zod bodies that produced an unhandled 500
+ *
+ * `withApiAuth` has no `try`/`catch` (`src/lib/api/auth.ts`) and neither of these verbs wrapped its
+ * write, so every database error propagated out as a rejected promise and Next.js rendered it as a
+ * 500 — telling the caller to retry a request that would fail identically forever.
+ *
+ * The two `position` cases are now UNREPRESENTABLE rather than caught: `stages.position` is an
+ * `integer` column and the schema declared a bare `z.number()`, so the schema's domain is now the
+ * column's domain and the caller gets a field name instead of a mapped database error. The 409 cases
+ * are the ones a schema cannot express — uniqueness spanning two columns, and a child row blocking a
+ * hard delete.
+ * ------------------------------------------------------------------------------------------ */
+
+/** A `postgres.js` error carries its SQLSTATE on `.code`, and nothing else the mapper reads. */
+function pgError(code: string): Error & { code: string } {
+  return Object.assign(new Error(`postgres said ${code}`), { code })
+}
+
+function putStage(id: string, body: unknown) {
+  return new NextRequest(`http://localhost:3000/api/v1/stages/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+  })
+}
+
+function deleteStage(id: string) {
+  return new NextRequest(`http://localhost:3000/api/v1/stages/${id}`, { method: "DELETE" })
+}
+
+describe("WR-01 — the position schema now has the integer column's domain", () => {
+  it.each([
+    ["1e12, which overflows int4", 1e12],
+    ["a non-integer", 1.5],
+    ["below int4's minimum", -3_000_000_000],
+  ])("refuses %s with 422 rather than a 22003 500", async (_label, position) => {
+    const response = await PUT(putStage("stage-1", { position }), paramsFor("stage-1"))
+    const body = await response.json()
+
+    expect(response.status).toBe(422)
+    expect(body.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: "position" })])
+    )
+    expect(db.update).not.toHaveBeenCalled()
+  })
+
+  it("still accepts an ordinary in-range integer position with 200", async () => {
+    // The anti-vacuity anchor. Without it the three refusals above are satisfied by a schema that
+    // rejects every `position`, which would break stage reordering entirely.
+    const response = await PUT(putStage("stage-1", { position: 3000 }), paramsFor("stage-1"))
+
+    expect(response.status).toBe(200)
+    expect(db.update).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("WR-01 — a rejected write becomes a problem document, never an unhandled rejection", () => {
+  it("maps a 23505 on rename to 409, naming the unique (pipeline_id, name) collision", async () => {
+    // `stages` carries a unique `(pipeline_id, name)` index. Renaming a stage to a name already used
+    // in the same pipeline is a real conflict, and `Problems.conflict` was defined and entirely
+    // unused. This is the case the schema cannot make unrepresentable: uniqueness spans two columns
+    // and depends on rows this request has not seen.
+    writeState.updateError = pgError("23505")
+
+    const response = await PUT(putStage("stage-1", { name: "Qualified" }), paramsFor("stage-1"))
+    const body = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(body.type).toMatch(/\/CONFLICT$/)
+    expect(body.detail).toContain("already exists")
+  })
+
+  it("maps an UNEXPECTED throw on PUT to a well-formed 500 rather than letting it escape", async () => {
+    // The status is 500 either way, which is exactly why this asserts the BODY: before WR-01 the
+    // promise rejected out of the handler and the response was whatever Next.js renders.
+    writeState.updateError = new Error("connection terminated unexpectedly")
+
+    const response = await PUT(putStage("stage-1", { name: "Renamed" }), paramsFor("stage-1"))
+    const body = await response.json()
+
+    expect(response.status).toBe(500)
+    expect(body.type).toMatch(/\/INTERNAL_ERROR$/)
+  })
+
+  it("maps a 23503 on DELETE to 409, because the stage still has deals", async () => {
+    // A case the review did not enumerate: `deals.stage_id` REFERENCES `stages.id`, so deleting a
+    // stage that still holds deals was `23503` and an unhandled 500 on an entirely ordinary request.
+    // On a DELETE that code means a child row is BLOCKING the operation, so 409 — nothing about the
+    // request was malformed. That is the opposite of what 23503 means on a write, and the reason
+    // there are two mappers.
+    writeState.deleteError = pgError("23503")
+
+    const response = await DELETE(deleteStage("stage-1"), paramsFor("stage-1"))
+    const body = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(body.type).toMatch(/\/CONFLICT$/)
+    expect(body.detail).toContain("deals")
+  })
+
+  it("still answers 204 when the DELETE succeeds — the 409 is targeted", async () => {
+    const response = await DELETE(deleteStage("stage-1"), paramsFor("stage-1"))
+
+    expect(response.status).toBe(204)
+    expect(db.delete).toHaveBeenCalledTimes(1)
+  })
+
+  it("maps an UNEXPECTED throw on DELETE to a well-formed 500", async () => {
+    writeState.deleteError = new Error("connection terminated unexpectedly")
+
+    const response = await DELETE(deleteStage("stage-1"), paramsFor("stage-1"))
+    const body = await response.json()
+
+    expect(response.status).toBe(500)
+    expect(body.type).toMatch(/\/INTERNAL_ERROR$/)
   })
 })

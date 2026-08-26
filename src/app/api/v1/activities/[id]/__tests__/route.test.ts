@@ -54,6 +54,11 @@ vi.mock("@/db", () => ({
     query: {
       activities: { findFirst: vi.fn() },
       deals: { findFirst: vi.fn() },
+      // WR-01: `type_id` is a foreign key and an unknown one used to reach the UPDATE and return
+      // `23503` as a 500, while POST answered a clean 422 for the identical input. The PUT now
+      // checks EXISTENCE here first. `activity_types` has no owner column, so this is deliberately
+      // not an ownership check.
+      activityTypes: { findFirst: vi.fn() },
     },
     update: vi.fn(),
   },
@@ -97,6 +102,7 @@ const mockDb = db as unknown as {
   query: {
     activities: { findFirst: ReturnType<typeof vi.fn> }
     deals: { findFirst: ReturnType<typeof vi.fn> }
+    activityTypes: { findFirst: ReturnType<typeof vi.fn> }
   }
   update: ReturnType<typeof vi.fn>
 }
@@ -240,6 +246,33 @@ function stubUpdate(rows: unknown[]) {
   })
 }
 
+/**
+ * Make the write REJECT, for the WR-01 assertions.
+ *
+ * `withApiAuth` has no `try`/`catch`, so before WR-01 a rejected write left the handler as a
+ * rejected promise and Next.js rendered a 500. A test can only tell "mapped to a problem document"
+ * apart from "escaped the handler" if the write really rejects, which is what this installs.
+ */
+function stubUpdateRejecting(error: unknown) {
+  mockDb.update.mockReturnValue({
+    set: vi.fn((v: Record<string, unknown>) => {
+      updatedValues = v
+      return {
+        where: vi.fn(() =>
+          Object.assign(Promise.reject(error), {
+            returning: vi.fn().mockRejectedValue(error),
+          })
+        ),
+      }
+    }),
+  })
+}
+
+/** A `postgres.js` error carries its SQLSTATE on `.code`, and nothing else the mapper reads. */
+function pgError(code: string): Error & { code: string } {
+  return Object.assign(new Error(`postgres said ${code}`), { code })
+}
+
 /* ------------------------------------------------------------------------------------------ *
  * Request helpers — these build requests only. No helper in this file asserts a status.
  * ------------------------------------------------------------------------------------------ */
@@ -278,6 +311,9 @@ beforeEach(() => {
   // silently become predicate-BLIND would resolve a row for the foreign deal too and make every
   // CR-01 assertion below vacuous.
   mockDb.query.deals.findFirst.mockImplementation(dealsFindFirst)
+  // The type EXISTS by default, so a WR-01 assertion about an unknown type has to say so explicitly
+  // and cannot pass because every type lookup happens to be empty.
+  mockDb.query.activityTypes.findFirst.mockResolvedValue({ id: "type-1", name: "Call" })
   stubUpdate([{ ...ownedActivity }])
 })
 
@@ -669,5 +705,167 @@ describe("DELETE /api/v1/activities/:id — per-record authorization (SC-1c)", (
 
     expect(response.status).toBe(404)
     expect(mockDb.update).not.toHaveBeenCalled()
+  })
+})
+
+/* ------------------------------------------------------------------------------------------ *
+ * WR-01 — four valid-per-zod bodies that produced an unhandled 500
+ *
+ * `withApiAuth` has no `try`/`catch` (`src/lib/api/auth.ts`) and this route wrapped nothing, so every
+ * database error propagated out as a rejected promise and Next.js rendered it as a 500 — telling the
+ * caller to retry a request that would fail identically forever.
+ *
+ * The BEHAVIOURAL proof that these were really 500s against PostgreSQL lives in
+ * `activities-scope.db.test.ts`: this file's `db.update` is a stub, so the pre-fix status here is 200,
+ * not 500. Both are needed. The status assertions below prove the REQUEST IS NOW REFUSED with a field
+ * name; the db test proves what it used to do to a real database.
+ * ------------------------------------------------------------------------------------------ */
+
+describe("WR-01 — the schema and the column no longer contradict each other", () => {
+  beforeEach(() => {
+    mockDb.query.activities.findFirst.mockResolvedValue(ownedActivity)
+  })
+
+  it("refuses `due_at: null` with 422 naming the field, because due_date is NOT NULL", async () => {
+    // `activities.due_date` is `.notNull()` while the API schema declared `due_at` nullable, so this
+    // body passed zod, executed `due_date = null` and answered
+    // `23502 null value in column "due_date" violates not-null constraint` as a 500. There is no way
+    // to clear this column, so refusing with a field name is the only honest answer.
+    const response = await PUT(putRequest("act-1", { due_at: null }), routeParams("act-1"))
+    const problem = await response.json()
+
+    expect(response.status).toBe(422)
+    expect(problem.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: "due_at" })])
+    )
+    expect(mockDb.update).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["due_at", { due_at: "not-a-date" }],
+    ["completed_at", { completed_at: "not-a-date" }],
+  ])("refuses an unparseable %s with 422 rather than a RangeError 500", async (field, body) => {
+    // `new Date("not-a-date")` is an `Invalid Date`; postgres.js serializes via `toISOString()`,
+    // which throws `RangeError: Invalid time value` — a 500 carrying no SQLSTATE at all, so even the
+    // error mapper could not classify it. `.datetime()` makes it unrepresentable instead.
+    const response = await PUT(putRequest("act-1", body), routeParams("act-1"))
+    const problem = await response.json()
+
+    expect(response.status).toBe(422)
+    expect(problem.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field })])
+    )
+    expect(mockDb.update).not.toHaveBeenCalled()
+  })
+
+  it("still accepts a well-formed ISO due_at with 200 — the tightening is targeted", async () => {
+    // The anti-vacuity anchor for the three refusals above. Without it they are satisfied by a
+    // schema that rejects every `due_at`, which would break every legitimate reschedule.
+    const response = await PUT(
+      putRequest("act-1", { due_at: "2026-03-01T09:00:00.000Z" }),
+      routeParams("act-1")
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockDb.update).toHaveBeenCalledTimes(1)
+    expect(updatedValues?.dueDate).toBeInstanceOf(Date)
+  })
+
+  it("accepts `completed_at: null` — nullable there is CORRECT, and must not be tightened away", async () => {
+    // `activities.completed_at` IS nullable and `null` is the meaningful value that marks an activity
+    // not-done. Only the FORMAT was tightened. Pinned, because "make due_at non-nullable" applied
+    // one field too far would silently remove the ability to reopen an activity.
+    const response = await PUT(putRequest("act-1", { completed_at: null }), routeParams("act-1"))
+
+    expect(response.status).toBe(200)
+    expect(updatedValues?.completedAt).toBeNull()
+  })
+
+  it("refuses an unknown type_id with 422, the same answer POST already gave for that input", async () => {
+    // `{"type_id": "does-not-exist"}` reached the UPDATE and returned `23503` as a 500, while
+    // `POST /api/v1/activities` answered a clean 422 ("Activity type not found") for the identical
+    // input. Two verbs disagreeing about one error is worse than either answer alone.
+    mockDb.query.activityTypes.findFirst.mockResolvedValue(undefined)
+
+    const response = await PUT(
+      putRequest("act-1", { type_id: "does-not-exist" }),
+      routeParams("act-1")
+    )
+    const problem = await response.json()
+
+    expect(response.status).toBe(422)
+    expect(problem.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "type_id", code: "invalid_reference" }),
+      ])
+    )
+    expect(mockDb.update).not.toHaveBeenCalled()
+  })
+
+  it("still accepts a type_id that EXISTS with 200 — existence, not ownership", async () => {
+    // `activity_types` has no owner column: it is a shared lookup table. A caller must be able to use
+    // any type that exists, so this anchor is what stops the check above from drifting into an
+    // ownership comparison there is nothing to compare against.
+    mockDb.query.activityTypes.findFirst.mockResolvedValue({ id: "type-2", name: "Email" })
+
+    const response = await PUT(putRequest("act-1", { type_id: "type-2" }), routeParams("act-1"))
+
+    expect(response.status).toBe(200)
+    expect(updatedValues?.typeId).toBe("type-2")
+  })
+})
+
+describe("WR-01 — a rejected write becomes a problem document, never an unhandled rejection", () => {
+  beforeEach(() => {
+    mockDb.query.activities.findFirst.mockResolvedValue(ownedActivity)
+  })
+
+  it("maps a 23503 from the UPDATE to 422 — the check-then-write race is still real", async () => {
+    // `deal_id` and `type_id` are validated in separate statements from the write, so a concurrent
+    // delete between them still produces a foreign-key violation. Validating does not remove the
+    // need to catch.
+    stubUpdateRejecting(pgError("23503"))
+
+    const response = await PUT(putRequest("act-1", { title: "renamed" }), routeParams("act-1"))
+    const problem = await response.json()
+
+    expect(response.status).toBe(422)
+    expect(problem.type).toMatch(/\/VALIDATION_ERROR$/)
+  })
+
+  it("maps an UNEXPECTED throw to a well-formed 500 instead of letting it escape the handler", async () => {
+    // The status is 500 either way, and that is exactly why this asserts the BODY. Before WR-01 the
+    // promise rejected out of the handler and the response was whatever Next.js renders; now it is
+    // the same RFC 7807 document every other error from this API produces.
+    stubUpdateRejecting(new Error("connection terminated unexpectedly"))
+
+    const response = await PUT(putRequest("act-1", { title: "renamed" }), routeParams("act-1"))
+    const problem = await response.json()
+
+    expect(response.status).toBe(500)
+    expect(problem.type).toMatch(/\/INTERNAL_ERROR$/)
+    expect(problem.title).toBe("Internal Server Error")
+  })
+
+  it("emits no CRM event when the write failed", async () => {
+    // The emit sits after the write. An unwrapped rejection skipped it by crashing; a mapped return
+    // has to skip it deliberately, and a webhook announcing an update that did not happen would be
+    // worse than the 500.
+    stubUpdateRejecting(pgError("23503"))
+
+    await PUT(putRequest("act-1", { title: "renamed" }), routeParams("act-1"))
+
+    expect(mockEmit).not.toHaveBeenCalled()
+  })
+
+  it("maps a rejected DELETE soft-delete the same way, and emits nothing", async () => {
+    stubUpdateRejecting(new Error("connection terminated unexpectedly"))
+
+    const response = await DELETE(deleteRequest("act-1"), routeParams("act-1"))
+    const problem = await response.json()
+
+    expect(response.status).toBe(500)
+    expect(problem.type).toMatch(/\/INTERNAL_ERROR$/)
+    expect(mockEmit).not.toHaveBeenCalled()
   })
 })

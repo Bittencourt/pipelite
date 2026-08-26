@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { withApiAuth, ApiAuthContext } from "@/lib/api/auth"
 import { Problems } from "@/lib/api/errors"
+import { mapWriteError } from "@/lib/api/db-errors"
 import { parsePagination } from "@/lib/api/pagination"
 import { parseExpand } from "@/lib/api/expand"
 import { paginatedResponse, createdResponse } from "@/lib/api/response"
@@ -136,17 +137,34 @@ export async function POST(request: NextRequest) {
       ? Math.max(...existingStages.map(s => s.position)) + 1000
       : 1000
 
+    // WR-01: `stages` carries a unique `(pipeline_id, name)` index, so a `name` that already exists
+    // in the caller's OWN pipeline was `23505` — and, with no `try`/`catch` anywhere on this path
+    // (`withApiAuth` has none either), an unhandled 500. `Problems.conflict` was already defined and
+    // entirely unused. This is the one case here the request schema cannot make unrepresentable:
+    // uniqueness spans two columns and depends on rows this request has not seen.
+    //
+    // `pipeline_id` is validated above, but that is a SEPARATE statement from this insert, so a
+    // pipeline deleted in between still produces `23503`. Validate AND catch.
     const now = new Date()
-    const [stage] = await db.insert(stages).values({
-      name,
-      pipelineId: pipeline_id,
-      color: color || "blue",
-      type: type || "open",
-      description: description || null,
-      position: maxPosition,
-      createdAt: now,
-      updatedAt: now,
-    }).returning()
+    let stage: typeof stages.$inferSelect
+    try {
+      const [row] = await db.insert(stages).values({
+        name,
+        pipelineId: pipeline_id,
+        color: color || "blue",
+        type: type || "open",
+        description: description || null,
+        position: maxPosition,
+        createdAt: now,
+        updatedAt: now,
+      }).returning()
+      stage = row
+    } catch (error) {
+      return mapWriteError("api/v1/stages", error, {
+        conflict: "A stage with that name already exists in this pipeline",
+        field: "name",
+      })
+    }
 
     return createdResponse(serializeStage(stage))
   })

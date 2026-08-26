@@ -122,7 +122,8 @@ import { db } from "@/db"
 import { apiKeys, auditLog, pipelines, stages, users } from "@/db/schema"
 
 import { mintApiKey, type MintedApiKey } from "../__tests__/api-key-fixture"
-import { GET } from "./route"
+import { GET, POST } from "./route"
+import { PUT } from "./[id]/route"
 
 /* ---------------------------------------------------------------------------
  * The environment guard — evaluated at module scope, so a wrong target aborts
@@ -276,7 +277,10 @@ const LEFTOVER_PREDICATE: Record<(typeof TOUCHED_TABLES)[number], ReturnType<typ
   users: sql`id like ${LIKE_PREFIX}`,
   api_keys: sql`id like ${LIKE_PREFIX}`,
   pipelines: sql`id like ${LIKE_PREFIX}`,
-  stages: sql`id like ${LIKE_PREFIX}`,
+  // `pipeline_id` as well as `id`: `POST /api/v1/stages` lets the DATABASE generate the id, so a
+  // stage created by the WR-01 conflict assertion carries no prefix. An id-prefix check alone would
+  // report zero leftovers while one sat in the table pointing at a fixture pipeline.
+  stages: sql`id like ${LIKE_PREFIX} or pipeline_id like ${LIKE_PREFIX}`,
   audit_log: sql`entity_id like ${LIKE_PREFIX} or actor_user_id like ${LIKE_PREFIX}`,
 }
 
@@ -309,6 +313,11 @@ async function removeFixtures(): Promise<void> {
     .delete(auditLog)
     .where(or(like(auditLog.entityId, LIKE_PREFIX), like(auditLog.actorUserId, LIKE_PREFIX)))
   await db.delete(stages).where(like(stages.id, LIKE_PREFIX))
+  // And by parent, for the same reason the leftover predicate checks `pipeline_id`: a stage created
+  // through `POST /api/v1/stages` has a database-generated id that no prefix sweep can see, and if
+  // the WR-01 conflict assertion is RED — i.e. run against the route before the mapper existed —
+  // exactly such a row is what gets left behind, blocking the pipeline delete below with a 23503.
+  await db.delete(stages).where(like(stages.pipelineId, LIKE_PREFIX))
   await db.delete(pipelines).where(like(pipelines.id, LIKE_PREFIX))
   await db.delete(apiKeys).where(like(apiKeys.id, LIKE_PREFIX))
   await db.delete(users).where(like(users.id, LIKE_PREFIX))
@@ -868,5 +877,126 @@ describe("WR-02 — a multi-pipeline caller loses no stage between pages", () =>
     for (const foreign of B_STAGE_IDS) expect(returned).not.toContain(foreign)
     // The cross-check's other half: B's rows are in the table right now.
     expect(await sqlIdsOwnedBy(USER_B)).toEqual([...B_STAGE_IDS].sort())
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * WR-01 — the 500s, reproduced against real PostgreSQL and then closed
+ *
+ * `withApiAuth` has no `try`/`catch` and neither of these handlers wrapped its write, so a database
+ * error propagated out as a rejected promise and Next.js rendered it as a 500. The unit suites assert
+ * the NEW answer with a mocked write; these two assertions are the reason we know the OLD answer was
+ * a real database error and not a hypothesis: they go through the real handler, the real
+ * `withApiAuth`, a real minted key and real PostgreSQL, with nothing substituted.
+ * ------------------------------------------------------------------------ */
+
+describe("WR-01 — POST /api/v1/stages answers 409, not 500, on a duplicate name", () => {
+  it("refuses a name already used in the caller's OWN pipeline with 409 and creates nothing", async () => {
+    // `stages` carries a unique `(pipeline_id, name)` index, so this is a genuine 23505 from
+    // PostgreSQL rather than a simulated one. `Problems.conflict` was defined and entirely unused.
+    const existingName = `${PREFIX}${A_STAGE_IDS[0]}`
+    const before = await globalStageCount()
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/v1/stages", {
+        method: "POST",
+        headers: {
+          Authorization: keyA.authorizationHeader,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: existingName, pipeline_id: PIPELINE_A }),
+      }),
+    )
+
+    expect(response.status).toBe(409)
+
+    const problem = (await response.json()) as { type: string; detail: string }
+    expect(problem.type).toMatch(/\/CONFLICT$/)
+    expect(problem.detail).toContain("already exists")
+
+    // And nothing landed. A 409 that still inserted would be a worse defect than the 500.
+    expect(await globalStageCount()).toBe(before)
+  })
+
+  it("still creates a stage with a name that is free in that pipeline — the 409 is targeted", async () => {
+    // The anti-vacuity anchor: without it the 409 above is satisfied by a POST that refuses every
+    // request. Created and removed here so the fixture the other describes assume is unchanged.
+    const freeName = `${PREFIX}a-brand-new-stage-name`
+    const response = await POST(
+      new NextRequest("http://localhost/api/v1/stages", {
+        method: "POST",
+        headers: {
+          Authorization: keyA.authorizationHeader,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: freeName, pipeline_id: PIPELINE_A }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+
+    const created = (await response.json()) as { data: { id: string } }
+    expect(created.data.id).toBeTruthy()
+
+    await db.delete(stages).where(eq(stages.id, created.data.id))
+  })
+})
+
+describe("WR-01 — PUT /api/v1/stages/:id answers 422, not 500, on an out-of-range position", () => {
+  it("refuses position 1e12 with 422 naming the field, and leaves the row alone", async () => {
+    // `stages.position` is an `integer` column and the schema declared a bare `z.number()`, so this
+    // body passed zod and PostgreSQL answered `22003 numeric field overflow`. The schema now carries
+    // the column's own domain, so the request never reaches the database.
+    const target = A_STAGE_IDS[0]
+    const before = await db.select().from(stages).where(eq(stages.id, target))
+
+    const response = await PUT(
+      new NextRequest(`http://localhost/api/v1/stages/${target}`, {
+        method: "PUT",
+        headers: {
+          Authorization: keyA.authorizationHeader,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ position: 1e12 }),
+      }),
+      { params: Promise.resolve({ id: target }) },
+    )
+
+    expect(response.status).toBe(422)
+
+    const problem = (await response.json()) as { errors: { field: string }[] }
+    expect(problem.errors.map((e) => e.field)).toContain("position")
+
+    const after = await db.select().from(stages).where(eq(stages.id, target))
+    expect(after[0].position).toBe(before[0].position)
+    expect(after[0].updatedAt.getTime()).toBe(before[0].updatedAt.getTime())
+  })
+
+  it("still accepts an in-range position with 200 — and puts it back", async () => {
+    const target = A_STAGE_IDS[0]
+    const original = (await db.select().from(stages).where(eq(stages.id, target)))[0]
+
+    const response = await PUT(
+      new NextRequest(`http://localhost/api/v1/stages/${target}`, {
+        method: "PUT",
+        headers: {
+          Authorization: keyA.authorizationHeader,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ position: original.position + 1 }),
+      }),
+      { params: Promise.resolve({ id: target }) },
+    )
+
+    expect(response.status).toBe(200)
+    expect(
+      (await db.select().from(stages).where(eq(stages.id, target)))[0].position,
+    ).toBe(original.position + 1)
+
+    // Restored, so the position fixture the pagination describes rest on is the one they expect.
+    await db
+      .update(stages)
+      .set({ position: original.position, updatedAt: original.updatedAt })
+      .where(eq(stages.id, target))
   })
 })

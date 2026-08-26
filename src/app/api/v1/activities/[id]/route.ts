@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { withApiAuth, ApiAuthContext } from "@/lib/api/auth"
 import { Problems } from "@/lib/api/errors"
+import { mapWriteError } from "@/lib/api/db-errors"
 import { parseExpand } from "@/lib/api/expand"
 import { singleResponse, noContentResponse } from "@/lib/api/response"
 import { serializeActivity, serializeDeal, serializeOrganization, serializePerson } from "@/lib/api/serialize"
@@ -17,11 +18,27 @@ import { recalculateFormulas, stripFormulaKeys } from "@/lib/formula-recalc"
 
 const updateActivitySchema = z.object({
   title: z.string().min(1).optional(),
-  type_id: z.string().optional(),
+  type_id: z.string().min(1).optional(),
   deal_id: z.string().nullable().optional(),
   owner_id: z.string().optional(),
-  due_at: z.string().nullable().optional(),
-  completed_at: z.string().nullable().optional(),
+  // WR-01: `.datetime()` and NON-nullable, and both halves close a reachable 500.
+  //
+  // `activities.due_date` is `.notNull()` (`src/db/schema/activities.ts:13`) while this field used to
+  // declare `z.string().nullable().optional()`. `{"due_at": null}` therefore passed zod, executed
+  // `due_date = null` and returned `23502 null value in column "due_date" violates not-null
+  // constraint` as a 500 — for a request that can never succeed. There is no way to CLEAR this
+  // column, so refusing `null` with a field name is the honest answer.
+  //
+  // Without `.datetime()`, `{"due_at": "not-a-date"}` reached `new Date("not-a-date")`, which is an
+  // `Invalid Date`; postgres.js serializes via `toISOString()` and throws
+  // `RangeError: Invalid time value` — another 500, and one carrying no SQLSTATE at all.
+  //
+  // Making the state UNREPRESENTABLE is preferred over catching it: the caller now gets the field
+  // name and a zod code instead of a mapped database error.
+  due_at: z.string().datetime().optional(),
+  // `completed_at` STAYS nullable: `activities.completed_at` is nullable and `null` is the
+  // meaningful value that marks an activity not-done. Only the format is tightened.
+  completed_at: z.string().datetime().nullable().optional(),
   notes: z.string().nullable().optional(),
   custom_fields: z.record(z.string(), z.unknown()).optional(),
 })
@@ -231,6 +248,28 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // WR-01: `type_id` EXISTENCE, checked here rather than discovered by the database.
+    //
+    // `activities.type_id` is a foreign key, so `{"type_id": "does-not-exist"}` reached the UPDATE
+    // and returned `23503` as a 500 — while `POST /api/v1/activities` answered a clean 422
+    // ("Activity type not found") for the identical input. Two verbs disagreeing about one error is
+    // worse than either answer alone.
+    //
+    // This is EXISTENCE only, not ownership: `activity_types` has no owner column
+    // (`src/db/schema/activity-types.ts`) — it is a shared lookup table, so there is nothing to
+    // compare `ctx.userId` against. Do not "complete" this into an ownership check.
+    if (updates.type_id) {
+      const type = await db.query.activityTypes.findFirst({
+        where: eq(activityTypes.id, updates.type_id),
+      })
+
+      if (!type) {
+        return Problems.validation([
+          { field: "type_id", code: "invalid_reference", message: "Activity type not found" },
+        ])
+      }
+    }
+
     const now = new Date()
 
     // Build update object and track changed fields
@@ -285,10 +324,29 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const [updatedActivity] = await db.update(activities)
-      .set(updateData)
-      .where(eq(activities.id, id))
-      .returning()
+    // WR-01: the write is wrapped because `withApiAuth` has no `try`/`catch`, so an error here
+    // propagates out as a rejected promise and Next.js renders it as a 500 — telling the caller to
+    // retry a request that will fail identically forever.
+    //
+    // The zod tightening above and the two reference checks make the KNOWN cases unreachable. This
+    // catch is the backstop for what a schema cannot express: `deal_id` or `type_id` deleted by a
+    // concurrent request between the check and this statement is still a real `23503`, because those
+    // are separate statements.
+    let updatedActivity: typeof activities.$inferSelect
+    try {
+      const [row] = await db.update(activities)
+        .set(updateData)
+        .where(eq(activities.id, id))
+        .returning()
+      updatedActivity = row
+    } catch (error) {
+      return mapWriteError("api/v1/activities/[id]", error, {
+        // `activities` carries no unique index a caller can collide with, so there is deliberately
+        // no `conflict` message: a 23505 here would be unexpected and must surface as a logged 500
+        // rather than as a 409 with a guessed detail.
+        field: "body",
+      })
+    }
 
     // Recalculate BEFORE the emit (D-17): the webhook body and the workflow-trigger envelope are
     // emit-time snapshots of this object, so recalculating afterwards would leave both stale.
@@ -347,10 +405,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return Problems.forbidden()
     }
 
-    // Soft delete
-    await db.update(activities)
-      .set({ deletedAt: new Date() })
-      .where(eq(activities.id, id))
+    // Soft delete. Wrapped for the same reason as the PUT write: an unwrapped rejection here is a
+    // 500 with no problem document. This is an UPDATE, not a DELETE, so a child row cannot block it
+    // and `mapWriteError` is the right mapper.
+    try {
+      await db.update(activities)
+        .set({ deletedAt: new Date() })
+        .where(eq(activities.id, id))
+    } catch (error) {
+      return mapWriteError("api/v1/activities/[id]", error)
+    }
 
     // Emit CRM event via bus. `data` is `{ id }`, so `previous` is the ONLY source of tombstone
     // state — omitting it would silently produce an audit row with no field detail.
