@@ -1,10 +1,11 @@
 ---
 phase: 48
 slug: rest-api-authorization
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: signed-off
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-08-25
+signed_off: 2026-08-26
 ---
 
 # Phase 48 — Validation Strategy
@@ -115,10 +116,79 @@ subject area** and is the reason the Q10 gate exists: deleting all three ownersh
 
 ## Sign-Off
 
-- [ ] All six negative controls observed red, verbatim output in the SUMMARY
-- [ ] The Q10 gate proven to catch a deleted predicate (control A)
-- [ ] SC-4a and SC-3 proven with the *defect-proving* halves, not the guards
-- [ ] `/api/v1/stages?offset=<count>` returns 200 after a real container rebuild
-- [ ] `nyquist_compliant: true`
+- [x] All six negative controls observed red, verbatim output in the SUMMARY — A/A′/A″ and B1/B2 and C
+      in `48-08-SUMMARY.md`, D1-D4 in `48-01-SUMMARY.md`, E1/E2 in `48-06-SUMMARY.md`, F in
+      `48-07-SUMMARY.md`. Judged row by row in the register below; **fifteen named controls plus five
+      unnamed ones, all DELIVERED, none NOT DELIVERED.**
+- [x] The Q10 gate proven to catch a deleted predicate (control A) — the exact SEC-48-B ablation moved
+      the base suite from **0 failures to exactly 1**, and the one red test names file, line and verb.
+      **Re-falsified fresh at sign-off** (register § fresh falsifications).
+- [x] SC-4a and SC-3 proven with the *defect-proving* halves, not the guards — SC-4a by ablation S1,
+      which reddened `owner + no expand → 200` while **both non-owner cells stayed green**; SC-3 by the
+      four-component seeded proof, with E1 showing the ceiling alone passing a single-owner dataset.
+- [x] `/api/v1/stages?offset=<count>` returns 200 after a real container rebuild — image
+      `8f07a18eddad` → **`eba9cfa1c4be`**, `offset=74` (the live count, read by SQL) and `offset=999999`
+      both **HTTP 200 with `data: []`**, and **zero `42601`** in the container log for the probe window.
+- [x] `nyquist_compliant: true`
 
-**Approval:** pending
+**Approval:** signed off by 48-10 on 2026-08-26. Evidence: `48-10-SUMMARY.md`.
+
+---
+
+## The exploit re-checked over real HTTP against a REBUILT image (48-10 Task 1)
+
+`docker compose up -d --build`. Bound image `sha256:8f07a18e…` → **`sha256:eba9cfa1…`**
+(`pipelite-app:latest` `8f07a18eddad` → **`eba9cfa1c4be`**). `/api/health` **200**, `db.ok: true`,
+**10/10** processors alive. A matching image id would have invalidated every row below; it does not
+match, so the measurements are against this phase's code.
+
+Two temporary users (`p48gate-user-a`, `p48gate-user-b`, role `member`, status `approved`), two
+temporary API keys (`p48gate-key-a`, `p48gate-key-b`), one activity each created through
+`POST /api/v1/activities` with that user's own key, one pipeline and one stage owned by A. **All
+removed afterwards; absence asserted by count.** The plaintext keys were never written into any
+committed file.
+
+| Transcript | Research measured | 48-10 measured, same request | Verdict |
+|---|---|---|---|
+| `GET /activities/{B}` as A | **200**, body carried `owner_id: p48res-userB` | **403** `FORBIDDEN` | reversed |
+| `PUT /activities/{B}` as A | **200**, `title: "HIJACKED BY A"` persisted | **403** `FORBIDDEN` | reversed |
+| `PUT /activities/{A}` as A with `owner_id: B` | **200**, `owner_id` moved B → A | **422**, `errors: [{field: "owner_id", code: "forbidden", …}]`; follow-up GET shows `owner_id: p48gate-user-a` **unchanged** | reversed |
+| `DELETE /activities/{B}` as A | **204**; B's own GET then **404** | **403**; B's own GET still **200** with B's row | reversed |
+| `POST /activities` as A with `owner_id: B` | the vector was open (`:154-164` validated existence only) | **422** naming `owner_id`; B's `meta.total` **1 → 1** | reversed |
+| `GET /activities` as B | 100 rows, **none of them B's**, `meta.total` **79024** | **1 row**, `distinct_owners: ["p48gate-user-b"]`, `meta.total` **1** | reversed |
+| `GET /activities` as A | (same defect) | **1 row**, own only; `contains_B_activity: false` | correct |
+| `GET /stages/{A}` owner, **no** `?expand` | **403** — *this was SEC-02* | **200**, and `data` keys carry **no `pipeline` key** | reversed |
+| `GET /stages/{A}?expand=pipeline` owner | 200 + expanded pipeline | **200**, `pipeline.owner_id: p48gate-user-a` | guard, unchanged |
+| `GET /stages/{A}` non-owner, both ways | 403 / 403 | **403** / **403** | guards, unchanged |
+| `GET /stages?limit=5&offset=74` | **500**, `42601 syntax error at or near ")"` | **200**, `{"data":[],"meta":{"total":1,"offset":74,"limit":5}}` | reversed |
+| `GET /stages?limit=5&offset=999999` | **500**, same | **200**, `data: []` | reversed |
+| `GET /stages?limit=5` as the stage's owner (F3) | `data: []` beside `meta.total: 1` | **`data: ["p48gate-stage-a"]`**, `data_length: 1`, `meta.total: 1` | reversed |
+
+**The boundary offset was read from the database, not written down.** `select count(*) from stages`
+returned **74** while the fixture stage existed (73 live + 1), so `offset=74` is the first empty page —
+the same class of request research measured at 500.
+
+**Container log for the probe window:** `42601` **0**, `syntax error` **0**, `Failed query` **0**,
+`IN ()` **0**, error-level lines **0**. Floored so the absence is not vacuous: the same window carries
+**20** `Rate limiting skipped: Redis not configured` lines, one per authenticated `/api/v1` request, so
+the window demonstrably covers the probe. The matcher itself was falsified against a positive fixture:
+run over `48-RESEARCH.md` it reports **8** hits.
+
+**Live database, before and after the probe — identical:**
+
+| Table | Pre-probe | Post-cleanup |
+|---|---|---|
+| `activities` | 79 022 | **79 022** |
+| `stages` | 73 | **73** |
+| `pipelines` | 12 | **12** |
+| `users` | 10 | **10** |
+| `api_keys` | 8 | **8** |
+| `audit_log` | 214 | **214** |
+
+Deleted in foreign-key order: 2 `audit_log`, 2 `activities`, 1 `stages`, 1 `pipelines`, 2 `api_keys`,
+2 `users`. Prefixed leftovers afterwards: `users 0 / api_keys 0 / audit_log 0 / pipelines 0 / stages 0`,
+and 0 activities owned by either probe user. The leftover matcher was floored too — the same `LIKE`
+form matched **10** rows when pointed at a pattern that must match.
+
+Worth recording: research's cleanup removed **5** `audit_log` rows from 6 requests; this probe removed
+**2** from ~22. The refusals write nothing, which is the audit-side shadow of the same fix.
