@@ -67,3 +67,71 @@ belonging to a soft-deleted or `rejected` user therefore still authenticates eve
 and still establishes an `api_key` actor scope. Recorded by 48-RESEARCH § Q2 as "worth a note; out of
 scope" and out of scope here too — 48-06 only proves the list scope, and widening the fixture to cover
 account lifecycle would be a different requirement.
+
+---
+
+## DEF-48-03 — `createActivityMutation` still validates deal EXISTENCE, not ownership
+
+**Found during:** the CR-01 fix (code review remediation pass).
+
+CR-01 was fixed in the two `/api/v1` ROUTES — `activities/route.ts` POST and
+`activities/[id]/route.ts` PUT — because that is where the review located it and where the house
+pattern lives (`deals/[id]/route.ts:226-256`). `src/lib/mutations/activities.ts:140-151` is
+unchanged and still reads:
+
+```ts
+if (validated.data.dealId) {
+  const deal = await db.query.deals.findFirst({
+    where: and(eq(deals.id, validated.data.dealId), isNull(deals.deletedAt)),
+  })
+  if (!deal) return { success: false, error: "Deal not found" }
+}
+```
+
+Existence, not ownership.
+
+**Why it was not fixed here.** The review says so explicitly: "the mutation is also called from the
+session-auth server-action path where `input.userId` is already the owner, so tightening it there is
+a second, separate change." That path has different callers, a different auth model and a different
+blast radius — a `{ success: false }` return there surfaces in the UI, not as a 422.
+
+**Residual risk, and why it is not a leak.** The REST route can no longer plant a foreign `deal_id`.
+The remaining writer is the session-auth server action, whose UI deal picker is owner-scoped, so
+reaching it needs a hand-crafted server-action call. And the READ side is now guarded independently:
+both `?expand=deal` projections compare `activity.deal.ownerId` to `ctx.userId`
+(`activities/route.ts`, `activities/[id]/route.ts`), so a row that carries a foreign link — planted
+this way, or existing from before the fix — does not serialize the deal, its organization or its
+person. What remains is an INTEGRITY gap (a `deal_id` the victim's deal cannot account for), not a
+confidentiality one.
+
+**Fix when picked up:** add `eq(deals.ownerId, input.userId)` to the mutation's deal lookup and
+re-run the server-action suites; the route-level guards then become defence in depth rather than the
+only control. Consider the same treatment for `assigneeId`, which the mutation accepts and does not
+check at all.
+
+**Owner:** whoever picks up the activities server-action work next.
+
+---
+
+## DEF-48-04 — the WR-02 tie case cannot be proven behaviourally
+
+**Found during:** the WR-02 fix (code review remediation pass).
+
+`GET /api/v1/stages` now orders by `(position, id)`, so `LIMIT`/`OFFSET` is over a TOTAL order. The
+behavioural guard for it — `stages-scope.db.test.ts`, "WR-02 — a multi-pipeline caller loses no stage
+between pages", which seeds a second pipeline for user A with COLLIDING positions and asserts the
+collision is present before paging — was measured against the UNFIXED route and came back
+**`Tests 28 passed (28)`**. It did not catch the defect.
+
+That is not a defect in the test. `LIMIT`/`OFFSET` over a sort with ties is UNSPECIFIED in
+PostgreSQL: correct pages are a permitted outcome, and for six rows on one plan they are the likely
+one. The RED/GREEN proof therefore lives in `stages/__tests__/in-clause.test.ts` on the COMPILED SORT
+KEYS, where "the order is total" is a deterministic claim about the statement rather than a hope
+about the planner.
+
+**What is deferred:** nothing is broken, but the behavioural guard is weaker than it looks and its
+header says so. If a future plan wants a behavioural proof, it needs a fixture large enough to force
+a different plan (a sort spill, or an index-only scan over thousands of tied rows) — which is a
+performance-shaped fixture, not a correctness-shaped one, and is out of proportion to the defect.
+
+**Owner:** unassigned. Recorded so the guard is not mistaken for evidence.
