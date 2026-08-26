@@ -421,3 +421,17 @@ statement text, `42601`, and `position: '70'` reproduced from shipped code.
 **Pattern available for reuse:** `stages-scope.db.test.ts` is the second `*-scope.db.test.ts`. The
 two-owner / two-real-key / floor-ceiling-discriminator-crosscheck shape is now a pattern, and Phase 50's
 export-authorization work can copy either file rather than inventing a third harness.
+
+## Self-Check: PASSED
+
+| Claim | Check | Result |
+| --- | --- | --- |
+| `src/app/api/v1/stages/stages-scope.db.test.ts` exists | `ls -la` | FOUND, 37.5K |
+| `.planning/phases/48-rest-api-authorization/48-07-SUMMARY.md` exists | `ls -la` | FOUND, 25.4K |
+| commit `e0e1aa5` exists | `git log --oneline` | FOUND |
+| commit `bd8d4c9` exists | `git log --oneline` | FOUND |
+| working tree clean | `git diff --exit-code` | exit 0 |
+| nothing untracked or staged | `git status --short` | empty |
+
+`468029b` is this document's own commit; the row above is omitted because it could not exist at the
+time this table was written. It is verifiable in `git log` after the amend that added this section.
