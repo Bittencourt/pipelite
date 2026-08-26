@@ -942,13 +942,27 @@ describe("mergeRecordsMutation — the survivor's own formula recalculation (DAT
     await mergeRecordsMutation({ ...baseInput, choices: LOSER_WINS_CHOICES })
 
     expect(mockRecalculate).toHaveBeenCalledTimes(3)
+
+    // DELIBERATELY INDEPENDENT OF `recalcCalls()`, so this is a SECOND detector for the ordering
+    // rather than a restatement of that helper's precondition.
+    //
+    // AND DELIBERATELY NOT `order[0] < order[1]`. That was the first spelling of this cell and
+    // ablation A3 proved it VACUOUS: `invocationCallOrder` is monotonic by construction, so
+    // element 0 is below element 1 whichever call each one is — the assertion passed with the
+    // survivor recalculated LAST. The indices have to be resolved from the ARGUMENTS.
+    const inputs = mockRecalculate.mock.calls.map((call) => call[0])
     const order = mockRecalculate.mock.invocationCallOrder
-    // Read off the MOCK's recorded order, never off the source text: a `toContain` over
-    // `dedup.ts` would pass on a comment and fail on a reformat.
+    const survivorAt = inputs.findIndex((input) => input.entityId === "org-survivor")
+    const firstChildAt = inputs.findIndex((input) => input.entityType !== "organization")
+
+    expect(survivorAt, "no recorded call named the survivor").toBeGreaterThanOrEqual(0)
+    expect(firstChildAt, "no recorded call named a child").toBeGreaterThanOrEqual(0)
     expect(
-      order[0],
-      `recorded invocation order ${JSON.stringify(order)} — the survivor must be first`
-    ).toBeLessThan(order[1])
+      order[survivorAt],
+      `recorded order ${inputs
+        .map((input) => `${input.entityType}:${input.entityId}`)
+        .join(" -> ")} — the survivor must be invoked before the first child`
+    ).toBeLessThan(order[firstChildAt])
   })
 
   it("ORDERING HAS A CONSEQUENCE: the children are handed the survivor's FRESH formula values", async () => {
