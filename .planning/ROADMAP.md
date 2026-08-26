@@ -479,7 +479,11 @@ absence asserted; `organizations` back at **46054**, `users` 10, `api_keys` 8, `
 **0 stored file descriptors on both the `%storedName%` and `%publicUrl%` probes across 188,619
 rows** — identical to 49-01's measurement, so the live database was not written to by this phase.
 
-**Verdicts:** SC-1 **PROVED for `FILE_STORAGE=local` only**, SC-2 **PROVED**, SC-3 **PROVED**, SC-4
+**Verdicts:** SC-1 **PROVED for `FILE_STORAGE=local` only**, SC-2 **PROVED**, SC-3 **PROVED on wider
+evidence after being re-opened** (the sign-off's verdict rested on the survivor adopting a loser's
+*input*; the post-sign-off review's WR-01 showed the criterion FAILED when the survivor adopts the
+loser's *output* — stored 574 against inputs computing 122, reachable through the `filledOnly` default
+with no user action. Fixed in `80b5098`, now pinned in both directions by three new db cells), SC-4
 **PROVED**. Each cites the defect-proving assertion, never a regression guard — and the three known
 guards are named as guards: 49-03's activities cells (C1) were green before the fix, 49-07's
 URL-goes-dark half was already true after 49-04, and 49-05's and 49-06's first runs were green because

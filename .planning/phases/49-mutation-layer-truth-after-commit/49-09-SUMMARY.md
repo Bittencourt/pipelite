@@ -923,7 +923,28 @@ removing the log leaves all four blob-gone cells and the URL cell green, reddeni
   A1-vs-A3c table distinguishes "rolled back" from "committed but reported as failed".
 - **The now-empty directory tree is deliberately not pruned.**
 
-## SC-3 — a merge leaves the survivor's formula equal to a fresh computation: **PROVED**
+## SC-3 — a merge leaves the survivor's formula equal to a fresh computation: **RE-OPENED, THEN RE-CLOSED ON WIDER EVIDENCE**
+
+> **CORRECTION, 2026-08-26, after this sign-off was written.** The verdict below said **PROVED** and
+> it rested on a case narrower than the criterion claims. The post-sign-off code review's **WR-01**
+> showed the criterion **did not hold** when the survivor adopts the loser's formula **OUTPUT**:
+> `scopeFormulasToChangedFields` matches a formula's *references*, not the formula's own name, so an
+> adopted derived value was never recomputed. Measured: the survivor stored **574** while a fresh
+> computation from its post-merge inputs (11, 100) gives **122** — and 574 is the loser's stored
+> value. **Not an edge case:** the `filledOnly` default reaches it with **no user action at all**
+> whenever a formula definition was added after the survivor's last save.
+>
+> 49-08 exercised only the **input**-adoption case, and its own vacuity control had already recorded
+> that an all-survivor choice map passes against unfixed code — so the proof's entire discriminating
+> power rested on that one fixture. The output-adoption case was never driven.
+>
+> Fixed in `80b5098` (with `429166f` as its RED). The criterion now holds in **both** directions and
+> three new db cells pin it, including a barrier cell that would redden if the fix degenerated into
+> "never touch the formula key" — which would have re-introduced exactly the staleness 49-08 removed.
+> **The verdict stands as PROVED only on that wider evidence.** The original text is kept below
+> unaltered, because the narrowness of the evidence it cites is the finding.
+
+## SC-3 (original verdict, superseded above): **PROVED**
 
 **The carrying assertion:** the survivor's stored value equals **174**, with the
 does-not-equal-pre-merge discriminator beside it —
