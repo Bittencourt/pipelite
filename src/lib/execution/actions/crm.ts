@@ -186,6 +186,81 @@ function coerceFieldMapping(
 }
 
 /**
+ * CR-04 — THE KEYS A `crm_action` NODE MAY NEVER SET, WHATEVER THE ENTITY.
+ *
+ * `ownerId` is the one that crosses the boundary. `dealSchema` carries
+ * `ownerId: z.string().optional()` and both deal mutations honour it (`deals.ts:35`, `:232`,
+ * `:377-380`); `coerceFieldMapping` copies any key with no `crmFieldTypes` entry through unchanged,
+ * and `crmFieldTypes.deal` has only `value` and `expectedCloseDate`. The two call sites spread
+ * `{ ...interpolatedFields, userId }` — `userId` is LAST so it cannot be clobbered, but `ownerId`
+ * is a different key. So `fieldMapping: { ownerId: "<victim>" }` created a row IN THE VICTIM'S
+ * ACCOUNT (visible in their `GET /api/v1/deals` and their `/deals` UI, on the caller's stage in
+ * the caller's pipeline), and the `update` variant TRANSFERRED one of the caller's own rows to the
+ * victim after `assertCallerOwnsTarget` legitimately passed.
+ *
+ * That is strictly worse than DEF-48-05's reference columns: those attach a foreign FK to the
+ * caller's own row, this moves the row itself across the boundary.
+ *
+ * REFUSED, NOT SILENTLY DROPPED. A node configured to reassign an owner must fail visibly in the
+ * runs list. Dropping the key would make the node appear to work and would hide a misconfiguration
+ * that the operator wrote on purpose.
+ *
+ * `id` and `deletedAt` are here for the same reason rather than because either is currently
+ * reachable: `id` is the record's identity and `deletedAt` is its lifecycle, and neither is a field
+ * a node writes. Both are stripped by every one of the four Zod schemas today, so refusing them is
+ * a durability claim — stated as one.
+ *
+ * ALL FOUR ENTITIES, not only deals. `createPersonMutation`, `createOrganizationMutation` and
+ * `createActivityMutation` hard-code `ownerId: input.userId` and their schemas omit `ownerId`, so
+ * for those three this is durability too. A guard that fires only for the entity that happens to
+ * be vulnerable today is the shape that lets the fifth entity through — which is precisely how
+ * `ownerId` came to be absent from DEF-48-05's enumeration.
+ *
+ * WHY HERE AND NOT IN THE MUTATION HELPERS: the same reason as the CR-02 block below. The helpers
+ * are shared with the session-auth server actions, where `updateDealOwnerMutation` and the bulk
+ * reassign paths set `owner_id` LEGITIMATELY. The engine is the caller that must not.
+ *
+ * KEYS DELIBERATELY NOT REFUSED, audited rather than assumed — every remaining `*Id`-shaped field
+ * that names a USER:
+ *
+ *   - `deal.assigneeIds` (`z.array(z.string())` -> `deal_assignees.user_id`) and
+ *     `activity.assigneeId` (`text('assignee_id') references users.id`, validated NOWHERE).
+ *     Neither moves the row: `GET /api/v1/deals` and `GET /api/v1/activities` both scope their
+ *     lists by `owner_id` and never by assignee, so an assigned record does not appear in the
+ *     assignee's account. Refusing them would break assigning work to a colleague from a workflow,
+ *     which is a supported product behaviour. They remain a foreign-FK residual of exactly
+ *     DEF-48-05's class and are recorded in its table; `deal.assigneeIds` additionally reaches
+ *     `newAssigneeUserIds` and therefore a notification, which is SEC-48-D's recipient question.
+ *   - person and organization carry no user-naming field beyond `organizationId`, already recorded.
+ */
+const FORBIDDEN_MAPPING_KEYS: ReadonlySet<string> = new Set(["ownerId", "id", "deletedAt"])
+
+/**
+ * Refuse a `fieldMapping` that names a key the engine may not set.
+ *
+ * Runs on the COERCED, INTERPOLATED mapping and BEFORE the three dry-run gates, both deliberately:
+ * `"ownerId": "{{trigger.data.userId}}"` needs no prior knowledge of the victim's id (chained with
+ * CR-05 it planted the row on whoever last wrote a record), and a refusal that only fired on a real
+ * execution would let a dry run report success for a node whose real run is refused.
+ *
+ * `Object.keys` on the object `coerceFieldMapping` built, so this reads own enumerable keys only.
+ */
+function assertNoForbiddenMappingKeys(
+  entity: string,
+  fields: Record<string, unknown>
+): void {
+  for (const key of Object.keys(fields)) {
+    if (FORBIDDEN_MAPPING_KEYS.has(key)) {
+      throw new Error(
+        `crm_action cannot set '${key}' on a ${entity}: the engine acts only as the workflow's ` +
+          `own user, and '${key}' would move the record across the owner boundary. Remove it ` +
+          `from fieldMapping.`
+      )
+    }
+  }
+}
+
+/**
  * =============================================================================
  * CR-02 — THE PER-RECORD AUTHORIZATION BOUNDARY FOR THE WORKFLOW ENGINE
  * =============================================================================
@@ -241,6 +316,16 @@ function coerceFieldMapping(
  *     deal, `organizationId` on a person) are still validated for EXISTENCE only, by the mutation
  *     helpers. A caller can therefore still attach one of their OWN records to another owner's
  *     record id. That is CR-01's residual, not CR-02's, and it is recorded as DEF-48-05.
+ *   - `deal.assigneeIds` and `activity.assigneeId` name USERS and are in the same residual class:
+ *     `assigneeIds` writes `deal_assignees.user_id` for arbitrary user ids and `assigneeId` is
+ *     validated nowhere at all. Neither MOVES the record — `GET /api/v1/deals` and
+ *     `GET /api/v1/activities` scope their lists by `owner_id`, never by assignee — which is why
+ *     they are residuals here rather than entries in `FORBIDDEN_MAPPING_KEYS` above: refusing them
+ *     would break assigning work to a colleague from a workflow. `assigneeIds` additionally
+ *     reaches `newAssigneeUserIds` and therefore a notification, which is SEC-48-D's question.
+ *     Both are now in DEF-48-05's table, which listed neither before CR-04's audit.
+ *   - `ownerId` WAS in this list's blind spot and is no longer a residual at all: it is refused
+ *     outright by `FORBIDDEN_MAPPING_KEYS`. See the CR-04 block above the CR-02 one.
  *   - Ownership is read here and acted on by the mutation a moment later, so a concurrent owner
  *     transfer between the two is not serialized. Closing that means moving the predicate into the
  *     mutation's own statement, which is the Phase 49 work above.
@@ -428,6 +513,11 @@ async function handleCrmAction(
     entity,
     interpolateDeep(fieldMapping, context)
   )
+
+  // CR-04. After interpolation and coercion — so a template cannot walk past it — and above the
+  // switch, so it applies to create, update and delete alike and lands ABOVE all three dry-run
+  // gates. See the FORBIDDEN_MAPPING_KEYS block for why it refuses rather than drops.
+  assertNoForbiddenMappingKeys(entity, interpolatedFields)
 
   switch (operation) {
     case "create": {
