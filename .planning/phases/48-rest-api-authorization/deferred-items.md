@@ -317,7 +317,7 @@ decision.
 
 ---
 
-## DEF-48-07 — CR-05: the CRM trigger matcher was unscoped, and it had never been recorded — **CLOSED 2026-08-26**
+## DEF-48-07 — CR-05: the CRM trigger matcher was unscoped, and it had never been recorded — **CLOSED 2026-08-26 (both halves: matcher, then the SEC-48-A read path)**
 
 **Found during:** the iteration-3 code review. **This item did not exist in `.planning/` in any
 form before this entry.** A search of the whole directory for `matchAndFireTriggers` returned one
@@ -391,14 +391,55 @@ error level.
 | `triggers/schedule-processor.ts` | also selects every active workflow, but its envelope is `{ scheduledAt }` and carries no record at all. |
 | `triggers/manual-trigger.ts` | the caller supplies its own `entityData`; the route (`workflows/[id]/run`) scopes the workflow by `getWorkflow(id, context.userId)`. |
 
-**STILL OPEN, and NOT fixed by this pass because it is explicitly out of scope:** `GET
+~~**STILL OPEN, and NOT fixed by this pass because it is explicitly out of scope:** `GET
 /api/v1/workflows/{id}/runs` and `.../runs/{runId}` do not check `workflows.createdBy` at all, so an
-API key can read **any** workflow's runs and run steps. That is **SEC-48-A** in `BACKLOG.md`, which
-has a deliberately inverted-polarity control asserting the detector still flags both routes. With
-the matcher scoped, a workflow only ever receives its own author's records — so the SEC-48-A route
-hole no longer aggregates other owners' CRM rows into one attacker-owned workflow, but it is still a
-cross-owner read of whatever the victim's OWN workflows recorded. Closing CR-05's read path
-completely means closing SEC-48-A.
+API key can read **any** workflow's runs and run steps.~~ **CLOSED 2026-08-26 — see the block
+below.** The paragraph is struck rather than rewritten because it was accurate when written and the
+sequence matters: the matcher was scoped first, the read path second, and a reader needs to be able
+to see that CR-05 shipped with a known-open half.
+
+> **THE READ HALF IS NOW CLOSED (2026-08-26), so CR-05 is complete.**
+>
+> `GET /api/v1/workflows/{id}/runs` and `GET .../runs/{runId}` both resolve the workflow through
+> `getWorkflow(id, context.userId)` and answer `Problems.notFound("Workflow")` otherwise — the
+> house pattern of every sibling under `workflows/` (`workflows/[id]/route.ts:29,:68,:93`,
+> `workflows/[id]/run/route.ts:24`). The `[runId]` handler's callback had been `async () => …`, with
+> no `context` parameter at all, so the caller's identity was not even in scope in the function that
+> served the row; the workflow is now resolved BEFORE the run is read, and the pre-existing
+> `eq(workflowRuns.workflowId, id)` term is retained ALONGSIDE the owner check rather than replaced
+> by it, so a caller still cannot pull an arbitrary run id through a workflow they own.
+>
+> **404 and not 403**, because every sibling of these two answers 404 and because 403-for-real
+> beside 404-for-unknown is an existence oracle over every workflow id in the deployment. Asserted,
+> not claimed: the two responses are compared BYTE FOR BYTE on both routes.
+>
+> **All five routes under `src/app/api/v1/workflows/` were checked**, not just the two named:
+> `[id]` GET/PUT/DELETE and `[id]/run` POST were already `getWorkflow(id, ctx.userId)`; the
+> collection GET was already `listWorkflows({createdBy})` with the same filter on its `total`; the
+> collection POST stamps `createdBy: context.userId`. There is no steps or logs sub-route.
+>
+> **No admin surface was broken.** Checked the way `authorizeAuditRead` gates `GET /api/v1/audit`:
+> these routes carry no role read, and nothing outside `src/app/api/v1` calls them — the UI's own
+> runs pages query the database directly.
+>
+> **Proof:** `src/app/api/v1/workflows/__tests__/runs-owner-scope.db.test.ts` (new) — real
+> PostgreSQL, real unmocked `withApiAuth`, real route handlers, two real keys from the existing
+> `mintApiKey` fixture. Measured **red first** at `Tests 6 failed | 11 passed (17)`, with the red
+> asserted on the SERIALIZED RESPONSE BODY rather than the status code, so it shows user A actually
+> receiving B's `trigger_data`; green at `17 passed (17)`. The step leak is a separate marker
+> because `serializeRunStep` is a second verbatim passthrough. Anti-vacuity: A reading A's own runs
+> and run detail must succeed and must contain A's markers, and B reading B's own must too.
+>
+> **The gate built for this fired.** `route-authorization.test.ts`'s inverted-polarity
+> `ACCEPTED_KNOWN_ROUTES` control went red on the fix and forced the carve-out out: the list, its
+> two controls and its `EXEMPT_LISTS` entry are deleted, `MIN_EXEMPT_MATCHED` 11 → 9,
+> `SUPPRESSED_BY_EXEMPTION` 12 → 10, `RAW_OFFENDERS` 13 → 11. Both routes are covered by the
+> ordinary offender sweep now, and a named replacement cell asserts they are neither flagged NOR
+> exempt, so the hole cannot be re-hidden.
+>
+> Both operations were also **undocumented in `public/openapi.yaml`** — no path item at all — and
+> are now documented with their 404 and held by the parsed-YAML gate in both polarities (scope
+> 10 → 12 operations). `DOC-48-01` is not closed by that.
 
 **Proof:** `src/lib/triggers/trigger-owner-scope.db.test.ts` (new) — real PostgreSQL, real
 mutations, real `crmBus`, real route handlers, real minted API keys; measured red first at

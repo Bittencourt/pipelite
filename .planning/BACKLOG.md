@@ -60,7 +60,8 @@ Status legend — **v1.4** promoted for scoping · **recorded** real but deliber
 | **SEC-47-B** | `matches_regex` runs a user-supplied regex unbounded on the request path | **recorded** — the only remaining unbounded engine on the execution path |
 | **SEC-48-C** | Workflow `fieldMapping` still plants a foreign FK on the caller's own row | **recorded** — owned by Phase 49; DEF-48-05. Its "can no longer read/write another owner's row" claim was FALSE in both directions and is corrected in place |
 | **SEC-48-D** | Any API key can mail any address from the app's sending domain | **recorded** (relay half) — the directory-disclosure half is **disproven**: `/team` already publishes every address to every signed-in user |
-| **SEC-48-E** | CR-05 — every active workflow fired on every user's CRM write | **closed** 2026-08-26; DEF-48-07. Read path completes only when SEC-48-A closes |
+| **SEC-48-A** | `workflows/[id]/runs` and `runs/[runId]` were unscoped cross-owner reads | **closed** 2026-08-26; the other half of CR-05's read path. Added to this index on closure — it had an entry in the register since 2026-08-25 but was never listed here |
+| **SEC-48-E** | CR-05 — every active workflow fired on every user's CRM write | **closed** 2026-08-26; DEF-48-07. Read path COMPLETE — SEC-48-A closed the same day |
 | **SEC-48-F** | The engine is stricter than the product for deals (no admin bypass) | **accepted** — recorded 2026-08-26; DEF-48-08 |
 | **TS-48-A** | `noUncheckedIndexedAccess` is off; WR-10 was the second bug it hid | **recorded** — whole-repo strictness change |
 | **IMP-48-A** | Three more unscoped lookups in the CSV importer | **recorded** — blocked on a duplicates decision; DEF-48-06 |
@@ -1374,7 +1375,7 @@ in the live `workflows` table, (b) picks between the sandbox route and an explic
 and (c) proves the wedge with a real `(a+)+$` payload before and after. Do not fold it into a test
 or tooling task; it is a behaviour change on the execution path.
 
-### SEC-48-A — `workflows/[id]/runs` and `runs/[runId]` are unscoped reads — **DEFERRED from Phase 48**
+### SEC-48-A — `workflows/[id]/runs` and `runs/[runId]` are unscoped reads — **CLOSED 2026-08-26**
 
 Measured 2026-08-25 by Phase 48 research while auditing all 36 `/api/v1` route files. Both endpoints
 read workflow-run records **without any per-record ownership check**. Real, reproducible, and the same
@@ -1408,6 +1409,52 @@ authorization regression gate that would have caught all of these.
 >
 > **Closing this item therefore means:** add the ownership scope, watch `ACCEPTED_KNOWN_ROUTES` go
 > red, delete both entries, and update `SUPPRESSED_BY_EXEMPTION` — in that order.
+
+**CLOSED 2026-08-26, in exactly that order, and the control did its job.** Nothing above is
+rewritten: the deferral was a real decision and the instruction it left behind is what closed it.
+
+Both routes now resolve the workflow through `getWorkflow(id, context.userId)` and answer
+`Problems.notFound("Workflow")` otherwise — the house pattern of all four sibling handlers under
+`workflows/` (`workflows/[id]/route.ts:29,:68,:93`, `workflows/[id]/run/route.ts:24`). The
+`[runId]` handler's callback had been written `withApiAuth(request, async () => …)`, taking no
+`context` parameter, so the caller identity was not even in scope in the function that returned the
+row; the workflow is resolved BEFORE the run is read, and the pre-existing
+`eq(workflowRuns.workflowId, id)` term is kept ALONGSIDE the owner check, not replaced by it.
+
+**404, not 403.** Iteration 1 settled that `organizations/{id}`, `people/{id}` and `deals/{id}`
+answer a foreign record with 404 while `pipelines/{id}` and `webhooks/{id}` return 403; the
+tiebreak is the route's own siblings, and every sibling here answers 404. It is also the only
+non-leaking answer — 403-for-real beside 404-for-unknown is an existence oracle over every workflow
+id in the deployment. Asserted byte-for-byte on both routes rather than claimed. WR-06's
+soft-deleted-parent-is-404 rule does not arise: `workflows` has no `deleted_at` and `deleteWorkflow`
+is a hard cascade.
+
+**All five routes under `src/app/api/v1/workflows/` were checked**, not only the two named. `[id]`
+GET/PUT/DELETE and `[id]/run` POST were already scoped; the collection GET was already
+`listWorkflows({createdBy})` with the same filter on its `total`; the collection POST stamps
+`createdBy: context.userId`. There is no steps or logs sub-route. **No admin surface reads all runs
+by design** — checked the way `authorizeAuditRead` gates `GET /api/v1/audit`: these routes carry no
+role read, and nothing outside `src/app/api/v1` calls them, because the UI's own runs pages query
+the database directly.
+
+**Proof:** `src/app/api/v1/workflows/__tests__/runs-owner-scope.db.test.ts` — real PostgreSQL, real
+unmocked `withApiAuth`, real route handlers, two real keys from the existing `mintApiKey` fixture
+(no third harness). Measured **red first** at `Tests 6 failed | 11 passed (17)`, asserted on the
+SERIALIZED RESPONSE BODY and not the status code, so the red shows user A actually receiving B's
+`trigger_data`; green at `17 passed (17)`. The step leak carries its own marker because
+`serializeRunStep` is a second verbatim passthrough that a list-only fix would have left open.
+
+**What the closure cost the gate, recorded because a count that moves without a reason is how a
+carve-out becomes permanent:** `ACCEPTED_KNOWN_ROUTES` and its two controls deleted,
+`MIN_EXEMPT_MATCHED` 11 → 9, `SUPPRESSED_BY_EXEMPTION` 12 → 10, `RAW_OFFENDERS` 13 → 11,
+`getWorkflow` R3 calls 4 → 6. A named replacement cell asserts both routes are neither flagged NOR
+exempt, so the hole cannot be re-hidden by re-adding a list entry.
+
+**Also fixed on the way:** both operations were **absent from `public/openapi.yaml` entirely** — not
+merely missing a status. They are documented now, with their 404, and held by the parsed-YAML gate
+in both polarities (`REQUIRE_404_OPERATIONS` and `MUST_NOT_DECLARE_403_OPERATIONS`); its scope went
+10 → 12 operations and was re-proved falsifiable in both directions before being trusted.
+`DOC-48-01` is not closed by this.
 
 ### SEC-48-B — nothing in this repo detects removing an authorization check — **CLOSED by Phase 48 (2026-08-25)**
 
@@ -1662,12 +1709,20 @@ via `workflow_runs.trigger_data`, which `serializeRun` returns verbatim. Fixed b
 event record's `owner_id` and scoping `workflows.createdBy` to it, failing closed when the owner
 cannot be resolved.
 
-**Still open, and it is the reason this is not the whole read path:** **SEC-48-A** above —
+~~**Still open, and it is the reason this is not the whole read path:** **SEC-48-A** above —
 `GET /api/v1/workflows/{id}/runs` and `.../runs/{runId}` still carry no `workflows.createdBy` check,
-so an API key can read any workflow's runs and run steps. With the matcher scoped, those runs no
-longer aggregate other owners' CRM rows into one attacker-owned workflow, but reading a victim's own
-workflow runs is still a cross-owner read. **Closing CR-05's read path completely means closing
-SEC-48-A**, and SEC-48-A's inverted-polarity control will go red when someone does.
+so an API key can read any workflow's runs and run steps.~~
+
+**THE READ PATH IS NOW COMPLETE. SEC-48-A closed 2026-08-26** — both routes scoped through
+`getWorkflow(id, context.userId)`, answering 404 like every sibling under `workflows/`, proved
+behaviourally against real PostgreSQL with two minted API keys in
+`src/app/api/v1/workflows/__tests__/runs-owner-scope.db.test.ts` (red first at
+`6 failed | 11 passed (17)`, green at `17 passed (17)`). The paragraph above is struck rather than
+deleted because the ordering is the point: the matcher was scoped on 2026-08-26 with the read half
+knowingly left open, and this entry said so. **SEC-48-A's inverted-polarity control did go red when
+someone did**, exactly as this sentence predicted, and forced the carve-out out of
+`route-authorization.test.ts`. So CR-05 is closed end to end: nothing writes another owner's row
+into a workflow's runs, and nothing reads another owner's workflow's runs.
 
 ---
 
