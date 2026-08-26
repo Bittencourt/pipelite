@@ -63,8 +63,17 @@ vi.mock("@/lib/api/auth", () => ({
 }))
 
 import { db } from "@/db"
-import { ownedStagesPredicate } from "@/lib/api/stage-scope"
+import {
+  MANDATORY_SCOPE_TERMS,
+  ownedStagesPredicate,
+  requireScopedPredicate,
+} from "@/lib/api/stage-scope"
 import { GET } from "@/app/api/v1/stages/route"
+// Real column objects and real drizzle combinators, for the WR-07 controls below: they have to build
+// the same expressions the helper builds, or they are testing something else.
+import { and, eq, isNull } from "drizzle-orm"
+import { QueryBuilder } from "drizzle-orm/pg-core"
+import { pipelines, stages } from "@/db/schema"
 
 const mockDb = db as unknown as {
   select: ReturnType<typeof vi.fn>
@@ -253,6 +262,98 @@ describe("ownedStagesPredicate — the compiled statement", () => {
     const EMPTY_IN = /\bin\s*\(\s*\)/i
     expect(bare).not.toMatch(EMPTY_IN)
     expect(filtered).not.toMatch(EMPTY_IN)
+  })
+})
+
+/* ---------------------------------------------------------------------------------------------
+ * WR-07 — the scope cannot collapse into an unfiltered query
+ *
+ * `ownedStagesPredicate` used to end `) as SQL`. `and(...)` is typed `SQL | undefined`, and the cast
+ * was the only thing standing between a future edit and `.where(undefined)` — which drizzle renders
+ * as NO WHERE CLAUSE. The cast is gone; the narrowing is checked. These are the assertions that make
+ * that claim falsifiable rather than described.
+ * ------------------------------------------------------------------------------------------ */
+
+describe("drizzle's actual behaviour, which is why the guard exists at all", () => {
+  it("`and()` over nothing is `undefined`, and `.where(undefined)` emits NO where clause", () => {
+    // ⚠ NOT a proof of anything about our code — it is a MEASUREMENT of drizzle, green before and
+    // after WR-07. It is here so the hazard is a rendered statement in the suite rather than a claim
+    // in a comment, and so a drizzle upgrade that changed this semantics would surface here.
+    expect(and()).toBeUndefined()
+
+    const qb = new QueryBuilder()
+    const join = eq(stages.pipelineId, pipelines.id)
+
+    const scoped = qb
+      .select()
+      .from(stages)
+      .innerJoin(pipelines, join)
+      .where(and(eq(pipelines.ownerId, "user-1"), isNull(pipelines.deletedAt)))
+      .toSQL().sql
+    const collapsed = qb
+      .select()
+      .from(stages)
+      .innerJoin(pipelines, join)
+      // The exact value the removed `as SQL` allowed to reach this call.
+      .where(undefined)
+      .toSQL().sql
+
+    // FLOOR: the scoped form really does emit a where clause, so the negative below is a difference
+    // rather than a property of `toSQL()`.
+    expect(scoped).toContain(" where ")
+    expect(scoped).toContain('"owner_id"')
+
+    expect(collapsed).not.toContain(" where ")
+    expect(collapsed).toContain("inner join")
+    // Every stage joined to every pipeline, for every caller — page and count alike, since both
+    // consume this one expression.
+    expect(collapsed).not.toContain('"owner_id" =')
+  })
+})
+
+describe("requireScopedPredicate — the checked narrowing that replaced `as SQL`", () => {
+  it("throws rather than handing back `undefined`", () => {
+    expect(() => requireScopedPredicate(undefined, MANDATORY_SCOPE_TERMS)).toThrow(
+      /NO WHERE CLAUSE/,
+    )
+  })
+
+  it("throws when the conjunction is valid but has LOST the owner term", () => {
+    // The second half, and the one a plain non-null check would miss: `and(isNull(...))` is a
+    // perfectly good `SQL` and still returns other people's stages. This is the shape of the future
+    // edit the review names — an admin path or a nullable userId making the owner term conditional.
+    expect(() => requireScopedPredicate(and(isNull(pipelines.deletedAt)), 1)).toThrow(
+      /mandatory/,
+    )
+  })
+
+  it("returns a predicate that carries both mandatory terms — the guard does not reject everything", () => {
+    // The anti-vacuity anchor. A guard that threw unconditionally satisfies both assertions above
+    // and would take the whole endpoint down with it.
+    const real = and(eq(pipelines.ownerId, "user-1"), isNull(pipelines.deletedAt))
+    const returned = requireScopedPredicate(real, MANDATORY_SCOPE_TERMS)
+
+    expect(returned).toBe(real)
+    expect(renderPredicate(returned)).toContain('"owner_id"')
+  })
+
+  it("names 2 mandatory terms — the owner equality and the soft-delete guard", () => {
+    // Pinned, because lowering it to 1 or 0 is how a future edit would make the guard pass while
+    // the owner term was gone.
+    expect(MANDATORY_SCOPE_TERMS).toBe(2)
+  })
+})
+
+describe("ownedStagesPredicate still names owner_id for degenerate caller ids", () => {
+  it("an EMPTY caller id still produces an owner-scoped predicate, not an unscoped one", () => {
+    // The review's own fallback control. An empty `ctx.userId` must narrow to nobody's rows, never
+    // widen to everybody's — `owner_id = ''` matches no user, which is the correct answer.
+    const { sql, params } = renderQuery(ownedStagesPredicate("", null))
+
+    expect(sql.length).toBeGreaterThan(0)
+    expect(sql).toContain('"owner_id"')
+    expect(sql).toContain('"deleted_at"')
+    expect(params).toContain("")
   })
 })
 

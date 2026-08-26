@@ -33,6 +33,10 @@
  * of the statement text. `in-clause.test.ts` asserts exactly that against the compiled render, and
  * asserts that no rendering of this predicate matches an empty `IN ()` in any form.
  *
+ * THERE IS NO `as SQL` HERE, AND THAT IS DELIBERATE (WR-07). `and(...)` is typed `SQL | undefined`
+ * and `.where(undefined)` is an UNFILTERED query. See `requireScopedPredicate` below for the
+ * measured statement, and do not reintroduce a cast to silence the type.
+ *
  * THE NAME IS PINNED. `ownedStagesPredicate` is referenced by the `/api/v1` authorization
  * regression gate (plans 48-05 and 48-08) as a known authorizer. Renaming it here silently removes
  * this route from that gate's coverage.
@@ -57,9 +61,72 @@ export function ownedStagesPredicate(
   userId: string,
   pipelineId?: string | null
 ): SQL {
-  return and(
-    eq(pipelines.ownerId, userId),
-    isNull(pipelines.deletedAt),
-    ...(pipelineId ? [eq(stages.pipelineId, pipelineId)] : [])
-  ) as SQL
+  // Declared `SQL[]`, so every element is a real term by TYPE rather than by inspection, and
+  // `terms.length` below is a trustworthy count of what actually reached the conjunction.
+  const terms: SQL[] = [eq(pipelines.ownerId, userId), isNull(pipelines.deletedAt)]
+
+  if (pipelineId) {
+    terms.push(eq(stages.pipelineId, pipelineId))
+  }
+
+  return requireScopedPredicate(and(...terms), terms.length)
+}
+
+/**
+ * The number of terms this scope may NEVER be without: the owner equality and the soft-delete guard.
+ * The optional `?pipeline_id=` filter is a third, and it is not mandatory.
+ */
+export const MANDATORY_SCOPE_TERMS = 2
+
+/**
+ * WHY THIS EXISTS INSTEAD OF `as SQL`, AND WHY A CAST WAS THE WRONG TOOL HERE.
+ *
+ * `and(...)` returns `SQL | undefined` — `undefined` when every argument it received was
+ * `undefined` — and drizzle treats `.where(undefined)` as NO WHERE CLAUSE AT ALL. Measured against
+ * this repository's own schema:
+ *
+ *     with a predicate: ... inner join "pipelines" on ... where ("pipelines"."owner_id" = $1 and
+ *                       "pipelines"."deleted_at" is null)
+ *     collapsed:        ... inner join "pipelines" on "stages"."pipeline_id" = "pipelines"."id"
+ *
+ * No `where`. `GET /api/v1/stages` consumes this one expression for BOTH the page and the count, so
+ * that statement is every stage in the database, returned to every caller, with a matching total.
+ *
+ * The previous shape ended `) as SQL`. A cast is an ASSERTION that the value is never `undefined` —
+ * it removes the compiler from the one position where it was guarding a total scope bypass, in a
+ * function whose entire job is the security boundary. The future edit that breaks it looks harmless:
+ *
+ *     return and(
+ *       ...(userId ? [eq(pipelines.ownerId, userId)] : []),   // an admin path, a service token
+ *       isNull(pipelines.deletedAt),
+ *     ) as SQL
+ *
+ * `tsc` stays green through that, and so does every render assertion in `in-clause.test.ts`, because
+ * those only exercise calls that pass a real `userId`.
+ *
+ * So the narrowing is CHECKED rather than asserted. This function returns `SQL` because the compiler
+ * proves it from the `if` below, not because a cast told it to — and the collapsed case becomes a
+ * loud throw at the call site instead of a silent unfiltered query. `termCount` is the second half:
+ * a predicate can be non-`undefined` and still have lost its owner term, which `and(isNull(...))`
+ * alone would be. Both halves are asserted in `src/app/api/v1/stages/__tests__/in-clause.test.ts`.
+ *
+ * Exported for that reason: an unreachable guard cannot be proven to reject anything.
+ */
+export function requireScopedPredicate(predicate: SQL | undefined, termCount: number): SQL {
+  if (predicate === undefined) {
+    throw new Error(
+      "ownedStagesPredicate produced no predicate at all. drizzle renders `.where(undefined)` as " +
+        "NO WHERE CLAUSE, which would return every stage in the database to every caller."
+    )
+  }
+
+  if (termCount < MANDATORY_SCOPE_TERMS) {
+    throw new Error(
+      `ownedStagesPredicate built ${termCount} term(s); the owner equality and the soft-delete ` +
+        `guard are both mandatory (${MANDATORY_SCOPE_TERMS}). A conjunction missing the owner term ` +
+        "is still a valid predicate and still returns other people's stages."
+    )
+  }
+
+  return predicate
 }
