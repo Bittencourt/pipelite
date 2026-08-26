@@ -394,6 +394,52 @@ describe("POST /api/v1/deals — recalculates before emitting", () => {
     expect(body.data.custom_fields).toEqual(RECALC_RESULT)
     expect(body.data.custom_fields).not.toEqual(STORED_CUSTOM_FIELDS)
   })
+
+  /**
+   * WR-02 — THE FALLBACK IS REACHABLE, AND IT MUST NOT SHIP THE PRE-RECALC BLOB.
+   *
+   * The route's comment claimed the fallback was "unreachable — the insert just committed a row
+   * whose `ownerId` is the value being matched". It is not. The canonical read is issued AFTER the
+   * bus emit above, `crmBus.emit` is a synchronous `EventEmitter`, and its workflow subscriber calls
+   * `matchAndFireTriggers` fire-and-forget — so a `crm_action { operation: "delete", targetId:
+   * "{{trigger.entityId}}" }` on `deal.created` races this read. A concurrent DELETE or a BULK-03
+   * owner reassign does the same against either of the other two predicate terms.
+   *
+   * When it fired, the 201 body was the raw `.returning()` row — the PRE-recalc blob — which is
+   * exactly the DATA-02 drift the canonical read exists to remove, with a log line that
+   * misattributed the cause. See the sibling cell in `people/__tests__/formula-recalc.test.ts` for
+   * the full argument; both routes carry the identical shape.
+   */
+  it("WR-02: when the canonical read finds no row, the 201 body still carries the POST-recalc blob", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(undefined)
+
+    const response = await POST(postRequest({ title: "Acme renewal", stage_id: "stage-1" }))
+    const body = await response.json()
+
+    expect(response.status).toBe(201)
+    expect(
+      body.data.custom_fields,
+      "the fallback shipped the PRE-recalc blob. Rejected as the PRIMARY path for good reasons; " +
+        "as the FALLBACK it is strictly better than a row that is wrong about the one column the " +
+        "recalc definitely did write.",
+    ).toEqual(RECALC_RESULT)
+    expect(body.data.custom_fields).not.toEqual(STORED_CUSTOM_FIELDS)
+  })
+
+  it("WR-02: and the log line names a REACHABLE cause instead of asserting none exists", async () => {
+    mockDb.query.deals.findFirst.mockResolvedValue(undefined)
+
+    await POST(postRequest({ title: "Acme renewal", stage_id: "stage-1" }))
+
+    const lines = errorSpy.mock.calls.map((call) => String(call[0]))
+    const canonical = lines.filter((line) => line.includes('"scope":"api/v1/deals"'))
+
+    expect(
+      canonical,
+      "the fallback fired and logged nothing under this route's scope",
+    ).toHaveLength(1)
+    expect(canonical[0]).toMatch(/reassigned|trashed|deleted/)
+  })
 })
 
 /* ============================================================================================ *

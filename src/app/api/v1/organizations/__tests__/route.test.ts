@@ -253,9 +253,21 @@ describe("POST /api/v1/organizations — the 201 body is a canonical read (DATA-
   })
 
   it("logs, rather than silently reproducing the defect, when the re-read finds nothing", async () => {
-    // The impossible case: the insert just committed a row whose `ownerId` is the value being
-    // matched, so this cannot happen. The fallback exists so a create cannot fail on a read, and it
-    // is LOGGED because an unlogged fallback is a path that reproduces DATA-02 and says nothing.
+    // WR-02 — AND THIS CELL'S OWN COMMENT USED TO SAY "the impossible case", WHICH WAS WRONG.
+    //
+    // The route's comment claimed the fallback was unreachable because "the insert just committed a
+    // row whose `ownerId` is the value being matched". Three things reach it. This route emits
+    // INSIDE the mutation (`createOrganizationMutation`), BEFORE this read, and `crmBus.emit` is a
+    // synchronous `EventEmitter` whose workflow subscriber calls `matchAndFireTriggers`
+    // fire-and-forget — so a `crm_action { operation: "delete", targetId: "{{trigger.entityId}}" }`
+    // on `organization.created` soft-deletes the row and defeats `isNull(deletedAt)`. A concurrent
+    // DELETE does the same, and a BULK-03 owner reassign defeats the `ownerId` term.
+    //
+    // Unlike people/deals, this route CANNOT ship a better body: the post-recalc blob is computed
+    // inside the mutation and is not in scope here, and widening the mutation's return type is a
+    // change with its own blast radius. So what this cell now requires is that the LOG names a
+    // reachable cause — a message asserting an impossibility sends the next reader looking for a
+    // database state that cannot occur instead of for the workflow that deleted the record.
     mockDb.query.organizations.findFirst.mockResolvedValue(undefined)
 
     const response = await POST(createRequest({ name: "Acme Corp" }))
@@ -268,6 +280,11 @@ describe("POST /api/v1/organizations — the 201 body is a canonical read (DATA-
     // asserts call-site equality between `log.<level>(` occurrences and extracted scope literals.
     expect(mockLogError.mock.calls[0][0]).toBe("api/v1/organizations")
     expect(mockLogError.mock.calls[0][2]).toMatchObject({ id: ORG_ID })
+    expect(
+      String(mockLogError.mock.calls[0][1]),
+      "the message must name what actually happened. 'found no row' alone is the sentence that " +
+        "let the unreachability claim stand for a whole phase.",
+    ).toMatch(/reassigned|trashed|deleted/)
   })
 
   it("issues NO canonical read when the mutation fails, and returns the validation problem", async () => {

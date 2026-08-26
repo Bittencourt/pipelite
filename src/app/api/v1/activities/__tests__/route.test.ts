@@ -370,6 +370,47 @@ describe("POST /api/v1/activities — create-as-another-user (SC-2b, T-48-02-02)
     expect(response.status).toBe(201)
     expect(mockCreateActivity.mock.calls[0][0].userId).toBe("user-1")
   })
+
+  /**
+   * WR-02 — the canonical-read fallback's "unreachable" claim was false, and the log said nothing.
+   *
+   * This route emits INSIDE `createActivityMutation`, BEFORE the read here, and `crmBus.emit` is a
+   * synchronous `EventEmitter` whose workflow subscriber calls `matchAndFireTriggers`
+   * fire-and-forget. A `crm_action { operation: "delete", targetId: "{{trigger.entityId}}" }` on
+   * `activity.created` therefore soft-deletes the row and defeats `isNull(deletedAt)`; a concurrent
+   * DELETE does the same, and a BULK-03 owner reassign defeats the `ownerId` term.
+   *
+   * Like organizations, this route cannot ship a better body — the post-recalc blob is computed
+   * inside the mutation and is not in scope here. So what is required is that the LOG names a
+   * reachable cause rather than asserting an impossibility.
+   */
+  it("WR-02: logs a REACHABLE cause when the canonical read finds no row", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(undefined)
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    let captured: string[]
+    try {
+      const response = await POST(createRequest({ title: "x", type_id: "type-1" }))
+      expect(response.status).toBe(201)
+    } finally {
+      // Copied out BEFORE the restore: `mockRestore()` is `mockReset()` plus restoring the
+      // original, and `mockReset()` CLEARS `mock.calls`.
+      captured = errorSpy.mock.calls.map((call) => String(call[0]))
+      errorSpy.mockRestore()
+    }
+
+    const canonical = captured.filter((line) => line.includes('"scope":"api/v1/activities"'))
+
+    expect(
+      canonical,
+      "the fallback fired and logged nothing under this route's scope",
+    ).toHaveLength(1)
+    expect(
+      canonical[0],
+      "the message must name what actually happened. 'found no row' alone is the sentence that " +
+        "let the unreachability claim stand for a whole phase.",
+    ).toMatch(/reassigned|trashed|deleted/)
+  })
 })
 
 describe("the deals mock self-test — findFirst answers from the PREDICATE, not from a fixed row", () => {

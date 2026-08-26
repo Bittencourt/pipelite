@@ -381,6 +381,62 @@ describe("POST /api/v1/people — recalculates before emitting", () => {
     expect(body.data.custom_fields).toEqual(RECALC_RESULT)
     expect(body.data.custom_fields).not.toEqual(STORED_CUSTOM_FIELDS)
   })
+
+  /**
+   * WR-02 — THE FALLBACK IS REACHABLE, AND IT MUST NOT SHIP THE PRE-RECALC BLOB.
+   *
+   * The route's comment claimed the fallback was "unreachable — the insert just committed a row
+   * whose `ownerId` is the value being matched". It is not. The canonical read is issued AFTER the
+   * bus emit above, `crmBus.emit` is a synchronous `EventEmitter`, and its workflow subscriber calls
+   * `matchAndFireTriggers` fire-and-forget. A `crm_action { entity: person, operation: "delete",
+   * targetId: "{{trigger.entityId}}" }` on `person.created` — a plausible "junk lead" rule — races
+   * this read and wins whenever it gets there first. A concurrent `DELETE /api/v1/people/:id`, or a
+   * BULK-03 owner reassign, does the same against either of the other two predicate terms.
+   *
+   * When it fires, the 201 body used to be `serializePerson(person)`: the raw `.returning()` row,
+   * i.e. the PRE-recalc blob, with the accompanying log line saying only "canonical read after
+   * create found no row". The client received a 201 describing a state no read will ever confirm —
+   * the exact DATA-02 drift the canonical read exists to remove — plus an `error` line that
+   * misattributes the cause.
+   *
+   * TWO-SIDED, like the cell above: `RECALC_RESULT` is deliberately unequal to
+   * `STORED_CUSTOM_FIELDS`, so an implementation that serialized the raw inserted row cannot pass.
+   */
+  it("WR-02: when the canonical read finds no row, the 201 body still carries the POST-recalc blob", async () => {
+    // The row vanished between the insert and the read.
+    mockDb.query.people.findFirst.mockResolvedValue(undefined)
+
+    const response = await POST(postRequest({ first_name: "Ada", last_name: "Lovelace" }))
+    const body = await response.json()
+
+    expect(response.status).toBe(201)
+    expect(
+      body.data.custom_fields,
+      "the fallback shipped the PRE-recalc blob. As the PRIMARY path the in-process merge is " +
+        "rejected — it agrees with the database only while the recalc writes exactly one column — " +
+        "but as the FALLBACK it is strictly better than the raw `.returning()` row, which is " +
+        "wrong about the one column the recalc definitely did write.",
+    ).toEqual(RECALC_RESULT)
+    expect(body.data.custom_fields).not.toEqual(STORED_CUSTOM_FIELDS)
+  })
+
+  it("WR-02: and the log line names a REACHABLE cause instead of asserting none exists", async () => {
+    mockDb.query.people.findFirst.mockResolvedValue(undefined)
+
+    await POST(postRequest({ first_name: "Ada", last_name: "Lovelace" }))
+
+    const lines = errorSpy.mock.calls.map((call) => String(call[0]))
+    const canonical = lines.filter((line) => line.includes('"scope":"api/v1/people"'))
+
+    expect(
+      canonical,
+      "the fallback fired and logged nothing under this route's scope, so the one reachable " +
+        "DATA-02 drift in the create path is silent",
+    ).toHaveLength(1)
+    // The MESSAGE has to say what happened. "found no row" alone sends the next reader looking for
+    // an impossible database state rather than for the workflow that deleted the record.
+    expect(canonical[0]).toMatch(/reassigned|trashed|deleted/)
+  })
 })
 
 /* ============================================================================================ *
