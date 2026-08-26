@@ -890,8 +890,27 @@ describe("purgePersonMutation", () => {
    * One `tx` handle with a spy per statement shape. `detachedDeals` is what the detach update's
    * `.returning()` yields, i.e. the live deals that lose their person.
    */
-  function stubTransaction(detachedDeals: { id: string }[] = []) {
-    const deleteWhere = vi.fn().mockResolvedValue(undefined)
+  function stubTransaction(
+    detachedDeals: { id: string }[] = [],
+    /**
+     * CR-01. What the row `DELETE`'s `.returning({ id })` yields — the rowcount the mutation now
+     * READS before it is allowed to write the `__purge` audit row or unlink anything. `[]` is the
+     * race: a restore committed between the pre-fetch and the transaction. See the cell at the end
+     * of this describe, and `src/lib/trash/purge-blobs.db.test.ts` for the behavioural proof.
+     */
+    purgedRows: { id: string }[] = [{ id: trashedPerson.id }],
+  ) {
+    const deleteReturning = vi.fn().mockResolvedValue(purgedRows)
+    // `.where(...)` has to be BOTH awaitable and `.returning()`-able: the notes delete awaits it
+    // directly and the row delete chains `.returning()` off it. That is what the real drizzle
+    // builder is; stubbing only one of the two shapes reddens every cell below.
+    const deleteWhere = vi.fn().mockImplementation(() => {
+      const builder = Promise.resolve(undefined) as Promise<undefined> & {
+        returning: typeof deleteReturning
+      }
+      builder.returning = deleteReturning
+      return builder
+    })
     const txDelete = vi.fn().mockReturnValue({ where: deleteWhere })
 
     const updateReturning = vi.fn().mockResolvedValue(detachedDeals)
@@ -907,7 +926,10 @@ describe("purgePersonMutation", () => {
       async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)
     )
 
-    return { txDelete, deleteWhere, txUpdate, updateSet, txInsert, insertValues, updateReturning }
+    return {
+      txDelete, deleteWhere, deleteReturning, txUpdate, updateSet, txInsert, insertValues,
+      updateReturning,
+    }
   }
 
   /** Every `values(...)` argument, flattened: a detach insert passes an array, the purge one object. */
@@ -1061,6 +1083,37 @@ describe("purgePersonMutation", () => {
     if (!result.success) expect(result.error).not.toBe("NOT_IN_TRASH")
     expect(errorSpy).toHaveBeenCalled()
     errorSpy.mockRestore()
+  })
+
+  /**
+   * CR-01 — the row `DELETE` matched nothing, so nothing else in the teardown may stand.
+   *
+   * The pre-fetch SUCCEEDED here, exactly as in every cell above; what differs is that the record
+   * left the trash before the `DELETE` ran, so `.returning({ id })` yields `[]`. Two distinct
+   * claims: the caller is told NOT_IN_TRASH, and no `__purge` audit row was inserted — the insert
+   * is ordered AFTER the delete, so a row here would mean the teardown carried on regardless. The
+   * bytes half is proven in `src/lib/trash/purge-blobs.db.test.ts`.
+   */
+  it("returns NOT_IN_TRASH and writes no purge audit row when the DELETE matched nothing", async () => {
+    mockDb.query.people.findFirst.mockResolvedValue(trashedPerson)
+    const tx = stubTransaction([{ id: "d1" }], [])
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    let result: Awaited<ReturnType<typeof purgePersonMutation>>
+    try {
+      result = await purgePersonMutation("p1")
+    } finally {
+      errorSpy.mockRestore()
+    }
+
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1)
+    expect(tx.deleteReturning).toHaveBeenCalledTimes(1)
+
+    expect(result).toEqual({ success: false, error: "NOT_IN_TRASH" })
+    expect(
+      purgeRowIndex(tx.insertValues),
+      "a `__purge` audit row was written for a purge whose DELETE removed nothing",
+    ).toBe(-1)
   })
 })
 

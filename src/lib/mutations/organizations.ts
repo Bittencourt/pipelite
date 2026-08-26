@@ -17,6 +17,9 @@ import {
 } from "@/lib/formula-recalc"
 import { collectFileFieldRefs } from "@/lib/trash/collect-file-field-refs"
 import { deleteEntityFiles } from "@/lib/trash/delete-entity-files"
+// CR-01. One constant for all four purge mutations; the module's own header carries the full
+// reasoning, including why it is a throw rather than a flag returned out of the transaction.
+import { NOT_IN_TRASH_INSIDE_TRANSACTION } from "@/lib/trash/purge-sentinel"
 
 // ---- Zod Schemas ----
 
@@ -633,9 +636,20 @@ export async function purgeOrganizationMutation(
 
       // 5. Now, and only now, the row itself. `isNotNull` is carried on the DELETE predicate
       //    itself, so a live record cannot be destroyed even by a guessed id.
-      await tx
+      //
+      //    CR-01: `.returning({ id })` AND THE COUNT IS READ. The predicate refusing to destroy a
+      //    live row is only half a guard — the other half is noticing that it refused. Zero rows
+      //    here means the record was restored (or already purged) between the pre-fetch above and
+      //    this statement, so everything this transaction has done so far is undone by the throw
+      //    and the post-commit unlink is never reached.
+      const purged = await tx
         .delete(organizations)
         .where(and(eq(organizations.id, id), isNotNull(organizations.deletedAt)))
+        .returning({ id: organizations.id })
+
+      if (purged.length === 0) {
+        throw new Error(NOT_IN_TRASH_INSIDE_TRANSACTION)
+      }
 
       // 6. The purge's own audit row, INSIDE the transaction so a rollback cannot leave a record
       //    of a purge that did not happen. `audit_log` has no foreign key on `entity_id`, so
@@ -695,6 +709,19 @@ export async function purgeOrganizationMutation(
 
     return { success: true, detached }
   } catch (error) {
+    // CR-01: the transaction refused to destroy a row that is no longer in the trash. It rolled
+    // back whole, the post-commit unlink above was never reached, and the caller gets the SAME
+    // code the pre-fetch miss already returns — so `PurgeResult` is unchanged and the eleven
+    // `toEqual({ success: true, detached: N })` assertions across the four mutation test files
+    // stay green.
+    if (error instanceof Error && error.message === NOT_IN_TRASH_INSIDE_TRANSACTION) {
+      log.error("mutations/organizations", "Purge refused: record left the trash mid-transaction", {
+        entityType: ENTITY,
+        id,
+      })
+      return { success: false, error: "NOT_IN_TRASH" }
+    }
+
     log.error("mutations/organizations", "Failed to purge organization", { err: error })
     return { success: false, error: "Failed to purge organization" }
   }

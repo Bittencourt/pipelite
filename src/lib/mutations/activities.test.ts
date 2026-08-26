@@ -849,11 +849,29 @@ describe("purgeActivityMutation", () => {
     deletedAt: new Date("2026-08-01T10:00:00Z"),
   }
 
-  function stubTransaction() {
+  function stubTransaction(
+    /**
+     * CR-01. What the row `DELETE`'s `.returning({ id })` yields — the rowcount the mutation now
+     * READS before it is allowed to write the `__purge` audit row or unlink anything. `[]` is the
+     * race: a restore committed between the pre-fetch and the transaction. See the cell at the end
+     * of this describe, and `src/lib/trash/purge-blobs.db.test.ts` for the behavioural proof.
+     */
+    purgedRows: { id: string }[] = [{ id: trashedActivity.id }],
+  ) {
     // Annotated `ReturnType<typeof vi.fn>` — the same posture `mockDb` above uses — so
     // `mock.calls[n][0]` is readable. The arrow bodies take no parameters, so an inferred
     // signature would make the call tuple empty and every argument assertion a type error.
-    const deleteWhere: ReturnType<typeof vi.fn> = vi.fn(() => Promise.resolve(undefined))
+    const deleteReturning: ReturnType<typeof vi.fn> = vi.fn(() => Promise.resolve(purgedRows))
+    // `.where(...)` has to be BOTH awaitable and `.returning()`-able: the notes delete awaits it
+    // directly and the row delete chains `.returning()` off it. That is what the real drizzle
+    // builder is; stubbing only one of the two shapes reddens every cell below.
+    const deleteWhere: ReturnType<typeof vi.fn> = vi.fn(() => {
+      const builder = Promise.resolve(undefined) as Promise<undefined> & {
+        returning: typeof deleteReturning
+      }
+      builder.returning = deleteReturning
+      return builder
+    })
     const txDelete: ReturnType<typeof vi.fn> = vi.fn(() => ({ where: deleteWhere }))
 
     const insertValues: ReturnType<typeof vi.fn> = vi.fn(() => Promise.resolve(undefined))
@@ -866,7 +884,7 @@ describe("purgeActivityMutation", () => {
       async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)
     )
 
-    return { txDelete, deleteWhere, txInsert, insertValues, txUpdate }
+    return { txDelete, deleteWhere, deleteReturning, txInsert, insertValues, txUpdate }
   }
 
   it("deletes notes then the activity, in that ORDER, in one transaction", async () => {
@@ -959,6 +977,43 @@ describe("purgeActivityMutation", () => {
     expect(result).toEqual({ success: false, error: "Failed to purge activity" })
     expect(spy).toHaveBeenCalled()
     spy.mockRestore()
+  })
+
+  /**
+   * CR-01 — the row `DELETE` matched nothing, so the notes deletion must not stand either.
+   *
+   * The pre-fetch SUCCEEDED here, exactly as in every cell above; what differs is that the record
+   * left the trash before the `DELETE` ran, so `.returning({ id })` yields `[]`. An activity is a
+   * LEAF and detaches nothing, so the whole blast radius here is its notes and its blobs — and
+   * both are as irreversible as anyone else's. Two claims: the caller is told NOT_IN_TRASH, and no
+   * `__purge` audit row was inserted. The bytes half is proven behaviourally in
+   * `src/lib/trash/purge-blobs.db.test.ts`.
+   */
+  it("returns NOT_IN_TRASH and writes no purge audit row when the DELETE matched nothing", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(trashedActivity)
+    const { deleteReturning, txInsert } = stubTransaction([])
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    let result: Awaited<ReturnType<typeof purgeActivityMutation>>
+    try {
+      result = await purgeActivityMutation("act1")
+    } finally {
+      spy.mockRestore()
+    }
+
+    // The transaction really opened and really reached the row DELETE. Without these the cell
+    // would pass on a mutation that refused at the pre-fetch — the case the cell above covers.
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1)
+    expect(deleteReturning).toHaveBeenCalledTimes(1)
+
+    expect(result).toEqual({ success: false, error: "NOT_IN_TRASH" })
+    // The activity purge inserts exactly ONE audit row and it is the `__purge` one, so "no purge
+    // row" and "no insert at all" are the same statement here — asserted on the insert itself
+    // rather than on a filtered list, which is the narrower and therefore stronger form.
+    expect(
+      txInsert,
+      "an audit row was written for a purge whose DELETE removed nothing",
+    ).not.toHaveBeenCalled()
   })
 })
 

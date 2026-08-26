@@ -27,6 +27,9 @@ import {
 import { log } from "@/lib/log"
 import { collectFileFieldRefs } from "@/lib/trash/collect-file-field-refs"
 import { deleteEntityFiles } from "@/lib/trash/delete-entity-files"
+// CR-01. One constant for all four purge mutations; the module's own header carries the full
+// reasoning, including why it is a throw rather than a flag returned out of the transaction.
+import { NOT_IN_TRASH_INSIDE_TRANSACTION } from "@/lib/trash/purge-sentinel"
 
 // ---- Zod Schemas ----
 
@@ -735,7 +738,21 @@ export async function purgeDealMutation(
       // 5. Now, and only now, the row itself. The `isNotNull` guard rides on the DELETE so a
       //    guessed id for a LIVE deal cannot be purged even if every upstream check were
       //    bypassed (T-37-15).
-      await tx.delete(deals).where(and(eq(deals.id, id), isNotNull(deals.deletedAt)))
+      //
+      //    CR-01: `.returning({ id })` AND THE COUNT IS READ. T-37-15's predicate refusing to
+      //    destroy a live row was only half a guard — the other half is noticing that it refused.
+      //    Zero rows means the record was restored (or already purged) between the pre-fetch and
+      //    here, so the throw rolls the notes deletion, the assignee/history deletion and the
+      //    activity detach back, and the post-commit unlink is never reached. See
+      //    `@/lib/trash/purge-sentinel` for the whole argument.
+      const purged = await tx
+        .delete(deals)
+        .where(and(eq(deals.id, id), isNotNull(deals.deletedAt)))
+        .returning({ id: deals.id })
+
+      if (purged.length === 0) {
+        throw new Error(NOT_IN_TRASH_INSIDE_TRANSACTION)
+      }
 
       // 6. The purge's own audit row, INSIDE the transaction, so a rollback cannot leave a
       //    record of a purge that did not happen (T-37-07).
@@ -803,6 +820,17 @@ export async function purgeDealMutation(
 
     return { success: true, detached }
   } catch (error) {
+    // CR-01. The transaction refused to destroy a row that is no longer in the trash, rolled back
+    // whole, and never reached the unlink block above. The caller gets the SAME code the pre-fetch
+    // miss already returns, so `PurgeResult` is unchanged.
+    if (error instanceof Error && error.message === NOT_IN_TRASH_INSIDE_TRANSACTION) {
+      log.error("mutations/deals", "Purge refused: record left the trash mid-transaction", {
+        entityType: "deal",
+        id,
+      })
+      return { success: false, error: "NOT_IN_TRASH" }
+    }
+
     log.error("mutations/deals", "Failed to purge deal", { err: error })
     return { success: false, error: "Failed to purge deal" }
   }

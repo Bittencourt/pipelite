@@ -915,8 +915,30 @@ describe("purgeOrganizationMutation", () => {
   function stubTransaction(
     detachedDeals: { id: string }[] = [],
     detachedPeople: { id: string }[] = [],
+    /**
+     * CR-01. What the row `DELETE`'s `.returning({ id })` yields — the rowcount the mutation now
+     * READS before it is allowed to write the `__purge` audit row or unlink anything.
+     *
+     * Defaults to one row, which is the ordinary case every cell below is about. `[]` is the race:
+     * a restore committed between the pre-fetch and the transaction, so the `isNotNull(deletedAt)`
+     * predicate legitimately matched nothing. That case has its own cell at the end of this
+     * describe, and its behavioural proof against real PostgreSQL is in
+     * `src/lib/trash/purge-blobs.db.test.ts`.
+     */
+    purgedRows: { id: string }[] = [{ id: trashedOrg.id }],
   ) {
-    const deleteWhere = vi.fn().mockResolvedValue(undefined)
+    const deleteReturning = vi.fn().mockResolvedValue(purgedRows)
+    // `.where(...)` has to be BOTH awaitable and `.returning()`-able, because the notes delete
+    // awaits it directly and the row delete chains `.returning()` off it. That is what the real
+    // drizzle builder is, and stubbing only one of the two shapes is what made nineteen cells in
+    // these four files red on the first pass.
+    const deleteWhere = vi.fn().mockImplementation(() => {
+      const builder = Promise.resolve(undefined) as Promise<undefined> & {
+        returning: typeof deleteReturning
+      }
+      builder.returning = deleteReturning
+      return builder
+    })
     const txDelete = vi.fn().mockReturnValue({ where: deleteWhere })
 
     const updateReturning = vi
@@ -937,7 +959,7 @@ describe("purgeOrganizationMutation", () => {
     )
 
     return {
-      txDelete, deleteWhere, txUpdate, updateSet, updateWhere, updateReturning,
+      txDelete, deleteWhere, deleteReturning, txUpdate, updateSet, updateWhere, updateReturning,
       txInsert, insertValues,
     }
   }
@@ -1108,6 +1130,48 @@ describe("purgeOrganizationMutation", () => {
     if (!result.success) expect(result.error).not.toBe("NOT_IN_TRASH")
     expect(errorSpy).toHaveBeenCalled()
     errorSpy.mockRestore()
+  })
+
+  /**
+   * CR-01 — the row `DELETE` matched nothing, so nothing else in the teardown may stand.
+   *
+   * The pre-fetch SUCCEEDED here: `findFirst` returns the trashed row, exactly as it does in every
+   * cell above. What differs is that by the time the `DELETE` ran the record was no longer in the
+   * trash — a restore committed in the window, from the other browser tab or ahead of the pruner —
+   * so `.returning({ id })` yields `[]`.
+   *
+   * Two claims, and they are different claims: the caller is told NOT_IN_TRASH, and NO `__purge`
+   * audit row was inserted. The second is what makes this cell more than a return-value check: the
+   * insert is ordered AFTER the delete inside the transaction, so a row here would mean the
+   * teardown carried on past a delete that removed nothing.
+   *
+   * The bytes are the third claim and they are not provable here — `deleteEntityFiles` is real and
+   * this fixture has no `customFields`. That half is proven behaviourally, against real PostgreSQL
+   * and real files on a real disk, in `src/lib/trash/purge-blobs.db.test.ts`.
+   */
+  it("returns NOT_IN_TRASH and writes no purge audit row when the DELETE matched nothing", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+    const tx = stubTransaction([{ id: "d1" }], [{ id: "p1" }], [])
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    let result: Awaited<ReturnType<typeof purgeOrganizationMutation>>
+    try {
+      result = await purgeOrganizationMutation("org1")
+    } finally {
+      errorSpy.mockRestore()
+    }
+
+    // The pre-fetch really did hand the mutation a row, and the transaction really did open and
+    // reach the row DELETE. Without these two, the cell would pass on a mutation that refused at
+    // the pre-fetch — the case the cell above already covers.
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1)
+    expect(tx.deleteReturning).toHaveBeenCalledTimes(1)
+
+    expect(result).toEqual({ success: false, error: "NOT_IN_TRASH" })
+    expect(
+      purgeRowIndex(tx.insertValues),
+      "a `__purge` audit row was written for a purge whose DELETE removed nothing",
+    ).toBe(-1)
   })
 })
 
