@@ -5,6 +5,9 @@ import {
   type AuditResolution,
   type FieldDescriptor,
 } from "@/lib/audit/present"
+// WR-01. `formula-helpers.ts` imports no database client — a test greps it for a database-alias
+// import and fails if one appears — so naming its predicate here keeps this module browser-safe.
+import { isFormulaWrapper } from "@/lib/formula-helpers"
 import type { MergeableEntityType } from "./types"
 
 /* -----------------------------------------------------------------------------------------
@@ -300,6 +303,57 @@ function isFileMergeValue(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0 && value.some(isFileDescriptor)
 }
 
+/**
+ * WR-01 — a compared custom key whose value on EITHER side is a STORED FORMULA RESULT.
+ *
+ * ## The failure this closes
+ *
+ * `survivorChangedFields` in `src/lib/mutations/dedup.ts` is built from the values that CHANGED,
+ * and `scopeFormulasToChangedFields` selects a formula only when one of its **refs** is in that set.
+ * A formula's own name being in `changedFields` selects nothing — there is no branch that looks for
+ * it, by design.
+ *
+ * But the merge writes `customFields` WHOLESALE, and a `formula`-typed key used to be a compared
+ * merge field like any other whose `filledOnly` default is the LOSER. So the merge could overwrite
+ * the survivor's derived value with the loser's while none of that formula's inputs changed, and
+ * the post-commit recalculation would then CORRECTLY decide there was nothing to recompute.
+ *
+ * The survivor was left permanently storing a derived value its own inputs contradict — DATA-01, in
+ * the block written to close DATA-01 — and a formula value the SERVER DID NOT COMPUTE, which is the
+ * T-34-04 invariant every other write path in the product enforces through `stripFormulaKeys`
+ * (`saveFieldValues` and every `/api/v1` route merge). The merge picker was the one write path with
+ * no equivalent.
+ *
+ * Reachable with no click at all: a formula definition added AFTER the survivor's last save leaves
+ * the survivor with no key for it while the loser, saved later, has one — survivor-empty and
+ * loser-populated is `filledOnly`, whose default is the loser.
+ *
+ * ## Why the SHAPE and not the definition type, again
+ *
+ * The same argument as `isFileMergeValue`'s, and it applies with the same force: the mutation passes
+ * an EMPTY `AuditResolution` and the screen passes a real one, so a `descriptor.kind`-based test
+ * would be vacuous where it matters and would make the two call sites disagree about the compared
+ * key set. `isFormulaWrapper` is `src/lib/formula-helpers.ts`'s exported predicate, documented there
+ * as "the single place that shape is understood", and that module imports no database client — which
+ * is what keeps this one importable from a `"use client"` component.
+ *
+ * It also covers the retyped/soft-deleted definition, exactly as the file case does.
+ *
+ * ## Refusing the key is only HALF the fix
+ *
+ * With the key refused, the survivor keeps its OWN stored value (the blob is copied wholesale before
+ * anything is written to it), or keeps having none. That already satisfies SC-3 — the value is
+ * consistent with inputs that did not change — but it leaves a never-computed key blank right after
+ * a merge in which the loser visibly had a value. So `mergeRecordsMutation` also adds
+ * `CHANGED_FIELDS_CUSTOM_SENTINEL` to `survivorChangedFields` when the loser held a formula value
+ * differing from the survivor's, which makes the post-commit block COMPUTE it. The two halves are
+ * deliberately in different modules: refusing the write is a partitioning rule and belongs here;
+ * deciding to recompute needs the engine and belongs there.
+ */
+function isFormulaMergeValue(value: unknown): boolean {
+  return isFormulaWrapper(value)
+}
+
 interface RankedMergeField {
   descriptor: FieldDescriptor
   field: MergeField
@@ -363,9 +417,17 @@ export function buildMergeFieldGroups(input: MergeFieldGroupsInput): MergeFieldG
     // See `isFileMergeValue` for why this is a value-shape test and why a definition-type test —
     // the obvious fix, and the one the review suggested — would be vacuous in the mutation and
     // divergent on the screen.
+    //
+    // WR-01 rides on the same `continue` for the same reason: a stored formula result is a value
+    // the SERVER derives, so it is not a question a user gets to answer and not a value a choice
+    // map gets to set. Refusing it here is what stops the merge writing a derived value its own
+    // inputs contradict; `mergeRecordsMutation` then asks the engine to COMPUTE the survivor's.
     if (
       key.startsWith(CUSTOM_FIELD_PREFIX) &&
-      (isFileMergeValue(survivorValue) || isFileMergeValue(loserValue))
+      (isFileMergeValue(survivorValue) ||
+        isFileMergeValue(loserValue) ||
+        isFormulaMergeValue(survivorValue) ||
+        isFormulaMergeValue(loserValue))
     ) {
       continue
     }

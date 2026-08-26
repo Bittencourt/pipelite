@@ -16,10 +16,14 @@ import type { MergeChoiceMap } from "@/lib/dedup/merge-defaults"
 import type { MergeableEntityType } from "@/lib/dedup/types"
 import { crmBus } from "@/lib/events"
 import type { CrmEventPayload } from "@/lib/events"
+// WR-01. The same predicate `@/lib/dedup/field-groups` refuses a formula value on, so the two
+// halves of that fix cannot disagree about what a stored formula value is.
+import { isFormulaWrapper } from "@/lib/formula-helpers"
 import {
   buildRelatedEntities,
   recalculateFormulas,
   CASCADE_CHILD_RELATIONS,
+  CHANGED_FIELDS_CUSTOM_SENTINEL,
   ENTITY_NATIVE_ATTRIBUTES,
   FORMULA_EVALUATION_BUDGET,
 } from "@/lib/formula-recalc"
@@ -691,6 +695,54 @@ export async function mergeRecordsMutation(input: MergeRecordsInput): Promise<Me
           (key) => !Object.is(survivorBlob[key], merged.customFields[key])
         ),
       ]
+
+      // WR-01 — THE HALF THAT REFUSING THE WRITE DOES NOT COVER.
+      //
+      // `field-groups.ts` now refuses a stored formula result as a compared field, so the merge can
+      // no longer overwrite the survivor's derived value with the loser's. That alone satisfies
+      // SC-3: what the survivor keeps is its own value against inputs that did not change.
+      //
+      // But it leaves the case this finding actually starts from BLANK. A formula definition added
+      // after the survivor's last save leaves the survivor with NO key for it while the loser has
+      // one, and refusing the key means the survivor still has none after a merge in which the
+      // loser visibly did. So when the loser held a formula value that differs from the survivor's,
+      // this block is told to COMPUTE the survivor's rather than leave it absent or stale.
+      //
+      // THE SENTINEL RATHER THAN THE FORMULA'S REFS, and that is a deliberate trade.
+      // `scopeFormulasToChangedFields` matches a formula's REFS three ways — the bare name, a
+      // native attribute via `NATIVE_ATTRIBUTE_COLUMNS`, or this sentinel — and a formula's own
+      // name matches NONE of them. Adding the refs would mean reading the definitions here (a
+      // query on the merge's critical path, and a D-05 failure mode) and re-deriving the ref
+      // spellings that `parentRefNamesForReparent` above already documents as easy to get subtly
+      // wrong. The sentinel selects every formula that reads a custom field: a SUPERSET, bounded by
+      // the survivor's own formula count because `cascade: false`, inside the second full budget
+      // this block already documents as accepted. A superset over-evaluates; a miss leaves a stored
+      // value the record's inputs contradict.
+      //
+      // The residual is named rather than hidden: a formula whose refs are ALL native attributes
+      // (`{{Name}} + "x"`) is not selected by the sentinel. Such a formula cannot have been made
+      // stale by this path either — the exclusion means the survivor kept its own value, and its
+      // native inputs are already in `changedFields` above by column name if they moved. What stays
+      // unfilled is only the never-computed case for that shape of formula.
+      //
+      // `isFormulaWrapper` is the same predicate `field-groups.ts` refuses on, so the two halves
+      // cannot disagree about what a formula value is.
+      const loserBlob = (loser.customFields ?? {}) as Record<string, unknown>
+      const loserHeldADifferentFormulaValue = Object.keys(loserBlob).some((key) => {
+        const loserValue = loserBlob[key]
+        if (!isFormulaWrapper(loserValue)) return false
+        const survivorValue = survivorBlob[key]
+        // `.value` on both sides: the two wrappers are separate objects out of two JSONB columns,
+        // so comparing the wrappers themselves would report every formula as different.
+        return !Object.is(
+          isFormulaWrapper(survivorValue) ? survivorValue.value : undefined,
+          loserValue.value
+        )
+      })
+
+      if (loserHeldADifferentFormulaValue) {
+        survivorChangedFields.push(CHANGED_FIELDS_CUSTOM_SENTINEL)
+      }
 
       const survivorRecalc = await recalculateFormulas({
         entityType,

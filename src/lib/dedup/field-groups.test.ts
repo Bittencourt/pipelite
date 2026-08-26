@@ -402,6 +402,18 @@ describe("buildMergeFieldGroups — CR-02: a file value is refused as a compared
     expect(keysOf(groups.filledOnly)).toContain("customFields.Origem")
   })
 
+  it("still compares a plain object custom value — the exclusion is not 'any object array'", () => {
+    // A JSON-ish custom field holding an array of plain objects with no `filename` is not a file
+    // value. If this were excluded the fix would be dropping arbitrary structured custom fields
+    // from every merge.
+    const groups = groupsOf(
+      { name: "Acme", customFields: { Meta: [] } },
+      { name: "Acme", customFields: { Meta: [{ k: "v" }] } }
+    )
+
+    expect(keysOf(groups.filledOnly)).toContain("customFields.Meta")
+  })
+
   it("still compares a file-typed key while BOTH sides are empty — nothing can move", () => {
     // `null` / `[]` is the field being empty and says nothing about its type. Such a key falls
     // through to the ordinary partitioning and lands in `identical`, where `applyMergeChoices`
@@ -413,5 +425,124 @@ describe("buildMergeFieldGroups — CR-02: a file value is refused as a compared
     )
 
     expect(keysOf(groups.identical)).toContain("customFields.Anexos")
+  })
+})
+
+/* -----------------------------------------------------------------------------------------
+ * WR-01 — a stored formula result is not a compared merge field
+ * ----------------------------------------------------------------------------------------- */
+
+const SCORE_DEFINITION = "5a1c9e04-7b62-4a18-9c3f-2d4e6f8a0b1c"
+
+/** The persisted shape `recalculateFormulas` writes: `{ formula: true, value, error }`. */
+const SURVIVOR_SCORE = { formula: true, value: 20, error: null }
+const LOSER_SCORE = { formula: true, value: 84, error: null }
+
+describe("buildMergeFieldGroups — WR-01: a stored formula result is refused as a compared field", () => {
+  it("offers the key in NO group when only the LOSER holds a formula value", () => {
+    // The reviewer's scenario, and it needs no click: a formula definition added after the
+    // survivor's last save leaves it with no key, so the key would land in `filledOnly` whose
+    // default is the LOSER.
+    const groups = groupsOf(
+      { name: "Acme", customFields: { Receita: 10 } },
+      { name: "Acme", customFields: { Receita: 42, Score: LOSER_SCORE } }
+    )
+
+    expect(allKeys(groups)).not.toContain("customFields.Score")
+    // ANCHORS: the INPUT is still compared — the fix must not silently stop the merge asking about
+    // the values a formula READS — and the partition still ran.
+    expect(allKeys(groups)).toContain("customFields.Receita")
+    expect(allKeys(groups)).toContain("name")
+  })
+
+  it("offers the key in NO group when BOTH hold formula values — so no choice map can set one", () => {
+    const groups = groupsOf(
+      { name: "Acme", customFields: { Receita: 10, Score: SURVIVOR_SCORE } },
+      { name: "Acme", customFields: { Receita: 42, Score: LOSER_SCORE } }
+    )
+
+    expect(keysOf(groups.conflicts)).not.toContain("customFields.Score")
+    expect(allKeys(groups)).not.toContain("customFields.Score")
+    expect(keysOf(groups.conflicts)).toContain("customFields.Receita")
+  })
+
+  it("offers the key in NO group when only the SURVIVOR holds a formula value", () => {
+    const groups = groupsOf(
+      { name: "Acme", customFields: { Score: SURVIVOR_SCORE } },
+      { name: "Acme", customFields: {} }
+    )
+
+    expect(allKeys(groups)).not.toContain("customFields.Score")
+    expect(allKeys(groups)).toContain("name")
+  })
+
+  it("refuses an ERRORED wrapper too — `{ formula: true, value: null, error }`", () => {
+    // An errored wrapper is still a server-derived value. Adopting the loser's error message onto
+    // the survivor would report a failure that never happened on the survivor's own inputs.
+    const groups = groupsOf(
+      { name: "Acme", customFields: {} },
+      {
+        name: "Acme",
+        customFields: { Score: { formula: true, value: null, error: "Unknown field: Receita" } },
+      }
+    )
+
+    expect(allKeys(groups)).not.toContain("customFields.Score")
+  })
+
+  /**
+   * THE SAME PAIR OF RESOLUTIONS AS THE CR-02 CELLS, for the same reason. The mutation passes an
+   * EMPTY `AuditResolution` and the screen passes a real one, so an exclusion keyed on
+   * `descriptor.kind` would fire on one and not the other. Both cells assert the same thing.
+   */
+  it("excludes the key with an EMPTY resolution — the mutation's call shape", () => {
+    const groups = groupsOf(
+      { name: "Acme", customFields: { Receita: 10 } },
+      { name: "Acme", customFields: { Receita: 10, Score: LOSER_SCORE } },
+      resolution()
+    )
+
+    expect(allKeys(groups).length).toBeGreaterThan(0)
+    expect(allKeys(groups)).not.toContain("customFields.Score")
+  })
+
+  it("excludes the key with a FULLY POPULATED resolution — the screen's call shape", () => {
+    const res = resolution({
+      customFieldNames: new Map([[SCORE_DEFINITION, "Score"]]),
+      customFieldTypes: new Map([[SCORE_DEFINITION, "formula"]]),
+      customFieldPositions: new Map([[SCORE_DEFINITION, 7]]),
+    })
+
+    const groups = groupsOf(
+      { name: "Acme", customFields: { Receita: 10 } },
+      { name: "Acme", customFields: { Receita: 10, Score: LOSER_SCORE } },
+      res
+    )
+
+    expect(allKeys(groups)).not.toContain("customFields.Score")
+  })
+
+  it("still compares a plain number under a formula-ish NAME — the test is the shape, not the name", () => {
+    // A bare number is not a wrapper. If a key called `Score` holds `84` rather than
+    // `{ formula: true, … }` then nothing in this system derived it, and the merge must still ask.
+    // This is the cell that keeps the predicate honest about being a SHAPE test.
+    const groups = groupsOf(
+      { name: "Acme", customFields: { Score: 20 } },
+      { name: "Acme", customFields: { Score: 84 } }
+    )
+
+    expect(keysOf(groups.conflicts)).toContain("customFields.Score")
+  })
+
+  it("still compares a multi_select array — `'formula' in []` must not be evaluated on a prototype", () => {
+    // `isFormulaWrapper`'s `!Array.isArray` guard is load-bearing and this is its cell here: every
+    // multi_select value in this database is an array, and `'formula' in []` would otherwise be
+    // checked against the array prototype chain rather than refused outright.
+    const groups = groupsOf(
+      { name: "Acme", customFields: { Origem: ["Inbound"] } },
+      { name: "Acme", customFields: { Origem: ["Outbound"] } }
+    )
+
+    expect(keysOf(groups.conflicts)).toContain("customFields.Origem")
   })
 })
