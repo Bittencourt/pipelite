@@ -1116,6 +1116,22 @@ components:
                 code: "too_small"
                 message: "Name is required"
 
+    Conflict:
+      description: |
+        The request is well-formed but conflicts with the current state of the resource.
+        Returned when a value collides with an existing record, or when a record cannot be
+        deleted because another record still references it. Retrying the identical request
+        will not succeed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+          example:
+            type: "https://api.pipelite.app/errors/CONFLICT"
+            title: "Conflict"
+            status: 409
+            detail: "A stage with that name already exists in this pipeline"
+
     RateLimited:
       description: Rate limit exceeded
       headers:
@@ -2071,6 +2087,8 @@ paths:
                     $ref: '#/components/schemas/Activity'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationError'
     delete:
@@ -2088,6 +2106,8 @@ paths:
           description: Activity deleted
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   # ========== Pipelines ==========
   /activities/{id}/notes:
@@ -2347,6 +2367,10 @@ paths:
                       $ref: '#/components/schemas/Stage'
                   meta:
                     $ref: '#/components/schemas/PaginatedMeta'
+        # An unknown `pipeline_id`, and one belonging to another owner, are indistinguishable here
+        # by design: the endpoint must not confirm the existence of another owner's pipeline.
+        '404':
+          $ref: '#/components/responses/NotFound'
     post:
       summary: Create stage
       operationId: createStage
@@ -2367,6 +2391,11 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Stage'
+        # `stages` carries a unique (pipeline_id, name) index.
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /stages/{id}:
     get:
@@ -2425,6 +2454,15 @@ paths:
                     $ref: '#/components/schemas/Stage'
         '403':
           $ref: '#/components/responses/Forbidden'
+        # Also returned when the stage's pipeline is in the trash: the caller owns it, so a 403
+        # would be wrong, and the list endpoint omits the row entirely.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        # Renaming a stage to a name already used in the same pipeline.
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
     delete:
       summary: Delete stage
       operationId: deleteStage
@@ -2440,6 +2478,11 @@ paths:
           description: Stage deleted
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        # The stage still has deals. Stages are hard-deleted, so `deals.stage_id` blocks it.
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   # ========== Custom Field Definitions ==========
   /custom-field-definitions:

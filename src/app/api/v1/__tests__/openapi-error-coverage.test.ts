@@ -86,9 +86,17 @@ const FORBIDDEN_REF = "#/components/responses/Forbidden"
 /** The `$ref` a validation refusal must resolve to. */
 const VALIDATION_REF = "#/components/responses/ValidationError"
 
-/** The component node names the two refs above point at. */
+/** The `$ref` a "no such record" answer must resolve to. */
+const NOT_FOUND_REF = "#/components/responses/NotFound"
+
+/** The `$ref` a state conflict must resolve to. */
+const CONFLICT_REF = "#/components/responses/Conflict"
+
+/** The component node names the refs above point at. */
 const FORBIDDEN_COMPONENT = "Forbidden"
 const VALIDATION_COMPONENT = "ValidationError"
+const NOT_FOUND_COMPONENT = "NotFound"
+const CONFLICT_COMPONENT = "Conflict"
 
 /**
  * Every HTTP method OpenAPI 3.1 recognises as an operation on a path item. Enumerating all eight
@@ -155,6 +163,55 @@ const REQUIRE_403_OPERATIONS = [
 const REQUIRE_422_OPERATIONS = [
   { path: "/activities", method: "post" },
   { path: "/activities/{id}", method: "put" },
+  // WR-03: both of these return `Problems.validation` and neither said so.
+  //   - `stages/route.ts:113` (zod) and `:129` (`pipeline_id` not owned)  — POST /stages
+  //   - `stages/[id]/route.ts:149` (zod)                                 — PUT /stages/{id}
+  { path: "/stages", method: "post" },
+  { path: "/stages/{id}", method: "put" },
+] as const
+
+/**
+ * WR-03 — the SEVEN operations that answer 404 and did not declare it.
+ *
+ * The gate's stated rationale is that "a 403 the contract does not mention is indistinguishable from
+ * an outage, and the usual reaction to an unexpected non-2xx is a retry". That argument applies
+ * verbatim to 404, and this phase left it undeclared on operations it changed — including the one
+ * whose 404 `MUST_NOT_DECLARE_403_OPERATIONS` writes down, in prose, as the measured REASON that
+ * operation has no 403. Describing a response and then never asserting it exists is the shape this
+ * whole file was built to eliminate.
+ *
+ *   - `activities/[id]/route.ts:110` (GET), `:174` (PUT), `:369` (DELETE)
+ *   - `stages/route.ts:40`            — GET /stages, for an unknown or foreign `?pipeline_id=`
+ *   - `stages/[id]/route.ts:103` (GET), `:133` (PUT), `:203` (DELETE)
+ *
+ * The concrete failure this closes: an integrator generates a client from the spec, calls
+ * `GET /api/v1/stages?pipeline_id=<a pipeline they just deleted>`, receives a 404 the generated
+ * client has no branch for, and — by the gate's own reasoning — retries it as a transient fault.
+ */
+const REQUIRE_404_OPERATIONS = [
+  { path: "/activities/{id}", method: "get" },
+  { path: "/activities/{id}", method: "put" },
+  { path: "/activities/{id}", method: "delete" },
+  { path: "/stages", method: "get" },
+  { path: "/stages/{id}", method: "get" },
+  { path: "/stages/{id}", method: "put" },
+  { path: "/stages/{id}", method: "delete" },
+] as const
+
+/**
+ * The THREE operations that gained a 409 in WR-01, where they previously returned an unhandled 500.
+ *
+ * `Problems.conflict` was defined and entirely unused before that fix, so this is a genuinely new
+ * response on the wire and declaring it is not catch-up — it would be fresh drift otherwise.
+ *
+ *   - `stages/route.ts:163`      (POST)   — 23505 on the unique `(pipeline_id, name)` index
+ *   - `stages/[id]/route.ts:185` (PUT)    — the same collision, on rename
+ *   - `stages/[id]/route.ts:220` (DELETE) — 23503, a stage that still has deals
+ */
+const REQUIRE_409_OPERATIONS = [
+  { path: "/stages", method: "post" },
+  { path: "/stages/{id}", method: "put" },
+  { path: "/stages/{id}", method: "delete" },
 ] as const
 
 /**
@@ -188,14 +245,35 @@ const MUST_NOT_DECLARE_403_OPERATIONS = [
 
 /** Exact subject-list sizes. An emptied `it.each` array generates zero tests and looks green. */
 const EXPECTED_403_SUBJECTS = 6
-const EXPECTED_422_SUBJECTS = 2
+const EXPECTED_422_SUBJECTS = 4
+const EXPECTED_404_SUBJECTS = 7
+const EXPECTED_409_SUBJECTS = 3
 const EXPECTED_NEGATIVE_403_SUBJECTS = 3
 
 /**
- * The number of DISTINCT operations under this gate — nine, matching the count Phase 48 changed.
- * `/activities/{id}` PUT is in two lists, so the distinct count is not the sum of the lengths.
+ * The number of DISTINCT operations under this gate. Several appear in more than one list, so this is
+ * not the sum of the lengths.
+ *
+ * WAS 9, IS 10, AND THE ONE THAT JOINED IS RECORDED HERE RATHER THAN ABSORBED.
+ *
+ * The original nine were the operations Phase 48's authorization work changed: GET/PUT/DELETE on
+ * `/activities/{id}` and on `/stages/{id}`, plus `GET /activities`, `POST /activities` and
+ * `GET /stages`.
+ *
+ * `POST /stages` is the tenth. It joined for two reasons, both of them changes to what it puts on the
+ * wire rather than a widening of ambition:
+ *
+ *   - WR-03: it returns `Problems.validation` for a zod failure and for a `pipeline_id` the caller
+ *     does not own (`stages/route.ts:113`, `:129`) and declared `'201'` only.
+ *   - WR-01: it now returns `Problems.conflict` on the unique `(pipeline_id, name)` index where it
+ *     previously returned an unhandled 500. That response DID NOT EXIST before, so declaring it is
+ *     not catch-up; omitting it would be fresh drift introduced by this very fix.
+ *
+ * The scope paragraph in this file's header still holds: this gate covers the operations THIS phase
+ * touched, not the whole document. The wider drift across all 59 operations — 401 declared on 22,
+ * 429 on 12, 403 on 8, and 36 route files against 27 documented path items — remains DOC-48-01.
  */
-const EXPECTED_GATED_OPERATIONS = 9
+const EXPECTED_GATED_OPERATIONS = 10
 
 type ResponseEntry = { $ref?: unknown } | null | undefined
 type Operation = { responses?: Record<string, ResponseEntry> }
@@ -256,7 +334,13 @@ function label(subject: { path: string; method: string }): string {
  * carries both a 403 and a 422, and `/activities` POST is a 422 subject *and* a must-not-403
  * subject — so the union is 11 entries over 9 distinct operations.
  */
-const ALL_SUBJECTS = [...REQUIRE_403_OPERATIONS, ...REQUIRE_422_OPERATIONS, ...MUST_NOT_DECLARE_403_OPERATIONS]
+const ALL_SUBJECTS = [
+  ...REQUIRE_403_OPERATIONS,
+  ...REQUIRE_422_OPERATIONS,
+  ...REQUIRE_404_OPERATIONS,
+  ...REQUIRE_409_OPERATIONS,
+  ...MUST_NOT_DECLARE_403_OPERATIONS,
+]
   .map(subject => ({ path: subject.path, method: subject.method }))
   .filter(
     (subject, index, all) =>
@@ -289,12 +373,19 @@ describe("OpenAPI error-response coverage", () => {
       ).toBeGreaterThanOrEqual(MIN_OPERATIONS)
     })
 
-    it("resolves both response components the subjects `$ref`", () => {
+    it("resolves every response component the subjects `$ref`", () => {
       const components = spec.components?.responses ?? {}
-      expect(Object.keys(components)).toContain(FORBIDDEN_COMPONENT)
-      expect(Object.keys(components)).toContain(VALIDATION_COMPONENT)
-      expect(components[FORBIDDEN_COMPONENT]).toBeTypeOf("object")
-      expect(components[VALIDATION_COMPONENT]).toBeTypeOf("object")
+      for (const name of [
+        FORBIDDEN_COMPONENT,
+        VALIDATION_COMPONENT,
+        NOT_FOUND_COMPONENT,
+        CONFLICT_COMPONENT,
+      ]) {
+        expect(Object.keys(components), `#/components/responses/${name} is missing`).toContain(name)
+        expect(components[name], `#/components/responses/${name} is not an object`).toBeTypeOf(
+          "object"
+        )
+      }
     })
   })
 
@@ -308,6 +399,14 @@ describe("OpenAPI error-response coverage", () => {
 
     it(`names exactly ${EXPECTED_422_SUBJECTS} operations that must declare 422`, () => {
       expect(REQUIRE_422_OPERATIONS.length).toBe(EXPECTED_422_SUBJECTS)
+    })
+
+    it(`names exactly ${EXPECTED_404_SUBJECTS} operations that must declare 404`, () => {
+      expect(REQUIRE_404_OPERATIONS.length).toBe(EXPECTED_404_SUBJECTS)
+    })
+
+    it(`names exactly ${EXPECTED_409_SUBJECTS} operations that must declare 409`, () => {
+      expect(REQUIRE_409_OPERATIONS.length).toBe(EXPECTED_409_SUBJECTS)
     })
 
     it(`names exactly ${EXPECTED_NEGATIVE_403_SUBJECTS} operations that must NOT declare 403`, () => {
@@ -405,6 +504,60 @@ describe("OpenAPI error-response coverage", () => {
           refOf(entry),
           `${label(subject)}'s '422' must $ref ${VALIDATION_REF}`
         ).toBe(VALIDATION_REF)
+      }
+    )
+  })
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // 5b. 404 COVERAGE + REF INTEGRITY (WR-03).
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  describe("404 coverage", () => {
+    it.each(REQUIRE_404_OPERATIONS)(
+      "$method $path declares a 404",
+      subject => {
+        const responses = responsesOf(subject.path, subject.method)
+        expect(
+          Object.keys(responses),
+          `${label(subject)} returns Problems.notFound() but the published spec does not declare '404'. A generated client has no branch for it, and per this gate's own reasoning the usual reaction to an unexpected non-2xx is a RETRY — so a permanent 404 reads as a transient fault.`
+        ).toContain("404")
+      }
+    )
+
+    it.each(REQUIRE_404_OPERATIONS)(
+      "$method $path resolves its 404 to the NotFound component",
+      subject => {
+        const entry = responsesOf(subject.path, subject.method)["404"]
+        expect(
+          refOf(entry),
+          `${label(subject)}'s '404' must $ref ${NOT_FOUND_REF}; a dangling or inline-empty ref is documentation that says nothing`
+        ).toBe(NOT_FOUND_REF)
+      }
+    )
+  })
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // 5c. 409 COVERAGE + REF INTEGRITY. New responses, introduced by WR-01.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  describe("409 coverage", () => {
+    it.each(REQUIRE_409_OPERATIONS)(
+      "$method $path declares a 409",
+      subject => {
+        const responses = responsesOf(subject.path, subject.method)
+        expect(
+          Object.keys(responses),
+          `${label(subject)} answers Problems.conflict() where it previously returned an unhandled 500. Declaring it is not catch-up — it is a response that did not exist on the wire before WR-01, so leaving it out would be fresh drift.`
+        ).toContain("409")
+      }
+    )
+
+    it.each(REQUIRE_409_OPERATIONS)(
+      "$method $path resolves its 409 to the Conflict component",
+      subject => {
+        const entry = responsesOf(subject.path, subject.method)["409"]
+        expect(
+          refOf(entry),
+          `${label(subject)}'s '409' must $ref ${CONFLICT_REF}`
+        ).toBe(CONFLICT_REF)
       }
     )
   })
