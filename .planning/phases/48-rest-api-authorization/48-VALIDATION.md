@@ -23,7 +23,7 @@ signed_off: 2026-08-26
 | **Framework** | vitest 4.1.11, three projects |
 | **Base (runs in CI)** | `vitest.config.ts` — excludes `*.rsc.test.*` and `*.db.test.*` |
 | **DB (NOT in CI)** | `vitest.db.config.ts` — includes `src/**/*.db.test.*`, `fileParallelism: false`, 60 s timeouts. Must stay out of `npm test`; `db-test-isolation.test.ts` enforces it |
-| **Baseline** | `172 passed / 2 skipped` files, **5237 passed / 32 skipped**, ~58 s |
+| **Baseline** | at phase start: `172 passed / 2 skipped` files, **5237 passed / 32 skipped**. **At sign-off: `178 passed / 2 skipped` files, 5376 passed / 32 skipped**, 62.5 s. DB project: **98 passed over 4 files** |
 | **DB suite** | `npm run test:db` (provisions `pipelite_dedup_test` first) |
 | **Gate on** | lint **ERRORS (0)**, never a warning total — it differs between repo and worktree |
 | **Container gate** | `docker compose up -d --build` then `/api/health` 200 with all processors |
@@ -34,19 +34,19 @@ signed_off: 2026-08-26
 
 | Req | Behaviour | Type | Command | Exists? |
 |---|---|---|---|---|
-| SEC-01 SC-1a | GET `/activities/[id]`: non-owner → 403; **owner → 200** | unit | `npx vitest run "src/app/api/v1/activities/[id]/__tests__/route.test.ts"` | ❌ W0 |
-| SEC-01 SC-1b | PUT: non-owner → 403 **and no `db.update` call** | unit | same | ❌ W0 |
-| SEC-01 SC-1c | DELETE: non-owner → 403 **and row not tombstoned** | unit | same | ❌ W0 |
-| SEC-01 SC-2 | PUT `{owner_id: other}` by the owner does not change `owner_id` | unit | same | ❌ W0 |
-| SEC-01 SC-2b | POST `{owner_id: other}` does not create a record owned by another user | unit | `.../activities/__tests__/route.test.ts` | ❌ W0 |
-| **SEC-01 SC-3** | list total == owner-scoped SQL count, **floor > 0**, **discriminator: != global count, and B sees only B's** | **integration (db)** | `npm run test:db` → `activities-scope.db.test.ts` | ❌ W0 |
-| SEC-02 SC-4a | GET `/stages/:id` **owner, no expand → 200** — *the only RED-today half* | unit | `.../stages/[id]/__tests__/route.test.ts` | ❌ W0 |
-| SEC-02 SC-4b | non-owner → 403 with **and** without expand — *regression guard, GREEN today* | unit | same | ❌ W0 |
-| SEC-02 SC-4c | bare GET body has **no `pipeline` key** — guards the fix's own leak | unit | same | ❌ W0 |
-| **QG-03 SC-5** | `?offset=<count>` → **200 + `data: []`** (500 / `42601` today) | **integration (db)** | `npm run test:db` → `stages-scope.db.test.ts` | ❌ W0 |
-| QG-03 SC-5b | empty-set SQL contains no `IN ()`, asserted from `PgDialect`/`toSQL()`, **not** from route source text | unit | `.../stages/__tests__/in-clause.test.ts` | ❌ W0 |
-| F3 | owner's `?limit=5` returns their stage; `data.length` consistent with `meta.total` | integration | `npm run test:db` | ❌ W0 |
-| **Q10 gate** | every `/api/v1` record handler authorizes — AST sweep with floors | unit (**in CI**) | `npx vitest run src/app/api/v1/__tests__/route-authorization.test.ts` | ❌ W0 |
+| SEC-01 SC-1a | GET `/activities/[id]`: non-owner → 403; **owner → 200** | unit | `npx vitest run "src/app/api/v1/activities/[id]/__tests__/route.test.ts"` | ✅ 48 |
+| SEC-01 SC-1b | PUT: non-owner → 403 **and no `db.update` call** | unit | same | ✅ 48 |
+| SEC-01 SC-1c | DELETE: non-owner → 403 **and row not tombstoned** | unit | same | ✅ 48 |
+| SEC-01 SC-2 | PUT `{owner_id: other}` by the owner does not change `owner_id` | unit | same | ✅ 48 |
+| SEC-01 SC-2b | POST `{owner_id: other}` does not create a record owned by another user | unit | `.../activities/__tests__/route.test.ts` | ✅ 48 |
+| **SEC-01 SC-3** | list total == owner-scoped SQL count, **floor > 0**, **discriminator: != global count, and B sees only B's** | **integration (db)** | `npm run test:db` → `activities-scope.db.test.ts` | ✅ 48 |
+| SEC-02 SC-4a | GET `/stages/:id` **owner, no expand → 200** — *the only RED-today half* | unit | `.../stages/[id]/__tests__/route.test.ts` | ✅ 48 |
+| SEC-02 SC-4b | non-owner → 403 with **and** without expand — *regression guard, GREEN today* | unit | same | ✅ 48 |
+| SEC-02 SC-4c | bare GET body has **no `pipeline` key** — guards the fix's own leak | unit | same | ✅ 48 |
+| **QG-03 SC-5** | `?offset=<count>` → **200 + `data: []`** (500 / `42601` today) | **integration (db)** | `npm run test:db` → `stages-scope.db.test.ts` | ✅ 48 |
+| QG-03 SC-5b | empty-set SQL contains no `IN ()`, asserted from `PgDialect`/`toSQL()`, **not** from route source text | unit | `.../stages/__tests__/in-clause.test.ts` | ✅ 48 |
+| F3 | owner's `?limit=5` returns their stage; `data.length` consistent with `meta.total` | integration | `npm run test:db` | ✅ 48 |
+| **Q10 gate** | every `/api/v1` record handler authorizes — AST sweep with floors | unit (**in CI**) | `npx vitest run src/app/api/v1/__tests__/route-authorization.test.ts` | ✅ 48 |
 
 ---
 
@@ -96,21 +96,31 @@ subject area** and is the reason the Q10 gate exists: deleting all three ownersh
 
 ## Wave 0 Requirements
 
-- [ ] `src/app/api/v1/activities/[id]/__tests__/route.test.ts` — SC-1a/b/c, SC-2
-- [ ] `src/app/api/v1/activities/__tests__/route.test.ts` — SC-2b
-- [ ] `src/app/api/v1/stages/[id]/__tests__/route.test.ts` — SC-4a/b/c
-- [ ] `src/app/api/v1/stages/__tests__/in-clause.test.ts` — SC-5b
-- [ ] `src/app/api/v1/activities/activities-scope.db.test.ts` — SC-3 (db project)
-- [ ] `src/app/api/v1/stages/stages-scope.db.test.ts` — SC-5, F3 (db project)
-- [ ] `src/app/api/v1/__tests__/route-authorization.test.ts` — **the Q10 gate**
-- [ ] a two-user API-key fixture invoking the real `withApiAuth` — **zero precedent in the repo**
+- [x] `src/app/api/v1/activities/[id]/__tests__/route.test.ts` — SC-1a/b/c, SC-2
+- [x] `src/app/api/v1/activities/__tests__/route.test.ts` — SC-2b
+- [x] `src/app/api/v1/stages/[id]/__tests__/route.test.ts` — SC-4a/b/c
+- [x] `src/app/api/v1/stages/__tests__/in-clause.test.ts` — SC-5b
+- [x] `src/app/api/v1/activities/activities-scope.db.test.ts` — SC-3 (db project)
+- [x] `src/app/api/v1/stages/stages-scope.db.test.ts` — SC-5, F3 (db project)
+- [x] `src/app/api/v1/__tests__/route-authorization.test.ts` — **the Q10 gate**
+- [x] a two-user API-key fixture invoking the real `withApiAuth` — **zero precedent in the repo**
 
 ---
 
-## Stale artifacts to reconcile (found by pattern mapping, three ungated)
+## Stale artifacts to reconcile (found by pattern mapping, three ungated) — ALL RECONCILED by 48-09
 
-- `openapi.yaml` declares no `'403'` for `/activities/{id}` or `/stages/{id}`
-- `docs/development/formula-fields.md:330` **asserts the IDOR still exists** — it becomes false on landing
+- ~~`openapi.yaml` declares no `'403'` for `/activities/{id}` or `/stages/{id}`~~ — **DONE.** Six
+  `'403'` and two `'422'` declarations added (16 insertions, 0 deletions), held by
+  `openapi-error-coverage.test.ts` — the first test in this repository that reads
+  `public/openapi.yaml` at all. Three of the plan's nine subjects turned out to have **no 403 code
+  path**, so they became an inverted-polarity control instead of a silent omission.
+- ~~`docs/development/formula-fields.md:330` **asserts the IDOR still exists**~~ — **DONE.** Struck
+  through and marked CLOSED by Phase 48, with the three 403 sites and the 422 site named. The two
+  neighbouring bullets were deliberately left alone; both remain true.
+- Also reconciled: `BACKLOG.md` § 999.17, § 999.18, § SEC-48-A, § SEC-48-B and `REQUIREMENTS.md`
+  § QG-03 — five documents that had recorded QG-03 as *unreachable*, which 48-07 disproved with a
+  `42601` reproduced from code that actually shipped. **No `REQUIREMENTS.md` checkbox or traceability
+  row was changed** (19 of each, byte-identical): `/gsd:verify-phase 48` owns those transitions.
 
 ---
 
@@ -118,8 +128,8 @@ subject area** and is the reason the Q10 gate exists: deleting all three ownersh
 
 - [x] All six negative controls observed red, verbatim output in the SUMMARY — A/A′/A″ and B1/B2 and C
       in `48-08-SUMMARY.md`, D1-D4 in `48-01-SUMMARY.md`, E1/E2 in `48-06-SUMMARY.md`, F in
-      `48-07-SUMMARY.md`. Judged row by row in the register below; **fifteen named controls plus five
-      unnamed ones, all DELIVERED, none NOT DELIVERED.**
+      `48-07-SUMMARY.md`. Judged row by row in the register below: **seventeen named controls plus nine more the
+      phase produced as it went — 26 in all, 26 DELIVERED, 0 NOT DELIVERED.**
 - [x] The Q10 gate proven to catch a deleted predicate (control A) — the exact SEC-48-B ablation moved
       the base suite from **0 failures to exactly 1**, and the one red test names file, line and verb.
       **Re-falsified fresh at sign-off** (register § fresh falsifications).
