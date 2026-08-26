@@ -290,21 +290,52 @@ async function removeFixtures(): Promise<void> {
  * Capturing the emission half
  * ------------------------------------------------------------------------ */
 
-const ALL_CRM_EVENTS: CrmEventName[] = [
-  "deal.created",
-  "deal.updated",
-  "deal.deleted",
-  "deal.stage_changed",
-  "person.created",
-  "person.updated",
-  "person.deleted",
-  "organization.created",
-  "organization.updated",
-  "organization.deleted",
-  "activity.created",
-  "activity.updated",
-  "activity.deleted",
-]
+/**
+ * WR-14. EXHAUSTIVENESS IS ENFORCED BY THE COMPILER, NOT BY THE LIST BEING RIGHT TODAY.
+ *
+ * This was `const ALL_CRM_EVENTS: CrmEventName[] = [ … 13 names … ]`. All thirteen were present, so
+ * the file's claim was true — but `CrmEventName[]` permits a SHORT list, and nine cells in this
+ * file rest on `expect(captured).toHaveLength(0)`, which is only ever a claim about the names that
+ * were actually subscribed. Phase 49 adding `"activity.completed"` to `CrmEventMap` and emitting it
+ * from `toggleActivityCompletionMutation` would produce a GREEN cell certifying "not emitted" for
+ * an event that was emitted, with no compile error and no lint error to stop it.
+ *
+ * `Record<CrmEventName, true>` makes a missing key TS2741 and a stale key TS2353. The array is
+ * derived from its keys so the two cannot drift.
+ *
+ * MEASURED, not assumed. Deleting the `"deal.stage_changed"` line below and running
+ * `tsc --noEmit` reports, verbatim:
+ *
+ *   src/lib/execution/actions/crm-ownership.db.test.ts(312,7): error TS2741: Property
+ *   '"deal.stage_changed"' is missing in type '{ "deal.created": true; … }' but required in type
+ *   'Record<keyof CrmEventMap, true>'.
+ *
+ * and the stale-key direction, `"deal.archived": true`, reports
+ *
+ *   error TS2353: Object literal may only specify known properties, and '"deal.archived"' does not
+ *   exist in type 'Record<keyof CrmEventMap, true>'.
+ *
+ * Both restored. The same pattern and the same two measurements now hold for
+ * `events/subscribers/webhook.ts` and `events/subscribers/workflow-trigger.ts`, where a silently
+ * un-subscribed event is a production defect rather than a test one.
+ */
+const ALL_CRM_EVENT_FLAGS: Record<CrmEventName, true> = {
+  "deal.created": true,
+  "deal.updated": true,
+  "deal.deleted": true,
+  "deal.stage_changed": true,
+  "person.created": true,
+  "person.updated": true,
+  "person.deleted": true,
+  "organization.created": true,
+  "organization.updated": true,
+  "organization.deleted": true,
+  "activity.created": true,
+  "activity.updated": true,
+  "activity.deleted": true,
+}
+
+const ALL_CRM_EVENTS = Object.keys(ALL_CRM_EVENT_FLAGS) as CrmEventName[]
 
 interface CapturedEvent {
   name: CrmEventName
@@ -559,6 +590,17 @@ describe("the fixture set is what every assertion below assumes", () => {
     expect(await sqlNotes(people, PERSON_B)).toBe(B_SECRET)
     expect(await sqlNotes(organizations, ORG_B)).toBe(B_SECRET)
     expect(await sqlNotes(deals, DEAL_A)).toBe(A_SECRET)
+  })
+
+  it("WR-14: the subscribed event list covers EVERY name in CrmEventMap, by construction", async () => {
+    // The compiler is the real gate (`Record<CrmEventName, true>` above), and a compile error is
+    // invisible in a test report — so this cell reads the derived list back at runtime and pins the
+    // count. It is the second half of the same claim, not a substitute for the first.
+    expect(ALL_CRM_EVENTS).toHaveLength(13)
+    expect(new Set(ALL_CRM_EVENTS).size).toBe(ALL_CRM_EVENTS.length)
+    // And the listeners this file attached are one per name, so "not emitted" below is a claim
+    // about all thirteen rather than about however many the array happened to hold.
+    expect(listeners.map((l) => l.name).sort()).toEqual([...ALL_CRM_EVENTS].sort())
   })
 
   it("the bus listener this file attaches actually captures — otherwise every 'not emitted' is vacuous", async () => {
