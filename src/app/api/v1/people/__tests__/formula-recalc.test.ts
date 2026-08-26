@@ -144,6 +144,17 @@ const secondPersonRow = {
   email: "grace@example.com",
 }
 
+/**
+ * What the CANONICAL RE-READ resolves (DATA-02): the same row, as the database holds it AFTER
+ * `recalculateFormulas` has written to it.
+ *
+ * It differs from `personRow` in `customFields` and NOWHERE ELSE, because the recalc issues exactly
+ * one `db.update` and that update sets only `customFields` — `updatedAt` is deliberately left alone
+ * (`src/lib/formula-recalc.ts:960-991`). The fixture mirrors that so a test cannot pass on a
+ * difference the production write would never produce.
+ */
+const recalculatedPersonRow = { ...personRow, customFields: RECALC_RESULT }
+
 /* ------------------------------------------------------------------------------------------ *
  * DB chain stubs
  * ------------------------------------------------------------------------------------------ */
@@ -260,6 +271,10 @@ afterEach(() => {
 describe("POST /api/v1/people — recalculates before emitting", () => {
   beforeEach(() => {
     stubInsert([personRow])
+    // DATA-02: the route re-reads the row it just inserted and serializes THAT for the 201. The
+    // stub resolves the POST-recalc row, which is what the database would actually hold by the
+    // time the read is issued — the recalc write lands between the insert and the read.
+    mockDb.query.people.findFirst.mockResolvedValue(recalculatedPersonRow)
   })
 
   it("recalculates exactly once, for the inserted person, BEFORE crmBus.emit", async () => {
@@ -334,6 +349,12 @@ describe("POST /api/v1/people — recalculates before emitting", () => {
 
   it("still returns 201 and still emits when the recalc rejects (D-05 / T-34-17)", async () => {
     mockRecalc.mockRejectedValueOnce(new Error("quickjs exploded"))
+    // The canonical re-read is stubbed DELIBERATELY to the PRE-recalc row here, and the override
+    // is the point of the cell rather than housekeeping: the recalc threw BEFORE its `db.update`,
+    // so nothing was written and the database still holds `STORED_CUSTOM_FIELDS`. Leaving the
+    // describe-level post-recalc stub in place would have the read return a value the failed
+    // recalc never persisted, and the 201-body half of this cell would then assert a fiction.
+    mockDb.query.people.findFirst.mockResolvedValue(personRow)
 
     const response = await POST(postRequest({ first_name: "Ada", last_name: "Lovelace" }))
 
@@ -344,14 +365,21 @@ describe("POST /api/v1/people — recalculates before emitting", () => {
     expect(String(errorSpy.mock.calls[0][0])).toContain('"scope":"formula-recalc"')
   })
 
-  it("leaves the 201 body pre-recalc — backlog 999.23, deferred for all four entities", async () => {
+  it("returns a 201 body carrying the POST-recalc blob — a canonical read, not the inserted row", async () => {
     const response = await POST(postRequest({ first_name: "Ada", last_name: "Lovelace" }))
     const body = await response.json()
 
-    // Documented, not accidental: the stored row and the emitted event are both correct, and a
-    // subsequent GET is correct (SC-1). Changing the create response is 999.23's job, so that
-    // one decision covers organizations, people, deals and activities together.
-    expect(body.data.custom_fields).toEqual(STORED_CUSTOM_FIELDS)
+    // DATA-02, decided in Phase 49 and applied identically to organizations, people, deals and
+    // activities: the 201 body is a CANONICAL READ — the row read back out of the database after
+    // `recalculateFormulas` has written to it — so the create response and a subsequent GET cannot
+    // disagree. Backlog 999.23 was closed by that one decision, as a re-read through the path GET
+    // uses rather than an in-process recompute merged into the `.returning()` row.
+    //
+    // TWO-SIDED on purpose, copying the emit cell above: `RECALC_RESULT` is deliberately unequal
+    // to `STORED_CUSTOM_FIELDS`, so an implementation that serialized the inserted row cannot pass
+    // this cell by accident.
+    expect(body.data.custom_fields).toEqual(RECALC_RESULT)
+    expect(body.data.custom_fields).not.toEqual(STORED_CUSTOM_FIELDS)
   })
 })
 
