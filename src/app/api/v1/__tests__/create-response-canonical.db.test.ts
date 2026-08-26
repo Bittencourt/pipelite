@@ -198,16 +198,28 @@ const PREFIX = "crcanon-"
 const LIKE_PREFIX = `${PREFIX}%`
 
 /**
- * ONE identity, deliberately. DATA-02 is not an authorization criterion — a second identity here
- * would invite confusion with plan 49-06's subject, and every predicate this file exercises is
- * already pinned cross-user by `activities-scope.db.test.ts` and `route-authorization.test.ts`.
+ * IDENTITY A drives DATA-02. One identity is all SC-4 needs: it is not an authorization criterion.
+ *
+ * IDENTITY B exists for one reason, and it is not DATA-02 — see the cross-route owner-scoping
+ * describe at the bottom of this file. Plan 49-03's **ablation 3** dropped the owner term from the
+ * activities predicate and measured that **nothing caught it, 30/30 green**, because the only
+ * rendered-predicate assertion in the repository covers the organizations route. Its SUMMARY
+ * assigns "cross-route predicate coverage" to this plan. A predicate proven by rendering the SQL a
+ * mock discarded is strictly weaker than one proven by a second real identity being refused, and
+ * SC-4's own contract — "the 201 equals what the GET returns" — is only worth anything if that GET
+ * is scoped. This is deliberately NOT plan 49-06's subject, which is `/api/files/...` under session
+ * auth.
  */
 const USER_A = `${PREFIX}user-a`
+const USER_B = `${PREFIX}user-b`
 const KEY_A = `${PREFIX}key-a`
+const KEY_B = `${PREFIX}key-b`
 
-/** The deals POST needs a stage inside a pipeline the caller owns. */
+/** The deals POST needs a stage inside a pipeline the caller owns — one per identity. */
 const PIPELINE_ID = `${PREFIX}pipeline`
 const STAGE_ID = `${PREFIX}stage`
+const PIPELINE_B = `${PREFIX}pipeline-b`
+const STAGE_B = `${PREFIX}stage-b`
 /** `activities.type_id` is NOT NULL and references `activity_types`. */
 const TYPE_ID = `${PREFIX}type-task`
 
@@ -237,6 +249,39 @@ const FORMULA_DEFINITIONS_TOTAL = 4
 const FORMULA_DEFINITIONS_BEFORE_SEED = 0
 /** How many entity types this file proves. Four, none inferred from another. */
 const ENTITIES_PROVEN = 4
+/** Two, and the second one exists only for the cross-route owner-scoping describe. */
+const IDENTITIES_SEEDED = 2
+
+/**
+ * THE REFUSAL EACH GET-BY-ID ACTUALLY RETURNS FOR A FOREIGN RECORD — and they are NOT the same.
+ * MEASURED by this file rather than assumed from the sibling routes:
+ *
+ *   - `organizations`, `people` and `deals` fold ownership INTO the predicate
+ *     (`id`, `owner_id`, `deleted_at is null`) so a foreign record is indistinguishable from a
+ *     missing one: **404**.
+ *   - `activities/[id]` fetches on `id` and `deleted_at` ONLY, then compares `activity.ownerId`
+ *     against the caller and returns `Problems.forbidden()`: **403**
+ *     (`src/app/api/v1/activities/[id]/route.ts:112-123`).
+ *
+ * Two consequences, both recorded rather than fixed here, because changing an API's status code is
+ * not this plan's subject (DATA-02) and is a contract change:
+ *
+ *   1. `activities/route.ts`'s DATA-02 comment claims the canonical read uses "the same three-term
+ *      predicate `GET /api/v1/activities/[id]` uses". It does not — that GET's predicate has TWO
+ *      terms and its ownership check is a post-fetch comparison. The canonical read is still
+ *      correctly scoped; the claim about which predicate it mirrors is what is inaccurate.
+ *   2. A 403 where the siblings return 404 is an existence oracle: it confirms that a record with
+ *      that id exists. Logged as a deferred item, not changed here.
+ *
+ * This map is a DRIFT ALARM in both directions. If somebody harmonises `activities` onto 404, the
+ * activities cell reddens and points here — which is the correct outcome, not a nuisance.
+ */
+const FOREIGN_READ_STATUS: Readonly<Record<EntityType, number>> = Object.freeze({
+  organization: 404,
+  person: 404,
+  deal: 404,
+  activity: 403,
+})
 
 /* ---------------------------------------------------------------------------
  * The manufactured divergence: one formula per entity type, over a NATIVE
@@ -317,6 +362,7 @@ const CREATE_SHAPE: Readonly<Record<EntityType, "create mutation" | "inline db.i
 const CELLS_THAT_RAN = new Set<EntityType>()
 
 let keyA: MintedApiKey
+let keyB: MintedApiKey
 /** Totals before the run, re-asserted afterwards: a prefix query cannot see a MUTATED row. */
 const baseline: Record<string, number> = {}
 /** Measured in `beforeAll`, between the clean and the mint. */
@@ -486,12 +532,13 @@ async function createVia(
   handler: (request: NextRequest) => Promise<Response>,
   path: string,
   body: Record<string, unknown>,
+  as: () => MintedApiKey = () => keyA,
 ): Promise<Envelope> {
   const response = await handler(
     new NextRequest(`http://localhost${path}`, {
       method: "POST",
       headers: {
-        Authorization: keyA.authorizationHeader,
+        Authorization: as().authorizationHeader,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
@@ -508,25 +555,65 @@ async function createVia(
   return payload
 }
 
-/** The GET-by-id the 201 must agree with — the one code path this phase makes truth. */
-async function readVia(
-  handler: (
-    request: NextRequest,
-    context: { params: Promise<{ id: string }> },
-  ) => Promise<Response>,
+/** A GET-by-id, returned RAW so a caller can assert on a refusal as well as on a success. */
+type ReadHandler = (
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) => Promise<Response>
+
+function rawRead(
+  handler: ReadHandler,
   path: string,
   id: string,
-): Promise<Envelope> {
-  const response = await handler(
+  authorization: string,
+): Promise<Response> {
+  return handler(
     new NextRequest(`http://localhost${path}/${id}`, {
-      headers: { Authorization: keyA.authorizationHeader },
+      headers: { Authorization: authorization },
     }),
     { params: Promise.resolve({ id }) },
   )
+}
+
+/** The GET-by-id the 201 must agree with — the one code path this phase makes truth. */
+async function readVia(handler: ReadHandler, path: string, id: string): Promise<Envelope> {
+  const response = await rawRead(handler, path, id, keyA.authorizationHeader)
 
   expect(response.status, `GET ${path}/${id} did not return the record just created`).toBe(200)
 
   return (await response.json()) as Envelope
+}
+
+/**
+ * A refusal is a status AND an empty payload. Asserting the status alone would be satisfied by a
+ * route that returned 404 with the victim's record in the body, which is not a refusal.
+ */
+async function expectRefusal(response: Response, entityType: EntityType): Promise<void> {
+  expect(
+    response.status,
+    `${entityType}: a foreign GET-by-id was not refused with ${FOREIGN_READ_STATUS[entityType]}. ` +
+      "Either the predicate lost its owner term, or the refusal status changed — if the latter, " +
+      "update FOREIGN_READ_STATUS and say so, do not widen this assertion.",
+  ).toBe(FOREIGN_READ_STATUS[entityType])
+
+  const body = (await response.json()) as Record<string, unknown>
+
+  expect(
+    Object.keys(body),
+    `${entityType}: the refusal carried a "data" key — the status refused and the body did not`,
+  ).not.toContain("data")
+}
+
+/** The owner recorded on a stored row, read by direct SQL rather than from a handler's answer. */
+async function sqlOwnerOf(table: string, id: string): Promise<string> {
+  const rows = await db.execute(
+    sql`select owner_id as owner from ${sql.identifier(table)} where id = ${id}`,
+  )
+  const parsed = rows as unknown as { owner: string }[]
+
+  expect(parsed, `direct SQL found no ${table} row with id ${id}`).toHaveLength(1)
+
+  return parsed[0].owner
 }
 
 /* ---------------------------------------------------------------------------
@@ -549,29 +636,38 @@ beforeAll(async () => {
   // `status` is an enum of pending_verification | pending_approval | approved | rejected;
   // `active` does not exist and errors. `role: "member"` deliberately: nothing here needs admin,
   // and an admin fixture invites an admin-bypass path into a criterion that has none.
-  await db.insert(users).values({
-    id: USER_A,
-    email: `${PREFIX}a@local.test`,
-    name: "Canonical A",
-    role: "member",
-    status: "approved",
-  })
+  // NEITHER user is an admin. An admin fixture would invite an admin-bypass path into a criterion
+  // that has none, and would make the cross-route owner-scoping cells below unfalsifiable.
+  await db.insert(users).values([
+    {
+      id: USER_A,
+      email: `${PREFIX}a@local.test`,
+      name: "Canonical A",
+      role: "member",
+      status: "approved",
+    },
+    {
+      id: USER_B,
+      email: `${PREFIX}b@local.test`,
+      name: "Canonical B",
+      role: "member",
+      status: "approved",
+    },
+  ])
 
   keyA = await mintApiKey({ id: KEY_A, userId: USER_A, name: "canonical fixture A" })
+  keyB = await mintApiKey({ id: KEY_B, userId: USER_B, name: "canonical fixture B" })
 
   await db.insert(activityTypes).values({ id: TYPE_ID, name: "Canonical Task", isDefault: false })
 
-  await db.insert(pipelines).values({
-    id: PIPELINE_ID,
-    name: `${PREFIX}pipeline`,
-    ownerId: USER_A,
-  })
-  await db.insert(stages).values({
-    id: STAGE_ID,
-    pipelineId: PIPELINE_ID,
-    name: `${PREFIX}stage`,
-    position: 1000,
-  })
+  await db.insert(pipelines).values([
+    { id: PIPELINE_ID, name: `${PREFIX}pipeline`, ownerId: USER_A },
+    { id: PIPELINE_B, name: `${PREFIX}pipeline B`, ownerId: USER_B },
+  ])
+  await db.insert(stages).values([
+    { id: STAGE_ID, pipelineId: PIPELINE_ID, name: `${PREFIX}stage`, position: 1000 },
+    { id: STAGE_B, pipelineId: PIPELINE_B, name: `${PREFIX}stage B`, position: 1000 },
+  ])
 
   // The manufactured divergence. Four definitions, one per entity type, through plan 49-01's
   // fixture rather than a hand-written insert — the id is caller-supplied because
@@ -714,22 +810,36 @@ describe("pre-flight floors — without these, every comparison below is vacuous
     expect(rows).toHaveLength(FORMULA_DEFINITIONS_TOTAL)
   })
 
-  it("the fixture set the four cells depend on exists", async () => {
-    const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, USER_A))
-    const [key] = await db.select({ id: apiKeys.id }).from(apiKeys).where(eq(apiKeys.id, KEY_A))
-    const [stage] = await db
+  it("the fixture set the cells depend on exists, for BOTH identities", async () => {
+    const userRows = await db.select({ id: users.id }).from(users).where(like(users.id, LIKE_PREFIX))
+    const keyRows = await db
+      .select({ id: apiKeys.id })
+      .from(apiKeys)
+      .where(like(apiKeys.id, LIKE_PREFIX))
+    const stageRows = await db
       .select({ id: stages.id, pipelineId: stages.pipelineId })
       .from(stages)
-      .where(eq(stages.id, STAGE_ID))
+      .where(like(stages.id, LIKE_PREFIX))
     const [type] = await db
       .select({ id: activityTypes.id })
       .from(activityTypes)
       .where(eq(activityTypes.id, TYPE_ID))
 
-    expect(user?.id).toBe(USER_A)
-    expect(key?.id).toBe(KEY_A)
-    expect(stage?.pipelineId).toBe(PIPELINE_ID)
+    expect(userRows.map((r) => r.id).sort()).toEqual([USER_A, USER_B].sort())
+    expect(userRows).toHaveLength(IDENTITIES_SEEDED)
+    expect(keyRows.map((r) => r.id).sort()).toEqual([KEY_A, KEY_B].sort())
+    expect(keyRows).toHaveLength(IDENTITIES_SEEDED)
+    expect(
+      stageRows.map((r) => `${r.id}:${r.pipelineId}`).sort(),
+      "each identity needs a stage inside a pipeline IT owns, or the deals POST below is refused " +
+        "for a reason that has nothing to do with what is being measured",
+    ).toEqual([`${STAGE_ID}:${PIPELINE_ID}`, `${STAGE_B}:${PIPELINE_B}`].sort())
     expect(type?.id).toBe(TYPE_ID)
+
+    // The two identities are DISTINCT. An assertion that a foreign read is refused is satisfied
+    // trivially if "foreign" and "own" are the same user.
+    expect(USER_A).not.toBe(USER_B)
+    expect(keyA.plaintextKey).not.toBe(keyB.plaintextKey)
   })
 })
 
@@ -881,6 +991,146 @@ describe("shape coverage — for the record, because a two-shape surface is how 
     expect(shapes.has("create mutation")).toBe(true)
     expect(shapes.has("inline db.insert")).toBe(true)
     expect(Object.keys(CREATE_SHAPE)).toHaveLength(ENTITIES_PROVEN)
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * CROSS-ROUTE OWNER SCOPING — closing plan 49-03's ablation 3
+ *
+ * 49-03 dropped the owner term from the activities predicate and measured that
+ * NOTHING caught it: 30/30 green, because the only rendered-predicate
+ * assertion in the repository covers the organizations route, and it renders
+ * SQL a mock then discards. Its SUMMARY hands cross-route predicate coverage
+ * to this plan.
+ *
+ * This is on-subject rather than adjacent. SC-4's contract is "the 201 body
+ * equals what a subsequent GET returns" — so a GET whose predicate is
+ * unscoped does not merely leak, it makes the contract meaningless: the 201
+ * would be agreeing with a read that anybody can perform.
+ *
+ * Each cell is a matched pair. The refusal alone proves nothing (a route that
+ * 404s everything satisfies it) and the success alone proves nothing (the row
+ * might be visible to everyone). Only the pair is a proof, and the row's owner
+ * is confirmed by direct SQL first so a 404 cannot be a missing row.
+ * ------------------------------------------------------------------------ */
+
+describe("the GET-by-id the 201 is compared against is OWNER-SCOPED, per entity", () => {
+  it("organizations: A is refused B's record, and B is not", async () => {
+    const created = await createVia(
+      POST_ORGANIZATION,
+      "/api/v1/organizations",
+      { name: `${ORGANIZATION_NAME} B` },
+      () => keyB,
+    )
+    expect(await sqlOwnerOf("organizations", created.data.id)).toBe(USER_B)
+
+    // A is refused. If this reddens with a 200, the GET-by-id predicate lost its owner term — and
+    // with it SC-4's contract, because the 201 would be agreeing with a read anybody can perform.
+    await expectRefusal(
+      await rawRead(
+        GET_ORGANIZATION,
+        "/api/v1/organizations",
+        created.data.id,
+        keyA.authorizationHeader,
+      ),
+      "organization",
+    )
+
+    const own = await rawRead(
+      GET_ORGANIZATION,
+      "/api/v1/organizations",
+      created.data.id,
+      keyB.authorizationHeader,
+    )
+    expect(
+      own.status,
+      "the POSITIVE ANCHOR: B cannot read B's own organization either, so the 404 above is " +
+        "satisfied by a route that serves nothing rather than by a scoped one",
+    ).toBe(200)
+  })
+
+  it("people: A is refused B's record, and B is not", async () => {
+    const created = await createVia(
+      POST_PERSON,
+      "/api/v1/people",
+      { first_name: `${PERSON_FIRST_NAME}B`, last_name: PERSON_LAST_NAME },
+      () => keyB,
+    )
+    expect(await sqlOwnerOf("people", created.data.id)).toBe(USER_B)
+
+    await expectRefusal(
+      await rawRead(GET_PERSON, "/api/v1/people", created.data.id, keyA.authorizationHeader),
+      "person",
+    )
+
+    const own = await rawRead(
+      GET_PERSON,
+      "/api/v1/people",
+      created.data.id,
+      keyB.authorizationHeader,
+    )
+    expect(own.status, "the POSITIVE ANCHOR: B cannot read B's own person either").toBe(200)
+  })
+
+  it("deals: A is refused B's record, and B is not", async () => {
+    const created = await createVia(
+      POST_DEAL,
+      "/api/v1/deals",
+      { title: `${DEAL_TITLE} B`, value: DEAL_VALUE, stage_id: STAGE_B },
+      () => keyB,
+    )
+    expect(await sqlOwnerOf("deals", created.data.id)).toBe(USER_B)
+
+    await expectRefusal(
+      await rawRead(GET_DEAL, "/api/v1/deals", created.data.id, keyA.authorizationHeader),
+      "deal",
+    )
+
+    const own = await rawRead(GET_DEAL, "/api/v1/deals", created.data.id, keyB.authorizationHeader)
+    expect(own.status, "the POSITIVE ANCHOR: B cannot read B's own deal either").toBe(200)
+  })
+
+  it("activities: A is refused B's record, and B is not", async () => {
+    const created = await createVia(
+      POST_ACTIVITY,
+      "/api/v1/activities",
+      { title: `${ACTIVITY_TITLE} B`, type_id: TYPE_ID },
+      () => keyB,
+    )
+    expect(await sqlOwnerOf("activities", created.data.id)).toBe(USER_B)
+
+    // This is the exact term plan 49-03's ablation 3 removed and nothing caught. Note the status:
+    // 403, not the siblings' 404 — see `FOREIGN_READ_STATUS`, which measured the asymmetry rather
+    // than assuming the four routes agree.
+    await expectRefusal(
+      await rawRead(
+        GET_ACTIVITY,
+        "/api/v1/activities",
+        created.data.id,
+        keyA.authorizationHeader,
+      ),
+      "activity",
+    )
+
+    const own = await rawRead(
+      GET_ACTIVITY,
+      "/api/v1/activities",
+      created.data.id,
+      keyB.authorizationHeader,
+    )
+    expect(own.status, "the POSITIVE ANCHOR: B cannot read B's own activity either").toBe(200)
+  })
+
+  it("the four refusals are NOT uniform, and that asymmetry is measured rather than assumed", () => {
+    // Stated as its own cell so the finding survives independently of the four cells above. Three
+    // routes fold ownership into the predicate and 404; `activities` fetches by id, compares
+    // `owner_id`, and 403s. The distinct-values assertion is what makes this cell non-decorative:
+    // it fails the day somebody harmonises the four, which is the day the map above must change.
+    expect(Object.keys(FOREIGN_READ_STATUS)).toHaveLength(ENTITIES_PROVEN)
+    expect(new Set(Object.values(FOREIGN_READ_STATUS)).size).toBe(2)
+    expect(FOREIGN_READ_STATUS.activity).not.toBe(FOREIGN_READ_STATUS.organization)
+    expect(FOREIGN_READ_STATUS.organization).toBe(FOREIGN_READ_STATUS.person)
+    expect(FOREIGN_READ_STATUS.organization).toBe(FOREIGN_READ_STATUS.deal)
   })
 })
 
