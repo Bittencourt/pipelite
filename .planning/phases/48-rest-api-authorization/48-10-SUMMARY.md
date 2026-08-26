@@ -78,7 +78,9 @@ disbelieved.**
 | 1 | `ccd4a5e` | the exploit and the 500 re-checked over real HTTP against a rebuilt image |
 | 2 | `1bb0fdb` | the negative-control register and the vacuity hunt |
 | 3 | `5928c66` | criterion verdicts, the phase gate, ROADMAP and STATE |
-| — | *(this file)* | the SUMMARY |
+| — | `91ef1dd` | this SUMMARY |
+| — | `bb75be0` | the progress counters, which could only read 10/10 once the SUMMARY existed |
+| — | `9bbd8ad` | **`48-VALIDATION.md`'s own stale claims, reconciled** — see the self-check below |
 
 ---
 
@@ -764,13 +766,50 @@ Files, re-verified on disk rather than asserted from memory:
 - FOUND `.planning/STATE.md` (focus = Phase 48 COMPLETE, new baseline recorded, Phase 47 items carried)
 - ABSENT `src/app/api/v1/__tests__/p48gate-matcher-probe.test.ts` — the temporary probe, deleted
 
-Commits:
+Commits, each confirmed present in `git log --all`:
 
 - FOUND `ccd4a5e` — `docs(48-10): the exploit and the 500 re-checked over real HTTP against a rebuilt image`
 - FOUND `1bb0fdb` — `docs(48-10): the negative-control register and the vacuity hunt`
 - FOUND `5928c66` — `docs(48-10): criterion verdicts, the phase gate, and the new suite baseline`
+- FOUND `91ef1dd` — `docs(48-10): SUMMARY — the phase signed off by auditing its own evidence`
+- FOUND `bb75be0` — `docs(48-10): finalize Phase 48 progress counters`
+- FOUND `9bbd8ad` — `docs(48-10): reconcile VALIDATION's own stale claims`
 
-Tree: `git diff --exit-code` exit 0, no untracked files, `git diff --exit-code -- src/` exit 0.
+Content assertions, measured rather than asserted:
+
+```
+VALIDATION nyquist_compliant: true       : true
+VALIDATION unticked boxes                : 0   (8 Wave 0 boxes ticked, each verified on disk first)
+VALIDATION stale "❌ W0" markers          : 0   (was 13)
+ROADMAP contains all ten 48-NN-PLAN.md   : true
+ROADMAP Phase 48 still says TBD          : false
+STATE records the 5376 baseline          : true
+SUMMARY lines                            : 780  (min_lines 150)
+plaintext probe key present in ANY artifact: false
+```
+
+Tree: `git diff --exit-code` exit 0, `git ls-files --others --exclude-standard` empty,
+`git diff --exit-code -- src/` exit 0.
+
+### The self-check found something, and it is worth reading
+
+`48-VALIDATION.md` — the phase's own validation document — carried **three claims that had gone
+false**, and they would have been read as current by whoever picked this up next:
+
+1. Its Requirements → Test Map still marked all **13** rows `❌ W0` ("does not exist yet"). Every one
+   of those artifacts exists. Each box and each marker was corrected only after the file behind it was
+   confirmed present on disk — the tick script **refused** to tick a box whose artifact was absent, and
+   reported `refused: 0`.
+2. Its Baseline row still read `5237 passed / 32 skipped` over 172 files. Sign-off measured **5376 /
+   32 over 178**, with a separate db baseline of **98 over 4 files**.
+3. Its own Sign-Off block said the register held "fifteen named controls plus five unnamed ones" — a
+   sentence written before the register was finished, which judges **26**.
+
+Fixed in `9bbd8ad`, along with marking the three "stale artifacts to reconcile" as reconciled with
+what actually changed. **This is the same defect class the phase spent nine plans punishing**, found in
+the phase's own bookkeeping, by the self-check the plan requires rather than by a reviewer later. It is
+recorded here rather than quietly corrected — a validation document that describes a tree from nine
+plans ago is a stale claim with a green tick beside it.
 
 ---
 *Phase: 48-rest-api-authorization*
