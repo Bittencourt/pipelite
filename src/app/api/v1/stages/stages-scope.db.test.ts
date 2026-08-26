@@ -346,10 +346,25 @@ async function listAs(authorization: string, query = ""): Promise<ListPayload> {
  * ------------------------------------------------------------------------ */
 
 beforeAll(async () => {
-  for (const table of TOUCHED_TABLES) baseline[table] = await countAll(table)
-
-  // A previous aborted run must not make this one report someone else's rows.
+  // CLEAN FIRST, THEN MEASURE — and the ORDER is the whole point (WR-04).
+  //
+  // These two statements used to be the other way round: the baseline was captured INCLUDING any
+  // leftovers from a previous aborted run, and those rows were then deleted. `afterAll` asserts
+  // `countAll(table) === baseline[table]`, so a run killed after `beforeAll` (Ctrl-C, container
+  // restart, OOM) converted itself into a false RED on the NEXT run — every test green, the suite
+  // red in teardown, with a message describing a mutated pre-existing row that never existed.
+  //
+  // MEASURED on the sibling file `activities-scope.db.test.ts`, which had the identical ordering:
+  // planting ONE leftover row and running it once gave `Tests 30 passed (30)` with
+  // `Test Files 1 failed (1)` and `AssertionError: expected +0 to be 1` inside `afterAll`.
+  //
+  // Cleaning first makes the baseline a measurement of the table WITHOUT this fixture, which is what
+  // `afterAll` compares against. It also makes the run after a crash self-healing rather than
+  // one-shot red, and — because the leftover is gone before the count is taken — the assertion still
+  // catches a genuinely mutated foreign row, which is what it exists for.
   await removeFixtures()
+
+  for (const table of TOUCHED_TABLES) baseline[table] = await countAll(table)
 
   // Neither user is an ADMIN: 48-CONTEXT locks owner-only on these routes, and an admin bypass would
   // make the cross-checks below permanently unfalsifiable. `status` is an enum of
