@@ -89,7 +89,17 @@ export async function GET(request: NextRequest) {
     const [activityList, countResult] = await Promise.all([
       db.query.activities.findMany({
         where: and(...conditions),
-        orderBy: [asc(sql`${activities.dueDate} IS NULL`), asc(activities.dueDate), desc(activities.createdAt)],
+        // WR-02: the trailing `asc(activities.id)` is a TIEBREAKER. `createdAt` is not unique —
+        // bulk-created rows share a timestamp to the millisecond — and `LIMIT`/`OFFSET` over a sort
+        // with ties is UNSPECIFIED in PostgreSQL, so a row can appear on two pages and another on
+        // none while `meta.total` reports the true count in both. The primary key makes the order
+        // TOTAL. It is appended, never inserted: the visible sort is unchanged.
+        orderBy: [
+          asc(sql`${activities.dueDate} IS NULL`),
+          asc(activities.dueDate),
+          desc(activities.createdAt),
+          asc(activities.id),
+        ],
         offset,
         limit,
         with: withOptions,

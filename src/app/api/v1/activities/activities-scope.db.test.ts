@@ -262,7 +262,10 @@ const LEFTOVER_PREDICATE: Record<(typeof TOUCHED_TABLES)[number], ReturnType<typ
   pipelines: sql`id like ${LIKE_PREFIX}`,
   stages: sql`id like ${LIKE_PREFIX}`,
   deals: sql`id like ${LIKE_PREFIX}`,
-  activities: sql`id like ${LIKE_PREFIX}`,
+  // `deal_id` as well as `id`, for the same reason `removeFixtures` sweeps both: a row created by
+  // `createActivityMutation` carries a generated UUID, so an id-prefix check alone would report zero
+  // leftovers while one sat in the table referencing a fixture deal.
+  activities: sql`id like ${LIKE_PREFIX} or deal_id like ${LIKE_PREFIX}`,
   audit_log: sql`entity_id like ${LIKE_PREFIX} or actor_user_id like ${LIKE_PREFIX}`,
 }
 
@@ -289,7 +292,16 @@ async function removeFixtures(): Promise<void> {
   // `activities.deal_id` references `deals`, `deals.stage_id` references `stages` and
   // `stages.pipeline_id` references `pipelines`, so this order is the foreign-key chain read
   // leaf-first. Reversing any two of these lines is a `23503` at teardown, not a silent leak.
+  //
+  // MEASURED, and the reason the second predicate exists: `createActivityMutation` generates its own
+  // `crypto.randomUUID()` id, so an activity created by the CR-01 POST assertion carries no prefix
+  // and the id sweep cannot see it. While that assertion is RED — i.e. run against the route before
+  // the guard existed, which is exactly when it gets created — the orphan is left behind referencing
+  // a prefixed deal, and every subsequent run then dies in THIS function with
+  // `23503 Key (id)=(actscope-deal-b) is still referenced from table "activities"`. Sweeping by the
+  // fixture's DEALS as well as by the fixture's ids makes a red run clean up after itself.
   await db.delete(activities).where(like(activities.id, LIKE_PREFIX))
+  await db.delete(activities).where(like(activities.dealId, LIKE_PREFIX))
   await db.delete(deals).where(like(deals.id, LIKE_PREFIX))
   await db.delete(stages).where(like(stages.id, LIKE_PREFIX))
   await db.delete(pipelines).where(like(pipelines.id, LIKE_PREFIX))

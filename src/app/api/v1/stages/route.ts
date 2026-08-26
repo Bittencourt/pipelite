@@ -60,7 +60,15 @@ export async function GET(request: NextRequest) {
       .from(stages)
       .innerJoin(pipelines, eq(stages.pipelineId, pipelines.id))
       .where(ownedStagesPredicate(ctx.userId, pipelineId))
-      .orderBy(asc(stages.position))
+      // WR-02: `stages.id` is a TIEBREAKER, not decoration. `position` is unique only WITHIN a
+      // pipeline — `POST /api/v1/stages` below assigns 1000 to the first stage of every pipeline and
+      // `max + 1000` thereafter — so every pipeline a caller owns contributes a stage at 1000, one
+      // at 2000, and so on. `LIMIT`/`OFFSET` over a sort with ties is UNSPECIFIED in PostgreSQL: the
+      // same row may appear on two pages and another on none, while `meta.total` reports the true
+      // count in both responses. A client paging until it has `total` rows then either loops forever
+      // or stops with a set that is missing a stage. Under the default `limit=50` this was invisible
+      // for small accounts, which is how it survived. The primary key makes the order TOTAL.
+      .orderBy(asc(stages.position), asc(stages.id))
       .offset(offset)
       .limit(limit)
 

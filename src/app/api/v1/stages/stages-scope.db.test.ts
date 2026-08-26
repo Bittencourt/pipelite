@@ -114,7 +114,7 @@
  * is cheaper than a special case. For the same reason nothing here asserts on elapsed time.
  * =============================================================================
  */
-import { like, or, sql } from "drizzle-orm"
+import { eq, like, or, sql } from "drizzle-orm"
 import { NextRequest } from "next/server"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
@@ -740,5 +740,118 @@ describe("the requests above touched only the tables this file accounts for", ()
     // means the baseline half of `afterAll` would pass even if every read had been audited. This is
     // the assertion that cannot: it runs while any such row would still be there.
     expect(await countLeftovers("audit_log")).toBe(0)
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * WR-02 — pagination over a NON-UNIQUE sort key
+ *
+ * `position` is unique only WITHIN a pipeline. `POST /api/v1/stages` assigns 1000 to the first stage
+ * of every pipeline and `max + 1000` thereafter, so a caller who owns two pipelines owns two stages
+ * at 1000, two at 2000, and so on. `LIMIT`/`OFFSET` over a sort with ties is UNSPECIFIED in
+ * PostgreSQL: the same row may appear on two pages and another on none, while `meta.total` reports
+ * the true count in both responses.
+ *
+ * ⚠ WHY THIS IS A GUARD AND NOT THE PROOF, MEASURED RATHER THAN ASSUMED.
+ *
+ * The pre-fix behaviour is UNSPECIFIED, not wrong: PostgreSQL is permitted to return correct pages
+ * over a tied sort, and it is free to stop doing so on any plan change. This describe was run with
+ * `stages/route.ts` stashed — that is, against the route ordering by `position` ALONE, with the
+ * collision seeded and asserted present — and it was GREEN: `Tests 28 passed (28)`. It did not catch
+ * the defect. Six rows, one plan, a stable order by luck.
+ *
+ * That is recorded here rather than quietly relied on, because a reader would otherwise take this
+ * describe for the WR-02 proof. It is not. The RED/GREEN proof lives in
+ * `__tests__/in-clause.test.ts`, on the COMPILED SORT KEYS, where "the order is total" is a
+ * deterministic claim about the statement rather than a hope about the planner:
+ *
+ *     × orders the page by a TOTAL key: position first, then the unique id as tiebreaker (WR-02)
+ *       expected [ SQL{...} ] to have a length of 2 but got 1
+ *
+ * This describe is the behavioural regression guard for the request shape the defect breaks, over
+ * data the main fixture deliberately does not contain. Keep it; do not cite it as evidence.
+ *
+ * THE MAIN FIXTURE CANNOT COVER THIS. `A_POSITIONS` is [1000,2000,3000,4000] and the comment at its
+ * declaration states that the order is total BECAUSE those values are distinct — which is exactly
+ * why the tie case is unreachable from it. Rather than perturb a proof five other describes depend
+ * on, this seeds its own second pipeline for A, with COLLIDING positions, and removes it again.
+ * ------------------------------------------------------------------------ */
+
+const TIE_PIPELINE = `${PREFIX}tie-pipeline`
+/** Positions chosen to COLLIDE with A_POSITIONS[0] and A_POSITIONS[1] across pipelines. */
+const TIE_POSITIONS = [A_POSITIONS[0], A_POSITIONS[1]]
+const TIE_STAGE_IDS = TIE_POSITIONS.map((_, i) => `${PREFIX}tie-stage-${i + 1}`)
+
+/** A owns their original stages PLUS the colliding pair while this describe runs. */
+const TIE_TOTAL = A_OWNED + TIE_STAGE_IDS.length
+
+describe("WR-02 — a multi-pipeline caller loses no stage between pages", () => {
+  beforeAll(async () => {
+    await db.insert(pipelines).values({
+      id: TIE_PIPELINE,
+      name: `${PREFIX}pipeline A second`,
+      ownerId: USER_A,
+    })
+    await db.insert(stages).values(
+      TIE_STAGE_IDS.map((id, index) => ({
+        id,
+        pipelineId: TIE_PIPELINE,
+        name: `${PREFIX}${id}`,
+        position: TIE_POSITIONS[index],
+      })),
+    )
+  }, 60_000)
+
+  afterAll(async () => {
+    // Removed here rather than left to the file-level teardown, so the describes that follow — and
+    // the audit_log assertion in particular — see the fixture they were written against.
+    await db.delete(stages).where(like(stages.id, `${PREFIX}tie-stage-%`))
+    await db.delete(pipelines).where(eq(pipelines.id, TIE_PIPELINE))
+  }, 60_000)
+
+  it("really does hold a POSITION COLLISION inside one caller's scope", async () => {
+    // The floor. Without it the paging assertion below is a restatement of the distinct-position
+    // case the main fixture already covers, and WR-02 is untested rather than tested.
+    const rows = await db.execute(
+      sql`select s.position, count(*)::int as n
+          from stages s
+          join pipelines p on p.id = s.pipeline_id
+          where p.owner_id = ${USER_A} and p.deleted_at is null
+          group by s.position
+          having count(*) > 1`,
+    )
+
+    const collisions = rows as unknown as { position: number; n: number }[]
+    expect(collisions.length).toBeGreaterThan(0)
+    for (const collision of collisions) expect(collision.n).toBeGreaterThan(1)
+  })
+
+  it(`pages through all ${TIE_TOTAL} of A's stages in windows of ${PAGE_WINDOW} with no duplicate and no omission`, async () => {
+    const seen: string[] = []
+    for (let offset = 0; offset < TIE_TOTAL; offset += PAGE_WINDOW) {
+      const page = await listAs(
+        keyA.authorizationHeader,
+        `?limit=${PAGE_WINDOW}&offset=${offset}`,
+      )
+
+      // Every page reports A's own total, which is the number a client pages against.
+      expect(page.meta.total).toBe(TIE_TOTAL)
+      seen.push(...page.data.map((r) => r.id))
+    }
+
+    // No row twice, which is the "same row on two pages" half.
+    expect(new Set(seen).size).toBe(seen.length)
+    // And nothing missing, which is the "another row on no page" half. Both halves are needed: a
+    // client that pages until it has `total` rows fails on either one.
+    expect(seen.sort()).toEqual([...A_STAGE_IDS, ...TIE_STAGE_IDS].sort())
+  })
+
+  it("still excludes B's stages while paging across the collision", async () => {
+    const page = await listAs(keyA.authorizationHeader, `?limit=${WIDE_LIMIT}`)
+    const returned = page.data.map((r) => r.id)
+
+    for (const foreign of B_STAGE_IDS) expect(returned).not.toContain(foreign)
+    // The cross-check's other half: B's rows are in the table right now.
+    expect(await sqlIdsOwnedBy(USER_B)).toEqual([...B_STAGE_IDS].sort())
   })
 })

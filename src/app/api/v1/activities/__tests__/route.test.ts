@@ -251,6 +251,38 @@ describe("GET /api/v1/activities — owner scope, rendered (T-48-02-01)", () => 
   })
 })
 
+describe("GET /api/v1/activities — the page order is TOTAL (WR-02)", () => {
+  it("ends the sort with the unique activities.id, so LIMIT/OFFSET cannot lose or repeat a row", async () => {
+    // The list's final sort key was `desc(activities.createdAt)`, which is NOT unique — bulk-created
+    // rows share a timestamp to the millisecond. `LIMIT`/`OFFSET` over a sort with ties is
+    // UNSPECIFIED in PostgreSQL, so a row can appear on two pages and another on none while
+    // `meta.total` reports the true count in both.
+    //
+    // Asserted on the compiled sort keys rather than behaviourally, and deliberately: the pre-fix
+    // outcome is unspecified rather than wrong, so a behavioural run may return correct pages by
+    // luck. Unspecified order IS the defect; the keys are what say which one this route asked for.
+    await GET(listRequest())
+
+    const orderBy = mockDb.query.activities.findMany.mock.calls[0][0].orderBy as unknown[]
+
+    // FLOOR: the route really did pass sort keys, so the length claim is about the sort.
+    expect(Array.isArray(orderBy)).toBe(true)
+    expect(orderBy.length).toBeGreaterThan(0)
+
+    const rendered = orderBy.map(key => renderPredicate(key))
+    // The pre-existing three keys survive — the fix ADDS a tiebreaker, it does not reorder the page.
+    expect(rendered[0]).toContain('"due_date"')
+    expect(rendered[1]).toContain('"due_date"')
+    expect(rendered[2]).toContain('"created_at"')
+    // And the last key is the primary key, which no two rows share.
+    expect(
+      rendered[rendered.length - 1],
+      "the final sort key must be unique per row, or a client paging to meta.total either loops " +
+        "forever or stops with a set that is missing an activity.",
+    ).toContain('"activities"."id"')
+  })
+})
+
 describe("GET /api/v1/activities — the caller-supplied filter narrows, never widens (T-48-02-03)", () => {
   it("composes ?owner_id=user-9 UNDER the scope: two owner_id occurrences, both ids bound", async () => {
     await GET(listRequest("?owner_id=user-9"))

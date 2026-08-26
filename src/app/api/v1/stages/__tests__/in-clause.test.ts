@@ -171,6 +171,16 @@ const methodsFor = (index: number): string[] =>
 const firstArgFor = (index: number, method: string): unknown =>
   callLog.find((c) => c.builder === index && c.method === method)?.args[0]
 
+/**
+ * ALL arguments handed to `method` on one builder.
+ *
+ * `orderBy` is variadic and WR-02 is a claim about its second argument, so `firstArgFor` cannot see
+ * the defect: a route ordering by a non-unique key alone and a route ordering by that key plus a
+ * unique tiebreaker have identical first arguments.
+ */
+const argsFor = (index: number, method: string): unknown[] =>
+  callLog.find((c) => c.builder === index && c.method === method)?.args ?? []
+
 /** How many builders `db.select()` produced during the request. */
 const builderIndexes = (): number[] => [...new Set(callLog.map((c) => c.builder))]
 
@@ -420,6 +430,40 @@ describe("GET /api/v1/stages — the route is bound to the predicate", () => {
     expect(methods.indexOf("where")).toBeLessThan(methods.indexOf("offset"))
     expect(methods.indexOf("where")).toBeLessThan(methods.indexOf("limit"))
     expect(methods.indexOf("innerJoin")).toBeLessThan(methods.indexOf("where"))
+  })
+
+  it("orders the page by a TOTAL key: position first, then the unique id as tiebreaker (WR-02)", async () => {
+    // THE DEFECT. `stages.position` is unique only WITHIN a pipeline: `POST /api/v1/stages` assigns
+    // 1000 to the first stage of every pipeline and `max + 1000` thereafter, so every pipeline a
+    // caller owns contributes a stage at 1000, one at 2000, and so on. `LIMIT`/`OFFSET` over a sort
+    // with ties is UNSPECIFIED in PostgreSQL: the same row may appear on two pages and another on
+    // none, while `meta.total` reports the true count in both responses — so a client paging until
+    // it has `total` rows either loops forever or stops with a set that is missing a stage.
+    //
+    // This is asserted STRUCTURALLY, on the compiled sort keys, and that is a deliberate choice.
+    // The behavioural version cannot be a proof: the pre-fix outcome is UNSPECIFIED, not wrong, so a
+    // run against a broken route may return correct pages by luck. An unspecified order is the
+    // defect; a total order is the fix; the sort keys are what says which one this is.
+    await GET(stagesRequest("?limit=5"))
+
+    const builders = builderIndexes()
+    expect(builders).toHaveLength(2)
+
+    const keys = argsFor(builders[0], "orderBy")
+    // FLOOR: the call happened and carried arguments, so the length claim below is about the sort
+    // and not about a missing call.
+    expect(keys.length).toBeGreaterThan(0)
+    expect(
+      keys,
+      "the page must be ordered by a key that is unique per row. `position` alone is unique only " +
+        "within one pipeline, and a multi-pipeline caller then loses stages between pages.",
+    ).toHaveLength(2)
+
+    const rendered = keys.map((key) => renderPredicate(key))
+    expect(rendered[0]).toContain('"position"')
+    expect(rendered[1]).toContain('"id"')
+    // And the tiebreaker is `stages.id` — the primary key — not some other column called `id`.
+    expect(rendered[1]).toContain('"stages"."id"')
   })
 
   it("returns the owner's own stage for a small limit, with a matching total", async () => {
