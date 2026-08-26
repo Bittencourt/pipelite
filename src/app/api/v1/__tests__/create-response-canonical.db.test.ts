@@ -22,9 +22,12 @@
  *
  * So the proof that means something is this one: **one request creates the record, a second request
  * reads it back, and the two bodies' `custom_fields` are compared** — real PostgreSQL, real minted
- * API keys through the real unmocked `withApiAuth`, real formula engine. There is no `vi.mock` in
- * this file at all, and this sentence deliberately does not spell the helper, because a control its
- * own prose satisfies proves nothing.
+ * API keys through the real unmocked `withApiAuth`, real formula engine. NOTHING IS MOCKED IN THIS
+ * FILE, and this paragraph deliberately does not SPELL the mocking helper, because a control that
+ * its own prose satisfies proves nothing: the acceptance check for this file counts occurrences of
+ * that helper and requires ZERO. `@/lib/api/auth`, `@/db` and `@/lib/formula-recalc` are all real —
+ * the last of those especially, because the real engine running against real definitions is the
+ * entire point.
  *
  * (What this file can and cannot discriminate is measured, not assumed, in plan 49-05's SUMMARY:
  * ablation 5 drives the rejected in-process merge against these very cells. Read that before citing
