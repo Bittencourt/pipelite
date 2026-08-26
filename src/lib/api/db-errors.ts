@@ -135,9 +135,28 @@ export interface WriteErrorMessages {
  *
  * `23505` becomes 409 when the caller supplied a `conflict` message; the value-domain codes become a
  * 422 naming `field`; everything else is logged and becomes a well-formed 500.
+ *
+ * ⚠ THE LOG SCOPE IS SPELLED OUT AT EACH CALL SITE, AS `"api/db-errors"`. Do not hoist it into a
+ * constant and do not pass the caller's route in as the scope.
+ *
+ * The first version of this module did the latter — `log.error(scope, ...)` with `scope` a parameter —
+ * and `src/lib/log-scope-format.test.ts` caught it:
+ *
+ *     AssertionError: 281 log.<level>( call sites but 279 scope literals — some call site computes
+ *     its scope, or the extractor is blind to an idiom
+ *
+ * The second attempt hoisted it to `const LOG_SCOPE = "api/db-errors"` and that gate STAYED RED, for
+ * the right reason: its extractor requires a quoted literal immediately inside the parenthesis. A
+ * scope is an INDEX KEY. An operator greps the log stream by it and then greps the SOURCE for the same
+ * string to find where it was emitted, and an identifier is findable by neither. Its own comment says
+ * "if a genuinely dynamic scope ever appears, pin it by file and line here — do not relax this".
+ * This is not a genuinely dynamic scope; it was a design mistake, so it was fixed rather than pinned.
+ *
+ * The route is still recorded — as a `route` FIELD in the structured payload, which is where a value
+ * that varies per call belongs.
  */
 export function mapWriteError(
-  scope: string,
+  route: string,
   error: unknown,
   messages: WriteErrorMessages = {}
 ): NextResponse {
@@ -160,7 +179,7 @@ export function mapWriteError(
   // Unforeseen. Logged with the original error so it is diagnosable, and answered as a PROBLEM
   // DOCUMENT rather than as an unhandled rejection — the caller gets the same shape as every other
   // error from this API instead of whatever the framework renders.
-  log.error(scope, "unmapped database error on write", { err: error, code })
+  log.error("api/db-errors", "unmapped database error on write", { err: error, code, route })
   return Problems.internalError()
 }
 
@@ -171,7 +190,7 @@ export function mapWriteError(
  * so the delete is refused. That is a 409, not a 422 — nothing about the request was malformed.
  */
 export function mapDeleteError(
-  scope: string,
+  route: string,
   error: unknown,
   messages: { referenced: string }
 ): NextResponse {
@@ -181,6 +200,6 @@ export function mapDeleteError(
     return Problems.conflict(messages.referenced)
   }
 
-  log.error(scope, "unmapped database error on delete", { err: error, code })
+  log.error("api/db-errors", "unmapped database error on delete", { err: error, code, route })
   return Problems.internalError()
 }

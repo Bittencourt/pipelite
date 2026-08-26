@@ -198,7 +198,14 @@ describe("mapWriteError — INSERT and UPDATE", () => {
     expect(body.type).toMatch(/\/INTERNAL_ERROR$/)
     expect(body.errors).toBeUndefined()
     expect(mockLogError).toHaveBeenCalledTimes(1)
-    expect(mockLogError.mock.calls[0][2]).toMatchObject({ code })
+    // The SCOPE is a literal and the ROUTE is a field. `src/lib/log-scope-format.test.ts` asserts an
+    // equality between `log.<level>(` call sites and extracted scope LITERALS, and it caught this
+    // module passing the caller's route in as the scope:
+    //   "281 log.<level>( call sites but 279 scope literals"
+    // A scope is an index key — an operator greps the log stream by it AND greps the source to find
+    // where it is emitted, so a computed scope is findable from neither.
+    expect(mockLogError.mock.calls[0][0]).toBe("api/db-errors")
+    expect(mockLogError.mock.calls[0][2]).toMatchObject({ code, route: "test" })
   })
 
   it("logs and 500s a non-postgres throw, without letting it escape", async () => {
