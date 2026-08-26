@@ -1817,3 +1817,37 @@ data migration — the migration cost is in the stored URLs, not the object keys
 **Related:** `SEC-04` (the local half, closed in Phase 49); `DEF-48-01`; the traversal finding in
 Phase 49 research (the load-bearing containment is the JSONB `storedName` match, not a path-prefix
 check — confirmed by execution to escape via both `filename` and `entityId`).
+
+---
+
+### SEC-49-B — `requireScopedPredicate` is silent when a 3+-term predicate loses its owner term — **recorded**
+
+**Measured by plan 49-04, 2026-08-26.** `src/lib/api/stage-scope.ts:135` guards against drizzle's
+`and(...)` collapsing to `undefined` (which renders an UNFILTERED query) by requiring a minimum term
+count: `MANDATORY_SCOPE_TERMS = 2`, checked as `if (termCount < MANDATORY_SCOPE_TERMS) throw`.
+
+**The flaw is that a count cannot verify identity.** It cannot tell the owner term from any other
+term. Drop the owner equality from a **three**-term predicate and the count is 2 — which is not
+`< 2` — so the guard stays silent and an unscoped query compiles and runs. 49-04 observed this
+directly: the guard did not fire, and the 8 cells that caught the bypass only did so because that
+plan's `@/db` mock **evaluates** the compiled predicate via `PgDialect().sqlToQuery` instead of
+returning `mockResolvedValue(undefined)`.
+
+**Every call site passing `terms.length` with three or more terms shares the gap:**
+
+- `src/lib/api/stage-scope.ts:83` — `ownedStagesPredicate`
+- `src/lib/execution/actions/crm.ts:419` — `callerScope`, **added by Phase 48 to close CR-02**
+- `src/lib/triggers/matcher.ts:258` — **added by Phase 48 to close CR-05**
+
+So this partially weakens two mitigations Phase 48 shipped. It does **not** mean CR-02 or CR-05 are
+open — both are covered by behavioural db-tests (`crm-ownership.db.test.ts` 31/31,
+`trigger-owner-scope.db.test.ts` 13/13) that assert the outcome rather than the predicate shape. What
+is weakened is the *compile-time* backstop those plans documented as a second line of defence, and
+`crm.ts:408`'s comment currently claims the guard holds "rather than by inspection".
+
+**Suggested owner:** a plan that replaces the count floor with a term-identity assertion — verify the
+owner column is present in the rendered predicate, not merely that N terms survived. 49-04's
+`PgDialect().sqlToQuery` mock is the working technique for asserting on a compiled predicate and
+should be the model. Correct `crm.ts:408`'s comment in the same change.
+
+**Related:** `SEC-48-C` / `DEF-48-05`; the WR-11 hardening in Phase 48 that introduced the guard.
