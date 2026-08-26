@@ -257,9 +257,41 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     })
 
-    // The 201 body deliberately carries the PRE-recalc row: the stored value, the emitted event
-    // and any subsequent GET are all correct (SC-1), and changing a create response is backlog
-    // 999.23, which is being decided once for all four entities rather than per route.
-    return createdResponse(serializePerson(person))
+    // DATA-02: the 201 body is a CANONICAL READ, not the row `.returning()` handed back. It is read
+    // back through the same three-term predicate `GET /api/v1/people/[id]` uses, so ONE code path
+    // defines truth and a create response cannot drift from a subsequent read — including for
+    // derived fields that do not exist yet. The accepted cost is one extra SELECT per create.
+    //
+    // `recalculateFormulas` runs between the insert above and this point and writes `customFields`
+    // (`src/lib/formula-recalc.ts:960-991`), so serializing `person` would ship a value a subsequent
+    // GET contradicts. It writes NO other column — `updatedAt` is deliberately not bumped there — so
+    // this read differs from the inserted row in `custom_fields` and nowhere else.
+    //
+    // NOT `{ ...person, customFields: recalculatedCustomFields }`, even though that blob is already
+    // in hand two statements up and the merge is therefore the easy turn to take here. It agrees
+    // with the database today only because the recalc happens to write exactly one column, which is
+    // a coincidence and not a contract; it breaks for the next derived field. That merge is the
+    // shape `people/[id]/route.ts` still uses and Phase 49 rejected for creates.
+    //
+    // `stripCallerFormulaKeys` still runs BEFORE the insert (T-34-04), so what this read returns is
+    // the server's own value for a formula key and never the caller's.
+    //
+    // The fallback keeps a create from FAILING on a read. It is unreachable — the insert just
+    // committed a row whose `ownerId` is the value being matched — and it is LOGGED rather than
+    // silent, because an unlogged fallback is a path that reproduces this very defect and says
+    // nothing about it.
+    const canonical = await db.query.people.findFirst({
+      where: and(
+        eq(people.id, person.id),
+        eq(people.ownerId, context.userId),
+        isNull(people.deletedAt)
+      ),
+    })
+
+    if (!canonical) {
+      log.error("api/v1/people", "canonical read after create found no row", { id: person.id })
+    }
+
+    return createdResponse(serializePerson(canonical ?? person))
   })
 }

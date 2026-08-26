@@ -25,7 +25,11 @@ const countFrom = vi.fn<(table: unknown) => { where: typeof countWhere }>(() => 
 vi.mock("@/db", () => ({
   db: {
     query: {
-      activities: { findMany: vi.fn() },
+      // `findFirst` is present for DATA-02's canonical read on POST. Without the KEY the re-read
+      // is `undefined(...)` — a TypeError inside the handler, not a `serializeActivity(undefined)`
+      // — so its absence would turn every 201 cell below into a 500 for a reason that has nothing
+      // to do with what those cells assert.
+      activities: { findMany: vi.fn(), findFirst: vi.fn() },
       activityTypes: { findFirst: vi.fn() },
       deals: { findFirst: vi.fn() },
       // Present because the UNFIXED route looks the supplied owner up here. It resolves to a
@@ -61,7 +65,9 @@ import { GET, POST } from "@/app/api/v1/activities/route"
 
 const mockDb = db as unknown as {
   query: {
-    activities: { findMany: ReturnType<typeof vi.fn> }
+    // `findFirst` must be here as well as in the factory above: the factory keeps the re-read from
+    // throwing at RUNTIME, this alias keeps `tsc --noEmit` from reddening on the stub below.
+    activities: { findMany: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> }
     activityTypes: { findFirst: ReturnType<typeof vi.fn> }
     deals: { findFirst: ReturnType<typeof vi.fn> }
     users: { findFirst: ReturnType<typeof vi.fn> }
@@ -198,6 +204,10 @@ function createRequest(body: unknown) {
 beforeEach(() => {
   vi.clearAllMocks()
   mockDb.query.activities.findMany.mockResolvedValue([])
+  // DATA-02's canonical read, defaulted here so every 201 cell in the file has a row to serialize.
+  // The two cells that actually assert a 201 re-stub it explicitly, so the assertion does not lean
+  // on a default set fifty lines away.
+  mockDb.query.activities.findFirst.mockResolvedValue(fakeActivity)
   mockDb.query.activityTypes.findFirst.mockResolvedValue({ id: "type-1", name: "Call" })
   // Re-installed explicitly rather than relying on reset semantics: a `deals.findFirst` that had
   // silently become predicate-BLIND would resolve a row for the foreign deal too and make every
@@ -334,6 +344,14 @@ describe("POST /api/v1/activities — create-as-another-user (SC-2b, T-48-02-02)
   })
 
   it("owns a new activity to the caller when owner_id is omitted", async () => {
+    // DATA-02: the 201 body is a canonical re-read, so a 201 needs a row for the read to resolve.
+    // This stub is a MECHANICAL GUARD and nothing more — it keeps the ownership assertion below
+    // from failing for an unrelated reason. It is NOT evidence that the re-read happens, and it
+    // must not be cited as such: the read's existence and predicate are proved in
+    // `src/app/api/v1/organizations/__tests__/route.test.ts`, and the behavioural four-entity
+    // proof belongs to plan 49-05.
+    mockDb.query.activities.findFirst.mockResolvedValue(fakeActivity)
+
     const response = await POST(createRequest({ title: "x", type_id: "type-1" }))
 
     expect(response.status).toBe(201)
@@ -344,6 +362,9 @@ describe("POST /api/v1/activities — create-as-another-user (SC-2b, T-48-02-02)
   })
 
   it("accepts owner_id when it is the caller's own id — the rejection is targeted", async () => {
+    // Same mechanical guard as the cell above, for the same reason. See the comment there.
+    mockDb.query.activities.findFirst.mockResolvedValue(fakeActivity)
+
     const response = await POST(createRequest({ title: "x", type_id: "type-1", owner_id: "user-1" }))
 
     expect(response.status).toBe(201)

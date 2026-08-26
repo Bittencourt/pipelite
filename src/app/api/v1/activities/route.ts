@@ -9,6 +9,7 @@ import { createActivityMutation } from "@/lib/mutations/activities"
 import { db } from "@/db"
 import { activities, deals, activityTypes, users } from "@/db/schema"
 import { eq, and, isNull, desc, asc, sql } from "drizzle-orm"
+import { log } from "@/lib/log"
 import { z } from "zod"
 
 const createActivitySchema = z.object({
@@ -235,6 +236,42 @@ export async function POST(request: NextRequest) {
       return Problems.validation([{ field: "body", code: "mutation_error", message: result.error }])
     }
 
-    return createdResponse(serializeActivity(result.activity))
+    // DATA-02: the 201 body is a CANONICAL READ, not the row the write returned. It is read back
+    // through the same three-term predicate `GET /api/v1/activities/[id]` uses, so ONE code path
+    // defines truth and a create response cannot drift from a subsequent read — including for
+    // derived fields that do not exist yet. The accepted cost is one extra SELECT per create.
+    //
+    // `recalculateFormulas` runs after the insert and before this point and writes `customFields`
+    // (`src/lib/formula-recalc.ts:960-991`), so serializing the returned row would ship a value a
+    // subsequent GET contradicts. It writes NO other column — `updatedAt` is deliberately not
+    // bumped there — so this read differs from the inserted row in `custom_fields` and nowhere else.
+    //
+    // NOT `{ ...row, customFields: recalculated }`. That in-process merge agrees with the database
+    // today only because the recalc happens to write exactly one column, which is a coincidence and
+    // not a contract; it breaks for the next derived field. See `activities/[id]/route.ts` for the
+    // shape that was rejected.
+    //
+    // The owner term is `activityOwnerId` rather than `ctx.userId` because that is the identifier
+    // the insert actually wrote; the 422 above proves the two are equal.
+    //
+    // The fallback keeps a create from FAILING on a read. It is unreachable — the insert just
+    // committed a row whose `ownerId` is the value being matched — and it is LOGGED rather than
+    // silent, because an unlogged fallback is a path that reproduces this very defect and says
+    // nothing about it.
+    const canonical = await db.query.activities.findFirst({
+      where: and(
+        eq(activities.id, result.id),
+        eq(activities.ownerId, activityOwnerId),
+        isNull(activities.deletedAt)
+      ),
+    })
+
+    if (!canonical) {
+      log.error("api/v1/activities", "canonical read after create found no row", {
+        id: result.id,
+      })
+    }
+
+    return createdResponse(serializeActivity(canonical ?? result.activity))
   })
 }

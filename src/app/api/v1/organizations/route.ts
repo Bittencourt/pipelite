@@ -9,6 +9,7 @@ import { createOrganizationMutation } from "@/lib/mutations/organizations"
 import { db } from "@/db"
 import { organizations } from "@/db/schema/organizations"
 import { and, eq, isNull, count, sql } from "drizzle-orm"
+import { log } from "@/lib/log"
 import { z } from "zod"
 
 const createOrganizationSchema = z.object({
@@ -106,6 +107,39 @@ export async function POST(request: NextRequest) {
       return Problems.validation([{ field: "body", code: "mutation_error", message: result.error }])
     }
 
-    return createdResponse(serializeOrganization(result.organization))
+    // DATA-02: the 201 body is a CANONICAL READ, not the row the write returned. It is read back
+    // through the same three-term predicate `GET /api/v1/organizations/[id]` uses, so ONE code path
+    // defines truth and a create response cannot drift from a subsequent read — including for
+    // derived fields that do not exist yet. The accepted cost is one extra SELECT per create.
+    //
+    // `recalculateFormulas` runs after the insert and before this point and writes `customFields`
+    // (`src/lib/formula-recalc.ts:960-991`), so serializing the returned row would ship a value a
+    // subsequent GET contradicts. It writes NO other column — `updatedAt` is deliberately not
+    // bumped there — so this read differs from the inserted row in `custom_fields` and nowhere else.
+    //
+    // NOT `{ ...row, customFields: recalculated }`. That in-process merge agrees with the database
+    // today only because the recalc happens to write exactly one column, which is a coincidence and
+    // not a contract; it breaks for the next derived field. See `people/[id]/route.ts` for the
+    // shape that was rejected.
+    //
+    // The fallback keeps a create from FAILING on a read. It is unreachable — the insert just
+    // committed a row whose `ownerId` is the value being matched — and it is LOGGED rather than
+    // silent, because an unlogged fallback is a path that reproduces this very defect and says
+    // nothing about it.
+    const canonical = await db.query.organizations.findFirst({
+      where: and(
+        eq(organizations.id, result.id),
+        eq(organizations.ownerId, context.userId),
+        isNull(organizations.deletedAt)
+      ),
+    })
+
+    if (!canonical) {
+      log.error("api/v1/organizations", "canonical read after create found no row", {
+        id: result.id,
+      })
+    }
+
+    return createdResponse(serializeOrganization(canonical ?? result.organization))
   })
 }
