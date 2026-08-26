@@ -65,9 +65,9 @@ by criterion. The planner must carry each row onto a task and preserve the *type
 | SEC-04 / SC-1 | `DELETE` the same → **404, and the blob is still on disk afterwards** | live-DB, same file | same | ❌ W0 | ⬜ pending |
 | SEC-04 / SC-1 | `filename = "../../../etc/passwd"` → 404, and `readFile` never called outside `UPLOAD_DIR` | **unit**, handler invoked with a crafted `params` promise | `npx vitest run src/app/api/files/__tests__/route-containment.test.ts` | ❌ W0 | ⬜ pending |
 | SEC-04 / SC-1 | a `filename` **not present in the record's JSONB** → 404 (this is the load-bearing check, not the prefix test) | unit, same file | same | ❌ W0 | ⬜ pending |
-| SEC-04 / SC-2 | after a purge: blob absent from disk **and** its URL serves nothing | live-DB | `npx vitest run --config vitest.db.config.ts src/lib/trash/__tests__/purge-blobs.db.test.ts` | ❌ W0 | ⬜ pending |
+| SEC-04 / SC-2 | after a purge: blob absent from disk **and** its URL serves nothing | live-DB | `npx vitest run --config vitest.db.config.ts src/lib/trash/purge-blobs.db.test.ts` | ❌ W0 | ⬜ pending |
 | SEC-04 / SC-2 | **injected** storage failure → purge still **COMMITTED**, mismatch logged with `{expected, deleted}` | live-DB, same file | same | ❌ W0 | ⬜ pending |
-| SEC-04 / SC-2 | `collectFileFieldRefs` on: `null`, `{}`, a non-array value, an array of non-objects, a well-formed array | **unit**, pure | `npx vitest run src/lib/trash/__tests__/collect-file-field-refs.test.ts` | ❌ W0 | ⬜ pending |
+| SEC-04 / SC-2 | `collectFileFieldRefs` on: `null`, `{}`, a non-array value, an array of non-objects, a well-formed array | **unit**, pure | `npx vitest run src/lib/trash/collect-file-field-refs.test.ts` | ❌ W0 | ⬜ pending |
 | DATA-01 / SC-3 | merging two records whose formula inputs disagree, **taking the loser's input**, leaves the survivor's stored value equal to a **fresh computation** | live-DB | `npx vitest run --config vitest.db.config.ts src/lib/mutations/dedup.db.test.ts` (extend) or a sibling `dedup-formula.db.test.ts` | ⚠ extend / ❌ new | ⬜ pending |
 | DATA-01 / SC-3 | the call is made **post-commit**, with a bare-name `changedFields` and `cascade: false` | **unit**, mocked recalc | `npx vitest run src/lib/mutations/dedup.test.ts` (extend) | ⚠ extend | ⬜ pending |
 | DATA-01 / SC-3 | a **rejected** recalculation does not fail the merge (D-05) | unit, same | same | ⚠ extend | ⬜ pending |
@@ -106,10 +106,10 @@ which the ROADMAP does not say.
 
 ## Wave 0 Requirements
 
-- [ ] `src/lib/trash/__tests__/collect-file-field-refs.test.ts` — pure-function coverage, SEC-04/SC-2
+- [ ] `src/lib/trash/collect-file-field-refs.test.ts` — pure-function coverage, SEC-04/SC-2
 - [ ] `src/app/api/files/__tests__/route-containment.test.ts` — unit containment + JSONB match, SEC-04/SC-1
 - [ ] `src/app/api/files/__tests__/files-route-ownership.db.test.ts` — SEC-04/SC-1 behavioural
-- [ ] `src/lib/trash/__tests__/purge-blobs.db.test.ts` — SEC-04/SC-2 behavioural + injected failure
+- [ ] `src/lib/trash/purge-blobs.db.test.ts` — SEC-04/SC-2 behavioural + injected failure
 - [ ] `src/app/api/v1/__tests__/create-response-canonical.db.test.ts` — DATA-02/SC-4, four entities
 - [ ] `src/app/api/v1/organizations/__tests__/route.test.ts` — **the collection route has no test file;
       three of the four POSTs have coverage and that asymmetry is how a four-entity fix half-ships**
@@ -152,3 +152,24 @@ only because 48-09 touched no db test).
 - [ ] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** pending
+
+---
+
+## Path convention correction (pattern mapper, 2026-08-26)
+
+The paths above were corrected after the pattern mapper found that **`src/lib/trash/` has no
+`__tests__/` directory** — every test in that module is a sibling `*.test.ts` (`prune.test.ts`,
+`dispatch.test.ts`, `present.test.ts`, `queries.test.ts`, `settings.test.ts`, `entity-types.test.ts`).
+Writing `src/lib/trash/__tests__/…` would have introduced a second convention inside one module.
+Placement does not affect collection — `vitest.db.config.ts` globs `src/**` — so this is a style
+choice, and the house style is siblings.
+
+`src/app/api/files/` has **no test file and no test directory at all**; it contains only
+`[entityId]/`. Either placement is new there, so `__tests__/` is retained for the two file-route
+tests to match the `src/app/api/v1/**/__tests__/` convention next door.
+
+**Suite-breaker C1 is worse than recorded above.**
+`src/app/api/v1/activities/__tests__/route.test.ts:24-37` mocks `@/db` with
+`query.activities: { findMany: vi.fn() }` — there is **no `findFirst` key at all**, so the canonical
+re-read raises a `TypeError` rather than yielding `serializeActivity(undefined)`. The `mockDb` type
+alias at `:62-71` must gain the key in the same change, or `tsc --noEmit` goes red.
