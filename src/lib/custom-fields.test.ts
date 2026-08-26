@@ -646,7 +646,7 @@ describe("saveFieldValues — the write refuses a target that is not a LIVE row"
    * decoration. `db.update(...).where(...)` used to be awaited without `.returning()`, so a write
    * that affected NOTHING still returned `{ success: true, values }` — a response describing a blob
    * no row holds. That is CR-01's defect class at a different call site, and it is the specific
-   * reason an OWNER term is NOT added here (DEF-49-01): before this `.returning()` existed, an
+   * reason an OWNER term is NOT added here (DEF-49-07): before this `.returning()` existed, an
    * owner term would have made every edit on a colleague's record fail silently.
    */
   it("returns a failure when the UPDATE matches no live row", async () => {

@@ -277,7 +277,7 @@ export async function saveFieldValues(
   // racing it.
   //
   // AN OWNER TERM IS DELIBERATELY *NOT* ADDED HERE, and that is CR-03's second half declined with
-  // reasons rather than overlooked. See DEF-49-01: the session UI is not owner-scoped anywhere
+  // reasons rather than overlooked. See DEF-49-07: the session UI is not owner-scoped anywhere
   // (all four detail pages read with no owner term, and the list pages treat owner as an optional
   // FILTER), so an owner term would make every custom-field edit on a colleague's record fail —
   // and, before the `.returning()` below existed, fail SILENTLY with `{ success: true }`, which is

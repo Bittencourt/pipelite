@@ -201,3 +201,101 @@ containment half, both exported from `src/lib/api/file-access.ts` and both prove
 write side needs one thing the read side does not: the field must be a live `type='file'` definition
 on the resolved entity type, or the route will happily create directories for field names that do
 not exist.
+
+---
+
+## DEF-49-07 — the session UI and the file guard disagree about who may see a record, and reconciling them is a product decision
+
+**Found by:** the `/gsd:code-review --fix` pass on 49-REVIEW.md's **CR-03**. The MANDATORY half of
+CR-03 — the client no longer drops a descriptor on a failed storage `DELETE` — is **FIXED**
+(`4c608b7`). This entry is the half that was NOT taken, and why.
+
+**What was measured, against shipped code:**
+
+| surface | owner-scoped? | evidence |
+|---|---|---|
+| `/api/files/[entityId]/[fieldName]/[filename]` (GET and DELETE) | **YES** | `findOwnedRecordById` carries `eq(source.ownerId, userId)` on all four branches — `src/lib/api/file-access.ts:150-163` |
+| all four detail pages | **NO** | `deals/[id]/page.tsx:57`, `people/[id]/page.tsx:47`, `organizations/[id]/page.tsx:41`, `activities/[id]/page.tsx:56` — `and(eq(id), isNull(deletedAt))`, no owner term |
+| the deals LIST page | **NO** | `src/app/deals/page.tsx:188` — `params.owner ? eq(deals.ownerId, params.owner) : undefined`. Owner is an optional **FILTER**, not a scope |
+| `/api/v1/deals` (and siblings) | **YES** | `src/app/api/v1/deals/route.ts:109`, `:377` — `eq(deals.ownerId, context.userId)` |
+| `saveFieldValues` | **NO owner term** (a `deletedAt` term was added by WR-03, `501c813`) | `src/lib/custom-fields.ts` |
+
+So there are **two authorization models in this codebase on purpose**: the `/api/v1` layer is
+owner-scoped because an API key belongs to one user, and the session UI is a shared CRM where every
+authenticated user sees every record. `file-access.ts` applies the API-key model to a **session**
+route. That is the disagreement, and it is not a bug in either model.
+
+**Consequence that remains open after the client fix:** a non-owner viewer (or the uploader after a
+BULK-03 owner reassign) still sees an attachment on a detail page and still gets **404** on
+download. That is a UX defect. It is no longer a DATA defect: the client now surfaces the refusal
+and keeps the descriptor, so the blob stays nameable, servable-once-authorized, deletable and
+collectable by a purge.
+
+**Why the fixer did not resolve it, three reasons:**
+
+1. **Widening `file-access.ts` would weaken SC-1**, which plan 49-06 proved at the BYTE level. That
+   is a criterion this phase has already signed off; a review-fix pass must not quietly narrow it.
+2. **Narrowing the four detail pages is a product decision, not a bug fix.** It would stop
+   colleagues seeing each other's records, which is what the list pages currently offer.
+3. **Adding an owner term to `saveFieldValues` would have introduced a NEW instance of CR-01.** Its
+   `db.update(table).set(…).where(eq(table.id, entityId))` read no rowcount, so an owner term would
+   have made every custom-field edit on a colleague's record match zero rows and **still return
+   `{ success: true, values }`** — a write reporting success without happening, which is the exact
+   defect class this pass exists to remove. WR-03's fix added `.returning({ id })` and a rowcount
+   check to that statement, so **the trap is now disarmed**: a future owner term there will fail
+   loudly. That was a precondition, not the fix.
+
+**What closing it would take:** a decision on what "may see this record" means, then ONE predicate
+used by the pages, the save API and `file-access.ts` — the reviewer's own `canAccessRecord`
+suggestion. Plus `disabled` on `CustomFieldsSection` for whoever the answer excludes, so the UI
+stops offering an action that will refuse.
+
+**Related and NOT this:** SEC-49-D / DEF-49-06 is the WRITE side of the same route family and has
+its own owner.
+
+---
+
+## DEF-49-08 — `organizations` and `activities` creates still ship the PRE-recalc blob on the canonical-read fallback
+
+**Found by:** the `/gsd:code-review --fix` pass on 49-REVIEW.md's **WR-02**, while fixing it
+(`b12289c`).
+
+**What WAS fixed:** all four routes' comments stopped claiming the fallback is unreachable (it is
+reachable three ways — a `crm_action{operation:"delete"}` workflow on `<entity>.created` through the
+synchronous bus, a concurrent DELETE, and a BULK-03 owner reassign, one per predicate term), and all
+four log messages now name a reachable cause. `people` and `deals` additionally fall back to
+`{ ...row, customFields: recalculatedCustomFields }`, which is strictly better than the raw
+`.returning()` row.
+
+**What was NOT fixed:** `organizations` and `activities` still fall back to the pre-recalc blob,
+because their recalculation happens INSIDE `create{Entity}Mutation` (which needs it for its own
+emit) and the post-recalc blob is not in the route's scope. It is stated in each route's comment and
+in its log line rather than left implicit.
+
+**What closing it would take:** widen `create{Organization,Activity}Mutation`'s return type to carry
+the post-recalc blob it already computes. That touches the mutation, its test file's exact `toEqual`
+assertions on the returned shape, and its other callers — a change with its own blast radius, which
+is why a review-fix pass declined it.
+
+---
+
+## DEF-49-09 — a merge no longer moves attachments, and the merge UI does not say so
+
+**Found by:** the `/gsd:code-review --fix` pass on 49-REVIEW.md's **CR-02**, as the stated cost of
+the fix taken (`9ec44dc`).
+
+`buildMergeFieldGroups` now refuses a file-typed value as a compared field, so the loser's
+attachments stay on the loser — which goes to Trash with them intact and restorable for the whole
+retention window — and the survivor keeps its own. That was chosen over re-homing the bytes (which
+puts filesystem I/O on the merge's critical path and, done post-commit best-effort, leaves the
+survivor pointing at the loser's directory whenever the copy fails) and over a reference-aware purge
+(which keeps the bytes but leaves the survivor displaying an attachment whose `publicUrl` names the
+now-trashed loser, so it 404s from the moment of the merge).
+
+**What closing it would take:** one line in the merge screen saying attachments are not moved.
+`src/app/duplicates/[pairId]/page.tsx` already counts each record's files
+(`countFiles(record.row, definitions)`) for the record header, so the number is in hand.
+
+**Why it is a deferred item and not part of the fix:** it is a copy change requiring three locale
+files, and the fixer's own rule is that a merge losing data silently is worse than a merge whose UI
+is briefly incomplete. The data is not lost — it is on the loser, in Trash, for the retention window.

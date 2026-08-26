@@ -187,7 +187,7 @@ export function FileField({ definition, value, entityId, onSave, disabled }: Fil
       //
       // Reconciling those two authorization models is NOT done here: it is a product decision
       // about what "may see this record" means, it would either weaken SC-1 (proven at the byte
-      // level by plan 49-06) or narrow every detail page, and it is recorded as DEF-49-01. What is
+      // level by plan 49-06) or narrow every detail page, and it is recorded as DEF-49-07. What is
       // done here is the half that cannot be argued with — a refusal is not a deletion.
       //
       // The shape is `handleUpload`'s, twenty lines up, which has always checked `res.ok`. This
