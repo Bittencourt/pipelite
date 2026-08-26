@@ -1196,7 +1196,17 @@ running container, or executed — as tagged inline.
 
 ---
 
-## Open Questions
+## Open Questions (ALL RESOLVED — carried into plan decisions 2026-08-26)
+
+> **Resolution map, added after planning.** Every question below was answered as an explicit stated
+> decision in a plan, not left open:
+> Q1 trashed-record file access → **refuse** (`49-04`, constraint 4) ·
+> Q2 empty-directory pruning → **out of scope, stated in code** (`49-02`, constraint 5) ·
+> Q3 `?expand=` on a 201 → **no** (`49-03`, constraint 6) ·
+> Q4 merge entry points → **`mergeRecordsMutation` only** (`49-08`, constraint 12) ·
+> Q5 the missing organizations collection test → **create it** (`49-03`).
+> Flagged by the plan checker as a Dimension-11 format gap: the recommendations were carried through
+> substantively, but no question carried a literal `RESOLVED` marker, so the record read as open work.
 
 1. **Should a file belonging to a SOFT-DELETED (trashed) record still serve?**
    - What we know: the four GET-by-id routes all carry `isNull(deletedAt)`. `/trash` lists trashed
