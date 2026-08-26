@@ -412,7 +412,24 @@ inverting them yields SC-4's proof for two entities. Set C is mechanical:
 `src/app/api/v1/activities/__tests__/route.test.ts:336` and `:347`. All must be amended in the SAME
 commit as `DATA-02`, or the suite goes red on success. See `49-RESEARCH.md` for the full chain. No `deleteEntityFiles` / `collectFileFieldRefs` helper exists yet.
 `src/lib/trash/prune.ts:66-73` documents the gap honestly today; that comment must stop being true.
-**Plans**: TBD
+**Plans**: 9 plans in 6 waves. Re-measured at plan time (2026-08-26): `type='formula'` **0**,
+`type='file'` **0**, records carrying a stored file descriptor **0** across all four CRM tables — all
+three premises hold, so every proof must manufacture its own subject.
+**Wave rule (hard):** `scripts/dedup-db-test-setup.sh` drops and rebuilds every schema in
+`pipelite_dedup_test`, so no two plans owning a `*.db.test.ts` file share a wave. Five plans own one
+(49-01, 49-05, 49-06, 49-07, 49-08) and 49-09 runs the whole db project, which is why there are six
+waves.
+
+Plans:
+- [ ] 49-01-PLAN.md — wave 1: re-measure the three zero-counts, EXECUTE the storage-failure seam, build the shared `custom_field_definitions` fixture three criteria depend on — SEC-04, DATA-01, DATA-02
+- [ ] 49-02-PLAN.md — wave 1: `collectFileFieldRefs` and `deleteEntityFiles`, pure/unit, with the injected-failure shortfall observed — SEC-04
+- [ ] 49-03-PLAN.md — wave 1: the four canonical create reads, all six suite-breakers amended in lockstep, and the first test file for `POST /api/v1/organizations` — DATA-02
+- [ ] 49-04-PLAN.md — wave 2: `findOwnedRecordById`, the JSONB reference match, path containment, wired into the file route's `GET` and `DELETE`; the IDOR reproduced at handler level first — SEC-04
+- [ ] 49-05-PLAN.md — wave 2: the behavioural four-entity 201-equals-GET proof against real PostgreSQL, with four per-entity ablations — DATA-02
+- [ ] 49-06-PLAN.md — wave 3: the behavioural SC-1 proof — two owners, real bytes, both verbs, both directions, with the IDOR reproduced against real PostgreSQL — SEC-04
+- [ ] 49-07-PLAN.md — wave 4: post-commit blob deletion in the four purge mutations, the injected failure leaving the purge committed, and the two comments that documented the gap retired — SEC-04
+- [ ] 49-08-PLAN.md — wave 5: the post-commit survivor recalculation, the `changedFields` spelling pinned, and the survivor-wins vacuity control measured — DATA-01
+- [ ] 49-09-PLAN.md — wave 6: sign-off — the control register, three fresh falsifications, the vacuity hunt, four criterion verdicts, the phase gate, and a real-HTTP DATA-02 round trip against a rebuilt image — SEC-04, DATA-01, DATA-02
 
 ### Phase 50: Export Authorization
 
