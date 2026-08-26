@@ -79,3 +79,40 @@ against a future refactor that changes what the read is keyed on, not an observa
 predicate assertion (organizations only) and by review, not by behaviour — and that is a property
 of the code shape, not a gap a proof was lazy about. The **GET-by-id** owner terms, which ARE
 observable, are covered behaviourally for all four entities by 49-05.
+
+---
+
+## DEF-49-04 — `src/lib/views/queries.db.test.ts`'s `afterAll` throws 42703, so the db PROJECT can never be green
+
+**Found by:** plan 49-06, Task 2, running the whole db project after the ablations.
+
+**Measured, in isolation, on unmodified code** (`vitest run --config vitest.db.config.ts
+src/lib/views/queries.db.test.ts`):
+
+```
+ Test Files  1 failed (1)
+      Tests  28 passed (28)
+```
+```
+Serialized Error: { severity: 'ERROR', code: '42703', position: '60', file: 'parse_relation.c',
+  routine: 'errorMissingColumn',
+  query: 'select count(*)::int as n from "saved_view_defaults" where id::text like $1',
+  parameters: [ 'viewsdbt-%' ] }
+```
+
+**The defect, at `src/lib/views/queries.db.test.ts:246-257`:** the leftover query is EXECUTED for
+every entry in `TOUCHED_TABLES` and only the `expect` around its result is guarded by
+`if (table !== "saved_view_defaults")`. `saved_view_defaults` has no `id` column, so the statement
+itself raises 42703 before the guard is ever consulted. Every one of its 28 cells passes; the hook is
+what fails.
+
+**Why it matters beyond that file:** it means the db project reports `1 failed | 10 passed` on a run
+where all 252 tests pass, and it is a plausible cause of **DEF-48-01** ("`npm run test:db` exits
+NON-ZERO on a GREEN suite"). The fix is to move the query inside the guard, or to give
+`saved_view_defaults` its own predicate the way `LEFTOVER_PREDICATE` does in the later db-tests.
+
+**Why plan 49-06 did not change it:** it is a Phase 40 file (`f097b5b`), untouched by this phase, in
+a subsystem this phase does not own. The executor scope boundary says pre-existing failures in
+unrelated files are logged, not fixed. It is independent of this plan's work: it reproduces on the
+file alone, and 49-06's own file contributes 18 passing cells with a clean two-part `afterAll`
+(234 → 252 passed, nothing else moved).
