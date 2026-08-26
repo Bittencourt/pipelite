@@ -122,18 +122,31 @@ export const MANDATORY_SCOPE_TERMS = 2
  * alone would be. Both halves are asserted in `src/app/api/v1/stages/__tests__/in-clause.test.ts`.
  *
  * Exported for that reason: an unreachable guard cannot be proven to reject anything.
+ *
+ * `subject` EXISTS BECAUSE THE GUARD IS NOW REACHED FROM TWO MORE PLACES (WR-11, CR-05), and it is
+ * a parameter rather than a hard-coded string so the throw names the predicate that actually
+ * collapsed. `src/lib/execution/actions/crm.ts`'s `callerScope` carried a docstring claiming that a
+ * collapse there "is a type error rather than a silent full-table read" — it is not: drizzle's
+ * `and` is typed `(...conditions: (SQLWrapper | undefined)[]) => SQL | undefined` and SILENTLY
+ * FILTERS `undefined` out, so `and(ilike(col, v), undefined)` compiles and renders as an unscoped
+ * query. `src/lib/triggers/matcher.ts` reaches it for the same reason. The default keeps the
+ * message identical for the original caller, which is what `in-clause.test.ts` reads.
  */
-export function requireScopedPredicate(predicate: SQL | undefined, termCount: number): SQL {
+export function requireScopedPredicate(
+  predicate: SQL | undefined,
+  termCount: number,
+  subject = "ownedStagesPredicate"
+): SQL {
   if (predicate === undefined) {
     throw new Error(
-      "ownedStagesPredicate produced no predicate at all. drizzle renders `.where(undefined)` as " +
+      `${subject} produced no predicate at all. drizzle renders \`.where(undefined)\` as ` +
         "NO WHERE CLAUSE, which would return every stage in the database to every caller."
     )
   }
 
   if (termCount < MANDATORY_SCOPE_TERMS) {
     throw new Error(
-      `ownedStagesPredicate built ${termCount} term(s); the owner equality and the soft-delete ` +
+      `${subject} built ${termCount} term(s); the owner equality and the soft-delete ` +
         `guard are both mandatory (${MANDATORY_SCOPE_TERMS}). A conjunction missing the owner term ` +
         "is still a valid predicate and still returns other people's stages."
     )

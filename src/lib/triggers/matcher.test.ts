@@ -204,17 +204,57 @@ describe("matchesTrigger", () => {
 // --- matchAndFireTriggers ---
 
 describe("matchAndFireTriggers", () => {
-  function mockWorkflowQuery(workflows: Array<{ id: string; active: boolean; triggers: unknown[] }>) {
-    const mockFrom = vi.fn().mockReturnValue({
-      where: vi.fn().mockResolvedValue(
-        workflows.filter(w => w.active).map(w => ({
-          id: w.id,
-          active: w.active,
-          triggers: w.triggers,
-        }))
-      ),
+  /**
+   * The owner of every fixture record below, and therefore the only `workflows.created_by` the
+   * scoped query may return (CR-05).
+   */
+  const OWNER_ID = "user-1"
+
+  /**
+   * TWO SELECTS ARE MODELLED HERE, NOT ONE, AND THE ORDER IS LOAD-BEARING (CR-05).
+   *
+   *   1. `resolveEventRecordOwner` — `.select({ownerId}).from(<entity table>).where(id = …).limit(1)`
+   *   2. the active-workflow read — `.select().from(workflows).where(active AND created_by = owner)`
+   *
+   * The JavaScript `filter` below stands in for the SQL predicate, exactly as this helper's
+   * `active` filter always has. It filters on `createdBy` TOO, because the predicate now carries
+   * that term — a helper that kept returning every row would make the scope untestable here and
+   * would quietly re-open what the db suite proves closed.
+   *
+   * HONEST LABEL: a mock filtering rows is evidence about the CALL SHAPE, not about the SQL. The
+   * behavioural proof that the predicate reaches PostgreSQL is
+   * `src/lib/triggers/trigger-owner-scope.db.test.ts`, which drives real mutations through the real
+   * bus against a real database. What these cells add is the fail-closed paths, which that suite
+   * cannot reach: an unresolvable owner and an unregistered entity.
+   */
+  function mockWorkflowQuery(
+    workflows: Array<{ id: string; active: boolean; triggers: unknown[]; createdBy?: string }>,
+    ownerId: string | null = OWNER_ID
+  ) {
+    // CALL 1 — the owner resolution. `.limit(1)` is what the previous single-chain mock lacked.
+    mockDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue(ownerId === null ? [] : [{ ownerId }]),
+        }),
+      }),
     })
-    mockDb.select.mockReturnValue({ from: mockFrom })
+
+    // CALL 2 — the owner-scoped active-workflow read.
+    mockDb.select.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(
+          workflows
+            .filter((w) => w.active && (w.createdBy ?? OWNER_ID) === ownerId)
+            .map((w) => ({
+              id: w.id,
+              active: w.active,
+              createdBy: w.createdBy ?? OWNER_ID,
+              triggers: w.triggers,
+            }))
+        ),
+      }),
+    })
   }
 
   const eventPayload: CrmEventPayload = {
@@ -394,24 +434,125 @@ describe("matchAndFireTriggers", () => {
 
     expect(mockCreateWorkflowRun).toHaveBeenCalledTimes(2)
   })
+
+  /* -------------------------------------------------------------------------
+   * CR-05 — the FAIL-CLOSED paths, which the db suite cannot reach
+   * ---------------------------------------------------------------------- */
+
+  it("CR-05: resolves the event record's owner BEFORE reading workflows, and reads workflows second", async () => {
+    // The call ORDER is the claim, and it is a real one: the owner has to be known before the
+    // predicate can be built, so a refactor that hoisted the workflow read above the resolution
+    // would have to reintroduce an unscoped select to compile.
+    mockWorkflowQuery([
+      {
+        id: "wf-1",
+        active: true,
+        triggers: [{ type: "crm_event", entity: "deal", action: "created", fieldFilters: [] }],
+      },
+    ])
+
+    await matchAndFireTriggers("deal.created", eventPayload)
+
+    expect(mockDb.select).toHaveBeenCalledTimes(2)
+    // Call 1 projects a single column (the owner); call 2 selects the whole workflow row.
+    expect(mockDb.select.mock.calls[0]).toHaveLength(1)
+    expect(mockDb.select.mock.calls[1]).toHaveLength(0)
+    expect(mockCreateWorkflowRun).toHaveBeenCalledOnce()
+  })
+
+  it("CR-05: fires NOTHING when the event record's owner cannot be resolved", async () => {
+    // A row that is no longer there, or an entity whose owner column came back empty. The absent
+    // predicate used to treat this case as "match everything"; it now matches nothing.
+    mockWorkflowQuery(
+      [
+        {
+          id: "wf-1",
+          active: true,
+          triggers: [{ type: "crm_event", entity: "deal", action: "created", fieldFilters: [] }],
+        },
+      ],
+      null
+    )
+
+    await matchAndFireTriggers("deal.created", eventPayload)
+
+    expect(mockCreateWorkflowRun).not.toHaveBeenCalled()
+    // And it stopped BEFORE the workflow read, so there is no unscoped statement to fall back to.
+    expect(mockDb.select).toHaveBeenCalledTimes(1)
+  })
+
+  it("CR-05: fires NOTHING for an entity with no owner-column entry, and never reaches the database", async () => {
+    // `entity: "constructor"` is the prototype-chain probe. `EVENT_OWNER_LOOKUP` is a `Map`, so
+    // `.get("constructor")` is `undefined` rather than the `Object` constructor — with an object
+    // literal this would have been truthy, walked into `.from(undefined)` and thrown a driver
+    // TypeError instead of failing closed.
+    const bogus = { ...eventPayload, entity: "constructor" as unknown as CrmEventPayload["entity"] }
+
+    await matchAndFireTriggers("deal.created", bogus)
+
+    expect(mockCreateWorkflowRun).not.toHaveBeenCalled()
+    expect(mockDb.select).not.toHaveBeenCalled()
+  })
+
+  it("CR-05: a workflow owned by ANOTHER user is not returned by the scoped read", async () => {
+    // HONEST LABEL: the filtering here is done by `mockWorkflowQuery`'s stand-in for the SQL
+    // predicate, so this cell is evidence about the call shape and not about the statement. The
+    // behavioural proof is `src/lib/triggers/trigger-owner-scope.db.test.ts`, against a real
+    // database. It is kept because it pins the invariant the helper models.
+    mockWorkflowQuery([
+      {
+        id: "wf-mine",
+        active: true,
+        createdBy: OWNER_ID,
+        triggers: [{ type: "crm_event", entity: "deal", action: "created", fieldFilters: [] }],
+      },
+      {
+        id: "wf-someone-elses",
+        active: true,
+        createdBy: "user-2",
+        triggers: [{ type: "crm_event", entity: "deal", action: "created", fieldFilters: [] }],
+      },
+    ])
+
+    await matchAndFireTriggers("deal.created", eventPayload)
+
+    // The positive half is what stops this being satisfied by a matcher that fires for nobody.
+    expect(mockCreateWorkflowRun).toHaveBeenCalledOnce()
+    expect(mockCreateWorkflowRun).toHaveBeenCalledWith("wf-mine", expect.any(Object))
+  })
 })
 
 // --- Formula wrapper normalisation in the trigger envelope (SC-3 / D-17) ---
 
 describe("matchAndFireTriggers formula wrapper normalisation", () => {
+  /**
+   * Two selects, in order: CR-05's owner resolution first, then the owner-scoped workflow read.
+   * `user-1` is `updatedPayload`'s `userId` AND the owner these cells' deal resolves to, so the
+   * workflow below is inside the scope and these cells stay about formula normalisation.
+   */
   function mockOneUpdatedWorkflow() {
-    const mockFrom = vi.fn().mockReturnValue({
-      where: vi.fn().mockResolvedValue([
-        {
-          id: "wf-formula",
-          active: true,
-          triggers: [
-            { type: "crm_event", entity: "deal", action: "updated", fieldFilters: [] },
-          ],
-        },
-      ]),
+    mockDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ ownerId: "user-1" }]),
+        }),
+      }),
     })
-    mockDb.select.mockReturnValue({ from: mockFrom })
+
+    mockDb.select.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([
+          {
+            id: "wf-formula",
+            active: true,
+            createdBy: "user-1",
+            triggers: [
+              { type: "crm_event", entity: "deal", action: "updated", fieldFilters: [] },
+            ],
+          },
+        ]),
+      }),
+    })
   }
 
   function envelopeOf(): { data: Record<string, unknown> } & Record<string, unknown> {
@@ -508,18 +649,30 @@ describe("matchAndFireTriggers formula wrapper normalisation", () => {
   })
 
   it("preserves envelope metadata and the write-after-spread anti-clobber invariant", async () => {
-    const mockFrom = vi.fn().mockReturnValue({
-      where: vi.fn().mockResolvedValue([
-        {
-          id: "wf-stage",
-          active: true,
-          triggers: [
-            { type: "crm_event", entity: "deal", action: "stage_changed", fieldFilters: [] },
-          ],
-        },
-      ]),
+    // CR-05's owner resolution first, then the owner-scoped workflow read — same two-call shape as
+    // `mockOneUpdatedWorkflow`, spelled out here because this cell needs a `stage_changed` trigger.
+    mockDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ ownerId: "user-1" }]),
+        }),
+      }),
     })
-    mockDb.select.mockReturnValue({ from: mockFrom })
+
+    mockDb.select.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([
+          {
+            id: "wf-stage",
+            active: true,
+            createdBy: "user-1",
+            triggers: [
+              { type: "crm_event", entity: "deal", action: "stage_changed", fieldFilters: [] },
+            ],
+          },
+        ]),
+      }),
+    })
 
     const stagePayload: DealStageChangedPayload = {
       entity: "deal",
