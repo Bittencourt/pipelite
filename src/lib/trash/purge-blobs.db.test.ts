@@ -172,6 +172,8 @@ import {
   removeFieldDefinitions,
 } from "@/lib/__tests__/custom-field-definition-fixture"
 
+import { mergeRecordsMutation } from "@/lib/mutations/dedup"
+
 import { collectFileFieldRefs } from "./collect-file-field-refs"
 import { purgeRecordByType } from "./dispatch"
 
@@ -261,6 +263,18 @@ const DEAL_NEIGHBOUR = `${PREFIX}deal-neighbour`
 const ACTIVITY_NEIGHBOUR = `${PREFIX}activity-neighbour`
 
 /**
+ * CR-02 — THE MERGE PAIR. Two LIVE organizations, each with its own blob under its own `entityId`
+ * directory, used by the "a merge must not re-home a descriptor without its bytes" describe below.
+ *
+ * They are a separate pair rather than a reuse of the subjects because a merge needs BOTH records
+ * live, and `restoreFixtureRows` keeps every subject soft-deleted so the purges can accept them.
+ * Flipping a subject's `deleted_at` for one describe is the shape of fixture reuse that
+ * `crm-ownership.db.test.ts:348-395` measured five cascaded reds from.
+ */
+const MERGE_SURVIVOR = `${PREFIX}merge-survivor`
+const MERGE_LOSER = `${PREFIX}merge-loser`
+
+/**
  * One file field per entity type, each with its own name so a red transcript names one entity
  * unambiguously. Spaces and an accent are deliberate: that is what this deployment's file fields
  * are actually called, and the name is interpolated into a filesystem path AND into a URL segment.
@@ -286,6 +300,9 @@ const STORED_ORG_NEIGHBOUR = "3f1c0d4e-6b21-4f77-a0aa-000000000201.pdf"
 const STORED_PERSON_NEIGHBOUR = "3f1c0d4e-6b21-4f77-a0aa-000000000202.pdf"
 const STORED_DEAL_NEIGHBOUR = "3f1c0d4e-6b21-4f77-a0aa-000000000203.pdf"
 const STORED_ACTIVITY_NEIGHBOUR = "3f1c0d4e-6b21-4f77-a0aa-000000000204.pdf"
+/** CR-02's pair. Distinct names so a red transcript can attribute a surviving file to one side. */
+const STORED_MERGE_SURVIVOR = "3f1c0d4e-6b21-4f77-a0aa-000000000301.pdf"
+const STORED_MERGE_LOSER = "3f1c0d4e-6b21-4f77-a0aa-000000000302.pdf"
 
 /**
  * Distinct contents per file, so a served body can be attributed to ONE specific record. A body
@@ -343,6 +360,20 @@ const SEEDED_BLOBS: readonly SeededBlob[] = Object.freeze([
     storedName: STORED_ACTIVITY_NEIGHBOUR,
     bytes: bytesFor("ACTIVITY-NEIGHBOUR"),
   },
+  // CR-02's pair. Each blob sits under its OWN record's directory, which is where
+  // `upload/route.ts:92-101` puts it — that is the whole premise the merge was breaking.
+  {
+    entityId: MERGE_SURVIVOR,
+    fieldName: FIELD_ORG,
+    storedName: STORED_MERGE_SURVIVOR,
+    bytes: bytesFor("MERGE-SURVIVOR"),
+  },
+  {
+    entityId: MERGE_LOSER,
+    fieldName: FIELD_ORG,
+    storedName: STORED_MERGE_LOSER,
+    bytes: bytesFor("MERGE-LOSER"),
+  },
 ])
 
 /**
@@ -362,7 +393,9 @@ const DEAL_REF_COUNT = 1
 const ACTIVITY_REF_COUNT = 1
 const SEEDED_SUBJECT_BLOBS = 5
 const SEEDED_NEIGHBOUR_BLOBS = 4
-const SEEDED_BLOB_TOTAL = 9
+/** CR-02's pair, one blob each. */
+const SEEDED_MERGE_BLOBS = 2
+const SEEDED_BLOB_TOTAL = 11
 const SEEDED_FILE_DEFINITIONS = 4
 
 /**
@@ -462,6 +495,47 @@ const CUSTOM_FIELDS_ACTIVITY_NEIGHBOUR = {
     ),
   ],
 }
+
+/* ---------------------------------------------------------------------------
+ * CR-02's pair, and the two shapes it is proven against
+ * ------------------------------------------------------------------------ */
+
+/**
+ * A NON-file value the merge really does adopt from the loser, so "the file did not move" cannot be
+ * satisfied by a merge in which NOTHING moved.
+ *
+ * `website` is a plain nullable `text` column on `organizations` and is not in
+ * `MERGE_EXCLUDED_COLUMNS`, so with the survivor's empty and the loser's populated it lands in
+ * `filledOnly`, whose default is the LOSER. That is the same group, the same default and the same
+ * write path the file value takes — which is exactly why it is the right anchor: if `website`
+ * arrives on the survivor and `Anexos Ação` does not, the exclusion is what stopped it and not a
+ * broken fixture.
+ */
+const MERGE_LOSER_WEBSITE = "https://loser.example.test"
+
+/** The loser's file value. One descriptor, named so a red transcript can attribute the bytes. */
+const CUSTOM_FIELDS_MERGE_LOSER = {
+  [FIELD_ORG]: [
+    descriptor(MERGE_LOSER, FIELD_ORG, STORED_MERGE_LOSER, bytesFor("MERGE-LOSER")),
+  ],
+}
+/** The survivor's OWN file value, for the explicit-choice cell. */
+const CUSTOM_FIELDS_MERGE_SURVIVOR = {
+  [FIELD_ORG]: [
+    descriptor(MERGE_SURVIVOR, FIELD_ORG, STORED_MERGE_SURVIVOR, bytesFor("MERGE-SURVIVOR")),
+  ],
+}
+
+/**
+ * Named-integer floors for the pair. One descriptor per side, asserted BEFORE the merge in both
+ * cells: with zero descriptors, "the survivor does not reference the loser's blob" and "the
+ * survivor's own bytes survived" are both vacuously true, and zero is exactly what the live
+ * database holds.
+ */
+const MERGE_LOSER_REF_COUNT = 1
+const MERGE_SURVIVOR_REF_COUNT = 1
+/** What a purge of the loser must return: an organization with no children detaches nothing. */
+const MERGE_LOSER_DETACHED = 0
 
 /**
  * Which `customFields` each seeded record carries, and which blob paths belong to it. One table,
@@ -721,6 +795,11 @@ async function restoreFixtureRows(): Promise<void> {
     .values([
       { id: ORG, name: `${PREFIX}org subject`, ownerId: USER },
       { id: ORG_NEIGHBOUR, name: `${PREFIX}org neighbour`, ownerId: USER },
+      // CR-02's pair. DISTINCT names on purpose: `norm_name` is a GENERATED ALWAYS column and
+      // both trigram indexes are partial on `deleted_at is null`, so two identical names would
+      // make these two rows a genuine duplicate pair for every OTHER suite in the same database.
+      { id: MERGE_SURVIVOR, name: `${PREFIX}merge survivor`, ownerId: USER },
+      { id: MERGE_LOSER, name: `${PREFIX}merge loser`, ownerId: USER },
     ])
     .onConflictDoNothing()
   await db
@@ -767,6 +846,33 @@ async function restoreFixtureRows(): Promise<void> {
     .update(organizations)
     .set({ customFields: CUSTOM_FIELDS_ORG_NEIGHBOUR, deletedAt: null, ownerId: USER })
     .where(sql`${organizations.id} = ${ORG_NEIGHBOUR}`)
+
+  // CR-02's pair, reset to its PRE-MERGE state. Both LIVE, because a merge refuses a soft-deleted
+  // record on either side, and a purge of the loser in one cell leaves the row gone for the next.
+  //
+  // The survivor's file key is set to `null` here rather than omitted: the merge writes
+  // `customFields` WHOLESALE, so the cell that adopts the loser's `website` would otherwise leave a
+  // stale `Anexos Ação` behind from the previous cell and the "the survivor holds its own
+  // descriptor" assertion would be reading the wrong run's state. Each cell that needs the
+  // survivor's own file value sets it explicitly.
+  await db
+    .update(organizations)
+    .set({
+      customFields: { [FIELD_ORG]: null },
+      deletedAt: null,
+      ownerId: USER,
+      website: null,
+    })
+    .where(sql`${organizations.id} = ${MERGE_SURVIVOR}`)
+  await db
+    .update(organizations)
+    .set({
+      customFields: CUSTOM_FIELDS_MERGE_LOSER,
+      deletedAt: null,
+      ownerId: USER,
+      website: MERGE_LOSER_WEBSITE,
+    })
+    .where(sql`${organizations.id} = ${MERGE_LOSER}`)
 
   await db
     .update(people)
@@ -1015,7 +1121,9 @@ describe("PRE-FLIGHT — the floors without which every assertion below is about
 
   it("has real bytes on disk for every one of the seeded blobs", () => {
     expect(SEEDED_BLOBS).toHaveLength(SEEDED_BLOB_TOTAL)
-    expect(SEEDED_SUBJECT_BLOBS + SEEDED_NEIGHBOUR_BLOBS).toBe(SEEDED_BLOB_TOTAL)
+    expect(SEEDED_SUBJECT_BLOBS + SEEDED_NEIGHBOUR_BLOBS + SEEDED_MERGE_BLOBS).toBe(
+      SEEDED_BLOB_TOTAL,
+    )
 
     for (const blob of SEEDED_BLOBS) {
       const target = blobPath(blob.entityId, blob.fieldName, blob.storedName)
@@ -1545,4 +1653,198 @@ describe("CR-01 — a restore between the pre-fetch and the DELETE must not dest
       expect(result).toEqual({ success: false, error: "NOT_IN_TRASH" })
     },
   )
+})
+
+/* ---------------------------------------------------------------------------
+ * CR-02 — a merge must not re-home a file descriptor without its bytes
+ * ------------------------------------------------------------------------ */
+
+/** The `customFields` blob a record currently holds, read by direct SQL. */
+async function readCustomFields(id: string): Promise<Record<string, unknown>> {
+  const rows = (await db.execute(
+    sql`select custom_fields from organizations where id = ${id}`,
+  )) as unknown as { custom_fields: Record<string, unknown> | null }[]
+
+  expect(rows.length, `no organizations row for ${id}`).toBe(1)
+  return rows[0].custom_fields ?? {}
+}
+
+/** The `website` column, read by direct SQL. The non-file anchor for the merge. */
+async function readWebsite(id: string): Promise<string | null> {
+  const rows = (await db.execute(
+    sql`select website from organizations where id = ${id}`,
+  )) as unknown as { website: string | null }[]
+
+  return rows.length === 0 ? null : rows[0].website
+}
+
+/** Every `storedName` a record's blob names, through the SAME walk a purge uses. */
+async function referencedStoredNames(id: string): Promise<string[]> {
+  return collectFileFieldRefs(id, await readCustomFields(id))
+    .map((ref) => ref.storedName)
+    .sort()
+}
+
+describe("CR-02 — a merge must not hand the survivor a descriptor whose bytes it does not own", () => {
+  /**
+   * A blob's on-disk location is `${UPLOAD_DIR}/${entityId}/${fieldName}/${storedName}`, where
+   * `entityId` is the record it was uploaded AGAINST. The merge copied the descriptor object —
+   * `storedName`, `path` and `publicUrl` all naming the LOSER — onto the survivor, and touched
+   * neither the bytes nor the loser's own blob. Two live records then referenced one file, and the
+   * purge collects refs blindly from the row it is destroying (by design) with no notion that
+   * another row holds the same `storedName`.
+   *
+   * `mergeRecordsMutation` is called with `choices: {}` in the first cell, which is the whole
+   * point: `buildMergeFieldGroups` puts a survivor-empty / loser-populated key in `filledOnly`,
+   * whose default is the LOSER, so the user does not have to click anything for this to happen.
+   *
+   * `pairId: null` skips the V-9 membership control, which is what lets a test merge two records
+   * that were never scanned into `duplicate_pairs` — and it is why this file's `afterAll` count
+   * assertions still hold: no pair row is written.
+   */
+  it("leaves the loser's file on the loser when the picker's own default would adopt it", async () => {
+    const loserPath = blobPath(MERGE_LOSER, FIELD_ORG, STORED_MERGE_LOSER)
+
+    // FLOORS AND ANCHORS, before anything is merged.
+    expect(
+      await referencedStoredNames(MERGE_LOSER),
+      "the loser holds no descriptor, so 'the survivor did not adopt it' is vacuously true",
+    ).toEqual([STORED_MERGE_LOSER])
+    expect(
+      collectFileFieldRefs(MERGE_LOSER, await readCustomFields(MERGE_LOSER)).length,
+    ).toBeGreaterThanOrEqual(MERGE_LOSER_REF_COUNT)
+    expect(await referencedStoredNames(MERGE_SURVIVOR)).toEqual([])
+    expect(existsSync(loserPath)).toBe(true)
+    expect(await readWebsite(MERGE_SURVIVOR)).toBeNull()
+    expect(await readWebsite(MERGE_LOSER)).toBe(MERGE_LOSER_WEBSITE)
+
+    const merged = await mergeRecordsMutation({
+      entityType: "organization",
+      pairId: null,
+      survivorId: MERGE_SURVIVOR,
+      loserId: MERGE_LOSER,
+      // NOT A SINGLE ANSWER. Every value that moves below moves because the SERVER decided it
+      // should, which is the failure mode: an unattended default that destroys data.
+      choices: {},
+    })
+
+    expect(merged.success, "the merge itself failed, so nothing below is about the merge").toBe(true)
+
+    // THE ANCHOR, AND IT COMES FIRST. `website` is survivor-empty / loser-populated, in the SAME
+    // `filledOnly` group with the SAME loser default and the SAME write path as the file key. If
+    // this is null, the exclusion is not what stopped the file — the merge simply moved nothing,
+    // and the criterion below would be passing for the wrong reason.
+    expect(
+      await readWebsite(MERGE_SURVIVOR),
+      "the merge adopted NOTHING from the loser, so this cell cannot distinguish a working " +
+        "exclusion from a broken fixture",
+    ).toBe(MERGE_LOSER_WEBSITE)
+
+    // THE CRITERION. The survivor must not name a blob that lives under another record's id.
+    expect(
+      await referencedStoredNames(MERGE_SURVIVOR),
+      `CR-02: the survivor now references ${STORED_MERGE_LOSER}, whose bytes are under ` +
+        `${MERGE_LOSER}'s directory. Two live records reference one file, and the loser's own ` +
+        "purge will unlink it 30 days from now, unattended, with no mismatch log.",
+    ).toEqual([])
+
+    // And the loser kept it, so the bytes are still owned by exactly one row.
+    expect(await referencedStoredNames(MERGE_LOSER)).toEqual([STORED_MERGE_LOSER])
+    expect(existsSync(loserPath)).toBe(true)
+  })
+
+  /**
+   * The same claim under an EXPLICIT choice, which is the stronger form: both sides populated, and
+   * the caller asks for the loser's value by name.
+   *
+   * This is also the T-39-04 property applied to the excluded key — `applyMergeChoices` writes
+   * exactly the keys the server computed, so a choice naming a key the picker never offered writes
+   * nothing. And it is the cell with the non-vacuous end-state assertion: after purging the loser,
+   * the survivor references EXACTLY ONE blob, it is the survivor's own, and its bytes are byte-for-
+   * byte intact.
+   */
+  it("keeps the survivor on its own bytes even when the caller explicitly picks the loser's file, and those bytes survive the loser's purge", async () => {
+    // The survivor gets its OWN descriptor for this cell. Direct SQL, never a mutation: the
+    // mutation is what is under test.
+    await db
+      .update(organizations)
+      .set({ customFields: CUSTOM_FIELDS_MERGE_SURVIVOR })
+      .where(sql`${organizations.id} = ${MERGE_SURVIVOR}`)
+
+    const survivorPath = blobPath(MERGE_SURVIVOR, FIELD_ORG, STORED_MERGE_SURVIVOR)
+    const loserPath = blobPath(MERGE_LOSER, FIELD_ORG, STORED_MERGE_LOSER)
+
+    // FLOORS: one descriptor per side, and both files really on disk.
+    expect(
+      collectFileFieldRefs(MERGE_SURVIVOR, await readCustomFields(MERGE_SURVIVOR)).length,
+    ).toBeGreaterThanOrEqual(MERGE_SURVIVOR_REF_COUNT)
+    expect(
+      collectFileFieldRefs(MERGE_LOSER, await readCustomFields(MERGE_LOSER)).length,
+    ).toBeGreaterThanOrEqual(MERGE_LOSER_REF_COUNT)
+    expect(existsSync(survivorPath)).toBe(true)
+    expect(existsSync(loserPath)).toBe(true)
+
+    const merged = await mergeRecordsMutation({
+      entityType: "organization",
+      pairId: null,
+      survivorId: MERGE_SURVIVOR,
+      loserId: MERGE_LOSER,
+      // ASKED FOR BY NAME. The prefixed key is exactly the spelling `applyMergeChoices` reads.
+      choices: { [`customFields.${FIELD_ORG}`]: "loser" },
+    })
+
+    expect(merged.success).toBe(true)
+
+    // The anchor again: a value the merge DID take from the loser, in the same group and by the
+    // same default, so "the file stayed put" is not "nothing happened".
+    expect(await readWebsite(MERGE_SURVIVOR)).toBe(MERGE_LOSER_WEBSITE)
+
+    // THE CRITERION, HALF ONE: the survivor holds its OWN descriptor and only its own.
+    expect(
+      await referencedStoredNames(MERGE_SURVIVOR),
+      "the explicitly-requested loser descriptor was written onto the survivor. A crafted or " +
+        "even an honest choice must not be able to point a record at bytes it does not own.",
+    ).toEqual([STORED_MERGE_SURVIVOR])
+
+    // The loser still holds its own, so the merge did not silently clear it either.
+    expect(await referencedStoredNames(MERGE_LOSER)).toEqual([STORED_MERGE_LOSER])
+
+    // THE CRITERION, HALF TWO — and this is the half that makes CR-02 a DATA-LOSS finding rather
+    // than a tidiness one. The merge soft-deleted the loser, so 30 days later the retention pruner
+    // purges it, unattended. Run that purge now.
+    expect(
+      await readDeletedAt("organizations", MERGE_LOSER),
+      "the merge did not put the loser in the trash, so the purge below will refuse and this " +
+        "half of the cell would prove nothing",
+    ).not.toBeNull()
+
+    const purge = await purgeRecordByType("organization", MERGE_LOSER)
+    expect(purge).toEqual({ success: true, detached: MERGE_LOSER_DETACHED })
+
+    // The loser's own bytes are gone, correctly — it owned them.
+    expect(existsSync(loserPath)).toBe(false)
+
+    // AND THE SURVIVOR'S ARE NOT. Byte equality, not mere existence: a truncated-but-present file
+    // would pass the weaker form.
+    expect(
+      existsSync(survivorPath),
+      `CR-02: purging ${MERGE_LOSER} destroyed bytes that the LIVE ${MERGE_SURVIVOR} is still ` +
+        "showing. `deleted === expected` held, so nothing was logged.",
+    ).toBe(true)
+    expect(readFileSync(survivorPath).equals(bytesFor("MERGE-SURVIVOR"))).toBe(true)
+
+    // And every blob the live survivor still NAMES is still on disk — the property SC-2 is about,
+    // asserted over a non-empty set because of the floor above.
+    const survivingRefs = collectFileFieldRefs(
+      MERGE_SURVIVOR,
+      await readCustomFields(MERGE_SURVIVOR),
+    )
+    expect(survivingRefs.length).toBeGreaterThanOrEqual(MERGE_SURVIVOR_REF_COUNT)
+    for (const ref of survivingRefs) {
+      expect(
+        existsSync(blobPath(ref.entityId, ref.fieldName, ref.storedName)),
+        `the live survivor names ${ref.storedName} and the bytes are gone`,
+      ).toBe(true)
+    }
+  })
 })
