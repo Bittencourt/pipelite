@@ -332,13 +332,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // catch is the backstop for what a schema cannot express: `deal_id` or `type_id` deleted by a
     // concurrent request between the check and this statement is still a real `23503`, because those
     // are separate statements.
-    let updatedActivity: typeof activities.$inferSelect
+    //
+    // WR-10: `| undefined` is the RUNTIME type of a destructured `.returning()` element.
+    // `tsconfig.json` sets `strict: true` but NOT `noUncheckedIndexedAccess`, so annotating this as
+    // the bare row made the compiler agree with a claim the driver does not make: an UPDATE that
+    // matches nothing resolves to `[]`. Every dereference below sits OUTSIDE this `try`, so
+    // `updatedActivity.customFields` threw `TypeError: Cannot read properties of undefined` right
+    // past the block that exists to stop exactly that. Reachable through a soft delete followed by
+    // `purgeActivityMutation` between the ownership read and this statement.
+    let updatedActivity: typeof activities.$inferSelect | undefined
     try {
-      const [row] = await db.update(activities)
+      ;[updatedActivity] = await db.update(activities)
         .set(updateData)
         .where(eq(activities.id, id))
         .returning()
-      updatedActivity = row
     } catch (error) {
       return mapWriteError("api/v1/activities/[id]", error, {
         // `activities` carries no unique index a caller can collide with, so there is deliberately
@@ -346,6 +353,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         // rather than as a 409 with a guessed detail.
         field: "body",
       })
+    }
+
+    // WR-10: the row was there when the ownership read ran and is gone now — a 404, which
+    // `public/openapi.yaml` already declares on this operation (WR-03), so this needs no contract
+    // change and no gate edit. Placed before the recalculation and the emit deliberately: a webhook
+    // announcing an update to a row that no longer exists is worse than the 500 it replaces.
+    if (!updatedActivity) {
+      return Problems.notFound("Activity")
     }
 
     // Recalculate BEFORE the emit (D-17): the webhook body and the workflow-trigger envelope are

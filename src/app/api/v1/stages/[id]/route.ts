@@ -174,18 +174,32 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // to a name already used in the same pipeline is a real `23505` and a real 409 — reachable with
     // a body that passes zod, and the one case the schema above cannot make unrepresentable because
     // uniqueness spans two columns and depends on other rows.
-    let updatedStage: typeof stages.$inferSelect
+    // WR-10: `| undefined` is the RUNTIME type of a destructured `.returning()` element, and
+    // `tsconfig.json` sets `strict: true` but NOT `noUncheckedIndexedAccess` — so annotating this
+    // as the bare row made the compiler agree with a claim the driver does not make. An UPDATE that
+    // matches nothing resolves to `[]`, and the dereference below sits OUTSIDE the `try`, so
+    // `serializeStage(undefined)` threw `TypeError: Cannot read properties of undefined (reading
+    // 'id')` right past the block that exists to stop exactly that. Reachable rather than
+    // theoretical: stages are HARD deleted, so one owner issuing a concurrent PUT and DELETE gets a
+    // PUT whose ownership check passed and whose UPDATE then matched zero rows.
+    let updatedStage: typeof stages.$inferSelect | undefined
     try {
-      const [row] = await db.update(stages)
+      ;[updatedStage] = await db.update(stages)
         .set(updateData)
         .where(eq(stages.id, id))
         .returning()
-      updatedStage = row
     } catch (error) {
       return mapWriteError("api/v1/stages/[id]", error, {
         conflict: "A stage with that name already exists in this pipeline",
         field: "name",
       })
+    }
+
+    // The row was there when `verifyStageOwnership` read it and is gone now: that is a 404, which
+    // `public/openapi.yaml` already declares on this operation (WR-03), so this needs no contract
+    // change and no gate edit.
+    if (!updatedStage) {
+      return Problems.notFound("Stage")
     }
 
     return singleResponse(serializeStage(updatedStage))
