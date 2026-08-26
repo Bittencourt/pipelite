@@ -354,7 +354,7 @@ distinct operations. Commits `139f5f8`, `a38c1a3`.
 *"Place `'403'` after `'404'` where one exists"* versus *"matching the ordering used at
 `openapi.yaml:2864`"*, which is ascending. Followed the cited precedent. Commit `a38c1a3`.
 
-### 3. [Rule 1 — the plan's own gate contained a needle that matches nothing] `'guanted non-empty'`
+### 3. [Rule 1 — the plan's own gate contained a needle that matches nothing] `'guarded non-empty'`
 
 Recorded, not silently fixed — see Control 3. The plan's script was run as written (it passes) and
 then strengthened with presence floors. The dead needle is a finding for 48-10's vacuity hunt: the
