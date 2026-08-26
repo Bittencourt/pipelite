@@ -922,6 +922,118 @@ describe("CR-01 — ?expand=deal does not serialize a deal the caller does not o
 })
 
 /* ---------------------------------------------------------------------------
+ * WR-08 — the LIST route's read guard, which had ZERO assertions anywhere
+ *
+ * CR-01's read half was added to TWO projections. The `[id]` one has four cells behind it (the
+ * describe immediately above, plus `activities/[id]/__tests__/route.test.ts:493-560`). The LIST one
+ * had NONE: the iteration-2 review grepped `expand=deal`, `expand.has("deal")` and `serialized.deal`
+ * across every test under `src/app/api/v1` and every hit was against `/activities/{id}`, never
+ * `/activities`. The list route's own unit suite has 14 `it`s and not one of them sets `?expand=`.
+ *
+ * So deleting ` && activity.deal.ownerId === ctx.userId` from `activities/route.ts:137` was GREEN
+ * everywhere — `tsc --noEmit` exit 0, `npm test` green, `test:db` green, and
+ * `route-authorization.test.ts` unaffected because the handler still satisfies R1 through
+ * `eq(activities.ownerId, ctx.userId)`. A live control with no test at all: the exact inverse of
+ * this milestone's twelve vacuous gates, and the guard's own comment calls itself "LOAD-BEARING"
+ * while nothing held it.
+ *
+ * The cells below are the list twin of the `[id]` pair above, with the same three parts: the
+ * DIRECT-SQL plant (the write guard makes a foreign link unreachable through the API, so the legacy
+ * shape has to be written underneath the route), the ABSENCE assertion over every element of `data`
+ * plus a whole-body string search for B's marker, and the POSITIVE ANCHOR beside it — without which
+ * the absence is satisfied by a route that stopped honouring `?expand=deal` altogether.
+ * ------------------------------------------------------------------------ */
+
+interface ExpandedListPayload {
+  data: Record<string, unknown>[]
+  meta: { total: number }
+}
+
+async function listExpandedAs(authorization: string, query: string): Promise<ExpandedListPayload> {
+  const response = await GET(listRequest(authorization, query))
+
+  expect(response.status).toBe(200)
+
+  return (await response.json()) as unknown as ExpandedListPayload
+}
+
+describe("WR-08 — GET /activities?expand=deal does not serialize a deal the caller does not own", () => {
+  it("A listing with ?expand=deal gets NO deal on a row whose deal_id was planted by direct SQL", async () => {
+    const target = A_ACTIVITY_IDS[6]
+    await db.update(activities).set({ dealId: DEAL_B }).where(eq(activities.id, target))
+    // The plant is confirmed by direct SQL before the request, so a green result cannot mean
+    // "the update silently did nothing".
+    expect(await sqlDealIdOf(target)).toBe(DEAL_B)
+
+    const body = await listExpandedAs(keyA.authorizationHeader, "?expand=deal")
+
+    // FLOOR: the page came back and it contains the planted row, so the absence below is the guard
+    // working rather than an empty response.
+    expect(body.meta.total).toBe(A_OWNED)
+    expect(body.data.map((row) => row.id)).toContain(target)
+
+    // THE ASSERTION THAT IS RED WITHOUT THE GUARD: the planted row carries no `deal` key.
+    const planted = body.data.find((row) => row.id === target)
+    expect(planted).toBeDefined()
+    expect(planted).not.toHaveProperty("deal")
+
+    // Stated over the WHOLE page as well, because a future fixture that plants a second foreign
+    // link has to be covered by the same cell. Note the shape: NOT "no row has a deal" — an
+    // earlier describe in this file legitimately leaves `A_ACTIVITY_IDS[3]` linked to A's OWN
+    // deal, and asserting the stronger thing measured RED against the FIXED route on the first
+    // run. What the guard promises is narrower and this is it: every deal that IS serialized
+    // belongs to the caller.
+    for (const row of body.data) {
+      if (!("deal" in row)) continue
+      expect((row.deal as { owner_id: string }).owner_id).toBe(USER_A)
+    }
+
+    // And B's deal notes — a column `serializeDeal` projects — appear nowhere in the payload. This
+    // is the half that also covers the nested organization and person, which `serializeDeal`'s
+    // caller spreads in beside it and which a key check on `deal` alone would not see.
+    expect(JSON.stringify(body)).not.toContain(`${PREFIX}B-secret`)
+
+    await db.update(activities).set({ dealId: null }).where(eq(activities.id, target))
+  })
+
+  it("THE POSITIVE ANCHOR: A listing with ?expand=deal DOES get A's own deal, notes and all", async () => {
+    const target = A_ACTIVITY_IDS[6]
+    await db.update(activities).set({ dealId: DEAL_A }).where(eq(activities.id, target))
+
+    const body = await listExpandedAs(keyA.authorizationHeader, "?expand=deal")
+
+    const row = body.data.find((r) => r.id === target)
+    expect(row).toBeDefined()
+    const deal = row?.deal as { id: string; owner_id: string; notes: string | null } | undefined
+    expect(deal?.id).toBe(DEAL_A)
+    expect(deal?.owner_id).toBe(USER_A)
+    expect(deal?.notes).toBe(`${PREFIX}A-secret`)
+
+    await db.update(activities).set({ dealId: null }).where(eq(activities.id, target))
+  })
+
+  it("B listing with ?expand=deal is refused A's deal too — the guard is not A-specific", async () => {
+    // The B-side symmetry cell, matching the one the PUT describe already carries. A guard written
+    // as `ctx.userId === USER_A` would pass every assertion above.
+    const target = B_ACTIVITY_IDS[1]
+    await db.update(activities).set({ dealId: DEAL_A }).where(eq(activities.id, target))
+
+    const body = await listExpandedAs(keyB.authorizationHeader, "?expand=deal")
+
+    expect(body.meta.total).toBe(B_OWNED)
+    expect(body.data.map((r) => r.id)).toContain(target)
+    expect(body.data.find((r) => r.id === target)).not.toHaveProperty("deal")
+    for (const row of body.data) {
+      if (!("deal" in row)) continue
+      expect((row.deal as { owner_id: string }).owner_id).toBe(USER_B)
+    }
+    expect(JSON.stringify(body)).not.toContain(`${PREFIX}A-secret`)
+
+    await db.update(activities).set({ dealId: null }).where(eq(activities.id, target))
+  })
+})
+
+/* ---------------------------------------------------------------------------
  * WR-01 — the 500s, reproduced against real PostgreSQL and then closed
  *
  * `withApiAuth` has no `try`/`catch` and this route wrapped nothing, so a database error propagated
