@@ -125,3 +125,31 @@ a subsystem this phase does not own. The executor scope boundary says pre-existi
 unrelated files are logged, not fixed. It is independent of this plan's work: it reproduces on the
 file alone, and 49-06's own file contributes 18 passing cells with a clean two-part `afterAll`
 (234 → 252 passed, nothing else moved).
+
+---
+
+## DEF-49-05 — the survivor-first ORDERING has no behavioural detector
+
+**Found by:** plan 49-08, ablation A3.
+**Status:** deferred, named, not absorbed.
+
+Plan 49-08's decision 4 orders the survivor's post-commit recalculation BEFORE the reparented
+children's, and hands the recomputed blob forward so the children resolve `{{Organization.*}}`
+against fresh parent values rather than against the row captured by the survivor UPDATE's
+`.returning()`.
+
+**Ablation A3 moved the survivor's block after the children's. Two unit cells reddened. The
+behavioural file stayed 15/15 GREEN.** That is not a gap in the ablation — it is a gap in the
+FIXTURE, and it is structural: `dedup-formula.db.test.ts` reparents a `deal`, and there are no
+`type='formula'` definitions on `deal`, so `childReferencesChangedParentField` returns false and no
+child is ever recomputed whichever order the two blocks run in.
+
+**What closing it would take:** a second minted definition, `type='formula'` on `deal`, whose
+expression reads `{{Organization.<parent formula name>}}`, plus a cell asserting the reparented
+deal's stored value is derived from the survivor's POST-recalculation parent value and not from its
+pre-recalculation one. That is a SECOND-HOP claim about `recalcReparentedChildren`, which is
+Phase 39 work this phase did not open, and it belongs with WR-02 (the survivor's PRE-EXISTING
+children keeping `Organization.*` values that a merge made stale) rather than with DATA-01.
+
+**Until then the ordering claim rests on two unit cells and is reported that way** — see 49-08's
+SUMMARY, which does not claim behavioural discrimination for it.
