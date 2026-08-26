@@ -58,6 +58,10 @@ Status legend — **v1.4** promoted for scoping · **recorded** real but deliber
 | — | `40-UI-SPEC` V-9 names the wrong helper | **recorded** — doc drift |
 | **SEC-47-A** | SMTP certificate verification disabled unconditionally | **recorded** — larger than any allowlisted nodemailer advisory |
 | **SEC-47-B** | `matches_regex` runs a user-supplied regex unbounded on the request path | **recorded** — the only remaining unbounded engine on the execution path |
+| **SEC-48-C** | Workflow `fieldMapping` still plants a foreign FK on the caller's own row | **recorded** — owned by Phase 49; DEF-48-05 |
+| **SEC-48-D** | Any API key can mail any address from the app's sending domain | **recorded** — a recipient-policy decision, not a predicate |
+| **TS-48-A** | `noUncheckedIndexedAccess` is off; WR-10 was the second bug it hid | **recorded** — whole-repo strictness change |
+| **IMP-48-A** | Three more unscoped lookups in the CSV importer | **recorded** — blocked on a duplicates decision; DEF-48-06 |
 | — | Soft-deleted users' private views are unreachable | **accepted** |
 | — | `/deals` pipeline-only views are saveable but not exportable | **accepted** |
 | **D-45-03** | `/deals` pipeline select empty label in dark mode | **closed** — disproven 2026-08-18 |
@@ -1494,3 +1498,113 @@ operations, (c) documents or explicitly excludes the `audit` and `trash` route f
 the gate's subject list from 9 to the full 59 with the same both-polarity structure it already uses —
 `REQUIRE_*_OPERATIONS` for what a route can return, `MUST_NOT_DECLARE_403_OPERATIONS` for what it
 cannot. Step (d) is the point; (a)-(c) without it just resets the clock on the same drift.
+
+---
+
+## Found by the Phase 48 iteration-2 code review and its fix pass, 2026-08-26
+
+### SEC-48-C — the workflow engine can attach the caller's record to another owner's record id — **recorded, owned by Phase 49**
+
+**Full evidence:** `.planning/phases/48-rest-api-authorization/deferred-items.md` **DEF-48-05**
+(reproduction, the six affected reference columns, and why the mutation layer cannot take a blanket
+owner predicate). Registered here because a finding that lives only in a phase artifact is a finding
+nobody will read again — this file's own Phase 40 lesson.
+
+CR-02 closed the **target** of a `crm_action` node for all four entities
+(`src/lib/execution/actions/crm.ts`), so the engine can no longer read, write, delete or emit another
+owner's row. What is still open is the node's `fieldMapping` **reference columns** — `activity.dealId`
+and `assigneeId`, `deal.organizationId` / `personId` / `stageId`, `person.organizationId` — which the
+mutation helpers validate for EXISTENCE only (`assigneeId`: not at all). Three ordinary `/api/v1`
+requests plant a foreign FK on the caller's own row, and `src/app/activities/[id]/page.tsx:41-52`
+renders the foreign parent's title, stage and pipeline name because that join carries no owner
+predicate.
+
+**Why not fixed in the review-fix pass:** the remedy is the mutation layer's contract, and that
+contract cannot be a blanket owner predicate — `src/lib/bulk/dispatch.ts:20-34` records the
+asymmetry, and `src/app/deals/actions.ts` grants admins a documented bypass at six call sites, so
+`updateDealMutation` / `deleteDealMutation` are legitimately called with an admin's `userId`. This is
+Phase 49's declared subject (SEC-04 / DATA-01 / DATA-02).
+
+**Also corrected by this pass:** DEF-48-03's two claims that the remaining `activities.deal_id`
+writer "needs a hand-crafted server-action call" and that "what remains is an INTEGRITY gap … not a
+confidentiality one" were both FALSE. That entry is now marked superseded in place rather than
+rewritten, so the correction stays visible.
+
+---
+
+### SEC-48-D — any API key can send mail from the app's sending domain, to any address, with caller-authored copy — **recorded**
+
+**Found during:** the CR-02 fix, while auditing the other five action handlers for the same
+`/api/v1`-reachable pattern.
+
+`src/lib/execution/actions/email.ts:25-53` builds its recipient list from
+`emailConfigSchema.recipients`, which is `array({ type: enum("user"|"dynamic"), value: string })` with
+**no constraint on `value`**:
+
+- `{"type":"dynamic","value":"<any address>"}` is interpolated and pushed straight into the send list.
+- `{"type":"user","value":"<any user id>"}` is resolved by
+  `select email from users where id in (…)` — **no owner or self predicate** — so it both delivers to
+  and confirms the existence of an arbitrary user's address.
+
+`src/lib/execution/actions/notification.ts:22-27` has the identical unscoped `users.email` read.
+
+Reachable from the same three requests as CR-02 (`POST /api/v1/workflows` →
+`PUT …/{id}` `{"active":true}` → `POST …/{id}/run`), with a caller-authored `subject` and `body`. And
+`.env` points `SMTP_PORT=465` at a real relay, not at the local Mailhog — the fact
+`notification.ts`'s own dry-run gate comment calls "the highest-severity finding of the phase" that
+introduced it.
+
+**Framed honestly:** this is NOT an owner-boundary defect of the kind CR-01/CR-02 are. Any
+signed-in user can already do the same through the workflow editor, so an API key is not gaining a
+privilege the session does not have. What is recorded is (a) that the app is an open mail relay from
+its own sending domain for every authenticated principal, and (b) that `users.email` is readable for
+an arbitrary user id, which is a directory-disclosure oracle. Both are product decisions about what
+a workflow may do, not a predicate to tighten, which is why nothing was changed.
+
+**Suggested owner:** a plan that decides the recipient policy (self + explicitly shared users? a
+verified-domain allowlist for `dynamic`?) and measures what recipient configurations exist in the
+live `workflows` table before narrowing anything. Do not fold it into a security-predicate task.
+
+---
+
+### TS-48-A — `noUncheckedIndexedAccess` is off, and WR-10 was the second bug it hid — **recorded**
+
+**Found during:** the WR-10 fix. `tsconfig.json` sets `strict: true` but not
+`noUncheckedIndexedAccess`, so `const [row] = await db.update(…).returning()` types `row` as the row
+while the runtime value is `undefined` whenever the statement matched nothing. Two `/api/v1` PUTs
+dereferenced that outside the `try` written to catch exactly this class
+(`stages/[id]/route.ts`, `activities/[id]/route.ts`) — both fixed, both now `| undefined` with an
+explicit 404.
+
+**What is deferred:** turning the flag on so the compiler finds the remaining
+`const [x] = await … .returning()` sites and every other unchecked indexed read, rather than a race
+finding them. It is a whole-repo compiler-strictness change: the blast radius is every indexed access
+in `src/`, it cannot be verified inside a review-fix scope, and it would arrive with no test of its
+own.
+
+**Suggested owner:** a plan that (a) turns the flag on, (b) reports the error count as a measurement
+before fixing anything, and (c) treats each site as a decision (is `undefined` reachable here, and
+what is the right answer if it is) rather than a `!` to add. A blanket non-null-assertion pass would
+silence the compiler and keep every bug.
+
+---
+
+### IMP-48-A — three more unscoped lookups in the CSV importer — **recorded**
+
+**Full evidence:** `.planning/phases/48-rest-api-authorization/deferred-items.md` **DEF-48-06**.
+
+CR-03 closed `importActivities`' deal lookup (`src/app/import/actions.ts`). `importPeople`'s and
+`importDeals`' `existingOrgs` / `existingPeople` reads (`:380-381`, `:528-529`, `:534-535`) and
+`importDeals`' `allStages` read (`:540-543`) are unscoped in the same way, but they feed FUZZY
+matching and AUTO-CREATION, so scoping them makes every import invent a per-owner duplicate of a
+shared organization or person — across 46,054 organizations and 38,348 people, with a whole
+duplicate-detection subsystem (Phase 39) that exists because duplicates are expensive here. The
+`allStages` half is a third shape again: stages are owned through `pipelines.owner_id`, and
+`getDefaultStage()` reads pipelines unscoped, so scoping the match without the default makes the two
+paths disagree.
+
+**Includes a disagreement with the review, stated rather than skipped:**
+`src/lib/import/pipedrive-api-import-actions.ts:897-901` is listed by CR-03 as the "same unscoped
+dedupe". It is not, and it must not be scoped: that importer maps Pipedrive owners onto Pipelite
+users and writes rows owned by those mapped users, so its dedupe is cross-owner BY DESIGN. Scoping it
+to the importing user would duplicate every record belonging to another mapped user.

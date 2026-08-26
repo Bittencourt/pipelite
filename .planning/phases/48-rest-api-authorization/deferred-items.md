@@ -72,6 +72,31 @@ account lifecycle would be a different requirement.
 
 ## DEF-48-03 — `createActivityMutation` still validates deal EXISTENCE, not ownership
 
+> **SUPERSEDED 2026-08-26 by the iteration-2 review-fix pass. Two of this entry's claims were
+> WRONG and are corrected below; the entry is kept rather than rewritten so the correction is
+> visible.**
+>
+> - **"reaching it needs a hand-crafted server-action call" — FALSE.** It needs three ordinary
+>   `/api/v1` requests through the workflow engine (`POST /api/v1/workflows` →
+>   `PUT …/{id}` `{"active":true}` → `POST …/{id}/run`), and it needs an ordinary CSV upload
+>   through `importActivities`. Both were live.
+> - **"What remains is an INTEGRITY gap … not a confidentiality one" — FALSE.** The planted row
+>   IS read across the owner boundary: `src/app/activities/[id]/page.tsx:41-52` joins
+>   `deals`/`stages`/`pipelines` off `activities.deal_id` with no owner predicate and renders the
+>   deal title, stage name and pipeline name at `:202-213`. The two `/api/v1` read guards close
+>   the API surface only.
+> - **The writer enumeration was one entry short of four**, not one of two. The four are: the
+>   session-auth server action (this entry), the CSV import (**closed** — CR-03,
+>   `src/app/import/actions.ts`), the workflow-engine `crm_action` **target** (**closed** —
+>   CR-02, `src/lib/execution/actions/crm.ts`), and the workflow-engine `crm_action`
+>   **fieldMapping reference** (**still open** — DEF-48-05 below, which is the part of this entry
+>   that survives).
+>
+> **What is still deferred from this entry:** the mutation-layer half. `createActivityMutation`
+> and `updateActivityMutation` still validate `dealId` for existence only, and `assigneeId` not at
+> all. Owner: Phase 49 (SEC-04/DATA-01/DATA-02), which is the phase for mutation-layer truth.
+
+
 **Found during:** the CR-01 fix (code review remediation pass).
 
 CR-01 was fixed in the two `/api/v1` ROUTES — `activities/route.ts` POST and
@@ -135,3 +160,109 @@ a different plan (a sort spill, or an index-only scan over thousands of tied row
 performance-shaped fixture, not a correctness-shaped one, and is out of proportion to the defect.
 
 **Owner:** unassigned. Recorded so the guard is not mistaken for evidence.
+
+---
+
+## DEF-48-05 — the workflow engine can still attach one of the caller's OWN records to another owner's record id
+
+**Found during:** the CR-02 fix (iteration-2 code-review remediation pass). This is the surviving
+half of DEF-48-03, restated with a correct reproduction.
+
+**What is closed.** CR-02 closed the **target** of a `crm_action` node: `resolveIdByLookup` is now
+owner-scoped at the query and `assertCallerOwnsTarget` refuses a caller-authored `targetId` that is
+not one of the caller's own live records, for all four entities
+(`src/lib/execution/actions/crm.ts`). So the engine can no longer read, write, delete or emit
+another owner's row.
+
+**What is still open.** The node's `fieldMapping` carries **reference columns**, and those still
+reach the mutation layer unvalidated for ownership:
+
+| entity | reference key | mutation check today |
+|---|---|---|
+| `activity` | `dealId` | `and(eq(deals.id, …), isNull(deals.deletedAt))` — existence (`src/lib/mutations/activities.ts:141-151`, `:235-245`) |
+| `activity` | `assigneeId` | **none at all** |
+| `deal` | `organizationId` | existence (`src/lib/mutations/deals.ts:311-329`) |
+| `deal` | `personId` | existence (same) |
+| `deal` | `stageId` | existence only, and stages are owned through `pipelines.owner_id` |
+| `person` | `organizationId` | existence |
+
+**Reproduction (three `/api/v1` requests, one API key, no id guessing needed beyond one read):**
+
+1. `GET /api/v1/deals` as user A to learn A's own deal ids — or note that a victim's deal id can be
+   obtained anywhere it leaks; the point is that the id is *not checked*.
+2. `POST /api/v1/workflows` with
+   `nodes: [{"id":"n1","type":"action","config":{"actionType":"crm_action","entity":"activity","operation":"create","fieldMapping":{"title":"x","typeId":"<any>","dueDate":"2026-01-01","dealId":"<B's deal id>"}}}]`
+   → 201.
+3. `PUT …/{id}` `{"active":true}` → 200, then `POST …/{id}/run` → 201.
+
+**Wrong output:** an activity owned by A carrying B's `deal_id`. `?expand=deal` correctly suppresses
+the deal on both `/api/v1` projections (CR-01's read guards, now covered by WR-08 as well), but
+`src/app/activities/[id]/page.tsx:41-52` joins off that column with no owner predicate and renders
+B's deal title, stage and pipeline name at `:202-213`. The `update` operation reaches the same place
+through `updateActivityMutation`'s `dealId` branch.
+
+**Why it was not fixed in this pass.** The fix belongs in the mutation layer, and the mutation layer
+cannot take a blanket owner predicate: `src/lib/bulk/dispatch.ts:20-34` records that the ownership
+predicate is ASYMMETRIC, and `src/app/deals/actions.ts:89,161,254,347,445,482` all read
+`deal.ownerId !== session.user.id && session.user.role !== "admin"`, so `updateDealMutation` and
+`deleteDealMutation` are legitimately reached with an admin's `userId`. Closing the reference half
+means deciding what the mutation layer's contract IS, which is Phase 49's declared subject
+(SEC-04 / DATA-01 / DATA-02). A second boundary check in `crm.ts` would close the `/api/v1` path
+only and would then be a fourth place the same rule is spelled — which is how CR-01 came to have
+five writers in the first place.
+
+**Owner:** Phase 49 (Mutation-Layer Truth After Commit). Do not fold it into a route task.
+
+---
+
+## DEF-48-06 — three more unscoped lookups in the CSV importer, deliberately left
+
+**Found during:** the CR-03 fix (iteration-2 code-review remediation pass), while auditing every
+`findMany` in `src/app/import/actions.ts` rather than only the one the review cited.
+
+CR-03 closed `importActivities`' deal lookup. Three more reads in the same file carry no owner
+predicate and feed rows whose `ownerId` is `session.user.id`:
+
+| line | read | consumer |
+|---|---|---|
+| `src/app/import/actions.ts:380-381` | `existingOrgs` (all live organizations) | `resolveOrganization` in `importPeople` → `people.organization_id` |
+| `:528-529` | `existingOrgs` | `resolveOrganization` in `importDeals` → `deals.organization_id` |
+| `:534-535` | `existingPeople` (all live people) | `importDeals` → `deals.person_id` |
+| `:540-543` | `allStages` (all stages, `with: { pipeline: true }`, filtered only on `!pipeline.deletedAt`) | `importDeals` → `deals.stage_id` |
+
+**Why they are NOT the same fix, and why closing them here would have been worse than leaving them.**
+
+- The organization and person reads feed **fuzzy matching** (`fuzzyMatchOrganization`) and
+  **auto-creation**: no match means the importer INVENTS a row (`actions.ts:200-220`). Scoping them
+  therefore does not produce a warning like the deal case — it produces a per-owner **duplicate** of
+  every shared organization and person on every import. This deployment holds 46,054 organizations
+  and 38,348 people, and an entire duplicate-detection and merge subsystem exists (Phase 39) because
+  duplicates are expensive here. Changing what the importer matches against changes duplicate volume
+  across those tables. That is a product decision with its own verification, not a review-fix edit.
+- `allStages` is a third shape again: `stages` has no owner column, ownership runs through
+  `pipelines.owner_id`, and `getDefaultStage()` (`:155-170`) reads `pipelines` unscoped and is the
+  fallback for every unmatched stage name. Scoping the match without scoping the default makes the
+  two paths disagree about the same import. Pipelines are also admin-managed in this app
+  (`src/app/admin/pipelines/actions.ts`), so "who owns a pipeline" is a question with a product
+  answer, not a lookup to tighten.
+
+Deals have no dedup subsystem and no auto-creation, which is exactly why CR-03's own query was
+contained and these are not.
+
+**ALSO RECORDED HERE: a disagreement with the review.** CR-03 lists
+`src/lib/import/pipedrive-api-import-actions.ts:897-901` as "same unscoped dedupe, narrower reach".
+It is **not the same defect and must not be scoped.** That importer MAPS Pipedrive owners onto
+Pipelite users and writes rows owned by those mapped users, not by the importer —
+`ownerId: pdOrg.owner_id` → `ownerId: orgData.ownerId` (`:737`/`:766`), the same pattern for people
+(`:828`/`:861`), deals (`:925`/`:1007`) and activities (`:1061`/`:1108`). Its dedupe is cross-owner
+**by design**: it is recreating a whole multi-user Pipedrive account, and scoping it to
+`importingUserId` would duplicate every record belonging to another mapped user. Left unchanged
+deliberately.
+
+**Fix when picked up:** one plan covering the organization/person match policy for imports, with a
+measurement of how many additional rows scoping would create against a copy of the live data, and a
+decision on pipeline ownership for the stage half. Do not fold it into a security task; the security
+half (a foreign FK that the session UI then renders) is real but the remedy is a duplicates
+decision.
+
+**Owner:** unassigned. Candidate for the same phase as the Phase 39 duplicate work.
