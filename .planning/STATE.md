@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Debt Paydown
 status: executing
-last_updated: "2026-08-26T01:22:10.046Z"
+last_updated: "2026-08-26T03:09:13.586Z"
 last_activity: 2026-08-26 -- Phase 48 execution started
 progress:
   total_phases: 9
   completed_phases: 2
   total_plans: 30
-  completed_plans: 27
+  completed_plans: 29
   percent: 22
 ---
 
@@ -20,8 +20,106 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-24)
 
 **Core value:** API-complete CRM core that handles fundamentals well
-**Current focus:** Phase 48 — REST API Authorization
-Next: `/gsd:verify-phase 47` (and Phase 46 is still owed its own `/gsd:verify-phase 46`).
+**Current focus:** **Phase 48 — REST API Authorization is COMPLETE.** All 10 plans, 10 SUMMARYs,
+signed off by 48-10 on 2026-08-26.
+Next: `/gsd:verify-phase 48` (and Phases 46 and 47 are each still owed their own
+`/gsd:verify-phase`).
+
+**THE NEW SUITE BASELINE IS 5376 passed / 32 skipped, 178 files passed / 2 skipped.** RSC **8/8**.
+Do **not** inherit an older number — this milestone has now paid for that twice (STATE.md said 5164
+while the tree was at 5237, and before that 4845 while it was at 5164). The db project is a **separate
+baseline: 98 passed across 4 files** under `npm run test:db`.
+**And do not gate on `npm run test:db`'s EXIT CODE — it exits 1 on a fully green suite** (DEF-48-01:
+`queries.db.test.ts`'s `afterAll` issues an `id`-keyed leftover query against `saved_view_defaults`,
+which has no `id` column → `42703`). Gate on the reported counts.
+
+**Phase 48 closed a live IDOR, and the exploit is dead over real HTTP against a REBUILT image.**
+`docker compose up -d --build` moved the image `8f07a18eddad` → **`eba9cfa1c4be`**; a matching id
+would have invalidated every measurement, which is why the id was compared rather than the
+container's "Starting" line trusted (`restart` runs the OLD image). Thirteen research transcripts
+re-run against `http://localhost:3001`: `GET`/`PUT`/`DELETE` on another user's activity went
+**200 / 200 / 204 → 403 / 403 / 403**; both owner-reassignment vectors went **200 / 201 → 422** naming
+field `owner_id`, with the persisted owner confirmed unchanged and the victim's row count unchanged;
+user B's `GET /api/v1/activities` went from **100 rows none of which were B's, `meta.total` 79 024** to
+**1 own row, `meta.total` 1**; `GET /api/v1/stages/:id` for its legitimate owner without `?expand`
+went **403 → 200** with **no `pipeline` key** in the bare body; and `?limit=5&offset=<live count>` and
+`&offset=999999` went **500 / SQLSTATE 42601 → 200 with `data: []`**. F3 reversed too — `?limit=5`
+returns the owner's stage instead of an empty page beside `meta.total: 1`. The container log for the
+probe window carries **zero `42601`**, floored at 20 authenticated requests so the absence is not
+vacuous, with the matcher falsified against `48-RESEARCH.md` at 8 hits. **The live database is
+unchanged: `79022 / 73 / 12 / 10 / 8 / 214`**, every `p48gate-` row deleted in foreign-key order and
+its absence asserted by count; the plaintext probe keys were never written into a committed file.
+
+**48-10 signed the phase off by auditing its evidence. 26 negative controls judged against verbatim
+output: 26 DELIVERED, 0 NOT DELIVERED.** The six the phase owed (A-F), the two it grew (A′, A″) and
+nine more it produced. **Four re-falsified fresh at sign-off:** control A, the exact SEC-48-B ablation
+→ `1 failed | 57 passed (58)` naming all three offenders by file:line:verb; control B1 → `10 failed |
+48 passed` with the WR-11 token floor firing at ``ctx.userId` fell to 0 occurrences (measured 22)`;
+the SC-4a ablation → `3 failed | 10 passed` with **both non-owner cells staying green**, which is why
+SC-4's verdict cites one cell only; and a **fourth, new** one — the rename question put to the OpenAPI
+gate for the first time (`Forbidden` → `AccessRefused`, declaration and all six `$ref`s moved
+together) → **RED at `7 failed | 30 passed`**. **No twelfth vacuous gate found** — four tests applied
+to **eight** artifacts (the plan said seven and then listed eight; the off-by-one is recorded, not
+rounded). The Q10 matcher was **extracted and RUN**, not read, on five fixtures whose text appears
+nowhere in the gate file, each over a parse floor: it correctly flags a hard-coded comparand, an
+identity compared against a non-ownership column, and — the load-bearing new result — a `where` clause
+scoped to a **caller-supplied** owner. **48-09's eleventh vacuous check is accepted rather than
+re-counted:** the dead needle `'guarded non-empty'` inside plan 48-09's own Task 3 verification
+script, which matched nothing and never did (the real sentence was ``(guarded by `stageList` being
+non-empty)``). It lived in a **plan artifact**, so nothing vacuous shipped, and 48-09's own control C3
+is what found it. One floor named as brittle rather than softened: **`MIN_EXEMPT_MATCHED = 11`**,
+pinned in both directions unlike every other number in that file — a false-RED risk on a legitimate
+route consolidation, not vacuity, the same shape as Phase 47's `MIN_NON_TEST_PERFORMANCE_NOW = 2`.
+
+**Verdicts:** SC-1 **PROVED**, SC-2 **PROVED**, SC-3 **PROVED as amended**, SC-4 **PROVED**, SC-5
+**PROVED as amended**, **SEC-48-B CLOSED**. Two of them carry a caveat that must travel with the
+verdict: **SC-3's live-dataset half is a smoke check, not a proof** — all 79 022 live activities
+belong to one admin user, so scoped count equals unscoped count and the original criterion was
+satisfied by the broken route; the proof is the seeded two-owner floor/ceiling/discriminator/
+cross-check. And **SC-4 is carried by `owner + no expand → 200` alone** — the other three cells were
+measured green *before* the fix and are regression guards, never evidence. **SEC-48-B's single number:
+the ablation that left 5237 tests green now fails exactly 1**, and `organizations/[id]`'s own test file
+still does not notice.
+
+**Two limitations Phase 48 ships on purpose.** The Q10 gate is a **presence** gate: it proves a check
+exists, not that it is correct, and its own header names the measured counter-example —
+`stages/[id]/route.ts` GET satisfied rule R2 **while it WAS the SEC-02 defect**. A green run of it must
+never be read as covering SEC-02. And the OpenAPI gate covers **only the nine operations this phase
+changed**; `BACKLOG.md` § **DOC-48-01** records the rest with numbers: `401` declared on 22 of 59
+operations against all 59 that can return it, `429` on 12 of 59, `403` on 8 of 59 against at least 12,
+and **36 route files against 27 documented path items** — the larger defect.
+
+**Open, with owners, carried out of Phase 48:**
+
+- **SEC-48-A** — `workflows/[id]/runs` and `runs/[runId]` are still unscoped reads. Deliberately
+  deferred, but **enforced rather than documented**: `ACCEPTED_KNOWN_ROUTES` asserts the detector
+  **STILL FLAGS** both, at inverted polarity, so whoever fixes them finds this control red and is
+  forced to shrink the list.
+
+- **DEF-48-01** — `npm run test:db` exits non-zero on a green suite. Unchanged.
+- **DEF-48-02** — a soft-deleted or `rejected` user's API key still authenticates; `validateApiKey`
+  never reads `users.deletedAt` or `users.status`.
+
+- **DOC-48-01** — 50 of 59 spec operations ungated; the both-polarity structure to extend from 9 to 59
+  already exists in the gate.
+
+- **A wave-scheduling hazard for Phases 49-54:** `scripts/dedup-db-test-setup.sh` drops and rebuilds
+  **every** schema in `pipelite_dedup_test`. It was safe this wave only because 48-09 touched no
+  `*.db.test.ts`. **Any future wave scheduling two db-test plans in parallel will corrupt both.**
+
+- **The 403-versus-404 existence leak on `/api/v1`** — a 403 confirms the record exists. Accepted
+  deliberately (SC-4 mandates 403 and Phase 25 chose 404 for webhooks); recorded, not acted on.
+
+- **The route PUT bypasses `updateActivityOwnerMutation`**, whose own doc-comment forbids routing an
+  owner change through the generic path. Now only reachable as a self-assignment, so it is a
+  mutation-layer/audit consistency item rather than a hole.
+
+**Still open from Phase 47, unchanged by Phase 48:** `origin/master` is `a58b9e1` with **the phase-46,
+47 and 48 commits all unpushed**, so `Migration chain check`, `Security audit policy` and
+`Registry signature verification` have still never executed on GitHub — **Phase 46 GAP 1 and
+D-47-12-A are both still open, and one operator push closes both, and SEC-05 with them.** Also
+carried: D-47-08-A, D-47-08-B, D-47-06-A, SEC-47-A (`src/lib/email/client.ts:20` sets
+`tls: { rejectUnauthorized: false }` unconditionally) and SEC-47-B.
 **QG-01 is COMPLETE. SEC-05 stays PARTIAL and its box stays `[ ]`.**
 **47-12 is PARTIAL, not complete** — its local half only; see the blocker below.
 **47-13 signed the phase off by auditing its evidence.** Nine negative controls judged: eight
@@ -314,6 +412,7 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 | Phase 47 P09 | 26min | 3 tasks | 7 files |
 | Phase 47 P12 | 12min | 1 tasks | 1 files |
 | Phase 47 P13 | 21min | 2 tasks | 0 files |
+| Phase 48 P10 | 35min | 3 tasks | 3 files |
 
 ## Decisions
 
@@ -517,6 +616,13 @@ in the same directory (drizzle-kit reads only `.env`). Do NOT "fix" `.env` back 
 - [Phase 47]: 47-12: the runner half was NOT simulated — no push, no branch (not even locally), no PR, no gh object of any kind — 46-06's standard applied verbatim: record the gap rather than manufacture a green run. origin/master is still a58b9e1 with 111 commits unpushed, so Migration chain check / Security audit policy / Registry signature verification have still never executed on GitHub. A local red presented as a GitHub red would be the exact defect milestone v1.4 exists to remove. No throwaway branch was created even locally, because an unpushed branch is an artifact whose only purpose is a push that is not happening, and containment is stronger with zero commits.
 - [Phase 47]: 47-12: the control was installed into the REAL working tree, not a scratch lockfile — A scratch directory re-verifies the ADVISORY (done separately for assumption A7: exactly 1 critical, GHSA-xvch-5gv4-984h, range >=1.0.0 <1.2.6, slopcheck scan OK) but does not exercise this project's audit-policy.json, its 39 allowlist entries, its failOn, or its stale-entry detector. npm install --save-dev was chosen over --package-lock-only so the installed tree and lockfile agree, which is what the CI step's ordering after npm ci actually reproduces, and which is required for the npm audit signatures isolation check since that subcommand reads the installed tree.
 - [Phase 47]: 47-12 finding: minimist was ALREADY hoisted at a safe 1.2.8, so the control DOWNGRADED an existing node to 1.2.5 rather than adding one — 1.2.8 was pushed into nested copies under shadcn and tsconfig-paths, whose declared ranges the control does not satisfy — a closer analogue of how a real vulnerable dependency arrives than a naive addition. Found only by parsing both lockfiles key-by-key; git diff --numstat's 25/7 lines on a 690KB file is far too coarse to see it. Confirmed in the same pass: overrides.vite untouched, removed: [], no rolldown/tsx/esbuild among added, lockfileVersion 3 -> 3.
+- [Phase 48]: the exploit is re-checked against a REBUILT image and the image id is compared -- docker compose restart runs the OLD image, so a container's Starting line is not a freshness signal
+- [Phase 48]: SC-4 is carried by owner + no expand -> 200 ALONE; the three non-owner/expand cells were measured green before the fix and are labelled regression guards, never evidence
+- [Phase 48]: SC-3's live-dataset half is a smoke check, not a proof -- all 79,022 activities have one owner, so scoped equals unscoped and the original criterion was satisfied by the broken route
+- [Phase 48]: the Q10 gate is a PRESENCE gate -- it cannot tell authorizes-correctly from authorizes; stages/[id] GET satisfied rule R2 while it WAS the SEC-02 defect
+- [Phase 48]: an accepted authorization hole is asserted STILL BROKEN at inverted polarity (ACCEPTED_KNOWN_ROUTES), so fixing it forces the exemption list to shrink
+- [Phase 48]: a false positive in an authorization gate EXTENDS THE RULES (R5) rather than earning an exemption -- a silent exemption would have been the eleventh vacuous gate, inside the gate built to delete the other ten
+- [Phase 48]: owner-only on /api/v1, NO admin bypass -- the only holder of live activities is an admin, so a bypass makes SC-3 permanently vacuous
 
 ### Quick Tasks Completed
 
@@ -624,5 +730,5 @@ open. No pending todos, no UAT/verification debt (audit-uat: 0 items), working t
 Phase: 48 (REST API Authorization) — EXECUTING
 Plan: 1 of 10
 Status: Executing Phase 48
-Progress: [██████████] 100%
+Progress: [██████████] 97%
 Last activity: 2026-08-26 -- Phase 48 execution started

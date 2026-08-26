@@ -71,7 +71,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 
 - [x] **Phase 46: Migration Chain & Toolchain Floor** - A clone of this repo builds its own database, and the documented commands work from the host (completed 2026-08-25)
 - [x] **Phase 47: Suite Trust & Supply Chain** - A red run means a defect, and the project has a stated position on its own advisories (all 14 plans executed 2026-08-25; **QG-01 complete, SEC-05 PARTIAL** — SC-4+s runner half is NOT PROVED, see 47-13-SUMMARY and D-47-12-A)
-- [ ] **Phase 48: REST API Authorization** - Every `/api/v1` route that touches a record authorizes the caller against that record
+- [x] **Phase 48: REST API Authorization** - Every `/api/v1` route that touches a record authorizes the caller against that record (all 10 plans executed 2026-08-26; **SEC-01, SEC-02 and QG-03 all PROVED**, 26/26 negative controls DELIVERED, the IDOR and the 500 both re-checked over real HTTP against a rebuilt image — see 48-10-SUMMARY)
 - [ ] **Phase 49: Mutation-Layer Truth After Commit** - A purge removes the bytes, a merge leaves the survivor consistent, a create response matches a read
 - [ ] **Phase 50: Export Authorization** - A non-admin cannot walk the customer table out through a filter that narrows nothing
 - [ ] **Phase 51: Board & List Volume** - The busiest board opens without loading every deal, and list counts describe the table rather than the page
@@ -322,7 +322,42 @@ Plans:
 - [x] 48-09-PLAN.md — OpenAPI 403/422 coverage behind a parsing gate, and the three stale prose claims corrected · SEC-01, SEC-02, QG-03
 
 **Wave 4** *(blocked on Wave 3)*
-- [ ] 48-10-PLAN.md — negative-control register, vacuity hunt, criterion verdicts, exploit re-checked over real HTTP against a rebuilt image, phase gate · SEC-01, SEC-02, QG-03
+- [x] 48-10-PLAN.md — negative-control register (26 controls, 26 DELIVERED), vacuity hunt (no twelfth found), criterion verdicts, exploit re-checked over real HTTP against a rebuilt image, phase gate · SEC-01, SEC-02, QG-03
+
+**Phase outcome, from 48-10-SUMMARY.md.** **Twenty-six negative controls judged against verbatim
+output: 26 DELIVERED, 0 NOT DELIVERED** — the six the phase owed (A-F), the two it grew (A′, A″), and
+nine more it produced as it went. **Four re-falsified fresh at sign-off:** control A (the exact
+SEC-48-B ablation → `1 failed | 57 passed`, three offenders named by file:line:verb), control B1
+(`ctx` removed from `IDENTITY_OBJECTS` → `10 failed | 48 passed`, the WR-11 token floor firing at
+`measured 22`), the SC-4a ablation (`3 failed | 10 passed`, **both non-owner cells staying green**),
+and a **new** one — the rename question put to the OpenAPI gate for the first time, RED at
+`7 failed | 30 passed`. The Q10 matcher was **extracted and RUN** on five fixtures the gate file does
+not contain, each over a parse floor; it correctly flags a `where` clause scoped to a caller-supplied
+owner. **No twelfth vacuous gate found** — four tests applied to eight artifacts; 48-09's eleventh
+(the dead needle `'guarded non-empty'` in its own plan's Task 3 script) is accepted rather than
+re-counted, and it lived in a plan artifact, so nothing vacuous shipped. One floor named as brittle
+rather than softened: `MIN_EXEMPT_MATCHED = 11`, pinned in both directions.
+
+**The exploit is dead over real HTTP against a REBUILT image** — `docker compose up -d --build`,
+image `8f07a18eddad` → **`eba9cfa1c4be`** (a matching id would have invalidated every measurement).
+Thirteen research transcripts re-run: GET/PUT/DELETE **200/200/204 → 403/403/403**, both owner
+reassignments **200/201 → 422** naming `owner_id`, B's list **100 foreign rows / `total: 79024` → 1 own
+row / `total: 1`**, the stage GET **403 → 200** with no `pipeline` key in a bare body, and
+`?offset=<live count>` and `?offset=999999` **500/`42601` → 200 with `data: []`**. F3 reversed too:
+`?limit=5` returns the owner's stage instead of an empty page. Container log for the window: **zero
+`42601`**, floored at 20 authenticated requests and the matcher falsified against a positive fixture.
+Live database unchanged at `79022 / 73 / 12 / 10 / 8 / 214`; every probe row deleted, absence asserted.
+
+**Verdicts:** SC-1 **PROVED**, SC-2 **PROVED**, SC-3 **PROVED as amended** (seeded proof; the
+live-dataset half is a smoke check, not a proof), SC-4 **PROVED** on `owner + no expand → 200` alone,
+the other three cells labelled regression guards and measured green before the fix, SC-5 **PROVED as
+amended**, SEC-48-B **CLOSED** — the ablation that left 5237 tests green now fails exactly **1**.
+Gate: **5376 passed / 32 skipped** (178 files + 2 skipped), RSC **8/8**, `tsc --noEmit` exit 0, lint
+**0 errors** / 122 warnings, `test:db` **98 passed** across 4 files (exit 1 is DEF-48-01's teardown,
+not a red suite), `db:check-migrations` exit 0, `security:audit` exit 0, `/api/health` 200 with
+**10/10** processors, tree clean. Phase 48's own delta closes **exactly**: 5237 + 12 + 9 + 13 + 10 +
+30 + 0 + 28 + 0 + 37 = **5376**. **SEC-48-A stays open by design** and is enforced rather than merely
+documented; **DOC-48-01** records 50 of 59 spec operations still ungated.
 
 ### Phase 49: Mutation-Layer Truth After Commit
 
