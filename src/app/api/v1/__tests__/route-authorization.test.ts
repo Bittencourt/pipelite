@@ -64,7 +64,7 @@
  * LOGGED instead, in an `it` whose only assertion was `MIN_ROUTE_FILES`. **A log line is not a
  * gate**, and that was said out loud rather than left for a reader to discover.
  *
- * Plan 48-08 (wave 2) deleted that `it` and its `console.log`, added the four exemption lists as
+ * Plan 48-08 (wave 2) deleted that `it` and its `console.log`, added the exemption lists as
  * LIVE CONTROLS (section 0 and section 5), added rule R5, and replaced the log with the array-form
  * `expect(GATE_OFFENDERS).toEqual([])` in section 6. Its falsification transcripts — a deleted
  * predicate, a renamed detector, a new unauthorized handler — are in `48-08-SUMMARY.md`.
@@ -287,27 +287,43 @@ const NO_OWNER_COLUMN_ROUTES = [
 const PUBLIC_ROUTES = ["src/app/api/v1/docs/route.ts"] as const
 
 /**
- * ACCEPTED KNOWN — two real, measured, unscoped reads, deferred out of phase 48 as BACKLOG item
- * **SEC-48-A**. Both read workflow-run records with no per-record ownership check whatsoever. They
- * are the same defect class as SEC-01; they are simply in a different subsystem, and folding them
- * in would widen a security fix past what one phase can verify.
+ * ── ACCEPTED_KNOWN_ROUTES IS GONE, AND THAT IS THE RECORD OF SEC-48-A BEING CLOSED ────────────
  *
- * **An accepted hole with no name is indistinguishable from an oversight. This list is the name.**
+ * There used to be a FOURTH list here, holding the two workflow-run reads that had no per-record
+ * ownership check at all:
  *
- * SEC-48-A's own text says: *"Run that gate against these two routes first; it should name them."*
- * It does — see the live control, which asserts both are STILL FLAGGED by the detector. That
- * inverts the usual polarity on purpose: when a later phase actually fixes SEC-48-A, this control
- * goes RED and forces whoever fixed it to shrink this list. An accepted hole that quietly stops
- * being a hole, and quietly stays on the list, is how a carve-out becomes permanent.
+ *   src/app/api/v1/workflows/[id]/runs/route.ts          (GET)
+ *   src/app/api/v1/workflows/[id]/runs/[runId]/route.ts  (GET)
+ *
+ * Its live control had INVERTED POLARITY on purpose: rather than asserting that a reason to be
+ * exempt still held, it asserted that the HOLE STILL EXISTED — that the detector still flagged
+ * both — so that whoever eventually fixed them would find it RED and be forced to delete the
+ * carve-out rather than let it become permanent.
+ *
+ * **It worked exactly as designed.** On 2026-08-26 both routes were scoped through
+ * `getWorkflow(id, context.userId)`, and running this file produced:
+ *
+ *   × ACCEPTED KNOWN: src/app/api/v1/workflows/[id]/runs/route.ts is STILL an unscoped read
+ *     (SEC-48-A) — expected 0 to be greater than 0
+ *   × ACCEPTED KNOWN: src/app/api/v1/workflows/[id]/runs/[runId]/route.ts is STILL an unscoped
+ *     read (SEC-48-A) — expected 0 to be greater than 0
+ *   × names every offender the exemptions suppress — expected [ …(10) ] to deeply equal [ …(12) ]
+ *
+ * So the list, its two controls and its `EXEMPT_LISTS` entry were deleted, `MIN_EXEMPT_MATCHED`
+ * fell 11 → 9, and `SUPPRESSED_BY_EXEMPTION` fell 12 → 10. Both routes are now covered by the
+ * ordinary offender sweep in section 6 — which is strictly stronger than any exemption, because it
+ * is the sweep that has to stay green rather than a list that has to stay accurate. The behavioural
+ * proof is `src/app/api/v1/workflows/__tests__/runs-owner-scope.db.test.ts` (real PostgreSQL, two
+ * real minted API keys, real `withApiAuth`); the paper trail is BACKLOG **SEC-48-A** / **SEC-48-E**
+ * and `deferred-items.md` **DEF-48-07**.
+ *
+ * This paragraph is left in place rather than deleted with the list, because the reason the three
+ * remaining lists are trustworthy is that the fourth one was made to fail and then removed.
  */
-const ACCEPTED_KNOWN_ROUTES = [
-  "src/app/api/v1/workflows/[id]/runs/route.ts",
-  "src/app/api/v1/workflows/[id]/runs/[runId]/route.ts",
-] as const
 
 /**
- * Total exempt paths, matched **by path** against `ROUTE_FILES`. Measured: **11** — 4 delegated,
- * 4 with no owner column, 1 public, 2 accepted-known.
+ * Total exempt paths, matched **by path** against `ROUTE_FILES`. Measured: **9** — 4 delegated,
+ * 4 with no owner column, 1 public. (Was 11; the 2 accepted-known went when SEC-48-A closed.)
  *
  * Pinned exactly rather than floored. Every other number in this file is a floor because the tree
  * may legitimately grow; this one may not drift in EITHER direction without someone writing a
@@ -315,14 +331,13 @@ const ACCEPTED_KNOWN_ROUTES = [
  * means a carve-out was deleted without its route being fixed, and the offender assertion would
  * then be doing the work of a `git blame`.
  */
-const MIN_EXEMPT_MATCHED = 11
+const MIN_EXEMPT_MATCHED = 9
 
-/** The four lists flattened, for the offender computation and the disjointness assertion. */
+/** The three lists flattened, for the offender computation and the disjointness assertion. */
 const EXEMPT_LISTS = [
   { name: "DELEGATED_ROUTES", paths: DELEGATED_ROUTES },
   { name: "NO_OWNER_COLUMN_ROUTES", paths: NO_OWNER_COLUMN_ROUTES },
   { name: "PUBLIC_ROUTES", paths: PUBLIC_ROUTES },
-  { name: "ACCEPTED_KNOWN_ROUTES", paths: ACCEPTED_KNOWN_ROUTES },
 ] as const
 
 const ALL_EXEMPT_PATHS: readonly string[] = EXEMPT_LISTS.flatMap((list) => [...list.paths])
@@ -549,7 +564,8 @@ const REJECTION_OPERATORS = new Set<ts.SyntaxKind>([
  * handler is safe — the eleventh vacuous gate, built inside the gate that exists to eliminate the
  * other ten. Extending the rule is strictly stronger: it recognises the SHAPE, so the next route
  * written this way is covered without anybody remembering to edit a list, and it keeps
- * `MIN_EXEMPT_MATCHED` at the eleven paths that are exempt for structural reasons.
+ * `MIN_EXEMPT_MATCHED` at the paths that are exempt for structural reasons — nine, since SEC-48-A
+ * closed and the two accepted-known workflow-run reads left.
  *
  * ── WHAT IT REQUIRES, AND WHY ALL THREE PARTS ─────────────────────────────────────────────────
  *
@@ -1553,11 +1569,16 @@ const TOTAL_OWNER_LIKE_ACCESSES = CORPUS.reduce(
  * one, because it must assert that the two SEC-48-A routes are still flagged — an assertion that
  * would be unsatisfiable against a list those routes have already been subtracted from.
  *
- * Measured after wave 1 merged: **13** — the 1 `activities` POST that rule R5 resolves below, 5
- * `custom-field-definitions`, 1 `docs`, 4 `workflow-templates` and the 2 `workflows/[id]/runs`.
- * Before wave 1 it was 17: the three `activities/[id]` verbs and the `activities` list GET dropped
- * out when plans 48-01 and 48-02 fixed them, which is this detector observing its own subject
- * being repaired.
+ * Measured **11** on 2026-08-26 — the 1 `activities` POST that rule R5 resolves below, 5
+ * `custom-field-definitions`, 1 `docs` and 4 `workflow-templates`.
+ *
+ * It was 13 after wave 1 merged, and the two that left are the `workflows/[id]/runs` reads, which
+ * dropped out when SEC-48-A was closed. Before wave 1 it was 17: the three `activities/[id]` verbs
+ * and the `activities` list GET dropped out when plans 48-01 and 48-02 fixed them. Every movement
+ * in this number so far has been this detector observing its own subject being repaired.
+ *
+ * Still read by a live control — the SEC-48-A cell in section 5 asserts both of those routes are
+ * ABSENT from it now, which is the mirror image of the inverted-polarity control it replaced.
  */
 const RAW_OFFENDERS = CORPUS.flatMap((entry) => entry.offenders)
 
@@ -1668,7 +1689,7 @@ describe("the gate does not sweep itself, and that is structural rather than an 
     expect(ROUTE_FILES.some((file) => file.includes("__tests__"))).toBe(false)
   })
 
-  it("is NOT named by any of the four exemption lists", () => {
+  it("is NOT named by any of the exemption lists", () => {
     // The second half of the SAME single mitigation, not a second one. The filename predicate is
     // what keeps this file out of the sweep; this asserts nobody has quietly added a BACKUP reason.
     //
@@ -1711,14 +1732,14 @@ describe("every exemption is a live control, not a comment", () => {
 
     expect(
       ALL_EXEMPT_PATHS.length,
-      `the four exemption lists total ${ALL_EXEMPT_PATHS.length} paths, measured 11 ` +
-        `(4 delegated + 4 no-owner-column + 1 public + 2 accepted-known). Pinned in BOTH ` +
-        `directions: up means the sweep silently narrowed, down means a carve-out was deleted ` +
-        `without its route being fixed.`
+      `the three exemption lists total ${ALL_EXEMPT_PATHS.length} paths, measured 9 ` +
+        `(4 delegated + 4 no-owner-column + 1 public). Was 11 until SEC-48-A closed and the two ` +
+        `accepted-known workflow-run reads left. Pinned in BOTH directions: up means the sweep ` +
+        `silently narrowed, down means a carve-out was deleted without its route being fixed.`
     ).toBe(MIN_EXEMPT_MATCHED)
   })
 
-  it("keeps the four exemption lists pairwise disjoint", () => {
+  it("keeps the exemption lists pairwise disjoint", () => {
     // A path in two lists would be justified by two different reasons at once, and each live
     // control would then be asserting a different thing about the same file. That is the kind of
     // contradiction that gets "resolved" by deleting an assertion.
@@ -1813,27 +1834,42 @@ describe("every exemption is a live control, not a comment", () => {
     expect(entry.counters.withApiAuthCalls).toBe(0)
   })
 
-  it.each(ACCEPTED_KNOWN_ROUTES)("ACCEPTED KNOWN: %s is STILL an unscoped read (SEC-48-A)", (file) => {
-    // ⚠ INVERTED POLARITY, DELIBERATELY. Every other control here asserts that a reason to be
-    // exempt still holds. This one asserts that the HOLE still exists.
+  it.each([
+    "src/app/api/v1/workflows/[id]/runs/route.ts",
+    "src/app/api/v1/workflows/[id]/runs/[runId]/route.ts",
+  ])("SEC-48-A: %s is NOT flagged, and is NOT exempt either", (file) => {
+    // ⚠ THE REPLACEMENT FOR THE DELETED INVERTED-POLARITY CONTROL, and it asserts BOTH halves,
+    // because either alone is satisfiable the wrong way.
     //
-    // SEC-48-A says: "Run that gate against these two routes first; it should name them." It does.
-    // When a later phase fixes them, this goes RED and forces the list to shrink — which is the
-    // point. An accepted hole that quietly stops being a hole, and quietly stays on the list, is
-    // how a deferral becomes a permanent carve-out nobody can justify.
+    // Half one: the detector no longer flags the file — the ownership check is really there. Half
+    // two: the file is not in ANY exemption list — so half one is a verdict from the sweep rather
+    // than a path that was quietly carved out again. A future edit that removed the ownership
+    // check would fail half one; a future edit that "fixed" half one by re-adding an exemption
+    // would fail half two.
+    //
+    // Kept as a NAMED cell rather than folded into the general offender sweep because SEC-48-A
+    // was a recorded, deferred hole with a control of its own, and a closure that leaves no
+    // trace in the gate is how the next reader loses the ability to tell "fixed" from "stopped
+    // being checked".
     const flagged = RAW_OFFENDERS.filter((offender) => offender.startsWith(`${file}:`))
     expect(
-      flagged.length,
-      `${file} is no longer flagged by the detector. Either it was FIXED — in which case delete ` +
-        `it from ACCEPTED_KNOWN_ROUTES, close SEC-48-A in BACKLOG.md and let the offender sweep ` +
-        `cover it — or the DETECTOR regressed and stopped seeing it, which is worse.`
-    ).toBeGreaterThan(0)
-  })
+      flagged,
+      `${file} is flagged by the detector again. SEC-48-A was closed on 2026-08-26 by scoping it ` +
+        `through getWorkflow(id, context.userId); if this is red the ownership check was removed, ` +
+        `and the behavioural proof in runs-owner-scope.db.test.ts should be red too. Do NOT ` +
+        `re-add an exemption.`
+    ).toEqual([])
 
-  it("counts the accepted-known holes as exactly 2", () => {
-    // Named AND counted. "Some workflow routes are unscoped" is a sentence; "these two, and only
-    // these two" is a control.
-    expect(ACCEPTED_KNOWN_ROUTES.length).toBe(2)
+    expect(
+      ALL_EXEMPT_PATHS,
+      `${file} is back in an exemption list. It is covered by the ordinary offender sweep now; a ` +
+        `carve-out here would suppress the very handler SEC-48-A was about.`
+    ).not.toContain(file)
+
+    // And the file is genuinely in the scanned corpus, so neither assertion above is about a path
+    // the walk never reached.
+    expect(ROUTE_FILES).toContain(file)
+    expect(corpusEntry(file).handlers.length).toBeGreaterThan(0)
   })
 })
 
@@ -1849,7 +1885,9 @@ describe("every name in AUTHORIZERS is actually reached by the corpus", () => {
    *   authorizeNoteMutation 2   notes/[noteId]/route.ts:75, :134
    *   authorizeAuditRead    1   audit/route.ts:150
    *   resolveActorRole      3   trash/[type]/[id]/restore:98, trash/[type]/[id]:91, trash:222
-   *   getWorkflow           4   workflows/[id]:29, :68, :93, workflows/[id]/run:24
+   *   getWorkflow           6   workflows/[id]:29, :68, :93, workflows/[id]/run:24,
+   *                              workflows/[id]/runs:52, workflows/[id]/runs/[runId]:34
+   *                              (the last two are SEC-48-A's fix)
    *   ownedStagesPredicate  2   stages/route.ts:62, :73   (0 before plan 48-04 landed)
    *
    * `getWorkflowTemplate` is DELIBERATELY ABSENT from `AUTHORIZERS`: measured 0 calls receiving an
@@ -1894,7 +1932,8 @@ describe("every name in AUTHORIZERS is actually reached by the corpus", () => {
     const total = [...AUTHORIZER_CALLS.values()].reduce((sum, n) => sum + n, 0)
     expect(
       total,
-      `R3 fired ${total} times across the corpus, measured 15 (3+2+1+3+4+2). A collapse here means ` +
+      `R3 fired ${total} times across the corpus, measured 17 (3+2+1+3+6+2) — was 15 before ` +
+        `SEC-48-A added two getWorkflow calls. A collapse here means ` +
         `delegation stopped being recognised and nine correctly-authorized handlers are about to ` +
         `be reported as offenders.`
     ).toBeGreaterThanOrEqual(12)
@@ -1910,10 +1949,10 @@ describe("every name in AUTHORIZERS is actually reached by the corpus", () => {
  *
  *     offenders = declaration-form handlers the detector classified UNAUTHORIZED
  *               + EVERY binding-form handler whose file is NOT in DELEGATED_ROUTES
- *               − every handler whose file appears in ANY of the four exemption lists
+ *               − every handler whose file appears in ANY of the exemption lists
  *
- * Written out because this is the only place the two handler forms and the four exemption lists
- * meet, and a reader has to be able to see the middle term without reconstructing it.
+ * Written out because this is the only place the two handler forms and the exemption lists meet,
+ * and a reader has to be able to see the middle term without reconstructing it.
  *
  * ⚠ THE MIDDLE TERM IS THE LOAD-BEARING ONE. `scanSource` marks every binding-form handler
  * `authorized: true` — that is a DEFERRAL, not a verdict: the body being exported lives inside a
@@ -1983,7 +2022,7 @@ describe("every /api/v1 handler constrains the record it touches by caller ident
         `\`if (row.ownerId !== ctx.userId) return Problems.forbidden()\`. The where-scoped ` +
         `alternative at organizations/[id]/route.ts:31-36 is equally accepted and yields 404 ` +
         `instead of 403; both are correct, pick whichever the route's siblings already use.\n\n` +
-        `A route with genuinely NO owner column belongs in one of the four exemption lists at the ` +
+        `A route with genuinely NO owner column belongs in one of the exemption lists at the ` +
         `top of this file, with a written reason — and the live control beside that list will hold ` +
         `you to the reason, because it asserts the reason is still TRUE. An exemption is not a way ` +
         `to make this message go away.\n\n` +
@@ -2006,12 +2045,14 @@ describe("every /api/v1 handler constrains the record it touches by caller ident
     /**
      * `toEqual([])` above is green in two very different worlds: one where no handler is
      * unauthorized, and one where the exemption lists grew until none of them was reported. This is
-     * what tells those apart. It writes down, by name, EVERY handler the four lists remove from the
+     * what tells those apart. It writes down, by name, EVERY handler the exemption lists remove from
      * sweep — the difference between the raw detector output and the gated list.
      *
-     * Twelve, measured. Phase 48 started from seventeen; the five that left are the four routes
-     * this phase FIXED (`activities/[id]` GET, PUT, DELETE and the `activities` list GET) plus the
-     * `activities` POST, which rule R5 now recognises as correctly authorized rather than exempt.
+     * TEN, measured. Phase 48 started from seventeen; the seven that left are the four routes this
+     * phase FIXED (`activities/[id]` GET, PUT, DELETE and the `activities` list GET), the
+     * `activities` POST, which rule R5 now recognises as correctly authorized rather than exempt,
+     * and the two `workflows/[id]/runs` reads, which left on 2026-08-26 when SEC-48-A was closed
+     * and `ACCEPTED_KNOWN_ROUTES` was deleted along with them.
      *
      * Matched on `file: VERB`, deliberately NOT on line number. Pinning lines would false-RED on
      * any benign edit to these files and get relaxed within a month; pinning file and verb goes red
@@ -2031,9 +2072,10 @@ describe("every /api/v1 handler constrains the record it touches by caller ident
       "src/app/api/v1/workflow-templates/[id]/route.ts: GET",
       "src/app/api/v1/workflow-templates/route.ts: GET",
       "src/app/api/v1/workflow-templates/route.ts: POST",
-      // ACCEPTED_KNOWN — SEC-48-A. Real holes, named, deferred, and asserted still broken.
-      "src/app/api/v1/workflows/[id]/runs/[runId]/route.ts: GET",
-      "src/app/api/v1/workflows/[id]/runs/route.ts: GET",
+      // The two `workflows/[id]/runs` GETs used to be here, under ACCEPTED_KNOWN — SEC-48-A. They
+      // left on 2026-08-26 because they were FIXED, not because the list grew: both now resolve
+      // the workflow through `getWorkflow(id, context.userId)` and are covered by the offender
+      // sweep above. This comment is the trace, so a reader can tell a closure from a deletion.
     ]
 
     const gated = new Set(GATE_OFFENDERS)
@@ -2047,7 +2089,7 @@ describe("every /api/v1 handler constrains the record it touches by caller ident
 
     expect(
       suppressed,
-      `the set of handlers hidden from this gate by the four exemption lists changed. If a route ` +
+      `the set of handlers hidden from this gate by the exemption lists changed. If a route ` +
         `LEFT this list it was fixed — delete its path from the exemption list and let the sweep ` +
         `cover it. If a route JOINED, an exemption just swallowed a handler that nobody reviewed, ` +
         `which is precisely the failure this file exists to prevent.`

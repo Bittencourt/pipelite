@@ -1004,6 +1004,108 @@ components:
           enum: [pending]
           description: Initial run status
 
+    WorkflowRun:
+      type: object
+      description: |
+        One execution of a workflow. Only the runs of workflows you own are readable; a workflow
+        belonging to another user answers 404, indistinguishably from one that does not exist.
+      required: [id, workflow_id, status, depth, dry_run, created_at]
+      properties:
+        id:
+          type: string
+        workflow_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed, waiting]
+        trigger_data:
+          type: object
+          nullable: true
+          description: |
+            The envelope of the record or event that started this run, stored verbatim. For a
+            CRM-event trigger this contains the triggering record itself, which is why these
+            endpoints are scoped to the workflow's owner.
+        error:
+          type: string
+          nullable: true
+        depth:
+          type: integer
+          description: Nesting depth, for runs triggered by other runs
+        dry_run:
+          type: boolean
+          description: |
+            True for a test run. Test runs are HIDDEN from the list endpoint unless
+            `dry_run=true` is passed, so a monitoring integration does not count them as
+            production failures. The detail endpoint always returns them, flagged.
+        current_node_id:
+          type: string
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    WorkflowRunStep:
+      type: object
+      required: [id, run_id, node_id, status, created_at]
+      properties:
+        id:
+          type: string
+        run_id:
+          type: string
+        node_id:
+          type: string
+          description: The workflow node this step executed
+        status:
+          type: string
+          enum: [pending, running, completed, failed, skipped, waiting]
+        input:
+          type: object
+          nullable: true
+          description: Resolved input the node was called with
+        output:
+          type: object
+          nullable: true
+          description: Value the node returned
+        error:
+          type: string
+          nullable: true
+        resume_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When a waiting step becomes runnable again
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    WorkflowRunWithSteps:
+      allOf:
+        - $ref: '#/components/schemas/WorkflowRun'
+        - type: object
+          required: [steps]
+          properties:
+            steps:
+              type: array
+              description: Every step of this run, oldest first
+              items:
+                $ref: '#/components/schemas/WorkflowRunStep'
+
     Note:
       type: object
       description: |
@@ -2882,6 +2984,106 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  # These two operations were undocumented until SEC-48-A closed (2026-08-26). They are documented
+  # now because that fix CHANGED what they put on the wire: a workflow belonging to another user
+  # used to answer 200 with that user's run records, and now answers 404. Both are held by
+  # src/app/api/v1/__tests__/openapi-error-coverage.test.ts, which requires the '404' and asserts
+  # the ABSENCE of a '403' — see that file's MUST_NOT_DECLARE_403_OPERATIONS for why.
+  /workflows/{id}/runs:
+    get:
+      summary: List workflow runs
+      operationId: listWorkflowRuns
+      tags: [Workflows]
+      description: |
+        Paginated execution history for a workflow you own, newest first.
+
+        Test runs (`dry_run: true`) are excluded unless `dry_run=true` is passed: a machine
+        consumer polling `?status=failed` would otherwise count every failed test run as a
+        production failure.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/schemas/PaginationParams/properties/offset'
+        - $ref: '#/components/schemas/PaginationParams/properties/limit'
+        - name: status
+          in: query
+          description: Filter by run status
+          schema:
+            type: string
+            enum: [pending, running, completed, failed, waiting]
+        - name: dry_run
+          in: query
+          description: Pass `true` to INCLUDE test runs, which are hidden by default
+          schema:
+            type: string
+            enum: ["true"]
+      responses:
+        '200':
+          description: Paginated list of runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WorkflowRun'
+                  meta:
+                    $ref: '#/components/schemas/PaginatedMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        # A workflow you do not own answers 404, identically to one that does not exist. It is NOT
+        # a 403: a 403 for a real id and a 404 for an unknown one would confirm the existence of
+        # another user's workflow. This matches every sibling under /workflows/{id}.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /workflows/{id}/runs/{runId}:
+    get:
+      summary: Get workflow run
+      operationId: getWorkflowRun
+      tags: [Workflows]
+      description: |
+        A single run of a workflow you own, with every step inline. Unlike the list endpoint this
+        returns test runs as well, flagged with `dry_run: true` — a caller holding the run id
+        already knows it exists, so hiding it would serve no purpose.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Workflow ID. The run must belong to this workflow.
+          schema:
+            type: string
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Run details with steps
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WorkflowRunWithSteps'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        # Three cases, one answer, deliberately: the workflow is not yours, the workflow does not
+        # exist, or the run does not belong to the workflow named in the path.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /notes/{noteId}:
     patch:

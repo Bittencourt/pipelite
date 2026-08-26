@@ -1,7 +1,7 @@
 /**
  * THE OPENAPI ERROR-COVERAGE GATE.
  *
- * Phase 48 changed the authorization behaviour of nine `/api/v1` operations. `public/openapi.yaml`
+ * Phase 48 changed the authorization behaviour of twelve `/api/v1` operations. `public/openapi.yaml`
  * is the contract integrators build against, and it did not change with them: `/activities/{id}`
  * declared `'200'` + `'404'` on GET, `'200'` on PUT and `'204'` on DELETE, with **no `'403'`
  * anywhere**; `/stages/{id}` had the identical omission while its GET was *already* returning 403
@@ -41,8 +41,8 @@
  * SIX operations gained a 403 path in Phase 48 — GET/PUT/DELETE on `/activities/{id}` and on
  * `/stages/{id}`, each of which fetches the row and compares its owner to `ctx.userId`.
  *
- * The other THREE operations this phase changed did **not** gain one, and the difference is
- * measured, not assumed:
+ * FIVE operations under this gate did **not** gain one, and the difference is measured, not
+ * assumed:
  *
  *   - `GET /api/v1/activities` scopes in the `WHERE` (`route.ts:62`,
  *     `eq(activities.ownerId, ctx.userId)`). A foreign row is never read, so there is nothing to
@@ -53,21 +53,30 @@
  *     answers a foreign `pipeline_id` with `Problems.notFound("Pipeline")` (`route.ts:39`) — a
  *     **404**, not a 403.
  *
- * Declaring a `'403'` on those three would be the same defect this file exists to fix, pointed the
+ *   - `GET /api/v1/workflows/{id}/runs` and `GET .../runs/{runId}` answer a workflow that is not
+ *     the caller's with `Problems.notFound("Workflow")` — a **404** — because that is what every
+ *     sibling under `/workflows/{id}` answers, and because a 403 for a real id beside a 404 for an
+ *     unknown one is an existence oracle. Added when SEC-48-A closed (2026-08-26).
+ *
+ * Declaring a `'403'` on those five would be the same defect this file exists to fix, pointed the
  * other way: documentation asserting a response the route cannot produce. They are therefore held
  * by `MUST_NOT_DECLARE_403_OPERATIONS`, with an inverted-polarity assertion and a written reason —
- * the pattern `route-authorization.test.ts` established for `ACCEPTED_KNOWN_ROUTES`. If a later
- * phase gives one of them a real 403 path, this gate goes RED and forces the entry to move to
+ * the pattern `route-authorization.test.ts` established for its exemption lists. If a later phase
+ * gives one of them a real 403 path, this gate goes RED and forces the entry to move to
  * `REQUIRE_403_OPERATIONS` rather than letting the spec drift again.
  *
  * ── SCOPE, DELIBERATELY BOUNDED ───────────────────────────────────────────────────────────────
  *
- * These nine operations are the ones Phase 48 changed, and they are all this gate covers. The rest
- * of `/api/v1` has the same class of drift and more of it — `organizations/{id}`, `people/{id}`,
- * `deals/{id}`, `pipelines/{id}` and `webhooks/{id}` all return 403 today and none of them says so
- * in the spec. Widening a security phase to fix that silently is how scope becomes unreviewable, so
- * it is recorded as a backlog item with a count instead. Do not read this file's green as "the
- * OpenAPI document is accurate"; read it as "nine named operations are accurate and held".
+ * These TWELVE operations are the ones Phase 48 changed the wire behaviour of, and they are all
+ * this gate covers — nine at first, then `POST /stages`, then the two `workflows/{id}/runs` reads
+ * when SEC-48-A closed. `EXPECTED_GATED_OPERATIONS` records why each joined.
+ *
+ * The rest of `/api/v1` has the same class of drift and more of it — `organizations/{id}`,
+ * `people/{id}`, `deals/{id}`, `pipelines/{id}` and `webhooks/{id}` all return 403 today and none
+ * of them says so in the spec. Widening a security phase to fix that silently is how scope becomes
+ * unreviewable, so it is recorded as a backlog item with a count instead. Do not read this file's
+ * green as "the OpenAPI document is accurate"; read it as "twelve named operations are accurate and
+ * held".
  */
 import { readFileSync } from "node:fs"
 import path from "node:path"
@@ -117,7 +126,8 @@ const HTTP_METHODS = [
 /**
  * Floor on the number of path items in the parsed document.
  *
- * MEASURED: 27 path items on 2026-08-25, before any edit by this plan. The floor is pinned
+ * MEASURED: 29 path items on 2026-08-26 (27 on 2026-08-25, +2 for the two `workflows/{id}/runs`
+ * path items SEC-48-A documented). The floor is pinned
  * deliberately BELOW that so ordinary consolidation of an unrelated endpoint does not false-RED,
  * while a parse that returned an empty or truncated `paths` object is red immediately. Without
  * this, every `it.each` below iterates nothing and reports success.
@@ -127,7 +137,7 @@ const MIN_PATH_ITEMS = 20
 /**
  * Floor on the total number of operations across all path items.
  *
- * MEASURED: 59 operations on 2026-08-25, before any edit by this plan. Same reasoning as
+ * MEASURED: 61 operations on 2026-08-26 (59 on 2026-08-25, +2 for SEC-48-A). Same reasoning as
  * `MIN_PATH_ITEMS`, one level deeper: a `paths` object whose path items parsed as empty maps would
  * satisfy the path-item floor and still make every subject lookup fail for the wrong reason.
  */
@@ -196,6 +206,15 @@ const REQUIRE_404_OPERATIONS = [
   { path: "/stages/{id}", method: "get" },
   { path: "/stages/{id}", method: "put" },
   { path: "/stages/{id}", method: "delete" },
+  // SEC-48-A, 2026-08-26. Both were UNDOCUMENTED — not merely missing a status, absent from the
+  // document entirely — and they are here because the SEC-48-A fix changed what they put on the
+  // wire: a workflow belonging to another user used to answer 200 WITH THAT USER'S RUN RECORDS,
+  // including `workflow_runs.trigger_data`, which `serializeRun` returns verbatim. It now answers
+  // 404.
+  //   - `workflows/[id]/runs/route.ts:52`          — getWorkflow(id, context.userId)
+  //   - `workflows/[id]/runs/[runId]/route.ts:34`  — same, resolved BEFORE the run is read
+  { path: "/workflows/{id}/runs", method: "get" },
+  { path: "/workflows/{id}/runs/{runId}", method: "get" },
 ] as const
 
 /**
@@ -241,20 +260,32 @@ const MUST_NOT_DECLARE_403_OPERATIONS = [
     reason:
       "scopes in the join via ownedStagesPredicate (stages/route.ts:62,:73) and answers a foreign pipeline_id with Problems.notFound (stages/route.ts:39) — a 404",
   },
+  {
+    path: "/workflows/{id}/runs",
+    method: "get",
+    reason:
+      "answers a workflow that is not the caller's with Problems.notFound (workflows/[id]/runs/route.ts:55) since SEC-48-A, matching every sibling under /workflows/{id}; a 403 for a real id and a 404 for an unknown one would confirm that another owner's workflow exists, and the db test asserts the two responses are byte-identical",
+  },
+  {
+    path: "/workflows/{id}/runs/{runId}",
+    method: "get",
+    reason:
+      "carries the same predicate and the same answer (workflows/[id]/runs/[runId]/route.ts:38), plus Problems.notFound for a run that does not belong to the workflow in the path; three cases, one 404, so no status code distinguishes a foreign workflow from a nonexistent one",
+  },
 ] as const
 
 /** Exact subject-list sizes. An emptied `it.each` array generates zero tests and looks green. */
 const EXPECTED_403_SUBJECTS = 6
 const EXPECTED_422_SUBJECTS = 4
-const EXPECTED_404_SUBJECTS = 7
+const EXPECTED_404_SUBJECTS = 9
 const EXPECTED_409_SUBJECTS = 3
-const EXPECTED_NEGATIVE_403_SUBJECTS = 3
+const EXPECTED_NEGATIVE_403_SUBJECTS = 5
 
 /**
  * The number of DISTINCT operations under this gate. Several appear in more than one list, so this is
  * not the sum of the lengths.
  *
- * WAS 9, IS 10, AND THE ONE THAT JOINED IS RECORDED HERE RATHER THAN ABSORBED.
+ * WAS 9, THEN 10, IS 12 — AND EVERY JOINER IS RECORDED HERE RATHER THAN ABSORBED.
  *
  * The original nine were the operations Phase 48's authorization work changed: GET/PUT/DELETE on
  * `/activities/{id}` and on `/stages/{id}`, plus `GET /activities`, `POST /activities` and
@@ -269,11 +300,39 @@ const EXPECTED_NEGATIVE_403_SUBJECTS = 3
  *     previously returned an unhandled 500. That response DID NOT EXIST before, so declaring it is
  *     not catch-up; omitting it would be fresh drift introduced by this very fix.
  *
- * The scope paragraph in this file's header still holds: this gate covers the operations THIS phase
- * touched, not the whole document. The wider drift across all 59 operations — 401 declared on 22,
- * 429 on 12, 403 on 8, and 36 route files against 27 documented path items — remains DOC-48-01.
+ * ── THE ELEVENTH AND TWELFTH: SEC-48-A, 2026-08-26 ────────────────────────────────────────────
+ *
+ *     GET /workflows/{id}/runs
+ *     GET /workflows/{id}/runs/{runId}
+ *
+ * These joined on the SAME test the tenth passed, and it is worth stating precisely because they
+ * are the first subjects this gate has acquired that were not in the document at all.
+ *
+ * They were not merely missing a status code — they had **no path item**, so there was nothing to
+ * attach a response to and `resolveOperation` would have returned `undefined` for either. Adding
+ * them is therefore documenting two previously-undocumented endpoints, which is normally
+ * DOC-48-01's territory and deliberately outside this gate's scope.
+ *
+ * WHAT PUTS THEM INSIDE IT: the SEC-48-A fix changed what they put on the wire. Both used to look
+ * the workflow up by id ALONE, so a workflow belonging to another user answered **200 with that
+ * user's run records** — and `workflow_runs.trigger_data` holds the triggering record, which
+ * `serializeRun` returns verbatim, so the 200 carried another owner's CRM row. They now answer
+ * 404. That is exactly the criterion `POST /stages` joined under: a response class that is new on
+ * the wire because of this work, where omitting the declaration would be fresh drift introduced by
+ * the fix rather than pre-existing drift inherited from the document.
+ *
+ * They are held in BOTH polarities — `REQUIRE_404_OPERATIONS` for the 404 they now emit, and
+ * `MUST_NOT_DECLARE_403_OPERATIONS` for the 403 they deliberately do NOT, because a 403 for a real
+ * id and a 404 for an unknown one is an existence oracle over every workflow in the deployment.
+ * The behavioural proof of both halves, including the byte-identical foreign/nonexistent
+ * responses, is `src/app/api/v1/workflows/__tests__/runs-owner-scope.db.test.ts`.
+ *
+ * The scope paragraph in this file's header still holds, with SEC-48-A added to what "this phase
+ * touched" means. The wider drift across the document — 401 declared on 22 of 59 operations, 429
+ * on 12, 403 on 8, and 36 route files against what was 27 documented path items — remains
+ * DOC-48-01. Two path items moved that last figure to 29; the item is not closed by it.
  */
-const EXPECTED_GATED_OPERATIONS = 10
+const EXPECTED_GATED_OPERATIONS = 12
 
 type ResponseEntry = { $ref?: unknown } | null | undefined
 type Operation = { responses?: Record<string, ResponseEntry> }
@@ -330,9 +389,11 @@ function label(subject: { path: string; method: string }): string {
 }
 
 /**
- * The reach sweep, de-duplicated. Two operations appear in two lists — `/activities/{id}` PUT
- * carries both a 403 and a 422, and `/activities` POST is a 422 subject *and* a must-not-403
- * subject — so the union is 11 entries over 9 distinct operations.
+ * The reach sweep, de-duplicated. Several operations appear in more than one list — `/activities/{id}`
+ * PUT carries both a 403 and a 422, `/activities` POST is a 422 subject *and* a must-not-403
+ * subject, and each `workflows/{id}/runs` read is both a 404 subject and a must-not-403 subject —
+ * so the union has more entries than there are distinct operations. `EXPECTED_GATED_OPERATIONS`
+ * pins the distinct count.
  */
 const ALL_SUBJECTS = [
   ...REQUIRE_403_OPERATIONS,
@@ -359,14 +420,14 @@ describe("OpenAPI error-response coverage", () => {
       expect(spec.paths).not.toBeNull()
     })
 
-    it(`exposes at least ${MIN_PATH_ITEMS} path items (measured 27)`, () => {
+    it(`exposes at least ${MIN_PATH_ITEMS} path items (measured 29)`, () => {
       expect(
         Object.keys(pathItems()).length,
         `${SPEC_PATH} parsed to ${Object.keys(pathItems()).length} path items. A truncated or empty parse satisfies every coverage loop below by iterating nothing.`
       ).toBeGreaterThanOrEqual(MIN_PATH_ITEMS)
     })
 
-    it(`exposes at least ${MIN_OPERATIONS} operations in total (measured 59)`, () => {
+    it(`exposes at least ${MIN_OPERATIONS} operations in total (measured 61)`, () => {
       expect(
         totalOperations(),
         `${SPEC_PATH} parsed to ${totalOperations()} operations across ${Object.keys(pathItems()).length} path items.`
@@ -415,11 +476,12 @@ describe("OpenAPI error-response coverage", () => {
       )
     })
 
-    it(`covers exactly ${EXPECTED_GATED_OPERATIONS} distinct operations — the nine Phase 48 changed`, () => {
+    it(`covers exactly ${EXPECTED_GATED_OPERATIONS} distinct operations — the ones Phase 48 changed`, () => {
       const distinct = new Set(ALL_SUBJECTS.map(label))
       expect(
         [...distinct].sort(),
-        "the gate's scope is nine operations; a change here is a change of scope and must be recorded"
+        "the gate's scope is twelve operations; a change here is a change of scope and must be " +
+          "recorded in EXPECTED_GATED_OPERATIONS's doc-comment, with the reason the operation joined"
       ).toHaveLength(EXPECTED_GATED_OPERATIONS)
     })
 

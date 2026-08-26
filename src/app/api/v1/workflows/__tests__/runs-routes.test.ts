@@ -10,9 +10,17 @@ type ApiRouteHandler = (
 ) => Promise<NextResponse>
 
 // Mock db
+//
+// `query.workflows.findFirst` is here because of SEC-48-A: both routes now resolve the workflow
+// through `getWorkflow(id, context.userId)` BEFORE touching `workflow_runs`, and `getWorkflow`
+// goes through the relational query builder rather than `db.select`. The behavioural proof that
+// the scope is real lives in `runs-owner-scope.db.test.ts` against real PostgreSQL and two real
+// minted API keys; what this file adds is the unit-level assertion that the predicate carries
+// `created_by` and the CALLER's id, which a mocked db can check on the SQL object itself.
 vi.mock("@/db", () => {
   const mockDb = {
     select: vi.fn(),
+    query: { workflows: { findFirst: vi.fn() } },
   }
   return { db: mockDb }
 })
@@ -30,10 +38,19 @@ import { GET as getRunDetail } from "@/app/api/v1/workflows/[id]/runs/[runId]/ro
 
 const mockDb = db as unknown as {
   select: ReturnType<typeof vi.fn>
+  query: { workflows: { findFirst: ReturnType<typeof vi.fn> } }
 }
+
+/** The workflow row `getWorkflow` resolves when the caller owns it. `user-1` is the mocked ctx. */
+const OWNED_WORKFLOW = { id: "wf-1", createdBy: "user-1" }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Default to "the caller owns it", so every cell below measures the thing it was written to
+  // measure rather than the new ownership gate. `mockResolvedValue` and not `…Once`: this runs
+  // after `clearAllMocks`, which clears call records but NOT a once-queue, so a leftover once
+  // value would leak into the next cell.
+  mockDb.query.workflows.findFirst.mockResolvedValue(OWNED_WORKFLOW)
 })
 
 /**
@@ -89,8 +106,13 @@ function runRow(overrides: Record<string, unknown> = {}) {
 }
 
 /**
- * Wires `db.select` for the list route (workflow existence, page of runs, count) and returns the
- * `where` spy the runs query was handed.
+ * Wires `db.select` for the list route (page of runs, count) and returns the `where` spy the runs
+ * query was handed.
+ *
+ * SEC-48-A removed a `db.select` from this route: the workflow lookup that used to be
+ * `select({id}).from(workflows).where(eq(workflows.id, id))` — existence only — is now
+ * `getWorkflow(id, context.userId)`, which goes through `db.query`. So this helper stubs TWO
+ * select chains, not three.
  */
 function stubRunsList(rows: Record<string, unknown>[]) {
   const runsWhere = vi.fn().mockReturnValue({
@@ -102,13 +124,6 @@ function stubRunsList(rows: Record<string, unknown>[]) {
   })
 
   mockDb.select
-    .mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockReturnValue(Promise.resolve([{ id: "wf-1" }])),
-        }),
-      }),
-    })
     .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: runsWhere }) })
     .mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
@@ -135,14 +150,6 @@ describe("GET /api/v1/workflows/:id/runs", () => {
       createdAt: new Date("2026-03-28T10:00:00Z"),
     }
 
-    const workflowSelectChain = {
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockReturnValue(Promise.resolve([{ id: "wf-1" }])),
-        }),
-      }),
-    }
-
     const runsSelectChain = {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
@@ -162,7 +169,6 @@ describe("GET /api/v1/workflows/:id/runs", () => {
     }
 
     mockDb.select
-      .mockReturnValueOnce(workflowSelectChain)
       .mockReturnValueOnce(runsSelectChain)
       .mockReturnValueOnce(countSelectChain)
 
@@ -247,16 +253,12 @@ describe("GET /api/v1/workflows/:id/runs", () => {
     expect(body.data[0]).toHaveProperty("dry_run", false)
   })
 
-  it("returns 404 when workflow does not exist", async () => {
-    const workflowSelectChain = {
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockReturnValue(Promise.resolve([])),
-        }),
-      }),
-    }
-
-    mockDb.select.mockReturnValueOnce(workflowSelectChain)
+  it("returns 404 when the workflow does not resolve for this caller", async () => {
+    // Post-SEC-48-A there is ONE answer here, not two: `getWorkflow(id, ctx.userId)` returns
+    // undefined both for an id that does not exist and for an id belonging to somebody else, and
+    // the route cannot tell them apart — which is the point. That the two are byte-identical on
+    // the wire is asserted behaviourally in `runs-owner-scope.db.test.ts`.
+    mockDb.query.workflows.findFirst.mockResolvedValue(undefined)
 
     const request = new NextRequest("http://localhost:3000/api/v1/workflows/wf-nonexistent/runs")
     const response = await getRunsList(request, {
@@ -266,6 +268,39 @@ describe("GET /api/v1/workflows/:id/runs", () => {
     expect(response.status).toBe(404)
     const body = await response.json()
     expect(body.title).toBe("Not Found")
+
+    // AND NO RUN WAS EVER READ. A route that refused after loading and serializing the rows would
+    // satisfy the status assertion above while still having pulled another owner's `trigger_data`
+    // out of the database.
+    expect(
+      mockDb.select,
+      "the run query must not run at all when the workflow is not the caller's"
+    ).not.toHaveBeenCalled()
+  })
+
+  // -----------------------------------------------------------------------------------------------
+  // SEC-48-A — the ownership predicate itself, read off the SQL object the route built.
+  // -----------------------------------------------------------------------------------------------
+
+  it("scopes the workflow lookup by created_by AND the caller's own id", async () => {
+    stubRunsList([runRow()])
+
+    const request = new NextRequest("http://localhost:3000/api/v1/workflows/wf-1/runs")
+    await getRunsList(request, { params: Promise.resolve({ id: "wf-1" }) })
+
+    expect(mockDb.query.workflows.findFirst).toHaveBeenCalledTimes(1)
+
+    const parts = conditionParts(mockDb.query.workflows.findFirst.mock.calls[0]?.[0]?.where)
+    const why =
+      "This route used to look the workflow up by id ALONE — `where(eq(workflows.id, id))` — so " +
+      "any valid API key could list any workflow's runs, and `serializeRun` returns " +
+      "`trigger_data` verbatim, i.e. another owner's CRM row. Both terms are asserted: without " +
+      "`created_by` there is no ownership at all, and without the caller's own id the predicate " +
+      "could be scoped to a constant."
+    expect(parts.columns, why).toContain("created_by")
+    expect(parts.values, why).toContain("user-1")
+    expect(parts.columns, why).toContain("id")
+    expect(parts.values, why).toContain("wf-1")
   })
 })
 
@@ -402,5 +437,75 @@ describe("GET /api/v1/workflows/:id/runs/:runId", () => {
     expect(response.status).toBe(404)
     const body = await response.json()
     expect(body.title).toBe("Not Found")
+  })
+
+  // -----------------------------------------------------------------------------------------------
+  // SEC-48-A — this handler's callback used to be `async () => …`, taking no `context` parameter at
+  // all, so the caller's identity was not even in scope in the function that returned the row.
+  // -----------------------------------------------------------------------------------------------
+
+  it("returns 404 without reading the run when the workflow is not the caller's", async () => {
+    mockDb.query.workflows.findFirst.mockResolvedValue(undefined)
+
+    const request = new NextRequest("http://localhost:3000/api/v1/workflows/wf-b/runs/run-b")
+    const response = await getRunDetail(request, {
+      params: Promise.resolve({ id: "wf-b", runId: "run-b" }),
+    })
+
+    expect(response.status).toBe(404)
+    expect(
+      mockDb.select,
+      "the workflow must be resolved BEFORE the run is read, so a run belonging to a workflow the " +
+        "caller does not own is never loaded — `serializeRun` and `serializeRunStep` both pass " +
+        "their payloads through verbatim, so loading it is already the leak"
+    ).not.toHaveBeenCalled()
+  })
+
+  it("scopes its workflow lookup by created_by AND the caller's own id", async () => {
+    mockDb.select
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockReturnValue(Promise.resolve([runRow()])),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue(Promise.resolve([])),
+          }),
+        }),
+      })
+
+    const request = new NextRequest("http://localhost:3000/api/v1/workflows/wf-1/runs/run-1")
+    await getRunDetail(request, { params: Promise.resolve({ id: "wf-1", runId: "run-1" }) })
+
+    const parts = conditionParts(mockDb.query.workflows.findFirst.mock.calls[0]?.[0]?.where)
+    expect(parts.columns).toContain("created_by")
+    expect(parts.values).toContain("user-1")
+  })
+
+  it("still requires the run to belong to the workflow in the path", async () => {
+    // The `workflowId` term was ALREADY here before SEC-48-A and is retained alongside the new
+    // ownership check, not replaced by it: dropping it would let a caller read any run id at all
+    // through a workflow they legitimately own, trading one cross-owner read for another.
+    const runWhere = vi.fn().mockReturnValue({
+      limit: vi.fn().mockReturnValue(Promise.resolve([])),
+    })
+
+    mockDb.select.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: runWhere }) })
+
+    const request = new NextRequest("http://localhost:3000/api/v1/workflows/wf-1/runs/run-foreign")
+    const response = await getRunDetail(request, {
+      params: Promise.resolve({ id: "wf-1", runId: "run-foreign" }),
+    })
+
+    expect(response.status).toBe(404)
+
+    const parts = conditionParts(runWhere.mock.calls[0]?.[0])
+    expect(parts.columns).toContain("workflow_id")
+    expect(parts.values).toContain("wf-1")
+    expect(parts.values).toContain("run-foreign")
   })
 })
