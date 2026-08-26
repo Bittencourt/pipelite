@@ -114,6 +114,8 @@ import {
   users,
 } from "@/db/schema"
 
+import { MAX_OFFSET } from "@/lib/api/pagination"
+
 import { mintApiKey, type MintedApiKey } from "../__tests__/api-key-fixture"
 import { GET, POST } from "./route"
 import { GET as GET_ONE, PUT } from "./[id]/route"
@@ -1030,6 +1032,61 @@ describe("WR-08 — GET /activities?expand=deal does not serialize a deal the ca
     expect(JSON.stringify(body)).not.toContain(`${PREFIX}A-secret`)
 
     await db.update(activities).set({ dealId: null }).where(eq(activities.id, target))
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * WR-09 — `?offset=` had no ceiling, so one query parameter was an unhandled 500
+ *
+ * `parsePagination` returned `Math.max(0, parseInt(raw, 10))` with no upper bound and no
+ * `Number.isSafeInteger` check. drizzle renders `offset` as a bound placeholder and postgres.js
+ * serializes a JS number as `'' + x`, so a 20-digit offset arrives as
+ * `"100000000000000000000"` and PostgreSQL's bigint `OFFSET` refuses it with
+ * `22003 value out of range for type bigint`; at 22 digits the serialization is `"1e+21"` and the
+ * refusal is `22P02 invalid input syntax for type bigint`. Neither list GET is wrapped and
+ * `withApiAuth` has no `try`/`catch`, so the rejection left the handler and Next.js rendered a
+ * framework 500 with no problem document.
+ *
+ * `src/lib/api/stage-scope.ts` had already NAMED the missing ceiling in its own header while
+ * explaining that the empty-`IN ()` consequence was gone. The consequence it described was gone;
+ * the ceiling was not, and this is the other consequence.
+ *
+ * Invoked directly, the pre-fix failure is a REJECTED PROMISE rather than an HTTP 500 — it is
+ * Next.js that maps a thrown error onto a status — so `.resolves` is the load-bearing word, exactly
+ * as it is in `stages-scope.db.test.ts`'s SC-5 describe.
+ * ------------------------------------------------------------------------ */
+
+describe("WR-09 — a huge ?offset= resolves 200 with an empty page instead of rejecting", () => {
+  it("the review's 20-digit offset (22003 value out of range for type bigint) resolves", async () => {
+    // `listAs` asserts 200 internally, so a rejection here fails the cell with the driver's own
+    // error rather than with an assertion — which is what the pre-fix red looks like.
+    const payload = await listAs(keyA.authorizationHeader, "?offset=99999999999999999999")
+
+    expect(payload.data).toEqual([])
+    // The window that was ACTUALLY used is reported, rather than the caller's unrepresentable
+    // number being echoed back or silently becoming page one.
+    expect(payload.meta.offset).toBe(MAX_OFFSET)
+    // FLOOR: the caller's own record count is unchanged, so the empty page is about the WINDOW and
+    // not about the caller owning nothing.
+    expect(payload.meta.total).toBe(A_OWNED)
+  })
+
+  it("the review's 22-digit offset (22P02 invalid input syntax for type bigint) resolves too", async () => {
+    const payload = await listAs(keyA.authorizationHeader, "?offset=1000000000000000000000")
+
+    expect(payload.data).toEqual([])
+    expect(payload.meta.offset).toBe(MAX_OFFSET)
+    expect(payload.meta.total).toBe(A_OWNED)
+  })
+
+  it("THE ANTI-VACUITY ANCHOR: an ordinary offset still pages normally", async () => {
+    // Without this, the two cells above are satisfied by a route that returns an empty page for
+    // every offset — which is the OTHER way this endpoint has been wrong (F3 on stages).
+    const payload = await listAs(keyA.authorizationHeader, "?offset=1&limit=100")
+
+    expect(payload.meta.offset).toBe(1)
+    expect(payload.data).toHaveLength(A_OWNED - 1)
+    expect(payload.meta.total).toBe(A_OWNED)
   })
 })
 

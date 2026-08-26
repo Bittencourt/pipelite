@@ -121,6 +121,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { db } from "@/db"
 import { apiKeys, auditLog, pipelines, stages, users } from "@/db/schema"
 
+import { MAX_OFFSET } from "@/lib/api/pagination"
+
 import { mintApiKey, type MintedApiKey } from "../__tests__/api-key-fixture"
 import { GET, POST } from "./route"
 import { PUT } from "./[id]/route"
@@ -612,6 +614,50 @@ describe("SC-5 (amended) — an offset at or past the global stage count resolve
   it("B's key hits the same path independently, so the proof is not a property of one fixture user", async () => {
     const boundary = await globalStageCount()
     const payload = await listAs(keyB.authorizationHeader, `?limit=${MEASURED_LIMIT}&offset=${boundary}`)
+
+    expect(payload.data).toEqual([])
+    expect(payload.meta.total).toBe(B_OWNED)
+    expect(payload.meta.total).toBeGreaterThan(0)
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * WR-09 — the offset the SC-5 describe above could not reach
+ *
+ * SC-5's far offset is `globalStageCount() * 1000`, which is a few thousand — comfortably inside
+ * `bigint`. The offsets below are not: `parsePagination` had no ceiling and no
+ * `Number.isSafeInteger` check, so a 20-digit offset reached the driver as
+ * `"100000000000000000000"` (`22003 value out of range for type bigint`) and a 22-digit one as
+ * `"1e+21"` (`22P02 invalid input syntax for type bigint`). Neither list GET is wrapped and
+ * `withApiAuth` has no `try`/`catch`, so both were framework 500s with no problem document.
+ *
+ * This file's own `stage-scope.ts` header NAMED the missing ceiling while explaining that the
+ * empty-`IN ()` consequence was gone. That consequence was gone; the ceiling was not. The two now
+ * agree — `stage-scope.ts`'s header was corrected in the same commit as the parser.
+ * ------------------------------------------------------------------------ */
+
+describe("WR-09 — a huge ?offset= resolves 200 with an empty page instead of rejecting", () => {
+  it("the review's 20-digit offset (22003 value out of range for type bigint) resolves", async () => {
+    const payload = await listAs(keyA.authorizationHeader, "?offset=99999999999999999999")
+
+    expect(payload.data).toEqual([])
+    expect(payload.meta.offset).toBe(MAX_OFFSET)
+    // FLOOR, as everywhere else in this file: the caller's own count is unchanged, so the empty
+    // page is about the WINDOW and not about the caller owning nothing.
+    expect(payload.meta.total).toBe(A_OWNED)
+    expect(payload.meta.total).toBeGreaterThan(0)
+  })
+
+  it("the review's 22-digit offset (22P02 invalid input syntax for type bigint) resolves too", async () => {
+    const payload = await listAs(keyA.authorizationHeader, "?offset=1000000000000000000000")
+
+    expect(payload.data).toEqual([])
+    expect(payload.meta.offset).toBe(MAX_OFFSET)
+    expect(payload.meta.total).toBe(A_OWNED)
+  })
+
+  it("B's key hits the same path independently", async () => {
+    const payload = await listAs(keyB.authorizationHeader, "?offset=99999999999999999999")
 
     expect(payload.data).toEqual([])
     expect(payload.meta.total).toBe(B_OWNED)
