@@ -1323,3 +1323,226 @@ describe("SC-2 — an injected storage failure leaves the purge COMMITTED and lo
     expect(existsSync(sabotagedPath)).toBe(true)
   })
 })
+
+/* ---------------------------------------------------------------------------
+ * CR-01 — a restore that lands between the pre-fetch and the row DELETE
+ * ------------------------------------------------------------------------ */
+
+/**
+ * THE RACE, INJECTED AT THE EXACT SEAM THE REVIEW NAMES.
+ *
+ * Every one of the four purge mutations does two things in this order: it pre-fetches the row with
+ * `db.query.<table>.findFirst({ where: and(eq(id), isNotNull(deletedAt)) })`, and then it opens a
+ * transaction. The window between those two statements is real and is reachable twice over — from
+ * two browser tabs (Restore and Purge Forever sit side by side in `/trash`) and from the unattended
+ * daily pruner working through a batch of up to 200 ids one record at a time.
+ *
+ * So the injection is a spy on THAT method which lets the real pre-fetch run, then commits a
+ * RESTORE by direct SQL, then hands the mutation the trashed row it legitimately read. Nothing
+ * about the mutation's own behaviour is substituted: the transaction that follows is real, the
+ * `DELETE ... WHERE deleted_at IS NOT NULL` is real, and it matches zero rows for the honest reason
+ * that the record is no longer in the trash.
+ *
+ * `mockImplementationOnce` is deliberate over `mockImplementation`: the restore must land in the
+ * window ONCE. A spy that restored on every call would also fire for any later read and would make
+ * the cell's own assertions read a state the spy created rather than the state the purge left.
+ */
+type PreFetchTarget = {
+  readonly findFirst: (...args: never[]) => Promise<unknown>
+}
+
+/** The `db.query` namespace each purge mutation pre-fetches through, per entity type. */
+const PRE_FETCH_FOR: Record<EntityType, PreFetchTarget> = {
+  organization: db.query.organizations as unknown as PreFetchTarget,
+  person: db.query.people as unknown as PreFetchTarget,
+  deal: db.query.deals as unknown as PreFetchTarget,
+  activity: db.query.activities as unknown as PreFetchTarget,
+}
+
+/** `deleted_at = NULL` on this row, by direct SQL. The restore the racing tab commits. */
+async function restoreByDirectSql(table: string, id: string): Promise<void> {
+  await db.execute(
+    sql`update ${sql.identifier(table)} set deleted_at = null where id = ${id}`,
+  )
+}
+
+/** How many `__purge` audit rows name this id. The purge's own claim that it happened. */
+async function countPurgeAuditRows(id: string): Promise<number> {
+  const rows = (await db.execute(
+    sql`select count(*)::int as n from audit_log
+        where entity_id = ${id} and action = 'deleted' and changes ? '__purge'`,
+  )) as unknown as { n: number }[]
+
+  return Number(rows[0].n)
+}
+
+/** How many LIVE notes are attached to this record. */
+async function countNotesFor(entityType: EntityType, id: string): Promise<number> {
+  const rows = (await db.execute(
+    sql`select count(*)::int as n from notes where entity_type = ${entityType} and entity_id = ${id}`,
+  )) as unknown as { n: number }[]
+
+  return Number(rows[0].n)
+}
+
+/** The child column a purge of this entity type NULLS, and the child row it nulls it on. */
+const DETACH_PROBE: Record<EntityType, { table: string; column: string; childId: string } | null> = {
+  organization: { table: "people", column: "organization_id", childId: PERSON_NEIGHBOUR },
+  person: { table: "deals", column: "person_id", childId: DEAL_NEIGHBOUR },
+  deal: { table: "activities", column: "deal_id", childId: ACTIVITY_NEIGHBOUR },
+  // `activities` is a true leaf — it detaches nothing, which is why `ACTIVITY_DETACHED` is 0.
+  activity: null,
+}
+
+async function readChildLink(probe: { table: string; column: string; childId: string }): Promise<
+  string | null
+> {
+  const rows = (await db.execute(
+    sql`select ${sql.identifier(probe.column)} as link from ${sql.identifier(probe.table)}
+        where id = ${probe.childId}`,
+  )) as unknown as { link: string | null }[]
+
+  return rows.length === 0 ? null : rows[0].link
+}
+
+/** The note this cell attaches to its subject, so "the notes survived" is not about zero rows. */
+const RACE_NOTE_CONTENT = `${PREFIX}note that a rolled-back purge must not destroy`
+/**
+ * A named-integer floor for the notes. Without it, "the notes survived" is satisfied by a record
+ * that never had any — which is the state `restoreFixtureRows` leaves, so the floor is the only
+ * thing making the assertion about something.
+ */
+const RACE_NOTE_COUNT = 1
+
+describe("CR-01 — a restore between the pre-fetch and the DELETE must not destroy a LIVE record", () => {
+  it.each(SUBJECTS.map((s) => [s.entityType, s] as const))(
+    "leaves a restored %s alive with its bytes, its notes and its children intact",
+    async (entityType, subject) => {
+      const table = TABLE_FOR[entityType]
+      const subjectPaths = subject.storedNames.map((stored) =>
+        blobPath(subject.id, subject.fieldName, stored),
+      )
+      const probe = DETACH_PROBE[entityType]
+
+      // A note on the subject, so the "notes survived" assertion is not about an empty set.
+      await db.insert(notes).values({
+        entityType,
+        entityId: subject.id,
+        content: RACE_NOTE_CONTENT,
+        authorId: USER,
+        source: "user",
+      })
+
+      // POSITIVE ANCHORS, all four of them. Every one of these is a state the unfixed code
+      // destroys, so each is a claim this cell has to establish before the purge runs.
+      expect(
+        collectFileFieldRefs(subject.id, subject.customFields).length,
+        "an empty ref list makes 'the bytes survived' vacuously true",
+      ).toBeGreaterThanOrEqual(subject.refCount)
+      for (const target of subjectPaths) {
+        expect(existsSync(target), `positive anchor: ${target} must exist BEFORE the purge`).toBe(
+          true,
+        )
+      }
+      expect(await countNotesFor(entityType, subject.id)).toBeGreaterThanOrEqual(RACE_NOTE_COUNT)
+      // A DELTA, not an absolute zero, and the difference is a red this cell already produced:
+      // `restoreFixtureRows` re-inserts a purged subject row but deliberately does NOT delete
+      // `audit_log` (the whole design of a purge is that the record's audit history outlives it),
+      // so by the time this describe runs the earlier SC-2 cells have left 1-3 `__purge` rows
+      // against every subject id. An absolute `toBe(0)` therefore failed on the ANCHOR against
+      // both the unfixed and the fixed code — a gate that could only ever be red, which is as
+      // useless as one that can only ever be green. What this cell is entitled to claim is that
+      // THIS invocation wrote no new one.
+      const purgeRowsBefore = await countPurgeAuditRows(subject.id)
+      if (probe !== null) {
+        expect(
+          await readChildLink(probe),
+          `positive anchor: ${probe.childId}.${probe.column} must point at the subject BEFORE ` +
+            "the purge, or the 'children stayed attached' assertion below is about a null that " +
+            "was always null",
+        ).toBe(subject.id)
+      }
+
+      // THE INJECTION. Real pre-fetch, then a real committed restore, then the mutation carries on
+      // with the row it read — exactly the interleaving the review describes.
+      //
+      // The real method is captured and BOUND before the spy replaces it, so the call-through is
+      // the genuine drizzle query rather than a fabricated row. A stubbed row would make this cell
+      // a test of the stub: the whole point is that the mutation legitimately read a trashed record
+      // and then the world changed underneath it.
+      const target = PRE_FETCH_FOR[entityType]
+      const realFindFirst = target.findFirst.bind(target)
+      const spy = vi.spyOn(target, "findFirst")
+      let restored = false
+      spy.mockImplementationOnce(async (...args: never[]) => {
+        const row = await realFindFirst(...args)
+
+        await restoreByDirectSql(table, subject.id)
+        restored = true
+
+        return row
+      })
+
+      let result: Awaited<ReturnType<typeof purgeRecordByType>>
+      try {
+        result = await purgeRecordByType(entityType, subject.id)
+      } finally {
+        spy.mockRestore()
+      }
+
+      // THE INJECTION TOOK. Asserted before anything relies on it: a spy that never fired would
+      // make every assertion below describe an ordinary refusal rather than the race.
+      expect(
+        restored,
+        "the pre-fetch spy never fired, so no restore landed in the window and this cell is not " +
+          "exercising the race at all",
+      ).toBe(true)
+      expect(
+        await readDeletedAt(table, subject.id),
+        "the restore did not commit — the injected UPDATE must have left this row LIVE",
+      ).toBeNull()
+
+      // THE CRITERION, IRREVERSIBLE HALF FIRST. The assertion order is the reading order of the
+      // failure: `unlink` cannot be undone, so "a live record's bytes are gone" is the sentence a
+      // reader must see before "and it was reported as a success". Putting the result `toEqual`
+      // first would have made every red in this describe read as a return-shape disagreement.
+      for (const path of subjectPaths) {
+        expect(
+          existsSync(path),
+          `CR-01: ${subject.id} is LIVE and visible, and the purge unlinked its bytes anyway. ` +
+            "`unlink` is irreversible; this attachment is gone forever.",
+        ).toBe(true)
+      }
+
+      expect(
+        await countById(table, subject.id),
+        "the restored record was hard-deleted anyway",
+      ).toBe(1)
+
+      expect(
+        await countNotesFor(entityType, subject.id),
+        "the transaction's notes DELETE survived a purge that did not happen",
+      ).toBeGreaterThanOrEqual(RACE_NOTE_COUNT)
+
+      expect(
+        await countPurgeAuditRows(subject.id),
+        "a NEW audit row claims this record was purged. It is alive, and its timeline now says " +
+          "otherwise.",
+      ).toBe(purgeRowsBefore)
+
+      if (probe !== null) {
+        expect(
+          await readChildLink(probe),
+          `${probe.childId} was silently detached from a LIVE ${entityType} the caller never ` +
+            "selected — the widest blast radius in the whole failure",
+        ).toBe(subject.id)
+      }
+
+      // AND THE RETURN VALUE, LAST. `PurgeResult` is NOT widened — this is the existing
+      // `{ success: false, error: "NOT_IN_TRASH" }` arm, which the mutations already return when
+      // the pre-fetch itself misses. The eleven `toEqual({ success: true, detached: N })`
+      // assertions across the four mutation test files are untouched by construction.
+      expect(result).toEqual({ success: false, error: "NOT_IN_TRASH" })
+    },
+  )
+})
