@@ -25,6 +25,8 @@ import {
   type RecalculateFormulasInput,
 } from "@/lib/formula-recalc"
 import { log } from "@/lib/log"
+import { collectFileFieldRefs } from "@/lib/trash/collect-file-field-refs"
+import { deleteEntityFiles } from "@/lib/trash/delete-entity-files"
 
 // ---- Zod Schemas ----
 
@@ -662,6 +664,12 @@ export async function purgeDealMutation(
     importSessionId: actor?.importSessionId ?? null,
   } as const
 
+  // SEC-04 / SC-2 — the blobs this record's `customFields` references, COLLECTED BEFORE THE
+  // TRANSACTION from the row already pre-fetched above. No second read, and no read is possible
+  // later: after the commit there is no row left to read the column out of. The deletion itself is
+  // after the commit; see the block below the transaction for why.
+  const blobRefs = collectFileFieldRefs(id, deal.customFields)
+
   try {
     let detached = 0
 
@@ -750,6 +758,48 @@ export async function purgeDealMutation(
         ...auditActor,
       })
     })
+
+    // ---- AFTER THE COMMIT. Best-effort, and it never rethrows. ---------------------------
+    //
+    // SEC-04 / SC-2 — the bytes, after the row. Four things a reader would otherwise have to
+    // reconstruct, and the same block sits in ./organizations.ts, ./people.ts and ./activities.ts:
+    //
+    //  1. IT IS OUT HERE ON PURPOSE, AND BOTH HALVES OF THAT MATTER. `unlink` is irreversible and
+    //     a transaction is not, so a deletion inside the block above destroys bytes that a later
+    //     rollback cannot bring back. And a THROW from here would be the defect rather than a
+    //     diagnostic: SC-2 requires the purge to stay COMMITTED when storage deletion fails, so a
+    //     rethrow would report a purge that DID happen as a failure, the caller would retry a
+    //     delete that already succeeded, and a blob nobody can remove would make a record
+    //     un-purgeable forever. `deleteEntityFiles` never rejects; the `catch` is belt-and-braces.
+    //  2. THE REFS WERE COLLECTED BEFORE THE TRANSACTION, off the row this function already
+    //     pre-fetched. `customFields` costs nothing extra there and cannot be read here at all.
+    //  3. THE MISMATCH IS LOGGED, NOT RETURNED. `PurgeResult` (src/lib/trash/dispatch.ts:51-53) is
+    //     read by eleven exact `toEqual({ success: true, detached: N })` assertions across the four
+    //     mutation test files, and SC-2's criterion is a LOG rather than a return value. The line
+    //     carries IDENTIFIERS AND COUNTS ONLY, never a filename — T-37-30, the rule this module's
+    //     own caller states at src/lib/trash/prune.ts:203-218.
+    //  4. THE NOW-EMPTY `${UPLOAD_DIR}/${entityId}/` TREE IS DELIBERATELY NOT PRUNED. `rmdir`
+    //     racing a concurrent upload into the same directory is a real hazard — an upload that has
+    //     created the directory but not yet written its bytes loses them, or the `rmdir` fails
+    //     spuriously and reads as a deletion failure — for a marginal gain in inodes. SC-2 says the
+    //     blob is gone, not the directory.
+    //
+    // Proven behaviourally, per entity type and under an injected storage failure, in
+    // src/lib/trash/purge-blobs.db.test.ts.
+    try {
+      const { deleted } = await deleteEntityFiles(blobRefs)
+
+      if (deleted !== blobRefs.length) {
+        log.error("mutations/deals", "Purged record's blobs were not all deleted", {
+          entityType: "deal",
+          id,
+          expected: blobRefs.length,
+          deleted,
+        })
+      }
+    } catch (error) {
+      log.error("mutations/deals", "Post-purge blob deletion failed", { err: error })
+    }
 
     return { success: true, detached }
   } catch (error) {

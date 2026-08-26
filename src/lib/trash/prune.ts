@@ -63,14 +63,16 @@ export const TICK_INTERVAL = 24 * 60 * 60 * 1000
  * Custom-field VALUES need no statement of their own: they live in the record's own `customFields`
  * JSONB column and go with the row.
  *
- * NOT COVERED — UPLOADED FILE BLOBS ARE NOT REMOVED. A file custom field stores its bytes under
- * `${UPLOAD_DIR}/${entityId}/${fieldName}/${storedName}` and is referenced only from that JSONB
- * column, so purging the row destroys the REFERENCE and leaves the BYTES on disk (or in S3). The
- * blob therefore survives a "permanent" delete and stays reachable to anyone holding its URL.
- * This is a known scope gap, deliberately not closed here: irreversible disk deletion inside the
- * most dangerous code path in the phase needs its own plan, and doing it wrong is unrecoverable.
- * Tracked as follow-up work — see `.planning/STATE.md`. Do not read the batch size below, or
- * anything else in this module, as evidence that blobs are handled.
+ * UPLOADED FILE BLOBS ARE OWNED BY THE FOUR PURGE MUTATIONS, NOT BY THIS MODULE — and the pointer
+ * is deliberately all this comment says. THIS MODULE OWNS NO TRANSACTION: it selects expired ids
+ * and delegates each one to `purgeRecordByType`, which routes to `purgeDealMutation`,
+ * `purgePersonMutation`, `purgeOrganizationMutation` or `purgeActivityMutation`. Each of those
+ * pre-fetches the record, collects its blob refs from `customFields` before its transaction, and
+ * unlinks them AFTER the commit; each one carries the real statement of what that does and why it
+ * is placed there. A second, fuller copy of that statement here is exactly how the previous
+ * revision of this comment came to be false, so there is not one.
+ *
+ * The batch size below is therefore not evidence about blobs either way. It is about lock pressure.
  *
  * This is a TUNABLE and it has not been measured. It should be timed once against a seeded batch
  * of real records and adjusted; 200 is a conservative starting point chosen to keep one batch

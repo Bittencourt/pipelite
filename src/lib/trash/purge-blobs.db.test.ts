@@ -478,6 +478,19 @@ interface Subject {
   readonly storedNames: readonly string[]
   readonly neighbourId: string
   readonly neighbourStoredName: string
+  /**
+   * The neighbour's exact bytes.
+   *
+   * Carried here so the barrier can assert BYTE EQUALITY rather than a non-zero length, and that is
+   * not a style preference — `src/lib/__tests__/suite-timing-hygiene.test.ts` flagged the
+   * `toBeGreaterThan(0)` this replaced. Its taint analysis is RIGHT: `blobPath` derives from
+   * `UPLOAD_ROOT`, which derives from the `Date.now()` in the `vi.hoisted` directory name, so a
+   * THRESHOLD matcher over a path-derived value is clock-derived by its rules. That gate's house
+   * rule is "assert the property instead — assert exactly", never weaken the gate, and here the
+   * property actually worth asserting is stronger anyway: the neighbour's bytes are UNCHANGED, not
+   * merely present. A truncated-but-non-empty neighbour file would have passed the old form.
+   */
+  readonly neighbourBytes: Buffer
 }
 
 const SUBJECTS: readonly Subject[] = Object.freeze([
@@ -491,6 +504,7 @@ const SUBJECTS: readonly Subject[] = Object.freeze([
     storedNames: [STORED_ORG_MAIN, STORED_ORG_SECOND],
     neighbourId: ORG_NEIGHBOUR,
     neighbourStoredName: STORED_ORG_NEIGHBOUR,
+    neighbourBytes: bytesFor("ORG-NEIGHBOUR"),
   },
   {
     entityType: "person",
@@ -502,6 +516,7 @@ const SUBJECTS: readonly Subject[] = Object.freeze([
     storedNames: [STORED_PERSON],
     neighbourId: PERSON_NEIGHBOUR,
     neighbourStoredName: STORED_PERSON_NEIGHBOUR,
+    neighbourBytes: bytesFor("PERSON-NEIGHBOUR"),
   },
   {
     entityType: "deal",
@@ -513,6 +528,7 @@ const SUBJECTS: readonly Subject[] = Object.freeze([
     storedNames: [STORED_DEAL],
     neighbourId: DEAL_NEIGHBOUR,
     neighbourStoredName: STORED_DEAL_NEIGHBOUR,
+    neighbourBytes: bytesFor("DEAL-NEIGHBOUR"),
   },
   {
     entityType: "activity",
@@ -524,6 +540,7 @@ const SUBJECTS: readonly Subject[] = Object.freeze([
     storedNames: [STORED_ACTIVITY],
     neighbourId: ACTIVITY_NEIGHBOUR,
     neighbourStoredName: STORED_ACTIVITY_NEIGHBOUR,
+    neighbourBytes: bytesFor("ACTIVITY-NEIGHBOUR"),
   },
 ])
 
@@ -1120,7 +1137,9 @@ describe("SC-2 — after a purge, the record's blobs are gone from disk", () => 
         existsSync(neighbourPath),
         `the neighbour's blob was destroyed by another record's purge: ${neighbourPath}`,
       ).toBe(true)
-      expect(readFileSync(neighbourPath).byteLength).toBeGreaterThan(0)
+      // BYTE EQUALITY, not a non-zero length. See `Subject.neighbourBytes` for why the weaker form
+      // was replaced and why the replacement is the stronger claim rather than a concession.
+      expect(readFileSync(neighbourPath).equals(subject.neighbourBytes)).toBe(true)
 
       // DATABASE: the row is gone, by direct SQL rather than through the ORM that just deleted it.
       expect(await countById(table, subject.id)).toBe(0)
@@ -1208,9 +1227,19 @@ describe("SC-2 — an injected storage failure leaves the purge COMMITTED and lo
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 
     let result: Awaited<ReturnType<typeof purgeRecordByType>>
+    let captured: unknown[][]
     try {
       result = await purgeRecordByType("organization", ORG)
     } finally {
+      // COPY THE CALLS OUT BEFORE RESTORING, and this is a defect this cell had and this comment
+      // exists so it does not come back. `mockRestore()` in Vitest is `mockReset()` plus restoring
+      // the original implementation, and `mockReset()` CLEARS `mock.calls`. Reading
+      // `errorSpy.mock.calls` after the restore therefore reads an EMPTY array — measured: this
+      // cell reported `expected [] to have a length of 1 but got +0` against a CORRECT
+      // implementation that had logged the mismatch. A gate that can only ever be red is as useless
+      // as one that can only ever be green, and it would have been "fixed" by weakening the
+      // assertion if the cause had not been found.
+      captured = errorSpy.mock.calls.map((call) => [...call])
       errorSpy.mockRestore()
     }
 
@@ -1237,7 +1266,7 @@ describe("SC-2 — an injected storage failure leaves the purge COMMITTED and lo
     //
     // `expect(spy).toHaveBeenCalled()` would be satisfied by any log line at all, including the
     // purge failing and logging its own catch, which is why the NUMBERS are asserted.
-    const lines = parseCapturedLines(errorSpy.mock.calls)
+    const lines = parseCapturedLines(captured)
     const mismatches = lines.filter(
       (line) =>
         line.fields.scope === "mutations/organizations" &&
@@ -1264,6 +1293,21 @@ describe("SC-2 — an injected storage failure leaves the purge COMMITTED and lo
     expect(mismatch.raw).not.toContain(STORED_ORG_MAIN)
     expect(mismatch.raw).not.toContain(STORED_ORG_SECOND)
     expect(mismatch.raw).not.toContain("original name.pdf")
+
+    // THE WHOLE FIELD SET, EXHAUSTIVELY. The three `not.toContain` checks above rule out the two
+    // filenames this fixture happens to use; this rules out EVERY other key. A future edit that
+    // added `storedNames` or `paths` to the payload would slip past a substring search for two
+    // specific strings and is caught here instead.
+    expect(mismatch.fields).toEqual({
+      level: "error",
+      scope: "mutations/organizations",
+      msg: "Purged record's blobs were not all deleted",
+      ts: expect.any(String),
+      entityType: "organization",
+      id: ORG,
+      expected: ORG_REF_COUNT,
+      deleted: ORG_DELETED_UNDER_SABOTAGE,
+    })
 
     // BARRIER: the OTHER ref on the SAME record, deleted by the SAME purge. Not a second purge and
     // not the neighbour's blob — `trigger-owner-scope.db.test.ts:780-829` measured what happens
