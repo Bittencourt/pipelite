@@ -106,6 +106,7 @@ import { organizations } from "@/db/schema"
 import type { EntityType } from "@/db/schema/custom-fields"
 import { db } from "@/db"
 
+import { resolveContainedPath } from "@/lib/api/file-access"
 import {
   GET,
   DELETE,
@@ -697,5 +698,92 @@ describe("self-test: the fake database answers from the predicate", () => {
     for (const type of ENTITY_TYPES) {
       expect(rows[TABLE_NAME[type]].length).toBeGreaterThanOrEqual(2)
     }
+  })
+})
+
+/* ------------------------------------------------------------------------------------------ *
+ * `resolveContainedPath` in isolation — the ONLY cells that test the prefix check on its own
+ *
+ * In the handler, the JSONB reference match gets there first, so containment can never be reached
+ * with a hostile `filename` through that path. These cells reach the exported pure function
+ * directly, which is what makes the third check provable at all.
+ *
+ * THE BOUNDARY IS THE FIELD DIRECTORY, NOT THE UPLOAD ROOT, AND THAT IS THE DECISION THESE CELLS
+ * ENCODE. `entityId` and `fieldName` are precisely two path segments, so `../../escape.txt`
+ * resolves to `${UPLOAD_DIR}/escape.txt` — INSIDE the root. This plan's RED transcript measured the
+ * shipped route reading exactly that path. A root-level `path.relative` check would ALLOW it, which
+ * would make the refusal cell below a check that cannot fail against a handler serving a different
+ * record's blob. Plan 49-02 found the same thing one module over and tightened to the same boundary;
+ * `src/lib/trash/delete-entity-files.ts` is the sibling spelling.
+ * ------------------------------------------------------------------------------------------ */
+
+describe("resolveContainedPath", () => {
+  const ENTITY = "org-owned"
+
+  it("resolves a legitimate stored name to a direct child of the field directory", () => {
+    const resolved = resolveContainedPath(UPLOAD_DIR, ENTITY, FILE_FIELD, OWNED_STORED)
+
+    expect(resolved).toBe(path.resolve(UPLOAD_DIR, ENTITY, FILE_FIELD, OWNED_STORED))
+    // The positive anchor for this function: without it, `return null` would satisfy every
+    // refusal cell below.
+    expect(path.relative(path.resolve(UPLOAD_DIR, ENTITY, FILE_FIELD), resolved as string)).toBe(
+      OWNED_STORED
+    )
+  })
+
+  it("refuses the TWO-segment climb that lands back on the upload root", () => {
+    // THE CELL A ROOT-LEVEL CHECK WOULD FAIL. `${UPLOAD_DIR}/escape.txt` is contained by the root
+    // and NOT by the field directory, and the field directory is the boundary that matters: the
+    // reachable attack is one record reaching another record's blob inside the same tree.
+    const escaped = path.resolve(UPLOAD_DIR, ENTITY, FILE_FIELD, "../../escape.txt")
+    expect(escaped).toBe(path.resolve(UPLOAD_DIR, "escape.txt"))
+    expect(path.relative(path.resolve(UPLOAD_DIR), escaped).startsWith("..")).toBe(false)
+
+    expect(resolveContainedPath(UPLOAD_DIR, ENTITY, FILE_FIELD, "../../escape.txt")).toBeNull()
+  })
+
+  it("refuses a ONE-segment climb into a sibling field of the same record", () => {
+    // Contained by the root AND by the record's own directory, and still wrong: it is a different
+    // field's blob. Only the field-directory boundary sees this.
+    expect(
+      resolveContainedPath(UPLOAD_DIR, ENTITY, FILE_FIELD, `../${OTHER_FIELD}/${OWNED_STORED}`)
+    ).toBeNull()
+  })
+
+  it("refuses a climb into a DIFFERENT record's field directory", () => {
+    expect(
+      resolveContainedPath(UPLOAD_DIR, ENTITY, FILE_FIELD, `../../org-foreign/${FILE_FIELD}/x.pdf`)
+    ).toBeNull()
+  })
+
+  it("refuses a climb clear out of the upload root", () => {
+    expect(
+      resolveContainedPath(UPLOAD_DIR, ENTITY, FILE_FIELD, "../../../../etc/passwd")
+    ).toBeNull()
+  })
+
+  it("refuses an absolute filename", () => {
+    expect(resolveContainedPath(UPLOAD_DIR, ENTITY, FILE_FIELD, "/etc/passwd")).toBeNull()
+  })
+
+  it("refuses an empty filename, which would resolve to the field directory itself", () => {
+    expect(resolveContainedPath(UPLOAD_DIR, ENTITY, FILE_FIELD, "")).toBeNull()
+  })
+
+  it("refuses a nested filename that stays inside the field directory", () => {
+    // Not an escape, but not a stored name either — every real one is a single segment.
+    expect(resolveContainedPath(UPLOAD_DIR, ENTITY, FILE_FIELD, "sub/dir/x.pdf")).toBeNull()
+  })
+
+  it("refuses a climbing entityId, the second measured escape vector", () => {
+    expect(resolveContainedPath(UPLOAD_DIR, "../../etc", FILE_FIELD, OWNED_STORED)).toBeNull()
+  })
+
+  it("refuses a climbing fieldName", () => {
+    expect(resolveContainedPath(UPLOAD_DIR, ENTITY, "../..", OWNED_STORED)).toBeNull()
+  })
+
+  it("refuses an absolute entityId", () => {
+    expect(resolveContainedPath(UPLOAD_DIR, "/etc", FILE_FIELD, OWNED_STORED)).toBeNull()
   })
 })
