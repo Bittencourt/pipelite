@@ -203,6 +203,16 @@ const SEEDED_TOTAL = 6
  */
 const WIDE_LIMIT = 100
 /**
+ * A page window strictly smaller than A_OWNED, so covering A's own records takes two pages. This is
+ * what makes the pagination-window assertion a statement about WHERE the window is applied rather
+ * than a restatement of the owner-page assertion.
+ */
+const PAGE_WINDOW = 2
+/** The first page's offset. Named, so the "no hard-coded offset" property holds without exception. */
+const FIRST_PAGE_OFFSET = 0
+/** Pages needed to cover A's records at PAGE_WINDOW, asserted rather than assumed to be 2. */
+const A_PAGE_COUNT = A_OWNED / PAGE_WINDOW
+/**
  * The limit the CONTEXT measurement used when it recorded `data: []` beside `meta.total: 1`. Kept at
  * that value so the assertion below is the same request that was measured broken.
  */
@@ -582,5 +592,153 @@ describe("SC-5 (amended) — an offset at or past the global stage count resolve
     expect(payload.data).toEqual([])
     expect(payload.meta.total).toBe(B_OWNED)
     expect(payload.meta.total).toBeGreaterThan(0)
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * F3 — the page holds the caller's own stages, and the window lives inside them
+ * ------------------------------------------------------------------------ */
+
+describe("F3 — an owner's page holds their own stages and none of the other owner's", () => {
+  it(`OWNER PAGE, ceiling: A's ?limit=${MEASURED_LIMIT} returns ${A_OWNED} rows and reports total ${A_OWNED}`, async () => {
+    // THE EXACT REQUEST 48-CONTEXT MEASURED BROKEN. Against the pre-48-04 route a stage's own owner
+    // got `data: []` beside `meta.total: 1`, because the page was a global window scoped by nothing
+    // while the total twelve lines below was scoped correctly.
+    const payload = await listAs(keyA.authorizationHeader, `?limit=${MEASURED_LIMIT}`)
+
+    expect(payload.meta.limit).toBeGreaterThan(A_OWNED)
+    expect(payload.data).toHaveLength(A_OWNED)
+    expect(payload.meta.total).toBe(A_OWNED)
+  })
+
+  it(`OWNER PAGE, floor: ${A_OWNED} is greater than zero, so the ceiling above is not satisfied by nothing`, async () => {
+    const payload = await listAs(keyA.authorizationHeader, `?limit=${MEASURED_LIMIT}`)
+
+    expect(
+      payload.data.length,
+      "an empty page satisfies every 'contains no foreign stage' assertion in this block. The floor " +
+        "is what makes them mean something: A must actually receive rows.",
+    ).toBeGreaterThan(0)
+    expect(
+      payload.meta.total,
+      "a zero total would make the ceiling above a comparison between two zeroes, which is true of " +
+        "any broken query and of an empty table alike.",
+    ).toBeGreaterThan(0)
+  })
+
+  it("PAGE AND TOTAL AGREE: neither is zero, which is the exact combination measured broken", async () => {
+    const payload = await listAs(keyA.authorizationHeader, `?limit=${MEASURED_LIMIT}`)
+
+    // `data: []` beside `meta.total: 1` was possible because the two came from DIFFERENT predicates.
+    // They now come from one exported expression (`ownedStagesPredicate`), so disagreement is
+    // structurally impossible rather than merely unintended — and this asserts the consequence.
+    expect(payload.data).not.toHaveLength(0)
+    expect(payload.meta.total).not.toBe(0)
+    expect(payload.data).toHaveLength(payload.meta.total)
+  })
+
+  it(`CROSS-CHECK direction 1: A sees exactly A's ${A_OWNED} ids, none of B's — while B's ${B_OWNED} DO exist`, async () => {
+    const payload = await listAs(keyA.authorizationHeader, `?limit=${WIDE_LIMIT}`)
+    const returned = payload.data.map((r) => r.id).sort()
+
+    expect(returned).toEqual([...A_STAGE_IDS].sort())
+    for (const foreign of B_STAGE_IDS) {
+      expect(returned).not.toContain(foreign)
+    }
+
+    // The other half of the pair, and the reason the absence above is evidence: B's stages are IN THE
+    // TABLE right now, by direct SQL. Without this, "A cannot see B's stages" is equally satisfied by
+    // B's stages never having been created.
+    const bInTable = await sqlIdsOwnedBy(USER_B)
+    expect(bInTable).toEqual([...B_STAGE_IDS].sort())
+    expect(bInTable).toHaveLength(B_OWNED)
+    expect(bInTable.length, "B owning nothing would make direction 1 vacuous.").toBeGreaterThan(0)
+  })
+
+  it(`CROSS-CHECK direction 2: B sees exactly B's ${B_OWNED} ids, none of A's — while A's ${A_OWNED} DO exist`, async () => {
+    const payload = await listAs(keyB.authorizationHeader, `?limit=${WIDE_LIMIT}`)
+    const returned = payload.data.map((r) => r.id).sort()
+
+    expect(returned).toEqual([...B_STAGE_IDS].sort())
+    expect(returned).toHaveLength(B_OWNED)
+    for (const foreign of A_STAGE_IDS) {
+      expect(returned).not.toContain(foreign)
+    }
+
+    const aInTable = await sqlIdsOwnedBy(USER_A)
+    expect(aInTable).toEqual([...A_STAGE_IDS].sort())
+    expect(aInTable).toHaveLength(A_OWNED)
+    expect(aInTable.length, "A owning nothing would make direction 2 vacuous.").toBeGreaterThan(0)
+  })
+
+  it("FILTERED PATH, foreign: A asking for B's pipeline gets 404, and the contract is unchanged", async () => {
+    const response = await GET(listRequest(keyA.authorizationHeader, `?pipeline_id=${PIPELINE_B}`))
+
+    // 404 rather than 403 is deliberate and pre-existing: an unknown pipeline and a pipeline owned by
+    // somebody else are indistinguishable to the caller, which is what keeps the endpoint from
+    // confirming the existence of another owner's pipeline.
+    expect(response.status).toBe(404)
+  })
+
+  it(`FILTERED PATH, own: A asking for A's pipeline gets 200 with total ${A_OWNED}`, async () => {
+    // The anti-vacuity anchor for the 404 above: the same caller with their OWN pipeline id is not
+    // refused, so the refusal is the ownership check working rather than the filter breaking every
+    // request that carries it.
+    const payload = await listAs(keyA.authorizationHeader, `?pipeline_id=${PIPELINE_A}`)
+
+    expect(payload.meta.total).toBe(A_OWNED)
+    expect(payload.data).toHaveLength(A_OWNED)
+    expect(payload.data.map((r) => r.id).sort()).toEqual([...A_STAGE_IDS].sort())
+  })
+
+  it(`PAGINATION AFTER AUTHORIZATION: two pages of ${PAGE_WINDOW} cover exactly A's own ${A_OWNED} stages`, async () => {
+    // WHAT THIS ASSERTION REPLACES. The route previously applied `offset` and `limit` to a GLOBAL
+    // stage list and then discarded foreign rows in JavaScript, so a caller's window could fall
+    // entirely outside their own records and return an empty page while `meta.total` reported a
+    // non-zero number computed from a different, correctly-scoped query twelve lines below. The
+    // window is now applied to a query that is ALREADY scoped, so it moves through the caller's own
+    // records and nothing else — which is what these two pages measure.
+    //
+    // The fixture's interleaved positions are what give this teeth: globally the six stages order
+    // A,B,A,B,A,A, so a window taken over the global list would hand A a page containing B's rows to
+    // throw away and would short A's page count. Contiguous blocks per owner would hide that.
+    expect(A_PAGE_COUNT).toBe(2)
+
+    const first = await listAs(
+      keyA.authorizationHeader,
+      `?limit=${PAGE_WINDOW}&offset=${FIRST_PAGE_OFFSET}`,
+    )
+    const second = await listAs(keyA.authorizationHeader, `?limit=${PAGE_WINDOW}&offset=${PAGE_WINDOW}`)
+
+    expect(first.data).toHaveLength(PAGE_WINDOW)
+    expect(second.data).toHaveLength(PAGE_WINDOW)
+
+    const firstIds = first.data.map((r) => r.id)
+    const secondIds = second.data.map((r) => r.id)
+
+    // Distinct pages, not the same page twice.
+    for (const id of secondIds) expect(firstIds).not.toContain(id)
+
+    // And their union is exactly A's seeded set — no foreign stage arrived in either window, and none
+    // of A's own stages fell out of the pagination because a foreign row consumed a slot.
+    expect([...firstIds, ...secondIds].sort()).toEqual([...A_STAGE_IDS].sort())
+
+    // Both pages report A's own total, not the global 6.
+    expect(first.meta.total).toBe(A_OWNED)
+    expect(second.meta.total).toBe(A_OWNED)
+    expect(first.meta.total).not.toBe(SEEDED_TOTAL)
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * A read is not an audited event — checked BEFORE teardown, where it can fail
+ * ------------------------------------------------------------------------ */
+
+describe("the requests above touched only the tables this file accounts for", () => {
+  it("wrote no audit_log row, so the baseline re-assert in afterAll is not covering for one", async () => {
+    // `audit_log` is in TOUCHED_TABLES for leak safety, and `removeFixtures` deletes from it — which
+    // means the baseline half of `afterAll` would pass even if every read had been audited. This is
+    // the assertion that cannot: it runs while any such row would still be there.
+    expect(await countLeftovers("audit_log")).toBe(0)
   })
 })
