@@ -545,6 +545,19 @@ are pinned:**
 this executor ran in a worktree alongside 49-02 and 49-03, and the orchestrator owns those writes
 after the wave completes.
 
+## Self-Check: PASSED
+
+All four claimed files exist on disk:
+
+- `src/lib/__tests__/custom-field-definition-fixture.ts` (7.4K)
+- `src/lib/__tests__/custom-field-definition-fixture.db.test.ts` (19.4K)
+- `.planning/phases/49-mutation-layer-truth-after-commit/49-01-SUMMARY.md` (28.0K)
+- `.planning/phases/49-mutation-layer-truth-after-commit/49-VALIDATION.md` (15.1K)
+
+All four claimed commits exist in `git log --oneline --all`: `ab3529b`, `bd6d5c3`, `ff7e5ae`,
+`6dcf729`. `git diff --diff-filter=D ab3529b~1 HEAD` reports **no deleted files** — nothing was
+destroyed across the four commits. Working tree clean; no untracked files outside `.planning/`.
+
 ---
 *Phase: 49-mutation-layer-truth-after-commit*
 *Completed: 2026-08-26*
