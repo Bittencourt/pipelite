@@ -589,7 +589,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 |-------|----------------|--------|-----------|
 | 46. Migration Chain & Toolchain Floor | 6/6 | Complete   | 2026-08-25 |
 | 47. Suite Trust & Supply Chain | 14/14 | Complete   | 2026-08-25 |
-| 48. REST API Authorization | 10/10 | Complete   | 2026-08-26 |
+| 48. REST API Authorization | 10/10 | Complete    | 2026-08-26 |
 | 49. Mutation-Layer Truth After Commit | 0/? | Not started | - |
 | 50. Export Authorization | 0/? | Not started | - |
 | 51. Board & List Volume | 0/? | Not started | - |

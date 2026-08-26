@@ -55,12 +55,12 @@ activities, and custom fields. Advanced features can be built externally via the
 
 ### Security — every route authorizes, and a delete deletes
 
-- [ ] **SEC-01**: A user cannot read, modify or delete another user's activity through the REST API,
+- [x] **SEC-01**: A user cannot read, modify or delete another user's activity through the REST API,
       and the list endpoint returns only activities they may see. *Source: `999.17`. GET/PUT/DELETE on
       `/api/v1/activities/[id]` and GET on `/api/v1/activities` perform **no ownership check**;
       the PUT can reassign `owner_id`. These route files have **zero test coverage**, so tests ship
       with the fix.*
-- [ ] **SEC-02**: A stage's legitimate owner can read it without passing `?expand=pipeline`.
+- [x] **SEC-02**: A stage's legitimate owner can read it without passing `?expand=pipeline`.
       *Source: `999.15`. The GET builds `withOptions` as `undefined` unless expand is requested, so the
       relation the ownership check reads is never loaded and the owner gets a 403. The file's own
       `ownershipWith` helper already does this correctly for PUT/DELETE.*
@@ -185,7 +185,7 @@ activities, and custom fields. Advanced features can be built externally via the
       drifted: `import-wizard.tsx:91` is gone, and `entity-combobox.tsx:96` and
       `webhook-response-config.tsx:39` are new. Each is behaviour-adjacent, which is why none was
       mechanically fixed inside an infrastructure phase — this needs UI test coverage.*
-- [ ] **QG-03**: No query builds a SQL `IN` clause by interpolating a JavaScript array.
+- [x] **QG-03**: No query builds a SQL `IN` clause by interpolating a JavaScript array.
       *Source: `999.18`. `stages/route.ts:73` used ``sql`${pipelines.id} IN ${pipelineIds}` `` instead
       of `inArray()`.*
       *__Correction 2026-08-25 (plan 48-09):__ this note previously called the empty case
@@ -259,9 +259,9 @@ Which phases cover which requirements. Filled in during roadmap creation.
 | DEPLOY-03 | Phase 46 | Complete |
 | QG-01 | Phase 47 | Complete |
 | SEC-05 | Phase 47 | In Progress |
-| SEC-01 | Phase 48 | Pending |
-| SEC-02 | Phase 48 | Pending |
-| QG-03 | Phase 48 | Pending |
+| SEC-01 | Phase 48 | Complete |
+| SEC-02 | Phase 48 | Complete |
+| QG-03 | Phase 48 | Complete |
 | SEC-04 | Phase 49 | Pending |
 | DATA-01 | Phase 49 | Pending |
 | DATA-02 | Phase 49 | Pending |
