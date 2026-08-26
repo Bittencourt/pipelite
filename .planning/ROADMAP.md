@@ -424,8 +424,8 @@ Plans:
 - [x] 49-01-PLAN.md — wave 1: re-measure the three zero-counts, EXECUTE the storage-failure seam, build the shared `custom_field_definitions` fixture three criteria depend on — SEC-04, DATA-01, DATA-02
 - [x] 49-02-PLAN.md — wave 1: `collectFileFieldRefs` and `deleteEntityFiles`, pure/unit, with the injected-failure shortfall observed — SEC-04
 - [x] 49-03-PLAN.md — wave 1: the four canonical create reads, all six suite-breakers amended in lockstep, and the first test file for `POST /api/v1/organizations` — DATA-02
-- [ ] 49-04-PLAN.md — wave 2: `findOwnedRecordById`, the JSONB reference match, path containment, wired into the file route's `GET` and `DELETE`; the IDOR reproduced at handler level first — SEC-04
-- [ ] 49-05-PLAN.md — wave 2: the behavioural four-entity 201-equals-GET proof against real PostgreSQL, with four per-entity ablations — DATA-02
+- [x] 49-04-PLAN.md — wave 2: `findOwnedRecordById`, the JSONB reference match, path containment, wired into the file route's `GET` and `DELETE`; the IDOR reproduced at handler level first — SEC-04
+- [x] 49-05-PLAN.md — wave 2: the behavioural four-entity 201-equals-GET proof against real PostgreSQL, with four per-entity ablations — DATA-02
 - [ ] 49-06-PLAN.md — wave 3: the behavioural SC-1 proof — two owners, real bytes, both verbs, both directions, with the IDOR reproduced against real PostgreSQL — SEC-04
 - [ ] 49-07-PLAN.md — wave 4: post-commit blob deletion in the four purge mutations, the injected failure leaving the purge committed, and the two comments that documented the gap retired — SEC-04
 - [ ] 49-08-PLAN.md — wave 5: the post-commit survivor recalculation, the `changedFields` spelling pinned, and the survivor-wins vacuity control measured — DATA-01
@@ -625,7 +625,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 | 46. Migration Chain & Toolchain Floor | 6/6 | Complete   | 2026-08-25 |
 | 47. Suite Trust & Supply Chain | 14/14 | Complete   | 2026-08-25 |
 | 48. REST API Authorization | 10/10 | Complete    | 2026-08-26 |
-| 49. Mutation-Layer Truth After Commit | 3/9 | In Progress|  |
+| 49. Mutation-Layer Truth After Commit | 5/9 | In Progress|  |
 | 50. Export Authorization | 0/? | Not started | - |
 | 51. Board & List Volume | 0/? | Not started | - |
 | 52. 320px Reachability & Modal Keyboard Ownership | 0/? | Not started | - |
