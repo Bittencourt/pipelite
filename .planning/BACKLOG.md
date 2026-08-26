@@ -1851,3 +1851,58 @@ owner column is present in the rendered predicate, not merely that N terms survi
 should be the model. Correct `crm.ts:408`'s comment in the same change.
 
 **Related:** `SEC-48-C` / `DEF-48-05`; the WR-11 hardening in Phase 48 that introduced the guard.
+
+---
+
+### SEC-49-C — `GET /api/v1/activities/[id]` is an existence oracle — **recorded**
+
+**Full evidence:** `.planning/phases/49-mutation-layer-truth-after-commit/deferred-items.md`
+**DEF-49-01**, measured by plan 49-05.
+
+`src/app/api/v1/activities/[id]/route.ts`'s `GET` does
+`findFirst({ where: and(eq(activities.id, id), isNull(activities.deletedAt)) })` and only then
+`if (activity.ownerId !== ctx.userId) return Problems.forbidden()`. A foreign activity therefore
+answers **403**, which confirms the id exists; its three siblings (`organizations/[id]`,
+`people/[id]`, `deals/[id]`) answer **404** because ownership is in the `WHERE`.
+
+**Why this survived Phase 48.** Plan 48-01 closed the activities IDOR and chose `forbidden()`.
+Phase 48 only settled on 404-as-the-answer later, at iteration 3 of its code review and in the
+SEC-48-A fix, on the explicit reasoning that "403-for-real beside 404-for-unknown is an existence
+oracle over every id". Iteration 1 compared `organizations`/`people`/`deals` (404) against
+`pipelines`/`webhooks` (403) and never examined `activities/[id]`, so the inconsistency was never in
+the compared set. Phase 48's verification passed 8/8 without touching it.
+
+**Severity is low but real**: it leaks existence, not content, and only to an authenticated caller.
+It is a consistency defect in a phase-settled convention rather than an access-control failure.
+
+**Not fixed in Phase 49** because changing a shipped status code is outside SEC-04/DATA-01/DATA-02
+and would need its own suite-breaker audit — `Problems.forbidden()` on that route may be asserted
+elsewhere. **Suggested owner:** a plan that changes it to a scoped `WHERE` and answers 404, amends
+every assertion that pins the 403, and adds the operation to the parsed-YAML OpenAPI gate
+(currently at 12 operations) so the declared response set follows.
+
+---
+
+### DATA-49-A — the canonical-read decision is implemented but unenforced — **recorded**
+
+**Measured by plan 49-05, 2026-08-26.** DATA-02's user decision was a **canonical read** rather than
+an in-process recompute. All four routes implement it (exactly one `const canonical = await
+db.query.` each, zero rejected-merge tails). But **no test discriminates the two**, and 49-05 proved
+that is inherent rather than an oversight:
+
+- Ablation 5 (swap the deals re-read for `{ ...deal, customFields: recalculatedCustomFields }`) → **23/23 green**.
+- Ablation 5b (that merge **plus** a canonical-read predicate rewritten to resolve nothing) → **still 23/23 green** — the proof is blind to whether the re-read happens at all.
+- Control 5c (dead predicate, merge removed) → **reddens**, proving 5b's sabotage was live, not inert.
+
+The two implementations agree for exactly as long as `recalculateFormulas` writes a single column, so
+no behavioural test can separate them today. The canonical read's value is the derived field that does
+not exist yet — which is why the decision was taken, and why it cannot currently be defended by a test.
+
+**A naive structural gate here would be vacuous by construction.** The rejected merge's identifier
+already appears in comments in three test files, so any token-count assertion over route source is
+satisfied by the prose describing it — this project's most-repeated failure mode (fifteen occurrences).
+
+**Suggested owner:** a plan that asserts it at the **AST** level — for each of the four `POST`
+handlers, that a re-read call exists and that the returned expression is not an object-spread merge —
+using a parser rather than a grep. Until then, treat the decision as documented-not-guarded; 49-05's
+SUMMARY instructs 49-09 not to claim discrimination, and it should not.
