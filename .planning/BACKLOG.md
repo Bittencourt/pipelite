@@ -1913,3 +1913,74 @@ satisfied by the prose describing it — this project's most-repeated failure mo
 handlers, that a re-read call exists and that the returned expression is not an object-spread merge —
 using a parser rather than a grep. Until then, treat the decision as documented-not-guarded; 49-05's
 SUMMARY instructs 49-09 not to claim discrimination, and it should not.
+
+**One hop out, recorded here because it is the same decision unmade elsewhere:** the three `[id]`
+**PUT** handlers still serialize the in-process merge —
+`src/app/api/v1/deals/[id]/route.ts:332`, `people/[id]/route.ts:258`,
+`activities/[id]/route.ts:387`, each `{ ...updated, customFields: recalculatedCustomFields }`. SC-4's
+criterion is about the **201** only, so this is not a Phase 49 miss; but "decide once for all four
+entities" was the requirement's own wording, and the decision currently holds for creates and not for
+updates. Same owner as the AST gate above.
+
+---
+
+### SEC-49-D — `POST /api/upload` has no ownership check and no path containment — **recorded**
+
+**Found by plan 49-09 at sign-off, 2026-08-26**, by looking one call-chain hop OUTSIDE Phase 49's
+declared file surface. **That is the exact failure mode that cost Phase 48's sign-off five
+criticals:** 48-10 judged 26 negative controls and reported 26 DELIVERED, and a code review then
+found five it had missed — two of them live cross-tenant reads through `/api/v1` — because it audited
+only the files the phase declared, and both were one hop away.
+
+**Phase 49 closed the READ and DELETE side of the file surface. The WRITE side still carries the
+identical defect, unrecorded and untested.** `src/app/api/upload/route.ts`:
+
+1. **No ownership check.** `:33-36` is `const session = await auth(); if (!session?.user) return 401`
+   and then nothing — no entity resolution, no ownership predicate. `entityId` and `fieldName` arrive
+   as **unvalidated form fields** (`:41-42`). This is byte-for-byte the shape
+   `src/app/api/files/[entityId]/[fieldName]/[filename]/route.ts` had before plan 49-04.
+2. **No path containment.** `:99` is `path.resolve(UPLOAD_DIR, entityId, fieldName)` with no
+   `path.relative` test, no direct-child test, nothing. Reproduced by executing that exact expression
+   against the container's measured `UPLOAD_DIR=/app/uploads`:
+
+   ```
+   INSIDE   /app/uploads/9f1c…0001/Anexos          <- a legitimate upload
+   INSIDE   /app/uploads/victim-record-id/Anexos   <- ANOTHER USER's record id; nothing checks
+   OUTSIDE  /app                                   <- entityId "../../.."  fieldName "app"
+   OUTSIDE  /etc/cron.d                            <- entityId "/etc"
+   OUTSIDE  /var/tmp                               <- fieldName "../../../var/tmp"
+   ```
+
+   So any authenticated caller can make the application write a file into a directory of their
+   choosing. The basename is a server-minted UUID plus the caller's extension
+   (`path.extname(file.name)`), so this is an arbitrary-**directory** write rather than an arbitrary
+   **overwrite** — which bounds it, but does not make it acceptable.
+3. **The loose 401 condition.** `!session?.user` accepts `{ user: {} }`. Plan 49-04 tightened the
+   file route to `!session?.user?.id` and recorded two red cells for it; this route was not in that
+   plan's surface and is still loose.
+
+**It does NOT reopen SC-1, stated so the finding is not over-read.** The read guard requires the
+requested filename to already be a value the server wrote into *that record's own* `customFields`
+JSONB, and an attacker cannot write the victim's JSONB without owning the victim's record — so a
+planted blob is not retrievable through `/api/files/...`. SC-1's verdict stands unchanged.
+
+**No test covers this route.** Nothing under `src/` or `e2e/` drives `POST /api/upload`; the ten
+files matching `api/upload` are the route itself, its client caller
+(`src/components/custom-fields/file-field.tsx`), and eight citations in prose or in
+`compose-uploads-persistence.test.ts`'s env-literal gate.
+
+**Why Phase 49 did not fix it.** SEC-04 is *"a purged record's uploaded files are unreachable —
+removed from storage, and not served even while they exist."* An upload WRITE path is not that on any
+reading, and a sign-off plan that grows a fifth requirement's worth of work is a sign-off nobody can
+audit. Recorded with its evidence instead, at the point where it was found.
+
+**Suggested owner:** a plan that reuses this phase's own exported helpers rather than inventing a
+third spelling of the same rule — `findOwnedRecordById` for ownership and `resolveContainedPath` for
+containment, both in `src/lib/api/file-access.ts`, both with recorded reds. The write side needs one
+check the read side does not: that `fieldName` is a live `type='file'` definition on the resolved
+entity type, or the route will keep creating directories for fields that do not exist. Note this is
+**independent of SEC-49-A** — that item is about reads bypassing the app under `FILE_STORAGE=s3`;
+this one is live under `local`, which is the configuration actually deployed.
+
+**Related:** `SEC-04` (the read/delete half, closed in Phase 49); `SEC-49-A`; `DEF-49-06` in
+`.planning/phases/49-mutation-layer-truth-after-commit/deferred-items.md`.

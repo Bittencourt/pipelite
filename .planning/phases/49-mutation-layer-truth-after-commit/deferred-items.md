@@ -153,3 +153,51 @@ children keeping `Organization.*` values that a merge made stale) rather than wi
 
 **Until then the ordering claim rests on two unit cells and is reported that way** — see 49-08's
 SUMMARY, which does not claim behavioural discrimination for it.
+
+---
+
+## DEF-49-06 — `POST /api/upload` still has the defect 49-04 closed on the read side
+
+**Found by:** plan 49-09, sign-off, deliberately looking ONE CALL-CHAIN HOP outside the phase's own
+declared file surface. **That is the specific failure mode that cost Phase 48's sign-off five
+criticals** — 48-10 judged 26 controls and reported 26 DELIVERED, and a later code review found five
+it had missed, two of them live cross-tenant reads, because it audited only the files the phase
+declared.
+
+**Recorded as `SEC-49-D` in `.planning/BACKLOG.md`.** Full evidence there. In short:
+`src/app/api/upload/route.ts:33-36` authorizes on `session?.user` **alone** — no entity resolution,
+no ownership predicate — and `:99` builds the destination as
+`path.resolve(UPLOAD_DIR, entityId, fieldName)` from two **unvalidated form fields**, with no
+containment check of any kind. Reproduced by executing that exact expression against the container's
+measured `UPLOAD_DIR=/app/uploads`:
+
+```
+INSIDE   /app/uploads/9f1c…0001/Anexos                 <- a legitimate upload
+INSIDE   /app/uploads/victim-record-id/Anexos          <- ANOTHER USER's record id, no ownership check exists
+OUTSIDE  /app                                          <- entityId = "../../.."   fieldName = "app"
+OUTSIDE  /etc/cron.d                                   <- entityId = "/etc"
+OUTSIDE  /var/tmp                                      <- fieldName = "../../../var/tmp"
+```
+
+**It does NOT reopen SC-1, and that is stated so the finding is not over-read.** The read guard
+requires the requested name to already be a value the server wrote into *that record's own*
+`customFields`, and an attacker cannot write the victim's JSONB without owning the victim's record.
+So a planted blob is not retrievable through `/api/files/...`. What is real is (a) an
+ownership-unchecked WRITE into any record's field directory, (b) a WRITE outside the upload root
+entirely, as the application user, available to any authenticated caller, and (c) the loose
+`!session?.user` condition that 49-04 tightened to `!session?.user?.id` on the file route and which
+is still loose here.
+
+**Why plan 49-09 did not fix it.** SEC-04 is "a purged record's uploaded files are unreachable —
+removed from storage, and not served even while they exist". The upload WRITE path is not that, on
+any reading, and a sign-off plan inventing a fifth requirement's worth of work is how a phase stops
+being auditable. It is also **not covered by any test**: no file under `src/` or `e2e/` drives
+`POST /api/upload` — the ten files matching `api/upload` are the route, its client caller, and eight
+citations of it in prose or in an env-literal gate.
+
+**Suggested owner:** a plan that reuses this phase's own two helpers rather than inventing a third
+spelling — `findOwnedRecordById` for the ownership half and `resolveContainedPath` for the
+containment half, both exported from `src/lib/api/file-access.ts` and both proven here. Note the
+write side needs one thing the read side does not: the field must be a live `type='file'` definition
+on the resolved entity type, or the route will happily create directories for field names that do
+not exist.
