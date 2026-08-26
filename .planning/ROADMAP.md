@@ -72,7 +72,7 @@ Full archive: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 46: Migration Chain & Toolchain Floor** - A clone of this repo builds its own database, and the documented commands work from the host (completed 2026-08-25)
 - [x] **Phase 47: Suite Trust & Supply Chain** - A red run means a defect, and the project has a stated position on its own advisories (all 14 plans executed 2026-08-25; **QG-01 complete, SEC-05 PARTIAL** — SC-4+s runner half is NOT PROVED, see 47-13-SUMMARY and D-47-12-A)
 - [x] **Phase 48: REST API Authorization** - Every `/api/v1` route that touches a record authorizes the caller against that record (all 10 plans executed 2026-08-26; **SEC-01, SEC-02 and QG-03 all PROVED**, 26/26 negative controls DELIVERED, the IDOR and the 500 both re-checked over real HTTP against a rebuilt image — see 48-10-SUMMARY)
-- [ ] **Phase 49: Mutation-Layer Truth After Commit** - A purge removes the bytes, a merge leaves the survivor consistent, a create response matches a read
+- [x] **Phase 49: Mutation-Layer Truth After Commit** - A purge removes the bytes, a merge leaves the survivor consistent, a create response matches a read
 - [ ] **Phase 50: Export Authorization** - A non-admin cannot walk the customer table out through a filter that narrows nothing
 - [ ] **Phase 51: Board & List Volume** - The busiest board opens without loading every deal, and list counts describe the table rather than the page
 - [ ] **Phase 52: 320px Reachability & Modal Keyboard Ownership** - Every dialog's primary control is reachable at 320px, and Enter inside a modal stays inside it
@@ -429,7 +429,99 @@ Plans:
 - [x] 49-06-PLAN.md — wave 3: the behavioural SC-1 proof — two owners, real bytes, both verbs, both directions, with the IDOR reproduced against real PostgreSQL — SEC-04
 - [x] 49-07-PLAN.md — wave 4: post-commit blob deletion in the four purge mutations, the injected failure leaving the purge committed, and the two comments that documented the gap retired — SEC-04
 - [x] 49-08-PLAN.md — wave 5: the post-commit survivor recalculation, the `changedFields` spelling pinned, and the survivor-wins vacuity control measured — DATA-01
-- [ ] 49-09-PLAN.md — wave 6: sign-off — the control register, three fresh falsifications, the vacuity hunt, four criterion verdicts, the phase gate, and a real-HTTP DATA-02 round trip against a rebuilt image — SEC-04, DATA-01, DATA-02
+- [x] 49-09-PLAN.md — wave 6: sign-off — the control register, three fresh falsifications, the vacuity hunt, four criterion verdicts, the phase gate, and a real-HTTP DATA-02 round trip against a rebuilt image — SEC-04, DATA-01, DATA-02
+
+**PHASE 49 OUTCOME — signed off by 49-09 on 2026-08-26 by auditing the phase's evidence, not its
+intentions.**
+
+**Every plan in this phase found a defect in its own plan. Eight for eight**, and that is the
+strongest single signal about the phase: 49-02's containment gate **could not have failed** (a
+root-level check plus a two-segment climb lands exactly on the root, which the check allows); 49-06's
+`must_haves.truths[0]` asked for a zero-byte body, which **fails against correct code** (the refusal
+is 29 bytes by design); 49-08's fixture computed **74 — exactly the loser's stored value** — so a
+merge that merely COPIED the loser's key would have passed the discriminator; 49-03 found the
+`<verify>` blocks `cd`-ed to the MAIN repo, a green transcript proving nothing, fixed across all nine
+plans in `34b2233` (20 occurrences, re-measured at 0 of 9 at sign-off); 49-07's ablation A3 could not
+fail; and 49-08's own ORDERING cell was vacuous (`invocationCallOrder` is monotonic by construction).
+
+**Negative-control register: 41 controls judged against verbatim output — 36 DELIVERED, 5 NOT
+DELIVERED, each of the five named with the structural reason its red is impossible** rather than
+softened (the rejected in-process merge, a create's canonical-read owner term, the inner catch's
+never-rethrow, the survivor-first ordering behaviourally, and `updated_at` not being bumped).
+**Three re-falsified fresh at sign-off:** the ownership term in `file-access.ts` → **5 of 18 red**
+with the victim's CONTENTS in the response body and `existsSync` going false on the victim's blob;
+`changedFields: Object.keys(fieldChanges)` → **db 3 of 15** (`expected 122 to be 174`) **and unit 1 of
+32** naming the cause; the blob deletion moved inside the transaction → with the result assertion
+deferred, **`expected 1 to be +0`** — the row is still in the database while its bytes are already
+gone, which is why the deletion is post-commit.
+
+**Vacuity hunt: NO VACUOUS GATE FOUND** — four tests applied to **13 gate artifacts** carrying **800
+assertions** (comment-stripped, counted with `node`). Test 1 was **run rather than read**: the three
+SEC-04 predicates were driven on 20 fixtures whose text appears in no test file, 19 behaved as
+specified and one **corrected the sign-off plan's own prediction** (an empty `storedName` is refused,
+because it would resolve to the field directory). A fresh deny-everything ablation on
+`resolveContainedPath` reddens **9 of 52** cells in `route-containment.test.ts` — so that file's
+non-vacuity rests on its 9 positives, **named as brittle rather than glossed**. Test 3 is satisfied
+structurally: **zero source-token greps anywhere** — no gate in this phase reads a source file from
+disk, so the project's most-repeated failure mode has no surface here. Test 4 was answered fresh:
+renaming the mismatch log's `msg` to an equally well-formed value reddens the exhaustive `toEqual`
+while `log-scope-format.test.ts` stays **green**.
+
+**DATA-02 re-checked over real HTTP against a REBUILT image** — `docker compose up -d --build`, bound
+image `sha256:83003bf6eb2e…` → **`sha256:66efd8556ac1…`** (a matching id would have invalidated every
+measurement). `POST /api/v1/organizations` **201** then `GET` **200** over a manufactured
+`type='formula'` definition: the two `custom_fields` deeply equal, the derived value equals the
+expression computed from the name that was SENT, and the discriminator (201 ≠ the object the request
+sent) asserted — 12 of 12 assertions pass. Foreign key B → **404**. The temporary formula definition
+existed for **~1 second per run** and was hard-deleted first; the live `type='formula'` count is back
+at **0** and the table at **169**, not 170. Every `p49gate` row removed in foreign-key order with
+absence asserted; `organizations` back at **46054**, `users` 10, `api_keys` 8, `audit_log` 214, and
+**0 stored file descriptors on both the `%storedName%` and `%publicUrl%` probes across 188,619
+rows** — identical to 49-01's measurement, so the live database was not written to by this phase.
+
+**Verdicts:** SC-1 **PROVED for `FILE_STORAGE=local` only**, SC-2 **PROVED**, SC-3 **PROVED**, SC-4
+**PROVED**. Each cites the defect-proving assertion, never a regression guard — and the three known
+guards are named as guards: 49-03's activities cells (C1) were green before the fix, 49-07's
+URL-goes-dark half was already true after 49-04, and 49-05's and 49-06's first runs were green because
+the fix had already landed.
+
+**Gate:** base **5659 passed / 32 skipped** (184 files passed + 2 skipped), RSC **8/8**,
+`tsc --noEmit` exit 0, eslint **0 errors** / 118 warnings (gated on errors), `npm run test:db` **288
+passed over 13 files, EXIT 0**, `db:check-migrations` exit 0, `security:audit` exit 0 (47 advisories,
+14 packages, 39 of 39 allowlist entries applied, 1285 dependencies), `/api/health` 200 with `db.ok`
+true and **10/10** processors, tree clean by `git diff --exit-code`. **Both deltas close EXACTLY,
+plan by plan, every intermediate figure quoted from a SUMMARY:** base
+`5546 + 0 + 43 + 11 + 52 + 0 + 0 + 0 + 7 + 0 = 5659`; db `197 + 14 + 23 + 18 + 21 + 15 = 288`.
+
+**DEF-48-01 CLOSED, and it is this phase's incidental win.** `npm run test:db` exited non-zero on a
+green suite from Phase 40 until 2026-08-26; root cause found by 49-06 (DEF-49-04) and fixed in
+`37202ce` — the `afterAll` guard wrapped the `expect` but not the QUERY, and `saved_view_defaults` has
+no `id` column → `42703`. Every phase from 48 onward had carried "never gate on its exit code" as a
+standing caveat; that caveat is retired.
+
+**Four limitations this phase ships ON PURPOSE, and none may be quietly upgraded.** (1) **SC-1 is
+`FILE_STORAGE=local` only** — under `s3` the stored `publicUrl` is `${S3_PUBLIC_URL}/${key}`
+(`upload/route.ts:89`) and reads never traverse the guarded route: **SEC-49-A**, open. 25 S3 sentences
+across the eight SUMMARYs were read for polarity and **all 25 are refusals or scope limits; zero claim
+coverage.** (2) **The tombstone retains 90 days, not "indefinitely"** — 22 occurrences of the stem in
+the phase directory, **all 22 refusing or correcting the claim, zero asserting it**; the two documents
+that still asserted it (`REQUIREMENTS.md` SEC-04, `BACKLOG.md` CR-01) are corrected in this sign-off.
+(3) **Nothing in this phase discriminates the canonical read from the rejected in-process merge** —
+ablation 5 passes 23/23, and 5b (that merge PLUS a canonical read resolving nothing) is **still
+23/23**, so the proof is blind to whether the re-read happens; control 5c reddens, proving 5b's
+sabotage was live. **DATA-49-A**; the guarantee is the code path. (4) **DEF-48-05 / SEC-48-C is NOT
+closed here** by the user's decision, keeps its owner and evidence, and is restated as open — 6
+references across the SUMMARYs, all six explicit non-absorptions.
+
+**One finding one call-chain hop OUTSIDE the phase's declared file surface — which is exactly how
+Phase 48's sign-off missed five criticals.** **SEC-49-D:** `POST /api/upload` authorizes on
+`session?.user` **alone** with no entity resolution, and builds `path.resolve(UPLOAD_DIR, entityId,
+fieldName)` from two **unvalidated form fields** with no containment check — so the defect 49-04 closed
+on the read side is live on the write side, and no test drives that route at all. Executed against the
+container's measured `UPLOAD_DIR`: `entityId = "../../.."` resolves to `/app`, `"/etc"` to
+`/etc/cron.d`. **It does NOT reopen SC-1** — the read guard requires the name to already be in that
+record's own JSONB, which an attacker cannot write. Recorded, not fixed: an upload write path is
+outside SEC-04's wording. Also carried out: SEC-49-B, SEC-49-C, DEF-49-01/02/03/05.
 
 ### Phase 50: Export Authorization
 
@@ -625,7 +717,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 | 46. Migration Chain & Toolchain Floor | 6/6 | Complete   | 2026-08-25 |
 | 47. Suite Trust & Supply Chain | 14/14 | Complete   | 2026-08-25 |
 | 48. REST API Authorization | 10/10 | Complete    | 2026-08-26 |
-| 49. Mutation-Layer Truth After Commit | 8/9 | In Progress|  |
+| 49. Mutation-Layer Truth After Commit | 9/9 | Complete   | 2026-08-26 |
 | 50. Export Authorization | 0/? | Not started | - |
 | 51. Board & List Volume | 0/? | Not started | - |
 | 52. 320px Reachability & Modal Keyboard Ownership | 0/? | Not started | - |

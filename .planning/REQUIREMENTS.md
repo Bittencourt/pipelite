@@ -71,13 +71,24 @@ activities, and custom fields. Advanced features can be built externally via the
       satisfies. **This needs a decision, not a patch** — minimum selectivity, a lower non-admin cap,
       or restoring the admin gate. The existing audit row makes exports attributable, not bounded, and
       does not close this.*
-- [ ] **SEC-04**: A purged record's uploaded files are unreachable — removed from storage, and not
+- [x] **SEC-04**: A purged record's uploaded files are unreachable — removed from storage, and not
       served even while they exist. *Source: `CR-01`. Blobs survive purge, and
       `api/files/[entityId]/[fieldName]/[filename]` authorizes on `session?.user` alone with no record
       lookup, so anyone who held the URL can still download them — and the URL is recoverable from the
-      audit tombstone indefinitely. The route fix alone closes the exposure even before blob deletion
-      lands; order it first. Blob deletion must run **post-commit**, so a storage failure cannot roll
-      back a committed purge.*
+      audit tombstone for **90 days** (`audit.retention_days = 90`, measured twice in Phase 49; this
+      note said "indefinitely", which was false — the ordering argument holds either way). The route
+      fix alone closes the exposure even before blob deletion lands; order it first. Blob deletion must
+      run **post-commit**, so a storage failure cannot roll back a committed purge.*
+      *49-09: **COMPLETE for `FILE_STORAGE=local` only.** The read/delete half is owner-scoped,
+      reference-matched and path-contained (49-04) and proven behaviourally against real PostgreSQL and
+      a real filesystem, with the disclosure reproduced at the byte level (49-06); the bytes are removed
+      post-commit in all four purge mutations, with an injected `EISDIR` leaving the purge COMMITTED and
+      logging a `{ entityType, id, expected, deleted }` mismatch (49-07). **Two exposures on the same
+      surface stay OPEN and are not covered by this box:** `SEC-49-A` (under `FILE_STORAGE=s3` the
+      stored `publicUrl` bypasses the route entirely, so the guard protects nothing there) and
+      `SEC-49-D` (`POST /api/upload` still authorizes on `session?.user` alone and builds its
+      destination from two unvalidated form fields — the write-side twin of the defect this requirement
+      closed on the read side, found one hop out at sign-off and untested).*
 - [ ] **SEC-05**: The committed lockfile's advisories are triaged, and CI has a stated audit policy.
       *Source: `999.16`. 4 critical / 22 high as of 2026-08-24. Re-measure at plan time — the count is
       not the requirement, the decision is.*
@@ -146,13 +157,13 @@ activities, and custom fields. Advanced features can be built externally via the
 
 ### Data correctness
 
-- [ ] **DATA-01**: A merge leaves the survivor's formula fields consistent with its post-merge values.
+- [x] **DATA-01**: A merge leaves the survivor's formula fields consistent with its post-merge values.
       *Source: `FORM-01`. An ordinary edit recalculates; a merge calls only `recalcReparentedChildren`
       and never recalculates the survivor, even though it writes the survivor's field values from the
       user's merge choices. **Dormant at 0 `type='formula'` definitions** — verify that count still
       holds at plan time. Must run post-commit: `recalculateFormulas` uses the module-level `db` and
       cannot take a `tx`.*
-- [ ] **DATA-02**: A create response carries the same field values a subsequent read would.
+- [x] **DATA-02**: A create response carries the same field values a subsequent read would.
       *Source: `999.23`. POST returns the raw `.returning()` row, so the 201 body carries the
       un-computed custom-field blob. Stored value, `crmBus` event and GET are all correct; PUT has no
       such gap. Decide once for all four entities. Note two plan 34-02 fixture assertions compare
@@ -262,9 +273,9 @@ Which phases cover which requirements. Filled in during roadmap creation.
 | SEC-01 | Phase 48 | Complete |
 | SEC-02 | Phase 48 | Complete |
 | QG-03 | Phase 48 | Complete |
-| SEC-04 | Phase 49 | Pending |
-| DATA-01 | Phase 49 | Pending |
-| DATA-02 | Phase 49 | Pending |
+| SEC-04 | Phase 49 | Complete |
+| DATA-01 | Phase 49 | Complete |
+| DATA-02 | Phase 49 | Complete |
 | SEC-03 | Phase 50 | Pending |
 | PERF-01 | Phase 51 | Pending |
 | UX-03 | Phase 51 | Pending |

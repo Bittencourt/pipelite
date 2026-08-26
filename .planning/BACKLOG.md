@@ -35,10 +35,10 @@ Status legend — **v1.4** promoted for scoping · **recorded** real but deliber
 | **PERF-01** | `/deals` renders every deal on a pipeline, unpaginated | **v1.4** — tier 1 |
 | **F-39-08** | Enter inside a modal navigates the list behind it | **v1.4** — tier 2 |
 | **F-39-07** | 320px reachability — no height clamp on dialogs or popovers | **v1.4** — tier 2 |
-| **CR-01** | Purge leaves file attachments on disk and downloadable | **v1.4** — tier 2 |
+| **CR-01** | Purge leaves file attachments on disk and downloadable | **closed** — Phase 49 (49-04/49-06 route half, 49-07 blob half); `local` only, `SEC-49-A` and `SEC-49-D` open |
 | **STATS-01** | `/activities` stats row states counts it cannot know | **v1.4** — tier 2 |
-| **FORM-01** | Merge never recalculates the survivor's own formula fields | **v1.4** — tier 2, dormant |
-| **999.13-999.23, 999.28** | The twelve former ROADMAP items | **v1.4** — tier 3 |
+| **FORM-01** | Merge never recalculates the survivor's own formula fields | **closed** — Phase 49 (49-08); ordering has no behavioural detector (`DEF-49-05`) |
+| **999.13-999.23, 999.28** | The twelve former ROADMAP items | **v1.4** — tier 3 · **999.23 closed** Phase 49 (49-03/49-05); the decision is a canonical read, unenforced (`DATA-49-A`) |
 | **D-45-01** | `toggle.test.ts` intermittent `beforeEach` timeout | **v1.4** — fold into `999.28` |
 | **D-45-02** | `ShortcutsHint` bar occludes actionable controls | **recorded** |
 | **D-45-04** | Admin drawer has no swipe-to-dismiss | **recorded** — needs `vaul`, and a doc fix |
@@ -622,7 +622,49 @@ it into this file when the phase's other findings did. The phase's verifier caug
 (gap G-3). They are recorded here because a finding that lives only in a phase artifact is a
 finding nobody will read again.
 
-### FORM-01 — merge never recalculates the SURVIVOR's own formula fields (phases 39 x 34 seam) — **PROMOTE → v1.4, tier 2**
+### FORM-01 — merge never recalculates the SURVIVOR's own formula fields (phases 39 x 34 seam) — **CLOSED 2026-08-26 (Phase 49, plan 49-08)**
+
+> **CLOSED.** `mergeRecordsMutation` now carries a third post-commit block that calls
+> `recalculateFormulas` naming the **survivor explicitly** — before the reparented children's refresh,
+> with `cascade: false`, an explicit `budget: FORMULA_EVALUATION_BUDGET`, and a `changedFields` array
+> of **native COLUMN names and BARE definition names**. Best-effort and never rethrowing (D-05).
+>
+> **The spelling is the load-bearing part, and this item's "test it can fail" is exactly what caught
+> it.** The audit diff built 300 lines above uses `customFields.<Name>`, which matches none of
+> `scopeFormulasToChangedFields`' three modes — so `changedFields: Object.keys(fieldChanges)` would
+> have produced a call that ran on every merge, cost a definition read, wrote **nothing**, and looked
+> exactly like a fix. **Re-falsified fresh at sign-off, both halves:** the unit cell goes red with
+> `expected [ 'customFields.CNPJ / CPF' ] to deeply equal []` — the **only** red of 32 — and the
+> behavioural file goes 3 of 15 red with `expected 122 to be 174`. Without that one unit cell the
+> behavioural file would have been the only detector, reporting the value and never the cause.
+>
+> **The proof is the test this item asked for, strengthened where the obvious fixture had a hole.**
+> This item's suggestion was one input field and a doubling; measured, that fixture computes **74 —
+> exactly the loser's own stored value** — so a merge that merely COPIED the loser's key would have
+> satisfied both the equality and the does-not-equal-pre-merge discriminator. The shipped fixture reads
+> **two** inputs, one won by each record: survivor stores 122, loser stores 574, and the only value
+> consistent with the post-merge record is **174 = 37·2 + 100**, reachable only by recomputing from a
+> MIXTURE of the two. A floor asserts `174 ∉ {122, 574}` before any claim is made.
+> Proven in `src/lib/mutations/dedup-formula.db.test.ts` against real PostgreSQL with a manufactured
+> `type='formula'` definition — including the **no-reparented-children** case, which is the strongest
+> form of the defect because `recalcReparentedChildren` returns on an empty work list and so recomputed
+> literally nothing at all.
+>
+> **The dormancy this item flagged is confirmed and is what makes the proof necessary rather than
+> optional.** `type='formula'` measured **0** live on 2026-08-26 and again at sign-off, so a test
+> written against live definitions is green before AND after the fix. The file carries a **VACUITY
+> CONTROL** — the same assertion shape on an all-survivor `choices` map — which was run under the
+> unfixed code and recorded **PASSING**, with a do-not-delete comment. That is why the criterion's
+> wording *"records whose formula inputs disagree"* is a fixture requirement and not decoration.
+>
+> **Two things this closure does NOT cover, named rather than implied:** the survivor's
+> **PRE-EXISTING** children keep `Organization.*` values a merge made stale (**WR-02**, `cascade: false`
+> by decision); and the survivor-first **ORDERING has no behavioural detector** — two unit cells hold
+> it, the db file is green under a reorder, and the reason is structural (**DEF-49-05**).
+>
+> Original entry follows.
+
+### FORM-01 (original entry) — merge never recalculates the SURVIVOR's own formula fields (phases 39 x 34 seam)
 
 **Filed 2026-08-24 by the v1.3 cross-phase integration audit.** Priority: medium, but **dormant
 today** — see below. This defect could not have been caught by either phase's own verification,
@@ -891,7 +933,57 @@ fails.
 These lived only in archived phase artifacts. The audit named them and said they were "tracked in
 `BACKLOG.md`" — they were not. Each was re-verified against the tree at `a58b9e1` before import.
 
-### CR-01 — a purge leaves the record's file attachments on disk and downloadable — **PROMOTE → v1.4**
+### CR-01 — a purge leaves the record's file attachments on disk and downloadable — **CLOSED 2026-08-26 (Phase 49), BOTH HALVES**
+
+> **CLOSED, and the two halves are recorded separately because they were fixed by different plans and
+> carry different evidence.**
+>
+> **The ROUTE half (consequences 2 and 3) — closed by plan 49-04, proven by plan 49-06.**
+> `GET` and `DELETE` on `/api/files/{entityId}/{fieldName}/{filename}` now resolve the record under an
+> owner-scoped three-term predicate (`id`, `owner_id`, `deleted_at is null`), require the requested
+> filename to already be a value the server wrote into **that record's own** `customFields` JSONB, and
+> resolve the path against the **field directory** rather than the upload root — every refusal a
+> uniform 404 with the same 29-byte body, so a foreign record is byte-indistinguishable from a missing
+> one. The loose `!session?.user` condition was tightened to `!session?.user?.id`.
+> **The defect-proving assertion, re-falsified fresh at sign-off:** with the ownership term removed,
+> `files-route-ownership.db.test.ts` goes **5 of 18 red** and the reds are the bytes, not the status —
+> *"A requested B's file — the response body CONTAINS the victim's file contents"*, and
+> *"A's refused DELETE removed B's file anyway"* with `existsSync` on the victim's path returning
+> `false` against a real filesystem. The **JSONB reference match is the load-bearing check**, measured
+> rather than assumed: removing it reddens the percent-encoded traversal
+> (`%2e%2e%2fetc%2fpasswd`), which contains no separator and no `..` and is therefore a legitimate
+> direct child that containment **cannot see at all**.
+>
+> **The BLOB half (consequence 1) — closed by plan 49-07.** All four purge mutations collect the
+> record's blob refs before their transaction and unlink them **AFTER the commit**, best-effort, never
+> rethrowing. The leak was reproduced first, per entity type, with each red naming its own absolute
+> path. An injected `EISDIR` failure leaves the purge **COMMITTED** and logs
+> `{"entityType":"organization","id":"purgeblob-org","expected":2,"deleted":1}` — identifiers and
+> counts only, never a filename (T-37-30), asserted by an exhaustive `toEqual` over the whole field
+> set so an added `paths` key could not slip past a substring check. **Re-falsified fresh at
+> sign-off:** with the deletion moved inside the transaction and the result assertion deferred by a
+> labelled probe, `expected 1 to be +0` — **the organization is still in the database while its bytes
+> are already gone.** That is the assertion that carries the post-commit ordering, and it is why the
+> ordering is not a stylistic preference.
+>
+> `src/lib/trash/prune.ts`'s "NOT COVERED — UPLOADED FILE BLOBS ARE NOT REMOVED" block is retired and
+> now points at the four mutations; a repository-wide search confirms no other source comment claims
+> blobs survive a purge.
+>
+> **THREE THINGS THIS CLOSURE DOES NOT COVER, named so the box cannot be over-read:**
+> - **`SEC-49-A`** — under `FILE_STORAGE=s3` the stored `publicUrl` is `${S3_PUBLIC_URL}/${key}`, so
+>   reads never traverse the guarded route. `deleteEntityFiles` has an S3 branch and it is
+>   **mock-covered only**; no bucket exists in any reachable environment. Both halves above hold for
+>   `FILE_STORAGE=local`, which is the configuration actually deployed (re-confirmed unset in the
+>   rebuilt container at sign-off).
+> - **`SEC-49-D`** — `POST /api/upload` still has **no ownership check and no path containment**. The
+>   write-side twin of the route defect this item closed, found one call-chain hop out at sign-off.
+> - **The now-empty `${UPLOAD_DIR}/${entityId}/` directory tree is deliberately not pruned** — `rmdir`
+>   racing a concurrent upload is a real hazard for a marginal gain in inodes.
+>
+> Original entry follows.
+
+### CR-01 (original entry) — a purge leaves the record's file attachments on disk and downloadable
 
 **Where:** the four `purge*Mutation` teardowns (`src/lib/mutations/{deals,people,organizations,activities}.ts`)
 and `src/app/api/files/[entityId]/[fieldName]/[filename]/route.ts`
@@ -908,8 +1000,9 @@ while the *blob* survives. Three consequences, worsening:
    "*{name} and its notes will be permanently deleted. This can't be undone.*"
 3. The URL does not even have to have been kept: the soft-delete tombstone diffs the whole pre-delete
    row including `customFields`, and purge deliberately preserves prior `audit_log` rows — so the path
-   to a "permanently deleted" record's attachments is recoverable from the audit log by any admin,
-   indefinitely.
+   to a "permanently deleted" record's attachments is recoverable from the audit log by any admin, for
+   **90 days** (`audit.retention_days = 90`, measured twice in Phase 49 — this item originally said
+   "indefinitely", which was false; 90 days is still ample for the consequence to matter).
 
 **Half of this was already fixed, which is why it reads as closed and is not.** `src/lib/trash/prune.ts:66-73`
 now documents the gap honestly ("NOT COVERED — UPLOADED FILE BLOBS ARE NOT REMOVED"), replacing the
@@ -1181,7 +1274,49 @@ the JSON export, which shares `flattenCustomFields`), yet the columns never reac
 header as the union of keys across all rows, or pass an explicit `columns` list to `unparse`. This is
 arguably the most user-visible defect found in the milestone so far. See `34-11-SUMMARY.md`.
 
-**999.23 — POST responses echo pre-recalculation formula values** (captured 2026-08-14, Phase 34) — **PROMOTE → v1.4**
+**999.23 — POST responses echo pre-recalculation formula values** (captured 2026-08-14, Phase 34) — **CLOSED 2026-08-26 (Phase 49, plans 49-03 and 49-05)**
+
+> **CLOSED, and the decision this item asked for is on the record: a CANONICAL READ for all four
+> entities**, not an in-process recompute. After the insert commits, each `POST` re-reads the record
+> through the same three-term predicate (`id`, `owner_id`, `deleted_at is null`) the corresponding
+> GET-by-id uses and serializes **that** — one code path defines truth, at the cost of one extra
+> `SELECT` per create. The fallback to the inserted row is kept and **logged**, because an unlogged
+> fallback is a path that reproduces this very defect and says nothing about it. The three-line comment
+> that documented the gap as intentional and cited this item is gone from both Shape B routes.
+>
+> **"Decide once for all four entities" was honoured, and the placement is why it could be.** The
+> re-read went in the **ROUTE**, never in a create mutation: `people` and `deals` POST call no create
+> mutation at all, so mutation-level placement covers two of four. That also means the ROADMAP's
+> "mandatory" Set A trap (`organizations.test.ts:134` and `:600`) was **AVOIDED, not amended** —
+> `git diff --exit-code` on that file exits 0 and lines 134/600 were never touched. The six real
+> suite-breakers (not the two originally named) were amended in the same commit as the fix.
+>
+> **Proven behaviourally for all four entities** in
+> `src/app/api/v1/__tests__/create-response-canonical.db.test.ts` — a real `POST` through a real minted
+> API key, a real `GET` through the same key, `custom_fields` compared, and the stored column
+> cross-checked by direct SQL. **Four per-entity ablations, each reddening exactly ONE cell; no run
+> reddened two**, so the four-entity claim is four measurements rather than one inference. Corroborated
+> at sign-off over **real HTTP against a rebuilt container**: `POST` 201 then `GET` 200 with the two
+> `custom_fields` deeply equal, the derived value equal to the expression computed from the name that
+> was SENT, and the discriminator (201 ≠ the object the request sent) asserted.
+>
+> **The proof manufactures its own divergence, and it has to.** Nothing diverges in production today —
+> divergence needs at least one `type='formula'` definition and there are **zero**, so a test written
+> against live definitions is green before AND after the fix.
+>
+> **What is NOT proven, and must not be read into this closure — `DATA-49-A`.** No test in the phase
+> discriminates the canonical read from the rejected in-process merge. Ablation 5 (the merge) passes
+> **23/23**; ablation 5b (that merge **plus** a canonical read rewritten to resolve nothing) is **still
+> 23/23**, so the proof is blind to whether the re-read happens at all; control 5c reddens, which is
+> what proves 5b's sabotage was live rather than inert. The two agree for exactly as long as
+> `recalculateFormulas` writes a single column, which it does today — deliberately, including not
+> bumping `updatedAt`. **The guarantee this phase ships is the code path**, chosen for the derived field
+> that does not exist yet. Also unclosed: the three `[id]` **PUT** handlers still serialize the
+> in-process merge, so "decide once for all four" holds for creates and not for updates.
+>
+> Original entry follows.
+
+**999.23 (original entry) — POST responses echo pre-recalculation formula values**
 The create mutations return the raw `.returning()` row, so a `POST /api/v1/{organizations,people,deals,activities}`
 201 body carries the **un-computed** custom-field blob. The stored value, the emitted `crmBus` event and any
 subsequent `GET` are all correct — only the create response is stale, and `PUT` has no such gap.
@@ -1821,9 +1956,29 @@ happens to already-stored `publicUrl` values), then migrates. Note the two backe
 already agree (`${entityId}/${fieldName}/${storedName}`), so a proxy route can serve both without a
 data migration — the migration cost is in the stored URLs, not the object keys.
 
-**Related:** `SEC-04` (the local half, closed in Phase 49); `DEF-48-01`; the traversal finding in
-Phase 49 research (the load-bearing containment is the JSONB `storedName` match, not a path-prefix
-check — confirmed by execution to escape via both `filename` and `entityId`).
+**STILL OPEN after Phase 49, confirmed at sign-off with this phase's own measurements.** Nothing in
+the phase touched it and nothing in the phase may be cited about it:
+
+- **The bypass is unchanged.** `upload/route.ts:89` still writes `publicUrl = ${S3_PUBLIC_URL}/${key}`
+  under `FILE_STORAGE=s3`, so the guard plans 49-04/49-06 built has no traffic to protect there.
+- **Every proof in the phase is `local`-scoped, and that was asserted rather than assumed.** In the
+  freshly rebuilt container at sign-off, `printenv FILE_STORAGE` **exits 1** (unset → `'local'`),
+  `UPLOAD_DIR=/app/uploads`, and that directory is **empty**. Both behavioural proof files assert
+  `FILE_STORAGE` resolves to `local` in a pre-flight cell, because under `s3` every local `existsSync`
+  assertion in them would pass for the wrong reason.
+- **The `deleteEntityFiles` S3 branch is MOCK-COVERED, not behaviourally proven.** 49-02 pins the call
+  shape (one `DeleteObjectCommand` per ref, `Key === ${entityId}/${fieldName}/${storedName}`, the
+  local filesystem untouched) with a `vi.mock` factory. No bucket is configured anywhere reachable.
+  **No cell in the phase exercises the S3 arm.**
+- **Polarity checked at sign-off, not merely grepped:** 25 sentences mentioning S3 across the eight
+  plan SUMMARYs, **all 25 refusals or scope limits, zero claiming coverage.**
+
+**Related:** `SEC-04` (the local read/delete half, closed in Phase 49); **`SEC-49-D`** (the
+write-side hole, `local`-live, found one hop out at 49-09's sign-off — independent of this item);
+`DEF-48-01` (**now closed**, 2026-08-26, `37202ce`); the traversal finding in Phase 49 research (the
+load-bearing containment is the JSONB `storedName` match, not a path-prefix check — re-confirmed by
+execution at sign-off: `%2e%2e%2fetc%2fpasswd` contains no separator and no `..`, so it resolves to a
+legitimate direct child and **only** the reference match refuses it).
 
 ---
 
