@@ -327,15 +327,24 @@ const listeners: { name: CrmEventName; handler: (p: CrmEventPayload) => void }[]
  * file red before trusting it.
  *
  * Restoring by direct SQL, not through a mutation: the mutations are what is under test.
+ *
+ * `ownerId` IS RESTORED TOO, AND IT WAS NOT UNTIL CR-04 — MEASURED, in the same way and for the
+ * same reason as the paragraph above. CR-04's second cell drives
+ * `fieldMapping: { ownerId: <USER_B> }` at DEAL_A, and against the UNFIXED handler that cell does
+ * not merely fail: it SUCCEEDS, and DEAL_A becomes B's. Every subsequent cell in the describe then
+ * threw `No deal found with id 'crmown-deal-a'` from `assertCallerOwnsTarget` — including the
+ * positive anchors, whose job is to prove the handler still works. Five cascaded reds for one
+ * defect, and the positive anchors reporting the wrong cause. A restore that covers the fields a
+ * cell WRITES but not the field a cell TRANSFERS is not a restore.
  */
 async function restoreFixtureRows(): Promise<void> {
   await db
     .update(activities)
-    .set({ title: ACT_A_TITLE, notes: A_SECRET, deletedAt: null })
+    .set({ title: ACT_A_TITLE, notes: A_SECRET, deletedAt: null, ownerId: USER_A })
     .where(eq(activities.id, ACT_A))
   await db
     .update(activities)
-    .set({ title: ACT_B_TITLE, notes: B_SECRET, deletedAt: null })
+    .set({ title: ACT_B_TITLE, notes: B_SECRET, deletedAt: null, ownerId: USER_B })
     .where(eq(activities.id, ACT_B))
 
   for (const [table, aId, bId] of [
@@ -343,8 +352,14 @@ async function restoreFixtureRows(): Promise<void> {
     [people, PERSON_A, PERSON_B],
     [organizations, ORG_A, ORG_B],
   ] as const) {
-    await db.update(table).set({ notes: A_SECRET, deletedAt: null }).where(eq(table.id, aId))
-    await db.update(table).set({ notes: B_SECRET, deletedAt: null }).where(eq(table.id, bId))
+    await db
+      .update(table)
+      .set({ notes: A_SECRET, deletedAt: null, ownerId: USER_A })
+      .where(eq(table.id, aId))
+    await db
+      .update(table)
+      .set({ notes: B_SECRET, deletedAt: null, ownerId: USER_B })
+      .where(eq(table.id, bId))
   }
 }
 
@@ -916,5 +931,264 @@ describe("CR-02 — the emission half, stated once over every refusal in this fi
     expect(await sqlNotes(organizations, ORG_B)).toBe(B_SECRET)
     expect(await sqlActivity(ACT_B)).toEqual({ title: ACT_B_TITLE, deletedAt: null })
     expect(captured).toHaveLength(0)
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * CR-04 — `fieldMapping.ownerId` moves the ROW across the boundary, not just an FK
+ * ------------------------------------------------------------------------ */
+
+/**
+ * CR-02 scoped WHICH row a `crm_action` node touches. It did not constrain WHOSE the row becomes.
+ *
+ * `coerceFieldMapping` copies any key with no entry in `crmFieldTypes` through unchanged, and
+ * `crmFieldTypes.deal` has only `value` and `expectedCloseDate`. The call sites spread
+ * `{ ...interpolatedFields, userId }` — `userId` is last so it cannot be clobbered, but `ownerId`
+ * is a DIFFERENT KEY and was never touched. `dealSchema` carries `ownerId: z.string().optional()`
+ * and both mutations honour it (`deals.ts:35`, `:232`, `:377-380`), so
+ * `fieldMapping: { ownerId: "<victim>" }` created or transferred a row INTO the victim's account.
+ *
+ * This is strictly worse than DEF-48-05's six reference columns: those plant a foreign FK on the
+ * caller's OWN row, this one puts the row itself on the other side of the boundary, where it shows
+ * up in the victim's `GET /api/v1/deals` and in the victim's `/deals` UI.
+ *
+ * ONLY DEALS WAS AFFECTED, and the asymmetry is why it survived: `createPersonMutation`,
+ * `createOrganizationMutation` and `createActivityMutation` all hard-code `ownerId: input.userId`
+ * and their Zod schemas OMIT `ownerId`, so it is stripped in silence. The refusal is applied to all
+ * four anyway — a guard that only fires for the entity that happens to be vulnerable today is the
+ * shape that lets the fifth entity through.
+ *
+ * WHAT THE AUDIT OF THE OTHER THREE SCHEMAS FOUND, since `ownerId` was missing from DEF-48-05's
+ * table precisely because nobody enumerated it. Every `*Id`-shaped field naming a USER:
+ *
+ *   - `deal.ownerId`      — TRANSFERS the row. Refused here.
+ *   - `deal.assigneeIds`  — `z.array(z.string())`, writes `deal_assignees.user_id` for arbitrary
+ *                           users. NOT refused: assignment does not move the row (both
+ *                           `/api/v1/deals` and `/api/v1/activities` scope their lists by
+ *                           `owner_id`, never by assignee), and refusing it would break assigning
+ *                           work to a colleague from a workflow. It does reach `newAssigneeUserIds`
+ *                           and therefore a notification, which is SEC-48-D's relay question.
+ *                           Recorded in DEF-48-05's residuals table.
+ *   - `activity.assigneeId` — `text('assignee_id') references users.id`, checked NOWHERE. Same
+ *                           class as `deal.assigneeIds`: a foreign FK on the caller's own row, not
+ *                           a transfer. Already in DEF-48-05's table; kept there.
+ *   - person / organization — no user-naming field of any kind beyond `organizationId`, which is
+ *                           already in DEF-48-05's table.
+ */
+describe("CR-04 — fieldMapping cannot move a record into another owner's account", () => {
+  /** The title carried by every row these cells attempt to plant. */
+  const PLANTED_TITLE = `${PREFIX}planted-in-victims-account`
+
+  /**
+   * A deal the engine CREATED carries a GENERATED UUID, which `removeFixtures`' `id like 'crmown-%'`
+   * sweep cannot see and which `afterAll`'s `count(*) === baseline` re-assert WOULD catch — as a
+   * confusing failure in a different describe. Recognised by its prefixed TITLE instead, and
+   * excluded by id so a fixture row can never be caught by it.
+   *
+   * In an `afterEach` rather than at the end of each cell: the cells that matter here are the ones
+   * that FAIL, and a line after a throwing assertion does not run.
+   */
+  async function removePlantedDeals(): Promise<void> {
+    await db.execute(
+      sql`delete from deal_assignees where deal_id in (
+            select id from deals where title like ${LIKE_PREFIX} and id not like ${LIKE_PREFIX})`,
+    )
+    await db.execute(
+      sql`delete from deals where title like ${LIKE_PREFIX} and id not like ${LIKE_PREFIX}`,
+    )
+  }
+
+  afterEach(removePlantedDeals)
+
+  /** Every live deal owned by a user, read by direct SQL — never from the handler's own answer. */
+  async function sqlDealsOwnedBy(ownerId: string): Promise<{ id: string; title: string }[]> {
+    return db
+      .select({ id: deals.id, title: deals.title })
+      .from(deals)
+      .where(and(eq(deals.ownerId, ownerId), sql`${deals.deletedAt} is null`))
+  }
+
+  async function sqlDealOwner(id: string): Promise<string | undefined> {
+    const rows = await db.select({ ownerId: deals.ownerId }).from(deals).where(eq(deals.id, id))
+
+    return rows[0]?.ownerId
+  }
+
+  it("CREATE with fieldMapping.ownerId = B is refused, and NO deals row lands in B's account", async () => {
+    // The floor, asserted BEFORE the attempt so a green cannot mean "B never had exactly one deal".
+    const before = await sqlDealsOwnedBy(USER_B)
+    expect(before.map((d) => d.id)).toEqual([DEAL_B])
+
+    await expect(
+      runNode(
+        {
+          entity: "deal",
+          operation: "create",
+          fieldMapping: {
+            title: PLANTED_TITLE,
+            stageId: STAGE_A,
+            organizationId: ORG_A,
+            notes: `${PREFIX}call 555-0100`,
+            ownerId: USER_B,
+          },
+        },
+        USER_A,
+      ),
+    ).rejects.toThrow(/ownerId/)
+
+    // THE DATABASE, not the response code. A non-200 with the row written is the failure this
+    // assertion exists for.
+    expect(await sqlDealsOwnedBy(USER_B)).toEqual(before)
+    const planted = await db
+      .select({ id: deals.id })
+      .from(deals)
+      .where(eq(deals.title, PLANTED_TITLE))
+    expect(planted).toEqual([])
+
+    // Nor did it land in A's account under a different owner: the refusal is a refusal, not a
+    // silent rewrite of the field.
+    expect((await sqlDealsOwnedBy(USER_A)).map((d) => d.title)).not.toContain(PLANTED_TITLE)
+
+    // And nothing was emitted, so no webhook subscriber saw a `deal.created` for it.
+    expect(captured).toHaveLength(0)
+  })
+
+  it("UPDATE of A's OWN deal with fieldMapping.ownerId = B is refused, and DEAL_A stays A's", async () => {
+    // The one-step variant: `assertCallerOwnsTarget` passes (A does own DEAL_A), then the mutation
+    // used to write `owner_id = B` and emit `deal.updated` with `changedFields: ["ownerId"]`.
+    expect(await sqlDealOwner(DEAL_A)).toBe(USER_A)
+
+    await expect(
+      runNode(
+        { entity: "deal", operation: "update", fieldMapping: { ownerId: USER_B }, targetId: DEAL_A },
+        USER_A,
+      ),
+    ).rejects.toThrow(/ownerId/)
+
+    expect(await sqlDealOwner(DEAL_A)).toBe(USER_A)
+    expect((await sqlDealsOwnedBy(USER_B)).map((d) => d.id)).toEqual([DEAL_B])
+    expect(captured).toHaveLength(0)
+  })
+
+  it("the interpolated form is refused too — `{{trigger.data.userId}}` needs no id knowledge", async () => {
+    // Chained with CR-05 this was the version that needed no prior knowledge of the victim's id:
+    // the trigger envelope hands the acting user's id straight to the mapping. The refusal happens
+    // AFTER interpolation, so the check cannot be walked past with a template.
+    await expect(
+      executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "deal",
+          operation: "update",
+          targetId: DEAL_A,
+          fieldMapping: { ownerId: "{{trigger.data.userId}}" },
+        },
+        {
+          trigger: { type: "crm_event", data: { userId: USER_B } },
+          nodes: {},
+          _workflowUserId: USER_A,
+        },
+        `${PREFIX}run-interp`,
+      ),
+    ).rejects.toThrow(/ownerId/)
+
+    expect(await sqlDealOwner(DEAL_A)).toBe(USER_A)
+  })
+
+  it("a DRY RUN is refused as well, so the misconfiguration surfaces in the editor", async () => {
+    // The three dry-run gates sit immediately before the mutation call, so a check placed after
+    // them would let a dry run report success for a node whose real execution is refused. WFOPS-02
+    // rule 1: simulate the side effect, never the resolution.
+    await expect(
+      executeAction(
+        "crm_action",
+        {
+          actionType: "crm_action",
+          entity: "deal",
+          operation: "update",
+          targetId: DEAL_A,
+          fieldMapping: { ownerId: USER_B },
+        },
+        { trigger: { type: "manual", data: {} }, nodes: {}, _workflowUserId: USER_A, _dryRun: true },
+        `${PREFIX}run-dry`,
+      ),
+    ).rejects.toThrow(/ownerId/)
+  })
+
+  it("`id` and `deletedAt` are refused for the same reason — identity and lifecycle are not fields", async () => {
+    for (const key of ["id", "deletedAt"]) {
+      await expect(
+        runNode(
+          { entity: "deal", operation: "update", fieldMapping: { [key]: "x" }, targetId: DEAL_A },
+          USER_A,
+        ),
+      ).rejects.toThrow(new RegExp(key))
+    }
+
+    expect(await sqlDealOwner(DEAL_A)).toBe(USER_A)
+  })
+
+  it("the refusal covers all four entities, not only the one that is vulnerable today", async () => {
+    // `personSchema`, `organizationSchema` and `activitySchema` omit `ownerId`, so Zod strips it
+    // and the mutations hard-code `ownerId: input.userId`. That makes these three cells a
+    // DURABILITY claim rather than a live hole — stated plainly, because a cell whose subject is
+    // already closed by a different mechanism must not be presented as a reproduction.
+    for (const entity of ["person", "organization", "activity"] as const) {
+      await expect(
+        runNode(
+          {
+            entity,
+            operation: "update",
+            fieldMapping: { ownerId: USER_B },
+            targetId: entity === "person" ? PERSON_A : entity === "organization" ? ORG_A : ACT_A,
+          },
+          USER_A,
+        ),
+      ).rejects.toThrow(/ownerId/)
+    }
+
+    expect(captured).toHaveLength(0)
+  })
+
+  it("THE POSITIVE ANCHOR: a create with NO ownerId still succeeds and lands in A's OWN account", async () => {
+    // Without this every assertion above is satisfied by a handler that refuses every create.
+    const result = await runNode(
+      {
+        entity: "deal",
+        operation: "create",
+        fieldMapping: {
+          title: PLANTED_TITLE,
+          stageId: STAGE_A,
+          organizationId: ORG_A,
+          notes: A_SECRET,
+        },
+      },
+      USER_A,
+    )
+
+    expect(result.output).toMatchObject({ success: true })
+
+    const owned = await sqlDealsOwnedBy(USER_A)
+    expect(owned.map((d) => d.title)).toContain(PLANTED_TITLE)
+    // And it is NOT in B's account, which is the whole point of the field being refused rather
+    // than ignored.
+    expect((await sqlDealsOwnedBy(USER_B)).map((d) => d.id)).toEqual([DEAL_B])
+    expect(captured.map((e) => e.name)).toContain("deal.created")
+  })
+
+  it("THE SECOND POSITIVE ANCHOR: an ordinary update with an unrelated key is untouched by the guard", async () => {
+    // A blanket "refuse every unknown key" would also pass every cell above and would break every
+    // workflow in the deployment. This pins that the refusal list is a list.
+    const marker = `${PREFIX}cr04-ordinary-update`
+
+    const result = await runNode(
+      { entity: "deal", operation: "update", fieldMapping: { notes: marker }, targetId: DEAL_A },
+      USER_A,
+    )
+
+    expect(result.output).toMatchObject({ success: true })
+    expect(await sqlNotes(deals, DEAL_A)).toBe(marker)
+    expect(await sqlDealOwner(DEAL_A)).toBe(USER_A)
   })
 })
