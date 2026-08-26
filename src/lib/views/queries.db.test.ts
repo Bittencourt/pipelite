@@ -247,11 +247,19 @@ afterAll(async () => {
   await removeFixtures()
 
   for (const table of TOUCHED_TABLES) {
-    const leftovers = await db.execute(
-      sql`select count(*)::int as n from ${sql.identifier(table)} where id::text like ${LIKE_PREFIX}`,
-    )
-
+    // `saved_view_defaults` has no `id` column, so the prefix sweep below cannot be
+    // built for it — the query itself raises 42703 (`errorMissingColumn`), not just the
+    // assertion. The guard therefore has to wrap the QUERY, not only the `expect`.
+    // It wrapped only the `expect` until 2026-08-26, which is what made
+    // `npm run test:db` exit non-zero on a fully green suite: 28 passed, 1 failed
+    // FILE, exit 1, from this `afterAll`. That was tracked as DEF-48-01 and forced
+    // every phase from 48 onward to read the pass counts instead of gating on the
+    // exit code. Found by plan 49-06 (DEF-49-04).
     if (table !== "saved_view_defaults") {
+      const leftovers = await db.execute(
+        sql`select count(*)::int as n from ${sql.identifier(table)} where id::text like ${LIKE_PREFIX}`,
+      )
+
       expect(Number((leftovers as unknown as { n: number }[])[0].n)).toBe(0)
     }
 
