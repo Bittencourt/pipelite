@@ -370,9 +370,12 @@ which is why they are one phase.
 **Requirements**: SEC-04, DATA-01, DATA-02
 **Success Criteria** (what must be TRUE):
 
-  1. A request for a file URL whose record the caller may not see, or which no longer exists, returns
-     no bytes — the route resolves the entity before serving. **This lands before blob deletion**: it
-     closes the exposure on its own, and the URL is recoverable from the audit tombstone indefinitely.
+  1. **Under `FILE_STORAGE=local` (see the amendment below):** a request for a file URL whose record
+     the caller may not see, or which no longer exists, returns no bytes — the route resolves the
+     entity before serving. Both `GET` and `DELETE`. **This lands before blob deletion**: it closes
+     the exposure on its own, and the URL is recoverable from the audit tombstone for **90 days**
+     (`audit.retention_days = 90` — the original text said "indefinitely", which is false; 90 days is
+     still ample for the ordering argument to hold).
 
   2. After a purge, the blob is gone from storage and its URL serves nothing. A storage failure during
      that deletion leaves the purge **committed** and logs a count mismatch — injected on purpose and
@@ -386,13 +389,28 @@ which is why they are one phase.
   4. A `POST /api/v1/{organizations,people,deals,activities}` 201 body carries the same custom-field
      values a subsequent `GET` of that record returns, for all four entities.
 
-**Open decision**: `DATA-02` is "decide once for all four entities" — recompute before returning, or
-return a canonical read. Decide in phase discussion; do not let a plan assume one.
+**Open decision — SETTLED 2026-08-26 in `49-CONTEXT.md`**: `DATA-02` returns a **canonical read**
+(re-read the record through the same path `GET` uses and serialize that), not an in-process recompute.
+Applied identically to all four entities.
+
+**SC-1 amendment, 2026-08-26 — SC-1 holds for LOCAL STORAGE ONLY.** Under `FILE_STORAGE=s3` the
+stored `publicUrl` is `${S3_PUBLIC_URL}/${key}` (`src/app/api/upload/route.ts:89`), so reads never
+traverse `/api/files/...` and an ownership guard on that route protects nothing in an S3 deployment.
+Measured during Phase 49 research. Do NOT read SC-1 as blanket coverage. The S3 bypass is recorded as
+its own backlog item; closing it changes how uploads hand back URLs and touches every consumer of
+`publicUrl`, which is more than this phase's requirements ask for.
 **Notes for planning**: `recalculateFormulas` uses the module-level `db` and cannot take a `tx`, so
 `DATA-01` must run POST-commit — the existing block at `dedup.ts:629-650` is the right place and
-already try/catches through `log.error("dedup-merge", …)`. **Two plan 34-02 fixture assertions compare
-against the current create-response shape and must be amended in the SAME commit as `DATA-02`**, or
-the suite goes red on success. No `deleteEntityFiles` / `collectFileFieldRefs` helper exists yet.
+already try/catches through `log.error("dedup-merge", …)`. **The ROADMAP previously named "two plan 34-02 fixture
+assertions" here; Phase 49 research found SIX suite-breakers in three sets, and the named pair is not
+the one that necessarily breaks.** Set A (`src/lib/mutations/organizations.test.ts:134` and `:600`)
+breaks only if `createOrganizationMutation`'s RETURN changes — route-level placement avoids it, and
+must, because `people` and `deals` POST use no create mutation at all. Set B are the guaranteed
+breakers and were unnamed anywhere: `src/app/api/v1/deals/__tests__/formula-recalc.test.ts:367` and
+`src/app/api/v1/people/__tests__/formula-recalc.test.ts:354`, both asserting the 201 stays pre-recalc;
+inverting them yields SC-4's proof for two entities. Set C is mechanical:
+`src/app/api/v1/activities/__tests__/route.test.ts:336` and `:347`. All must be amended in the SAME
+commit as `DATA-02`, or the suite goes red on success. See `49-RESEARCH.md` for the full chain. No `deleteEntityFiles` / `collectFileFieldRefs` helper exists yet.
 `src/lib/trash/prune.ts:66-73` documents the gap honestly today; that comment must stop being true.
 **Plans**: TBD
 

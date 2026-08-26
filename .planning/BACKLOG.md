@@ -1787,3 +1787,33 @@ paths disagree.
 dedupe". It is not, and it must not be scoped: that importer maps Pipedrive owners onto Pipelite
 users and writes rows owned by those mapped users, so its dedupe is cross-owner BY DESIGN. Scoping it
 to the importing user would duplicate every record belonging to another mapped user.
+
+---
+
+### SEC-49-A — under `FILE_STORAGE=s3` a file URL bypasses the app entirely — **recorded**
+
+**Measured during Phase 49 research, 2026-08-26.** `src/app/api/upload/route.ts:89` stores the file's
+`publicUrl` as `${S3_PUBLIC_URL}/${key}` when `FILE_STORAGE=s3`. Nothing then reads through
+`/api/files/[entityId]/[fieldName]/[filename]`, so the ownership guard Phase 49 adds to that route —
+which closes the exposure completely for `FILE_STORAGE=local` — protects **nothing** in an S3
+deployment. The bytes are served by the object store against a URL held by anyone who has ever seen
+it, with no session, no entity resolution and no ownership predicate anywhere in the path.
+
+**Why Phase 49 did not close it (user decision, 2026-08-26):** closing it means routing S3 reads back
+through the application — either proxying the bytes or issuing short-lived signed URLs behind an
+ownership check — which changes the contract by which uploads hand a URL back to the client and
+touches every consumer of `publicUrl`, in the UI as well as the API. That is a larger change than any
+of Phase 49's three requirements asks for, and doing it badly breaks every existing stored reference.
+
+**ROADMAP SC-1 was amended in the same decision** to say it holds for local storage only, so that the
+criterion cannot later be read as blanket coverage. That amendment is the mitigation for the
+*record*; it is not a mitigation for the *exposure*.
+
+**Suggested owner:** a phase that decides the URL contract first (proxy vs signed URL, and what
+happens to already-stored `publicUrl` values), then migrates. Note the two backends' key shapes
+already agree (`${entityId}/${fieldName}/${storedName}`), so a proxy route can serve both without a
+data migration — the migration cost is in the stored URLs, not the object keys.
+
+**Related:** `SEC-04` (the local half, closed in Phase 49); `DEF-48-01`; the traversal finding in
+Phase 49 research (the load-bearing containment is the JSONB `storedName` match, not a path-prefix
+check — confirmed by execution to escape via both `filename` and `entityId`).
