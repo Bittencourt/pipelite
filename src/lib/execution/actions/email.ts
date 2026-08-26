@@ -4,7 +4,7 @@ import { getWorkflowEmailTemplate } from "@/lib/email/templates"
 import { registerAction } from "./registry"
 import { db } from "@/db"
 import { users } from "@/db/schema"
-import { inArray } from "drizzle-orm"
+import { and, inArray, isNull } from "drizzle-orm"
 import type { ExecutionContext } from "../types"
 
 interface Recipient {
@@ -16,6 +16,39 @@ interface Recipient {
  * Resolve email addresses from recipient list.
  * - "dynamic" type: interpolate value to get email address directly
  * - "user" type: look up user by ID in database to get email
+ *
+ * =============================================================================
+ * SEC-48-D, SPLIT — WHAT THE OWNER PREDICATE HERE IS AND IS NOT
+ * =============================================================================
+ *
+ * The iteration-3 review asked for `eq(users.id, context._workflowUserId)` on this read, arguing
+ * that `resolveRecipientEmails` returns the resolved addresses in the node's `output`, that those
+ * outputs are persisted as `workflow_run_steps.output` and served by `serializeRunStep`, and that
+ * this is therefore "a read oracle whose answer is returned to the caller in a response body" —
+ * an owner-boundary defect of the same class as CR-01/CR-02, separable from the recipient-policy
+ * question because the dry-run gate below returns the addresses with NO MAIL SENT.
+ *
+ * THAT SELF-PREDICATE WAS NOT APPLIED, AND THE REASONING IS RECORDED RATHER THAN THE CONCLUSION:
+ * the premise is false in this product. `src/app/team/page.tsx` — an ordinary page, with NO role
+ * gate (`src/auth.config.ts:31-32` protects only `/settings` and `/admin`) — reads
+ *
+ *     db.query.users.findMany({ where: isNull(users.deletedAt),
+ *                               columns: { id: true, name: true, email: true } })
+ *
+ * for EVERY non-deleted user and hands the result to a client component, which renders the address
+ * at `team-page-client.tsx:55,57`. So every signed-in principal already holds the entire user
+ * directory INCLUDING email addresses, from a single GET, and an API key belongs to such a
+ * principal. Resolving one id to one address here discloses strictly less than `/team` already
+ * does. Adding a self-predicate would buy no confidentiality and would break the supported case of
+ * a workflow notifying a colleague — a product decision, which is the very thing SEC-48-D is
+ * deferred on. The relay half stays deferred with the entry corrected.
+ *
+ * WHAT WAS ACTUALLY WRONG, AND IS FIXED: this read had no `deletedAt` predicate at all, so it was
+ * WIDER than the already-public directory. A soft-deleted user — a departed employee — could still
+ * be resolved to their address and still be mailed. `isNull(users.deletedAt)` makes the engine's
+ * user read exactly as wide as `/team`'s and no wider. Related to DEF-48-02, which records that a
+ * soft-deleted user's API key still authenticates.
+ * =============================================================================
  */
 async function resolveRecipientEmails(
   recipients: Recipient[],
@@ -36,12 +69,15 @@ async function resolveRecipientEmails(
     }
   }
 
-  // Batch lookup user emails
+  // Batch lookup user emails. `isNull(users.deletedAt)` is carried ON THE STATEMENT rather than
+  // filtered afterwards: a departed employee's address must not be resolvable, and a JavaScript
+  // filter would still have read it. See the SEC-48-D block above for why there is no owner or
+  // self predicate here.
   if (userIds.length > 0) {
     const rows = await db
       .select({ email: users.email })
       .from(users)
-      .where(inArray(users.id, userIds))
+      .where(and(inArray(users.id, userIds), isNull(users.deletedAt)))
 
     for (const row of rows) {
       if (row.email) {

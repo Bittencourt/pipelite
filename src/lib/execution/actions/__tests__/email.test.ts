@@ -23,14 +23,23 @@ vi.mock("@/db", () => ({
   },
 }))
 
+// `and` and `isNull` are here for SEC-48-D's `isNull(users.deletedAt)` term. They were ABSENT, and
+// their absence is how the predicate's arrival was noticed rather than assumed: without them every
+// user-id resolution in this file died with
+// `[vitest] No "and" export is defined on the "drizzle-orm" mock`. Same mechanism
+// `crm.test.ts` records for CR-02's `and`/`isNull`.
 vi.mock("drizzle-orm", () => ({
   inArray: vi.fn((col, vals) => ({ _type: "inArray", col, vals })),
   eq: vi.fn((col, val) => ({ _type: "eq", col, val })),
   ilike: vi.fn((col, val) => ({ _type: "ilike", col, val })),
+  and: vi.fn((...terms: unknown[]) => ({ _type: "and", terms })),
+  isNull: vi.fn((col) => ({ _type: "isNull", col })),
 }))
 
+// `users.deletedAt` is SEC-48-D's new column; the string is what the predicate assertions read back
+// out of the captured `where` argument.
 vi.mock("@/db/schema", () => ({
-  users: { id: "users.id", email: "users.email" },
+  users: { id: "users.id", email: "users.email", deletedAt: "users.deletedAt" },
   deals: { id: "deals.id", title: "deals.title" },
   people: { id: "people.id", email: "people.email", firstName: "people.firstName" },
   organizations: { id: "organizations.id", name: "organizations.name" },
@@ -367,6 +376,127 @@ describe("Email action handler", () => {
       )
       expect(result.output.sent).toBe(true)
       expect(result.output.simulated).toBeUndefined()
+    })
+  })
+
+  /* -------------------------------------------------------------------------
+   * SEC-48-D (split) — the `users` read is no wider than the already-public directory
+   * ---------------------------------------------------------------------- */
+
+  describe("SEC-48-D — a soft-deleted user cannot be resolved to an address", () => {
+    /*
+     * MEASURED RED, and the mechanism is the one `crm.test.ts` records for CR-02: before
+     * `and`/`isNull` were added to this file's `drizzle-orm` mock, every user-id resolution here
+     * failed with
+     *
+     *     Error: [vitest] No "and" export is defined on the "drizzle-orm" mock.
+     *      ❯ resolveRecipientEmails src/lib/execution/actions/email.ts:80:14
+     *      Test Files  2 failed (2)
+     *           Tests  14 failed | 8 passed (22)
+     *
+     * across email.test.ts and notification.test.ts together. That is a real measurement of the
+     * predicate's ARRIVAL, but it is not a measurement of its CONTENT — so the first cell below
+     * reads the captured `where` argument rather than trusting that the mock stopped complaining.
+     *
+     * WHAT IS DELIBERATELY NOT ASSERTED HERE: an owner or self predicate. The review asked for
+     * `eq(users.id, context._workflowUserId)` on the grounds that returning the resolved address in
+     * the node output is a directory-disclosure oracle. It is not one in this product —
+     * `src/app/team/page.tsx` already serves every non-deleted user's `email` to every signed-in
+     * principal, with no role gate — so the reasoning, and the refusal to apply it, live in the
+     * block above `resolveRecipientEmails`. A cell asserting a self-predicate would be asserting a
+     * decision that was not taken.
+     */
+
+    it("carries BOTH terms on the statement: the id set AND the soft-delete guard", async () => {
+      mockWhere.mockResolvedValue([{ email: "alice@team.com" }])
+      mockSafeSend.mockResolvedValue(undefined)
+
+      await executeAction(
+        "email",
+        {
+          actionType: "email",
+          recipients: [{ type: "user", value: "user-alice" }],
+          subject: "FYI",
+          body: "Body",
+        },
+        makeContext(),
+        "run-scope"
+      )
+
+      // Read out of the captured argument, not out of the source. A filter applied AFTER the query
+      // would satisfy a source grep and would still have read the departed employee's address.
+      expect(mockWhere).toHaveBeenCalledTimes(1)
+      expect(mockWhere.mock.calls[0][0]).toEqual({
+        _type: "and",
+        terms: [
+          { _type: "inArray", col: "users.id", vals: ["user-alice"] },
+          { _type: "isNull", col: "users.deletedAt" },
+        ],
+      })
+    })
+
+    it("resolves nothing, and sends nothing, when the scoped SELECT comes back empty", async () => {
+      // What the predicate produces for a soft-deleted recipient: the row is filtered by the
+      // statement, so there is no address to send to and the node fails for the real reason.
+      mockWhere.mockResolvedValue([])
+
+      await expect(
+        executeAction(
+          "email",
+          {
+            actionType: "email",
+            recipients: [{ type: "user", value: "user-departed" }],
+            subject: "FYI",
+            body: "Body",
+          },
+          makeContext(),
+          "run-scope"
+        )
+      ).rejects.toThrow("No valid recipients resolved for email action")
+
+      expect(mockSafeSend).not.toHaveBeenCalled()
+    })
+
+    it("THE ANTI-VACUITY ANCHOR: a live user still resolves and is still mailed", async () => {
+      // Without this, both cells above are satisfied by a predicate that matches nobody.
+      mockWhere.mockResolvedValue([{ email: "alice@team.com" }])
+      mockSafeSend.mockResolvedValue(undefined)
+
+      const result = await executeAction(
+        "email",
+        {
+          actionType: "email",
+          recipients: [{ type: "user", value: "user-alice" }],
+          subject: "FYI",
+          body: "Body",
+        },
+        makeContext(),
+        "run-scope"
+      )
+
+      expect(mockSafeSend).toHaveBeenCalledWith("alice@team.com", expect.anything())
+      expect(result.output.recipients).toEqual(["alice@team.com"])
+    })
+
+    it("a `dynamic` recipient never touches the `users` table at all", async () => {
+      // The relay half of SEC-48-D is untouched by this change, and asserting that is better than
+      // saying it in prose: `dynamic` still reaches `safeSend` with no SELECT at all.
+      mockSafeSend.mockResolvedValue(undefined)
+
+      await executeAction(
+        "email",
+        {
+          actionType: "email",
+          recipients: [{ type: "dynamic", value: "someone@elsewhere.test" }],
+          subject: "FYI",
+          body: "Body",
+        },
+        makeContext(),
+        "run-scope"
+      )
+
+      expect(mockWhere).not.toHaveBeenCalled()
+      expect(mockSafeSend).toHaveBeenCalledWith("someone@elsewhere.test", expect.anything())
     })
   })
 })

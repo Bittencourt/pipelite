@@ -23,14 +23,23 @@ vi.mock("@/db", () => ({
   },
 }))
 
+// `and` and `isNull` are here for SEC-48-D's `isNull(users.deletedAt)` term. They were ABSENT, and
+// their absence is how the predicate's arrival was noticed rather than assumed: without them every
+// user-id resolution in this file died with
+// `[vitest] No "and" export is defined on the "drizzle-orm" mock`. Same mechanism
+// `crm.test.ts` records for CR-02's `and`/`isNull`.
 vi.mock("drizzle-orm", () => ({
   inArray: vi.fn((col, vals) => ({ _type: "inArray", col, vals })),
   eq: vi.fn((col, val) => ({ _type: "eq", col, val })),
   ilike: vi.fn((col, val) => ({ _type: "ilike", col, val })),
+  and: vi.fn((...terms: unknown[]) => ({ _type: "and", terms })),
+  isNull: vi.fn((col) => ({ _type: "isNull", col })),
 }))
 
+// `users.deletedAt` is SEC-48-D's new column; the string is what the predicate assertions read back
+// out of the captured `where` argument.
 vi.mock("@/db/schema", () => ({
-  users: { id: "users.id", email: "users.email" },
+  users: { id: "users.id", email: "users.email", deletedAt: "users.deletedAt" },
   deals: { id: "deals.id", title: "deals.title" },
   people: { id: "people.id", email: "people.email", firstName: "people.firstName" },
   organizations: { id: "organizations.id", name: "organizations.name" },
@@ -382,6 +391,94 @@ describe("Notification action handler", () => {
       )
       expect(result.output.sent).toBe(true)
       expect(result.output.simulated).toBeUndefined()
+    })
+  })
+
+  /* -------------------------------------------------------------------------
+   * SEC-48-D (split) — the identical unscoped `users` read this handler had
+   * ---------------------------------------------------------------------- */
+
+  describe("SEC-48-D — a soft-deleted user cannot be resolved to an address", () => {
+    /*
+     * `notification.ts` carried the SAME `select email from users where id in (…)` as `email.ts`
+     * with the same missing `deletedAt` predicate, so it gets the same fix and the same cells. The
+     * full reasoning — including why NO owner or self predicate was added, and the `/team` page that
+     * makes the review's directory-disclosure premise false in this product — is written above
+     * `resolveRecipientEmails` in `../email.ts` and referenced from this handler's own comment.
+     *
+     * MEASURED RED with the rest: before `and`/`isNull` were added to this file's `drizzle-orm`
+     * mock, nine of its eleven cells failed with
+     * `[vitest] No "and" export is defined on the "drizzle-orm" mock`.
+     */
+
+    it("carries BOTH terms on the statement: the id set AND the soft-delete guard", async () => {
+      mockWhere.mockResolvedValue([{ email: "alice@team.com" }])
+      mockSafeSend.mockResolvedValue(undefined)
+
+      await executeAction(
+        "notification",
+        { actionType: "notification", userIds: ["user-alice"], message: "hi" },
+        makeContext(),
+        "run-scope"
+      )
+
+      expect(mockWhere).toHaveBeenCalledTimes(1)
+      expect(mockWhere.mock.calls[0][0]).toEqual({
+        _type: "and",
+        terms: [
+          { _type: "inArray", col: "users.id", vals: ["user-alice"] },
+          { _type: "isNull", col: "users.deletedAt" },
+        ],
+      })
+    })
+
+    it("throws for the real reason, and sends nothing, when the scoped SELECT is empty", async () => {
+      mockWhere.mockResolvedValue([])
+
+      await expect(
+        executeAction(
+          "notification",
+          { actionType: "notification", userIds: ["user-departed"], message: "hi" },
+          makeContext(),
+          "run-scope"
+        )
+      ).rejects.toThrow("No valid users found for notification")
+
+      expect(mockSafeSend).not.toHaveBeenCalled()
+    })
+
+    it("THE ANTI-VACUITY ANCHOR: a live user still resolves and is still mailed", async () => {
+      mockWhere.mockResolvedValue([{ email: "alice@team.com" }])
+      mockSafeSend.mockResolvedValue(undefined)
+
+      const result = await executeAction(
+        "notification",
+        { actionType: "notification", userIds: ["user-alice"], message: "hi" },
+        makeContext(),
+        "run-scope"
+      )
+
+      expect(mockSafeSend).toHaveBeenCalledWith("alice@team.com", expect.anything())
+      expect(result.output.recipients).toEqual(["alice@team.com"])
+    })
+
+    it("under _dryRun the scoped SELECT still runs and STILL sends no mail", async () => {
+      // The half of the review's account that IS correct and worth pinning: the addresses come back
+      // in the output with no mail sent, which is why the two halves of SEC-48-D are separable at
+      // all. The predicate applies on this path too — a dry run must not be able to read what a
+      // real run cannot.
+      mockWhere.mockResolvedValue([{ email: "alice@team.com" }])
+
+      const result = await executeAction(
+        "notification",
+        { actionType: "notification", userIds: ["user-alice"], message: "hi" },
+        makeContext({ _dryRun: true }),
+        "run-scope"
+      )
+
+      expect(mockWhere.mock.calls[0][0]).toMatchObject({ _type: "and" })
+      expect(mockSafeSend).not.toHaveBeenCalled()
+      expect(result.output).toMatchObject({ sent: false, simulated: true })
     })
   })
 })

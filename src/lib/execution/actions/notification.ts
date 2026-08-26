@@ -4,7 +4,7 @@ import { getWorkflowNotificationTemplate } from "@/lib/email/templates"
 import { registerAction } from "./registry"
 import { db } from "@/db"
 import { users } from "@/db/schema"
-import { inArray } from "drizzle-orm"
+import { and, inArray, isNull } from "drizzle-orm"
 import type { ExecutionContext } from "../types"
 
 async function handleNotification(
@@ -19,11 +19,20 @@ async function handleNotification(
     throw new Error("No notification recipients specified")
   }
 
-  // Batch lookup user emails
+  // Batch lookup user emails.
+  //
+  // SEC-48-D, SPLIT. `isNull(users.deletedAt)` and deliberately NO owner or self predicate — the
+  // reasoning is written out in full above `resolveRecipientEmails` in `./email.ts`, which had the
+  // identical unscoped read. In short: the review's premise that this is a directory-disclosure
+  // oracle does not hold in this product, because `src/app/team/page.tsx` already serves every
+  // non-deleted user's `email` to every signed-in principal with no role gate, so resolving one id
+  // here discloses strictly less. What WAS wrong is that this read had no `deletedAt` predicate and
+  // was therefore WIDER than that already-public directory: a departed employee could still be
+  // resolved and still be mailed. It is now exactly as wide as `/team` and no wider.
   const rows = await db
     .select({ email: users.email })
     .from(users)
-    .where(inArray(users.id, userIds))
+    .where(and(inArray(users.id, userIds), isNull(users.deletedAt)))
 
   if (rows.length === 0) {
     throw new Error("No valid users found for notification")
