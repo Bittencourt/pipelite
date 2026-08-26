@@ -1,11 +1,22 @@
 ---
 phase: 49
 slug: mutation-layer-truth-after-commit
-status: draft
+status: executed
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-08-26
+signed_off: 2026-08-26 by 49-09
 ---
+
+> **`nyquist_compliant` is deliberately `false`, and the reason is a single specific box — not a
+> sampling shortfall.** The sampling architecture is fully satisfied: every task carried an
+> `<automated>` verify (20 blocks across nine plans), no three consecutive tasks lacked one, all
+> seven Wave 0 artifacts exist, 61 `vitest` invocations were scanned and **zero** carry a watch-mode
+> flag, and wave-level feedback stayed under 150 s. What is NOT satisfiable as an unqualified
+> statement is *"each new or inverted gate observed RED"*: **five properties in this phase carry no
+> red observation, each named by the plan that owns it and each unreddenable for a structural
+> reason** — see the Sign-Off block. Setting this field `true` would upgrade five refusals the plans
+> made on purpose. It is `false` so that the exceptions stay visible.
 
 # Phase 49 — Validation Strategy
 
@@ -63,21 +74,21 @@ by criterion. The planner must carry each row onto a task and preserve the *type
 
 | Criterion | Behaviour that must be TRUE | Test Type | Automated Command | File Exists | Status |
 |---|---|---|---|---|---|
-| SEC-04 / SC-1 | `GET` a file belonging to a record the caller does not own → **404, zero bytes** | live-DB (`vi.mock("@/auth")` + real `db`) | `npx vitest run --config vitest.db.config.ts src/app/api/files/__tests__/files-route-ownership.db.test.ts` | ❌ W0 | ⬜ pending |
-| SEC-04 / SC-1 | `DELETE` the same → **404, and the blob is still on disk afterwards** | live-DB, same file | same | ❌ W0 | ⬜ pending |
-| SEC-04 / SC-1 | `filename = "../../../etc/passwd"` → 404, and `readFile` never called outside `UPLOAD_DIR` | **unit**, handler invoked with a crafted `params` promise | `npx vitest run src/app/api/files/__tests__/route-containment.test.ts` | ❌ W0 | ⬜ pending |
-| SEC-04 / SC-1 | a `filename` **not present in the record's JSONB** → 404 (this is the load-bearing check, not the prefix test) | unit, same file | same | ❌ W0 | ⬜ pending |
-| SEC-04 / SC-2 | after a purge: blob absent from disk **and** its URL serves nothing | live-DB | `npx vitest run --config vitest.db.config.ts src/lib/trash/purge-blobs.db.test.ts` | ❌ W0 | ⬜ pending |
-| SEC-04 / SC-2 | **injected** storage failure → purge still **COMMITTED**, mismatch logged with `{expected, deleted}` | live-DB, same file | same | ❌ W0 | ⬜ pending |
-| SEC-04 / SC-2 | `collectFileFieldRefs` on: `null`, `{}`, a non-array value, an array of non-objects, a well-formed array | **unit**, pure | `npx vitest run src/lib/trash/collect-file-field-refs.test.ts` | ❌ W0 | ⬜ pending |
-| DATA-01 / SC-3 | merging two records whose formula inputs disagree, **taking the loser's input**, leaves the survivor's stored value equal to a **fresh computation** | live-DB | `npx vitest run --config vitest.db.config.ts src/lib/mutations/dedup.db.test.ts` (extend) or a sibling `dedup-formula.db.test.ts` | ⚠ extend / ❌ new | ⬜ pending |
-| DATA-01 / SC-3 | the call is made **post-commit**, with a bare-name `changedFields` and `cascade: false` | **unit**, mocked recalc | `npx vitest run src/lib/mutations/dedup.test.ts` (extend) | ⚠ extend | ⬜ pending |
-| DATA-01 / SC-3 | a **rejected** recalculation does not fail the merge (D-05) | unit, same | same | ⚠ extend | ⬜ pending |
-| DATA-02 / SC-4 | 201 `custom_fields` **==** a subsequent `GET`'s `custom_fields`, **all four entities**, against a purpose-built formula field | live-DB, `mintApiKey` over the real `withApiAuth` | `npx vitest run --config vitest.db.config.ts src/app/api/v1/__tests__/create-response-canonical.db.test.ts` | ❌ W0 | ⬜ pending |
-| DATA-02 / SC-4 | 201 carries the **post**-recalc blob (deals) | unit — **suite-breaker B1, inverted** | `npx vitest run src/app/api/v1/deals/__tests__/formula-recalc.test.ts` | ✅ amend `:360-368` | ⬜ pending |
-| DATA-02 / SC-4 | 201 carries the **post**-recalc blob (people) | unit — **suite-breaker B2, inverted** | `npx vitest run src/app/api/v1/people/__tests__/formula-recalc.test.ts` | ✅ amend `:347-355` | ⬜ pending |
-| DATA-02 / SC-4 | organizations `POST` 201 shape | unit | `npx vitest run src/app/api/v1/organizations/__tests__/route.test.ts` | ❌ **W0 — the collection route has NO test file at all** | ⬜ pending |
-| DATA-02 / SC-4 | activities `POST` still 201 with the re-read in place | unit — **suite-breaker C1** | `npx vitest run src/app/api/v1/activities/__tests__/route.test.ts` | ✅ amend `:336`, `:347` | ⬜ pending |
+| SEC-04 / SC-1 | `GET` a file belonging to a record the caller does not own → **404, zero bytes** | live-DB (`vi.mock("@/auth")` + real `db`) | `npx vitest run --config vitest.db.config.ts src/app/api/files/__tests__/files-route-ownership.db.test.ts` | ✅ created | ✅ green |
+| SEC-04 / SC-1 | `DELETE` the same → **404, and the blob is still on disk afterwards** | live-DB, same file | same | ✅ created | ✅ green |
+| SEC-04 / SC-1 | `filename = "../../../etc/passwd"` → 404, and `readFile` never called outside `UPLOAD_DIR` | **unit**, handler invoked with a crafted `params` promise | `npx vitest run src/app/api/files/__tests__/route-containment.test.ts` | ✅ created | ✅ green |
+| SEC-04 / SC-1 | a `filename` **not present in the record's JSONB** → 404 (this is the load-bearing check, not the prefix test) | unit, same file | same | ✅ created | ✅ green |
+| SEC-04 / SC-2 | after a purge: blob absent from disk **and** its URL serves nothing | live-DB | `npx vitest run --config vitest.db.config.ts src/lib/trash/purge-blobs.db.test.ts` | ✅ created | ✅ green |
+| SEC-04 / SC-2 | **injected** storage failure → purge still **COMMITTED**, mismatch logged with `{expected, deleted}` | live-DB, same file | same | ✅ created | ✅ green |
+| SEC-04 / SC-2 | `collectFileFieldRefs` on: `null`, `{}`, a non-array value, an array of non-objects, a well-formed array | **unit**, pure | `npx vitest run src/lib/trash/collect-file-field-refs.test.ts` | ✅ created | ✅ green |
+| DATA-01 / SC-3 | merging two records whose formula inputs disagree, **taking the loser's input**, leaves the survivor's stored value equal to a **fresh computation** | live-DB | `npx vitest run --config vitest.db.config.ts src/lib/mutations/dedup.db.test.ts` (extend) or a sibling `dedup-formula.db.test.ts` | ✅ new sibling `dedup-formula.db.test.ts` | ✅ green |
+| DATA-01 / SC-3 | the call is made **post-commit**, with a bare-name `changedFields` and `cascade: false` | **unit**, mocked recalc | `npx vitest run src/lib/mutations/dedup.test.ts` (extend) | ✅ extended (`dedup.test.ts`, 25 → 32 cells) | ✅ green |
+| DATA-01 / SC-3 | a **rejected** recalculation does not fail the merge (D-05) | unit, same | same | ✅ extended (`dedup.test.ts`, 25 → 32 cells) | ✅ green |
+| DATA-02 / SC-4 | 201 `custom_fields` **==** a subsequent `GET`'s `custom_fields`, **all four entities**, against a purpose-built formula field | live-DB, `mintApiKey` over the real `withApiAuth` | `npx vitest run --config vitest.db.config.ts src/app/api/v1/__tests__/create-response-canonical.db.test.ts` | ✅ created | ✅ green |
+| DATA-02 / SC-4 | 201 carries the **post**-recalc blob (deals) | unit — **suite-breaker B1, inverted** | `npx vitest run src/app/api/v1/deals/__tests__/formula-recalc.test.ts` | ✅ inverted (B1) | ✅ green |
+| DATA-02 / SC-4 | 201 carries the **post**-recalc blob (people) | unit — **suite-breaker B2, inverted** | `npx vitest run src/app/api/v1/people/__tests__/formula-recalc.test.ts` | ✅ inverted (B2) | ✅ green |
+| DATA-02 / SC-4 | organizations `POST` 201 shape | unit | `npx vitest run src/app/api/v1/organizations/__tests__/route.test.ts` | ✅ created (11 cells, the route had none) | ✅ green |
+| DATA-02 / SC-4 | activities `POST` still 201 with the re-read in place | unit — **suite-breaker C1** | `npx vitest run src/app/api/v1/activities/__tests__/route.test.ts` | ✅ amended (C1 — **a mechanical guard, green before the fix**) | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -218,25 +229,69 @@ only because 48-09 touched no db test).
 
 ## Manual-Only Verifications
 
-| Behaviour | Requirement | Why Manual | Test Instructions |
-|---|---|---|---|
-| Container serves the fixed routes | SEC-04 | `docker compose restart` runs the OLD image; a "Started" line is not proof of freshness | `docker compose up -d --build`, then **assert the image id CHANGED** (`docker inspect pipelite-app-1 --format '{{.Image}}'`), then `/api/health` 200 with `db.ok` true and 10/10 processors |
-| The S3 read path | SEC-04 / **out of scope** | Nothing reads through the route under `FILE_STORAGE=s3` (`upload/route.ts:89`); recorded as **SEC-49-A** and SC-1 is amended to local-storage only | Not verified in this phase. A plan must not claim it. |
+| Behaviour | Requirement | Why Manual | Test Instructions | RESULT (49-09, 2026-08-26) |
+|---|---|---|---|---|
+| Container serves the fixed routes | SEC-04 | `docker compose restart` runs the OLD image; a "Started" line is not proof of freshness | `docker compose up -d --build`, then **assert the image id CHANGED** (`docker inspect pipelite-app-1 --format '{{.Image}}'`), then `/api/health` 200 with `db.ok` true and 10/10 processors | **DONE.** Bound image `sha256:83003bf6eb2e…` → **`sha256:66efd8556ac1…`** (changed). `/api/health` **200**, `db.ok: true`, `latencyMs: 1`, **10/10** processors alive (counted with `node`, not read off the JSON). |
+| DATA-02 over real HTTP | DATA-02 | The unit and db proofs drive handlers in-process; only a real request exercises `withApiAuth` + routing + the built image together | `POST /api/v1/organizations` then `GET /api/v1/organizations/{id}` with the same Bearer key, over a manufactured `type='formula'` definition; compare the two `custom_fields` **programmatically** | **DONE.** POST **201**, GET **200**, the two `custom_fields` objects deeply equal, the derived key present by name in both at the value computed in the checker from the name that was SENT, and the discriminator (201 ≠ the object the request sent) asserted. Foreign key B → **404**. 12 of 12 assertions PASS. |
+| The S3 read path | SEC-04 / **out of scope** | Nothing reads through the route under `FILE_STORAGE=s3` (`upload/route.ts:89`); recorded as **SEC-49-A** and SC-1 is amended to local-storage only | Not verified in this phase. A plan must not claim it. | **NOT VERIFIED, by design.** `FILE_STORAGE` re-confirmed unset in the rebuilt container (`printenv` exit 1 → `'local'`), `UPLOAD_DIR=/app/uploads`, and that directory is still **empty** (`total 8`, only `.` and `..`). So the deployment under test is the `local` configuration every proof in this phase assumes. No S3 claim is made anywhere. |
+| An HTTP-level SC-1 probe | SEC-04 / **not achievable** | The file route authenticates with `auth()` by CONTEXT.md decision and there is no `/api/v1` file route, so an HTTP probe needs a browser session cookie | Not attempted — see the note below | **NOT DONE, and not attempted.** The unauthenticated `GET` and `DELETE` were curled and both answered **401** with `{"error":"Unauthorized"}` — **labelled a SMOKE CHECK, not a proof: it was 401 before the fix too.** A real HTTP SC-1 probe would additionally need a blob on the live deployment's disk, which is outside the plan's permitted-write envelope; without one the foreign 404 would come from `existsSync` rather than from the guard — the exact gate-that-cannot-fail 49-06 found in its own plan. **SC-1's behavioural proof is plan 49-06's**, at handler level against real PostgreSQL and a real filesystem. |
 
 ---
 
 ## Validation Sign-Off
 
-- [ ] All tasks have an `<automated>` verify or a Wave 0 dependency
-- [ ] Sampling continuity: no 3 consecutive tasks without an automated verify
-- [ ] Wave 0 covers all MISSING references above
-- [ ] No watch-mode flags
-- [ ] The three zero-counts re-measured, and every count assertion carries a named-integer floor
-- [ ] Each new/inverted gate observed RED before being trusted, with the red recorded verbatim
-- [ ] Feedback latency < 150 s at wave level
-- [ ] `nyquist_compliant: true` set in frontmatter
+Filled in from observation by plan 49-09, 2026-08-26. **No box is ticked whose evidence is missing.**
 
-**Approval:** pending
+- [x] **All tasks have an `<automated>` verify or a Wave 0 dependency** — 20 `<automated>` blocks
+      across the nine plans. One correction is on the record rather than glossed: 49-03 found that
+      the `<verify>` blocks `cd`-ed to the MAIN repo, which would have produced a green transcript
+      about a tree containing none of the work. Fixed across all nine plans in `34b2233` (20
+      occurrences); **re-measured at sign-off, `cd /home/pedro/programming/pipelite` now appears in
+      0 of 9 plans.**
+- [x] **Sampling continuity: no 3 consecutive tasks without an automated verify** — every task in
+      every plan carries one.
+- [x] **Wave 0 covers all MISSING references above** — all seven artifacts exist:
+      `collect-file-field-refs.test.ts` (49-02), `route-containment.test.ts` (49-04),
+      `files-route-ownership.db.test.ts` (49-06), `purge-blobs.db.test.ts` (49-07),
+      `create-response-canonical.db.test.ts` (49-05),
+      `organizations/__tests__/route.test.ts` (49-03), and the fixture helper
+      `src/lib/__tests__/custom-field-definition-fixture.ts` (49-01). DATA-01 took the sibling
+      option — `dedup-formula.db.test.ts` (49-08) — rather than extending `dedup.db.test.ts`, and
+      that file was left untouched and green, so the parity `afterAll` never had to be taught about
+      `custom_field_definitions`.
+- [x] **No watch-mode flags** — 61 `vitest` invocations scanned across the nine plans with `node`;
+      **0** carry `--watch` or `-w`.
+- [x] **The three zero-counts re-measured, and every count assertion carries a named-integer floor**
+      — re-measured twice: by 49-01 (169 live / 0 formula / 0 file; 0 descriptors on both the
+      `%storedName%` and `%publicUrl%` probes across 188,619 rows) and **again at sign-off, with
+      identical numbers**. Named-integer floors are present in every proof file
+      (`ANCHOR_REF_COUNT`, `SEEDED_BLOB_TOTAL = 9`, `FORMULA_DEFINITIONS_TOTAL = 4`,
+      `MIN_FORMULA_DEFINITIONS = 1`, `SABOTAGED_REF_COUNT = 1`, …) and two of them were observed
+      firing (49-01 R4, 49-08 A5/A6).
+- [ ] **Each new/inverted gate observed RED before being trusted, with the red recorded verbatim** —
+      **NOT tickable as an unqualified statement, and that is the honest answer.** Every gate that
+      *can* be reddened has a verbatim red (37 recorded ablations/controls across eight plans). Five
+      properties carry NO red, each named by its owning plan and each unreddenable for a structural
+      reason rather than an unrun experiment:
+      1. **the rejected in-process merge** (49-05 ablation 5, and 5b with a dead canonical read) —
+         green by construction; control 5c proves the sabotage was live. **DATA-49-A.**
+      2. **a create's canonical-read owner term** (49-05 ablation 6a) — satisfied by construction on
+         every reachable execution. **DEF-49-03.**
+      3. **the inner `catch`'s never-rethrow** in the four purge blocks (49-07 A3a) — unreachable,
+         because `deleteEntityFiles` never rejects. A3b/A3c cover the reachable forms.
+      4. **the survivor-first ORDERING, behaviourally** (49-08 A3) — the db file is green under a
+         reorder; two unit cells hold it. **DEF-49-05.**
+      5. **`updated_at` not being bumped by a derived refresh** (49-08 T-49-08-07) — unablatable
+         without editing `formula-recalc.ts`, which was out of scope. (Plus 49-08's six
+         isolation-guard cells, whose red is inherited from `dedup.db.test.ts` and not recorded
+         here.)
+- [x] **Feedback latency < 150 s at wave level** — a single db file runs in 5-20 s; the base project
+      at sign-off in ~145 s.
+- [ ] **`nyquist_compliant: true` set in frontmatter** — deliberately left `false`; see the note
+      under the frontmatter. The one unticked substantive box above is the reason.
+
+**Approval:** signed off by 49-09 on 2026-08-26, with the two unticked boxes stated rather than
+softened. Evidence: `49-09-SUMMARY.md`.
 
 ---
 
