@@ -31,8 +31,10 @@ created: 2026-08-26
 
 **Two hazards that are not optional reading:**
 
-- **DEF-48-01 — `npm run test:db` exits NON-ZERO on a GREEN suite** (`views/queries.db.test.ts`'s
-  `afterAll`). **Never gate on its exit code. Read the pass counts.**
+- **DEF-48-01 — CLOSED 2026-08-26** (commit `37202ce`). It used to exit NON-ZERO on a green suite;
+  the root cause was found by plan 49-06 while proving SC-1. `npm run test:db` now exits **0**
+  (11 files / 252 tests). Reading the pass counts remains good practice, but the exit code is no
+  longer a false red.
 - **Lint: gate on ERRORS, never on the warning total.** It differs between the main tree and a
   worktree because of `.planning`'s untracked files (124 vs 120-122 observed across Phase 48).
 

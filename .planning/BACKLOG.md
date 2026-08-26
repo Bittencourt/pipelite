@@ -1480,7 +1480,14 @@ Phase 48 makes the Q10 route-level gate its central deliverable for exactly this
 > have written a test for the route in question. Full transcripts, including a matching ablation
 > against this phase's own `activities/[id]` fix, are in `48-08-SUMMARY.md` § Negative controls.
 
-### DEF-48-01 — `npm run test:db` exits NON-ZERO on a fully green suite — **found by Phase 48, plan 48-06**
+### DEF-48-01 — `npm run test:db` exits NON-ZERO on a fully green suite — **CLOSED 2026-08-26 (Phase 49)**
+
+> **CLOSED.** Root cause found by plan 49-06 (logged DEF-49-04) and fixed in commit `37202ce`: the
+> `if (table !== "saved_view_defaults")` guard in that `afterAll` wrapped only the `expect`, not the
+> QUERY, so the query itself raised `42703`. Moved the query inside the guard. Measured before and
+> after with the same command: `1 failed (1) / 28 passed / exit 1` → `1 passed (1) / 28 passed /
+> exit 0`, and `npm run test:db` → **11 files, 252 tests, EXIT=0**. The exit code is now usable as a
+> gate. The original entry is kept below as written.
 
 Measured 2026-08-25: `npm run test:db` reports **73 passed / 73** and still exits non-zero.
 `src/lib/views/queries.db.test.ts:250` issues an `id`-keyed leftover query against

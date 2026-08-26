@@ -82,7 +82,16 @@ observable, are covered behaviourally for all four entities by 49-05.
 
 ---
 
-## DEF-49-04 — `src/lib/views/queries.db.test.ts`'s `afterAll` throws 42703, so the db PROJECT can never be green
+## DEF-49-04 — **CLOSED 2026-08-26, commit `37202ce`** (see the note directly below)
+
+> **CLOSED.** The orchestrator fixed this immediately rather than deferring it, because a green suite
+> exiting non-zero made `test:db`'s exit code unusable as a gate and had forced a standing caveat into
+> every phase from 48 onward, including all nine Phase 49 plans and the five phases still to run.
+> Measured before/after with the same command: `1 failed (1) / 28 passed / exit 1` →
+> `1 passed (1) / 28 passed / exit 0`; `npm run test:db` → 11 files / 252 tests / **EXIT=0**.
+> This also closes **DEF-48-01**. Original entry follows.
+
+## DEF-49-04 (original entry) — `src/lib/views/queries.db.test.ts`'s `afterAll` throws 42703, so the db PROJECT can never be green
 
 **Found by:** plan 49-06, Task 2, running the whole db project after the ablations.
 

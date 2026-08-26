@@ -30,9 +30,12 @@ Next: `/gsd:verify-phase 48` (and Phases 46 and 47 are each still owed their own
 Do **not** inherit an older number — this milestone has now paid for that twice (STATE.md said 5164
 while the tree was at 5237, and before that 4845 while it was at 5164). The db project is a **separate
 baseline: 98 passed across 4 files** under `npm run test:db`.
-**And do not gate on `npm run test:db`'s EXIT CODE — it exits 1 on a fully green suite** (DEF-48-01:
-`queries.db.test.ts`'s `afterAll` issues an `id`-keyed leftover query against `saved_view_defaults`,
-which has no `id` column → `42703`). Gate on the reported counts.
+**`npm run test:db`'s EXIT CODE IS USABLE AGAIN as of 2026-08-26** — DEF-48-01 is CLOSED (commit
+`37202ce`, root cause found by plan 49-06). `queries.db.test.ts`'s `afterAll` guarded only the
+`expect` and not the `id`-keyed leftover QUERY against `saved_view_defaults`, which has no `id`
+column → `42703`. Measured after the fix: `npm run test:db` → **11 files, 252 tests, EXIT=0**.
+Gating on the counts is still fine and more informative; the point is the exit code no longer reads
+green as red.
 
 **Phase 48 closed a live IDOR, and the exploit is dead over real HTTP against a REBUILT image.**
 `docker compose up -d --build` moved the image `8f07a18eddad` → **`eba9cfa1c4be`**; a matching id
@@ -97,7 +100,8 @@ and **36 route files against 27 documented path items** — the larger defect.
   **STILL FLAGS** both, at inverted polarity, so whoever fixes them finds this control red and is
   forced to shrink the list.
 
-- **DEF-48-01** — `npm run test:db` exits non-zero on a green suite. Unchanged.
+- **DEF-48-01** — ~~`npm run test:db` exits non-zero on a green suite~~ **CLOSED 2026-08-26**, commit
+  `37202ce`; root cause found by plan 49-06. `test:db` now exits 0 (11 files / 252 tests).
 - **DEF-48-02** — a soft-deleted or `rejected` user's API key still authenticates; `validateApiKey`
   never reads `users.deletedAt` or `users.status`.
 

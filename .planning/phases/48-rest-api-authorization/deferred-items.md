@@ -5,7 +5,12 @@ fixed here: they are not caused by this phase's changes.
 
 ---
 
-## DEF-48-01 — `src/lib/views/queries.db.test.ts` fails in `afterAll` (pre-existing)
+## DEF-48-01 — `src/lib/views/queries.db.test.ts` fails in `afterAll` (pre-existing) — **CLOSED 2026-08-26**
+
+> **CLOSED in Phase 49**, commit `37202ce`. The guard wrapped the `expect` but not the QUERY, so
+> `saved_view_defaults` (no `id` column) raised `42703` regardless. Query moved inside the guard;
+> `npm run test:db` → 11 files / 252 tests / **EXIT=0**. Found by plan 49-06, logged there as
+> DEF-49-04. Original entry unchanged below.
 
 **Found during:** 48-06, Task 3 verification (`npm run test:db` over the whole db project).
 
