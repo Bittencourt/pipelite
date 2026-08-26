@@ -43,7 +43,32 @@ async function verifyStageOwnership(stageId: string, userId: string) {
     return { stage: null, owned: false }
   }
 
-  if (!stage.pipeline || stage.pipeline.ownerId !== userId || stage.pipeline.deletedAt) {
+  // WR-06: THREE DISTINCT VERDICTS, and they must not collapse into one.
+  //
+  // All three verbs map `owned: false` to `Problems.forbidden()`, so folding these into a single
+  // condition told the owner of a soft-deleted pipeline that they had lost access to their own
+  // stage: `403 {"title":"Forbidden","detail":"You don't have access to this resource"}` for a
+  // record they own and can restore from the trash. That is the same 403-to-the-owner shape plan
+  // 48-03 exists to close, on a different branch of the same predicate.
+  //
+  // It also made the two stage endpoints disagree about the same row: `GET /api/v1/stages` filters
+  // with `isNull(pipelines.deletedAt)` inside `ownedStagesPredicate` and simply OMITS it. One
+  // endpoint said "not yours" while the other said "does not exist".
+  //
+  // A MISSING PARENT AND A TRASHED PARENT ARE BOTH ABSENCE, not refusal, so both return
+  // `stage: null` — which every caller turns into 404, matching the list. Only a LIVE parent owned
+  // by somebody else is an authorization failure.
+  //
+  // Absence is deliberately decided BEFORE ownership: a foreign stage in a trashed pipeline answers
+  // 404 rather than 403, which leaks strictly less (a 403 would confirm the row exists) and keeps
+  // this endpoint saying exactly what the list says about the same row. The 403 path is still
+  // reachable and still asserted — SC-4b and SC-4b' in
+  // `__tests__/route.test.ts` are foreign stages in LIVE pipelines.
+  if (!stage.pipeline || stage.pipeline.deletedAt) {
+    return { stage: null, owned: false }
+  }
+
+  if (stage.pipeline.ownerId !== userId) {
     return { stage, owned: false }
   }
 

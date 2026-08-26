@@ -24,6 +24,18 @@
  * `stage.pipeline` is always populated, so the `expand.has("pipeline") &&` guard in the projection
  * stops being belt-and-braces and becomes the only thing keeping the pipeline object out of a bare
  * GET's body.
+ *
+ * SC-4d is a FIFTH cell, added by the code review that found the same 403-to-the-owner shape on a
+ * branch 48-03 did not reach:
+ *
+ *   | cell  | caller     | pipeline  | before WR-06                 | after     | status          |
+ *   |-------|------------|-----------|------------------------------|-----------|-----------------|
+ *   | SC-4d | OWNER      | trashed   | 403  ← THE DEFECT            | 404       | THE PROOF       |
+ *
+ * `verifyStageOwnership` folded "pipeline is in the trash" into the same `owned: false` as "pipeline
+ * is somebody else's", and all three verbs map `owned: false` to `Problems.forbidden()`. SC-4d is
+ * asserted on GET, PUT and DELETE — three independent call sites — and is paired with a
+ * still-403 discriminator so the fix cannot have collapsed every refusal into 404.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { NextRequest, NextResponse } from "next/server"
@@ -107,7 +119,7 @@ vi.mock("@/lib/api/auth", () => ({
 // `verifyStageOwnership` is deliberately NOT stubbed. It is the predicate under test; a stubbed
 // predicate returns whatever the test told it to and proves nothing about the route.
 import { db } from "@/db"
-import { GET } from "@/app/api/v1/stages/[id]/route"
+import { GET, PUT, DELETE } from "@/app/api/v1/stages/[id]/route"
 
 const mockFindFirst = db.query.stages.findFirst as unknown as ReturnType<
   typeof vi.fn<(args?: FindFirstArgs) => Promise<unknown>>
@@ -144,6 +156,25 @@ const foreignStage: StageWithPipeline = {
   id: "stage-2",
   pipelineId: "pipe-2",
   pipeline: { ...ownedPipeline, id: "pipe-2", ownerId: "user-9" },
+}
+
+/**
+ * WR-06 — THE CALLER'S OWN STAGE, in a pipeline they have moved to the trash.
+ *
+ * `ownerId` is `user-1`: this row belongs to the caller. Only `deletedAt` differs from
+ * `ownedStage`, so the outcome cannot be attributed to ownership. Soft-deleting a pipeline is a
+ * REVERSIBLE user action, not an authorization event.
+ */
+const ownedStageInTrashedPipeline: StageWithPipeline = {
+  ...ownedStage,
+  id: "stage-3",
+  pipelineId: "pipe-3",
+  pipeline: {
+    ...ownedPipeline,
+    id: "pipe-3",
+    ownerId: "user-1",
+    deletedAt: new Date("2026-02-01T00:00:00Z"),
+  },
 }
 
 function getRequest(id: string, expand?: string) {
@@ -336,5 +367,125 @@ describe("lookup — a missing stage is still 404, decided before the ownership 
     const response = await GET(getRequest("stage-404", "pipeline"), paramsFor("stage-404"))
 
     expect(response.status).toBe(404)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// SC-4d (WR-06) — THE FOURTH CELL. The owner's OWN stage, in a pipeline they soft-deleted.
+//
+// `verifyStageOwnership` folded three distinct verdicts into one `owned: false`:
+//
+//     if (!stage.pipeline || stage.pipeline.ownerId !== userId || stage.pipeline.deletedAt)
+//
+// and all three verbs map `owned: false` to `Problems.forbidden()`. So the owner of a trashed
+// pipeline asking for one of its stages received
+// `403 {"title":"Forbidden","detail":"You don't have access to this resource"}` — for a record they
+// own and can restore. That is the same 403-to-the-owner shape plan 48-03 was written to close, on a
+// different branch of the same predicate.
+//
+// It also made the two stage endpoints disagree about the same row: `GET /api/v1/stages` filters
+// with `isNull(pipelines.deletedAt)` inside `ownedStagesPredicate` and simply OMITS it, so the list
+// says "does not exist" while `/stages/:id` says "not yours". 404 is the answer that matches the
+// list — and the one that does not tell a caller they have lost access to their own data.
+//
+// Asserted on ALL THREE VERBS, not just GET: `verifyStageOwnership` is one call site each, they fail
+// or pass independently of one another, and a shared helper asserting one of them would go green the
+// moment any single verb was fixed.
+// ---------------------------------------------------------------------------------------------
+describe("SC-4d — owner, pipeline soft-deleted → 404 not 403 [THE WR-06 PROOF, red before the fix]", () => {
+  beforeEach(() => {
+    mockState.currentStage = ownedStageInTrashedPipeline
+  })
+
+  it("GET answers 404 with ENTITY_NOT_FOUND, matching what GET /api/v1/stages does with the same row", async () => {
+    const response = await GET(getRequest("stage-3"), paramsFor("stage-3"))
+    const body = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(body.type).toMatch(/\/ENTITY_NOT_FOUND$/)
+    // Explicit, because 403 is what this returned before the fix and the two are easy to confuse in
+    // a diff: the caller must NOT be told they lack access to a record they own.
+    expect(response.status).not.toBe(403)
+  })
+
+  it("GET leaks no stage or pipeline data alongside the 404", async () => {
+    const response = await GET(getRequest("stage-3", "pipeline"), paramsFor("stage-3"))
+    const body = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(body.data).toBeUndefined()
+  })
+
+  it("PUT answers 404 and writes nothing", async () => {
+    const response = await PUT(
+      new NextRequest("http://localhost:3000/api/v1/stages/stage-3", {
+        method: "PUT",
+        body: JSON.stringify({ name: "renamed" }),
+        headers: { "content-type": "application/json" },
+      }),
+      paramsFor("stage-3")
+    )
+
+    expect(response.status).toBe(404)
+    // A trashed parent must not become an editable child either — 404 is the refusal, and it is
+    // still a refusal.
+    expect(db.update).not.toHaveBeenCalled()
+  })
+
+  it("DELETE answers 404 and deletes nothing", async () => {
+    const response = await DELETE(
+      new NextRequest("http://localhost:3000/api/v1/stages/stage-3", { method: "DELETE" }),
+      paramsFor("stage-3")
+    )
+
+    expect(response.status).toBe(404)
+    // Stages are HARD deleted (stages/[id]/route.ts), so an absent `db.delete` is the proof.
+    expect(db.delete).not.toHaveBeenCalled()
+  })
+
+  it("a FOREIGN stage whose pipeline is ALSO trashed answers 404 — absence is decided before ownership", async () => {
+    // Pins the ORDER, which is a decision rather than an accident. Absence first means a 403 never
+    // confirms the existence of a row inside a trashed pipeline, and it keeps this endpoint saying
+    // exactly what `GET /api/v1/stages` says about the same row. 403 is NOT gone: SC-4b and SC-4b'
+    // above are foreign stages in LIVE pipelines and both still assert it.
+    mockState.currentStage = {
+      ...foreignStage,
+      id: "stage-4",
+      pipeline: {
+        ...ownedPipeline,
+        id: "pipe-4",
+        ownerId: "user-9",
+        deletedAt: new Date("2026-02-01T00:00:00Z"),
+      },
+    }
+
+    const response = await GET(getRequest("stage-4"), paramsFor("stage-4"))
+    const body = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(body.type).toMatch(/\/ENTITY_NOT_FOUND$/)
+  })
+
+  it("403 IS STILL REACHABLE for a foreign stage in a LIVE pipeline — the fix did not collapse every refusal into 404", async () => {
+    // The discriminator for this whole describe. Without it, six 404 assertions above are satisfied
+    // by a helper that returns `stage: null` unconditionally, which would turn an authorization
+    // refusal into a "does not exist" for every foreign row in the system.
+    mockState.currentStage = foreignStage
+
+    const response = await GET(getRequest("stage-2"), paramsFor("stage-2"))
+    const body = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(body.type).toMatch(/\/FORBIDDEN$/)
+  })
+
+  it("the LIVE pipeline case is untouched: the same owner still gets 200", async () => {
+    // The anti-vacuity anchor for this describe. Without it the four 404s above are satisfied by a
+    // route that 404s the owner unconditionally — which would be a worse defect than the 403.
+    mockState.currentStage = ownedStage
+
+    const response = await GET(getRequest("stage-1"), paramsFor("stage-1"))
+
+    expect(response.status).toBe(200)
   })
 })
