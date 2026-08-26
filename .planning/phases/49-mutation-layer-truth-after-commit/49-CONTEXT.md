@@ -38,14 +38,18 @@ The roadmap explicitly forbade a plan from assuming one; the user chose the cano
   `activities`). The requirement is "decide once for all four"; per-entity divergence is not
   acceptable.
 - **Match scope: custom-field VALUES**, per SC-4's wording — not whole-body byte equality.
-- **The two plan 34-02 fixture assertions compare against the current create-response shape and MUST
-  be amended in the SAME commit as the DATA-02 change**, or the suite goes red on success. This is a
-  named milestone trap; see `<specifics>`.
+- **Fixture assertions that compare against the current create-response shape MUST be amended in the
+  SAME commit as the DATA-02 change**, or the suite goes red on success. This is a named milestone
+  trap; see `<specifics>`. **Corrected after research: there are SIX such assertions in three sets,
+  not the two the ROADMAP named, and the named pair is not the one that necessarily breaks** — see
+  the post-research decisions below and `49-RESEARCH.md`.
 
 ### SEC-04 — file route authorization (SC-1)
 
 **Close all three holes, not just the one SEC-04 names.** The user chose the widest of three options
-after the scout showed the exposure is broader than the requirement's wording.
+after the scout showed the exposure is broader than the requirement's wording. **Scope limit added
+after research: this applies to `FILE_STORAGE=local`. The S3 path bypasses the route entirely — see
+the post-research decisions below.**
 
 - **Authorization:** resolve `entityId` and apply the ownership predicate, answering **404** for a
   foreign or missing record. This is Phase 48's settled house pattern — `organizations/[id]`,
@@ -60,7 +64,9 @@ after the scout showed the exposure is broader than the requirement's wording.
 - **Identity model: session-only (`auth()`), unchanged.** There is no `/api/v1` file route, so no
   `withApiAuth` twin is needed. Do not invent one.
 - **Ordering (roadmap-mandated, non-negotiable):** this lands **before** blob deletion. It closes the
-  exposure on its own, and the URL stays recoverable from the audit tombstone indefinitely.
+  exposure on its own, and the URL stays recoverable from the audit tombstone for **90 days**
+  (`audit.retention_days = 90` — corrected after research; the ROADMAP said "indefinitely", which is
+  false. The ordering argument still holds).
 
 ### SEC-04 — purge and blob deletion (SC-2)
 
