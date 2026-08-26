@@ -258,10 +258,26 @@ const LOSER_NAME = `${PREFIX}Loser Ltda ME`
 /** `count(*)` per touched table, captured before the first fixture exists. */
 const countsBefore = new Map<string, number>()
 
+/**
+ * A unique prefixed id, from a COUNTER AND NO CLOCK.
+ *
+ * `dedup.db.test.ts`'s `fixtureId()` folds `Date.now().toString(36)` in, and that is right for a
+ * file whose fixtures must not collide across runs against a shared database. Here they cannot:
+ * every row this generator names is deleted in `afterEach`, and the isolated database is rebuilt
+ * per run.
+ *
+ * THE CLOCK READ WAS REMOVED RATHER THAN KEPT, and the reason is a measured gate collision.
+ * `src/lib/__tests__/suite-timing-hygiene.test.ts` propagates clock taint by NAME across a whole
+ * file and not by scope, so a `const id = fixtureId(...)` anywhere in this file taints EVERY
+ * identifier called `id` in it — including the `row?.value` inside the shared `scalar()` helper,
+ * which then taints every count derived from it. That reported two `toBeGreaterThanOrEqual` FLOORS
+ * over SQL row counts as elapsed-time thresholds. The counts are not clock-derived; the fix is to
+ * stop reading a clock this file never needed, not to weaken the gate or to exclude the path.
+ */
 let sequence = 0
 function fixtureId(kind: string): string {
   sequence += 1
-  return `${PREFIX}${kind}-${Date.now().toString(36)}-${sequence.toString(36)}`
+  return `${PREFIX}${kind}-${sequence.toString(36)}`
 }
 
 /** The stored shape of a formula key. `error` is part of it, and it is asserted. */

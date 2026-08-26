@@ -64,7 +64,12 @@ import { getCurrentActor } from "@/lib/audit/actor-context"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import { MERGE_EXCLUDED_COLUMNS } from "@/lib/dedup/field-groups"
 import { crmBus } from "@/lib/events"
-import { recalculateFormulas } from "@/lib/formula-recalc"
+import { CUSTOM_FIELD_PREFIX } from "@/lib/audit/present"
+import {
+  CHANGED_FIELDS_CUSTOM_SENTINEL,
+  FORMULA_EVALUATION_BUDGET,
+  recalculateFormulas,
+} from "@/lib/formula-recalc"
 
 import { MERGE_MARKER_KEYS, mergeRecordsMutation } from "./dedup"
 
@@ -302,6 +307,32 @@ const baseInput = {
   survivorId: "org-survivor",
   loserId: "org-loser",
   choices: {},
+}
+
+/**
+ * The recorded `recalculateFormulas` inputs, split into the SURVIVOR's call and the children's.
+ *
+ * THE SPLIT IS ASSERTED, NOT ASSUMED. Call 0 must name the survivor, which is the ORDERING
+ * property of plan 49-08's post-commit block stated as a precondition of every other assertion
+ * that reads these arguments. Without it, moving the survivor's block after the children's would
+ * shift every child assertion silently onto the survivor's argument object — and several of them
+ * would still pass, because both calls carry `cascade: false`.
+ */
+function recalcCalls(): {
+  survivor: Parameters<typeof recalculateFormulas>[0]
+  children: Parameters<typeof recalculateFormulas>[0][]
+} {
+  const inputs = mockRecalculate.mock.calls.map((call) => call[0])
+  expect(inputs.length, "recalculateFormulas was never called at all").toBeGreaterThan(0)
+  expect(
+    inputs[0].entityId,
+    "the FIRST recalculation must be the SURVIVOR's — the survivor's formulas feed " +
+      "`Organization.*` into its children, so a child refreshed first reads a parent value " +
+      `derived from an input the survivor no longer holds. Recorded order: ${inputs
+        .map((input) => `${input.entityType}:${input.entityId}`)
+        .join(" -> ")}`
+  ).toBe("org-survivor")
+  return { survivor: inputs[0], children: inputs.slice(1) }
 }
 
 /** Index of a label, with a message that names the whole recorded sequence when it is absent. */
@@ -739,16 +770,21 @@ describe("mergeRecordsMutation — what runs after the commit", () => {
     await mergeRecordsMutation(baseInput)
     void harness
 
-    expect(mockRecalculate).toHaveBeenCalledTimes(3)
+    // FOUR calls, not three: plan 49-08 added the survivor's own recalculation as the FIRST
+    // post-commit block (DATA-01), and `recalcCalls()` asserts that call 0 is the survivor
+    // rather than assuming it — so a reordering reddens there instead of silently shifting
+    // every assertion below onto the wrong argument object.
+    expect(mockRecalculate).toHaveBeenCalledTimes(4)
+    const { children } = recalcCalls()
+    expect(children).toHaveLength(3)
 
-    const budgets = mockRecalculate.mock.calls.map(
-      (call) => (call[0] as { budget?: number }).budget
-    )
+    const budgets = children.map((child) => child.budget)
     // ONE decrementing allowance across the loop, not one per child (T-34-03): 500, 490, 480.
+    // The survivor's own call carries a SECOND, independent full budget — the accepted doubling,
+    // asserted by its own cell below rather than folded into this one.
     expect(budgets).toEqual([500, 490, 480])
 
-    for (const call of mockRecalculate.mock.calls) {
-      const argument = call[0]
+    for (const argument of children) {
       // The child's OWN fields did not change; only its parent's did.
       expect(argument.changedFields).toEqual([])
       // The children ARE the cascade here; leaving it default would fan out a further hop each.
@@ -765,7 +801,8 @@ describe("mergeRecordsMutation — what runs after the commit", () => {
 
     await mergeRecordsMutation(baseInput)
 
-    const argument = mockRecalculate.mock.calls[0][0] as {
+    // The FIRST child's call, not the first call overall — call 0 is the survivor's.
+    const argument = recalcCalls().children[0] as {
       changedRelatedFields?: Record<string, string[]>
       relatedEntities?: Record<string, unknown>
     }
@@ -788,6 +825,194 @@ describe("mergeRecordsMutation — what runs after the commit", () => {
     }
     // Plus every parent definition name, which is what the `customFields` sentinel expands to.
     expect(refs).toContain("CNPJ / CPF")
+  })
+})
+
+/* -----------------------------------------------------------------------------------------
+ * DATA-01 / SC-3 — the survivor's OWN recalculation.
+ *
+ * WHAT THESE CELLS PROVE AND WHAT THEY CANNOT. They pin the SHAPE of the call: that it happens,
+ * for the survivor, first, with `cascade: false`, with an explicit budget, and — above all —
+ * with the RIGHT SPELLING in `changedFields`. They cannot prove the value that lands in the
+ * database, because `recalculateFormulas` is mocked here; that is
+ * `src/lib/mutations/dedup-formula.db.test.ts`, against real PostgreSQL and a real
+ * `type='formula'` definition.
+ *
+ * The division matters because the two halves fail differently. A wrongly-spelled
+ * `changedFields` produces a call that looks perfect and writes nothing: the db file reddens on
+ * the VALUE and says nothing about why, and the cell below is the one that names the cause.
+ * ----------------------------------------------------------------------------------------- */
+describe("mergeRecordsMutation — the survivor's own formula recalculation (DATA-01)", () => {
+  /**
+   * The loser wins the custom field `CNPJ / CPF` ("222" over "111"), which is what puts a BARE
+   * custom-field name into `changedFields`. The loser also wins `website` by default, because
+   * the survivor's is null and the loser's is not (`filledOnly`), which is what puts a native
+   * COLUMN name in beside it. Both spellings in one merge, on purpose.
+   */
+  const LOSER_WINS_CHOICES = { [`${CUSTOM_FIELD_PREFIX}CNPJ / CPF`]: "loser" }
+
+  /** Both spellings, and nothing else: the exhaustive expectation this fixture produces. */
+  const EXPECTED_CHANGED_FIELDS = ["CNPJ / CPF", "website"]
+
+  it("recalculates the SURVIVOR itself, naming the merge's own entity type", async () => {
+    setup({ movedDeals: [{ id: "d1" }] })
+
+    await mergeRecordsMutation({ ...baseInput, choices: LOSER_WINS_CHOICES })
+
+    const { survivor } = recalcCalls()
+    expect(survivor.entityId).toBe("org-survivor")
+    expect(survivor.entityType).toBe("organization")
+    // The post-merge row is handed over so the engine does not re-read what the merge just
+    // wrote; `undefined` here would be a silent extra SELECT per merge.
+    expect(survivor.row).toBeDefined()
+  })
+
+  it("SPELLING: changedFields carries the BARE custom-field name and the native COLUMN name, and nothing prefixed", async () => {
+    // THE CELL THAT STOPS DATA-01 SHIPPING GREEN OVER ITS OWN DEFECT.
+    //
+    // `dedup.ts` builds an audit diff one screen above the insertion point whose keys are
+    // `customFields.<Name>`. It reads exactly like the array this call wants.
+    // `scopeFormulasToChangedFields` matches a bare name, a native COLUMN name, or the literal
+    // `customFields` sentinel — and `"customFields.CNPJ / CPF"` matches NONE of the three, so
+    // passing the audit map's keys would scope the recalculation to nothing and write nothing,
+    // while every other assertion in this file stayed green.
+    setup({ movedDeals: [{ id: "d1" }] })
+
+    await mergeRecordsMutation({ ...baseInput, choices: LOSER_WINS_CHOICES })
+
+    const changedFields = recalcCalls().survivor.changedFields
+
+    // A PREDICATE over the whole array, not a single `not.toContain`, so a SECOND wrongly-spelled
+    // key cannot slip past behind a correctly-spelled one.
+    const prefixed = changedFields.filter((field) => field.startsWith(CUSTOM_FIELD_PREFIX))
+    expect(
+      prefixed,
+      `${JSON.stringify(prefixed)} carries the AUDIT DIFF's spelling. ` +
+        "`scopeFormulasToChangedFields` matches the bare definition name, a native attribute " +
+        "via its column name, or the coarse sentinel — never a dotted `customFields.<Name>`. A " +
+        "call built from `Object.keys(fieldChanges)` therefore selects NO formula, writes " +
+        "NOTHING, and looks exactly like a fix."
+    ).toEqual([])
+
+    // The coarse sentinel is a documented WIDENING, not this block's construction. If a future
+    // change needs it, this assertion is the place that forces the decision to be stated.
+    expect(changedFields).not.toContain(CHANGED_FIELDS_CUSTOM_SENTINEL)
+
+    // The bare custom-field name the loser won, and the native COLUMN name the loser won.
+    expect(changedFields).toContain("CNPJ / CPF")
+    expect(changedFields).toContain("website")
+
+    // Exhaustive, so a construction that over-collects (every native, every custom key) is
+    // caught too — an over-wide array is a silent FORMULA-02 regression, not a safe default.
+    expect([...changedFields].sort()).toEqual(EXPECTED_CHANGED_FIELDS)
+  })
+
+  it("ANCHOR: the recorded changedFields is NON-EMPTY", async () => {
+    // An empty array satisfies "contains nothing beginning `customFields.`" perfectly, and an
+    // empty array is EXACTLY what a mis-built construction produces — one comparing the merged
+    // values against themselves, or against the wrong side. Without this floor the spelling
+    // cell above passes for free.
+    setup({ movedDeals: [{ id: "d1" }] })
+
+    await mergeRecordsMutation({ ...baseInput, choices: LOSER_WINS_CHOICES })
+
+    expect(
+      recalcCalls().survivor.changedFields.length,
+      "an empty changedFields makes `inScope` empty, which makes `recalculateOneEntity` return " +
+        "before it reads a row — a call that happened and did nothing"
+    ).toBeGreaterThanOrEqual(EXPECTED_CHANGED_FIELDS.length)
+  })
+
+  it("cascade is exactly false, and the budget is written at the call site", async () => {
+    setup({ movedDeals: [{ id: "d1" }] })
+
+    await mergeRecordsMutation({ ...baseInput, choices: LOSER_WINS_CHOICES })
+
+    const { survivor } = recalcCalls()
+    // `toBe(false)`, not `toBeFalsy()`: `undefined` means the engine's DEFAULT, which is TRUE.
+    expect(survivor.cascade).toBe(false)
+    // The accepted doubling (49-08 decision e), asserted rather than described: a second
+    // independent full allowance, bounded because the survivor is one entity with no cascade.
+    expect(survivor.budget).toBe(FORMULA_EVALUATION_BUDGET)
+  })
+
+  it("ORDERING: the survivor's recalculation is invoked BEFORE the first reparented child's", async () => {
+    setup({ movedDeals: [{ id: "d1" }], movedPeople: [{ id: "p1" }] })
+
+    await mergeRecordsMutation({ ...baseInput, choices: LOSER_WINS_CHOICES })
+
+    expect(mockRecalculate).toHaveBeenCalledTimes(3)
+    const order = mockRecalculate.mock.invocationCallOrder
+    // Read off the MOCK's recorded order, never off the source text: a `toContain` over
+    // `dedup.ts` would pass on a comment and fail on a reformat.
+    expect(
+      order[0],
+      `recorded invocation order ${JSON.stringify(order)} — the survivor must be first`
+    ).toBeLessThan(order[1])
+  })
+
+  it("ORDERING HAS A CONSEQUENCE: the children are handed the survivor's FRESH formula values", async () => {
+    // WITHOUT THIS, THE ORDERING CLAIM WOULD BE DECORATIVE. `recalcReparentedChildren` resolves
+    // `{{Organization.*}}` from a captured ROW OBJECT, not from the database — so running the
+    // survivor first buys nothing unless the recomputed blob is handed forward. This cell is
+    // what makes the ordering observable in the arguments the children actually receive.
+    setup({ movedDeals: [{ id: "d1" }] })
+    const FRESH_KEY = "Derived Total"
+    const FRESH_VALUE = 999
+    // ANTI-VACUITY: the key cannot already be on the row, so its presence below can only have
+    // come from the survivor recalculation's return value.
+    expect(SURVIVOR.customFields).not.toHaveProperty(FRESH_KEY)
+
+    mockRecalculate.mockResolvedValueOnce({
+      customFields: {
+        ...SURVIVOR.customFields,
+        [FRESH_KEY]: { formula: true, value: FRESH_VALUE, error: null },
+      },
+      evaluations: 1,
+    })
+
+    await mergeRecordsMutation({ ...baseInput, choices: LOSER_WINS_CHOICES })
+
+    const child = recalcCalls().children[0]
+    const parentValues = (child.relatedEntities ?? {})["Organization"] as
+      | Record<string, unknown>
+      | undefined
+    expect(
+      parentValues?.[FRESH_KEY],
+      "the child's `relatedEntities.Organization` must carry the value the survivor's " +
+        "recalculation just produced, unwrapped. If it is undefined, the survivor's fresh blob " +
+        "was computed and then thrown away, and the ordering decision has no consequence."
+    ).toBe(FRESH_VALUE)
+  })
+
+  it("D-05: a REJECTED survivor recalculation leaves the merge successful and logs with the literal scope", async () => {
+    const harness = setup({ movedDeals: [{ id: "d1" }] })
+    // Only the SURVIVOR's call rejects; the children's still resolve, so this cell is about the
+    // new block's own containment and not about the whole post-commit region failing.
+    mockRecalculate.mockRejectedValueOnce(new Error("survivor recalc boom"))
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await mergeRecordsMutation({ ...baseInput, choices: LOSER_WINS_CHOICES })
+
+    // Copied out BEFORE mockRestore, which clears `mock.calls`.
+    const lines = errorSpy.mock.calls.map((call) => String(call[0]))
+    errorSpy.mockRestore()
+
+    // The merge had already COMMITTED. Its return value must be untouched.
+    expect(result).toEqual({ success: true, movedChildren: 1, loserName: "Acme LTDA ME" })
+    // The loser is still in Trash and the bus still told every subscriber about it.
+    expect(harness.labels()).toContain("update:organizations(loser)")
+    expect(mockEmit).toHaveBeenCalledTimes(1)
+    // The children's refresh still ran: one try/catch per concern, not one wrapping both.
+    expect(mockRecalculate).toHaveBeenCalledTimes(2)
+
+    // The scope is an INDEX KEY an operator greps by, and `log-scope-format.test.ts` asserts
+    // call-site equality on the literal. Asserted through the emitted line, so a scope passed
+    // as a variable would not satisfy it.
+    expect(
+      lines.some((line) => line.includes('"scope":"dedup-merge"')),
+      `no logged line carried the scope literal; captured: ${JSON.stringify(lines)}`
+    ).toBe(true)
   })
 })
 

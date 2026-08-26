@@ -41,10 +41,11 @@ import { log } from "@/lib/log"
  * total, so the transaction is smaller than several the application already runs (T-39-25,
  * recorded as accepted rather than hedged).
  *
- * WHAT IS DELIBERATELY *NOT* IN THE TRANSACTION, and why, in both cases because the machinery
- * involved uses the module-level `db` and cannot be handed a `tx`: the formula recalculation
- * and the bus emit. Both run after the commit, both are best-effort, and both are commented at
- * their call sites so a reader does not "fix" them by moving them inside.
+ * WHAT IS DELIBERATELY *NOT* IN THE TRANSACTION, and why, in every case because the machinery
+ * involved uses the module-level `db` and cannot be handed a `tx`: the survivor's formula
+ * recalculation, the reparented children's, and the bus emit. All three run after the commit,
+ * all three are best-effort, and all three are commented at their call sites so a reader does
+ * not "fix" them by moving them inside.
  * ----------------------------------------------------------------------------------------- */
 
 /**
@@ -624,9 +625,95 @@ export async function mergeRecordsMutation(input: MergeRecordsInput): Promise<Me
       }
     })
 
-    // ---- AFTER THE COMMIT. Both blocks are best-effort and neither rethrows. -------------
+    // ---- AFTER THE COMMIT. All three blocks are best-effort and none of them rethrows. ----
+    //
+    // The blocks are NUMBERED IN EXECUTION ORDER, which is also the order the data flows: the
+    // survivor's own formulas first, then the rows that moved onto it, then the bus.
 
-    // 1. Formula recalculation for the rows that moved.
+    // The survivor row AS THE REPARENTED CHILDREN SHOULD SEE IT.
+    //
+    // `outcome.survivorRow` came from the survivor UPDATE's `.returning()`, so its formula keys
+    // still hold the values that were stored BEFORE block 1 recomputed them. Block 2 hands that
+    // row to `buildRelatedEntities`, which is where a child resolves `{{Organization.<Formula>}}`
+    // — so without this hand-off, ordering block 1 first would buy nothing at all: block 2 reads
+    // a captured OBJECT, not the database, and would feed its children a parent formula value
+    // derived from an input the survivor no longer holds. That is DATA-01 again, one hop down.
+    //
+    // `let`, and declared out here rather than inside block 1, because block 1 is best-effort:
+    // if it fails, block 2 must still run against the best row available.
+    let survivorRowForChildren = outcome.survivorRow
+
+    // 1. Formula recalculation for THE SURVIVOR ITSELF (DATA-01).
+    //
+    //    FIVE DECISIONS, ALL OF THEM RECORDED HERE BECAUSE ALL FIVE ARE REACHABLE BY A PLAUSIBLE
+    //    "FIX" THAT WOULD BE WRONG.
+    //
+    //    (a) IT CANNOT RUN INSIDE THE TRANSACTION, for the same reason block 2 cannot:
+    //        `recalculateFormulas` and its whole cascade use the module-level `db` and have no
+    //        `tx` parameter, so calling it above would read a snapshot that does not include the
+    //        uncommitted survivor UPDATE and write outside the transaction's atomicity.
+    //
+    //    (b) IT NAMES THE SURVIVOR EXPLICITLY, and is NOT left to a survivor-rooted cascade.
+    //        `cascadeToChildren` short-circuits on `if (changed.size === 0) return 0`, so a
+    //        merge where the survivor won every field would recompute nothing — the same reason
+    //        block 2 iterates its children explicitly instead of fanning out from the parent.
+    //
+    //    (c) `changedFields` CARRIES BARE CUSTOM-FIELD NAMES AND NATIVE **COLUMN** NAMES, and
+    //        deliberately NOT the `customFields.<Name>` spelling that the audit diff above
+    //        builds one screen from here. `scopeFormulasToChangedFields` matches a formula's
+    //        dependency ref three ways — the bare name, a native attribute via its column name,
+    //        or the coarse sentinel — and `"customFields.Origem"` matches NONE of the three. So
+    //        passing the audit map's keys would produce a call that selected no formula, wrote
+    //        nothing, and looked exactly like a fix. It is built from `nativeValues`/`survivor`
+    //        and `merged.customFields`/`survivorBlob` for that reason; the audit map is not
+    //        reachable from here by accident because it is not referenced.
+    //
+    //    (d) `cascade: false`. Block 2 has already refreshed the children that MOVED, and
+    //        fanning out again from the survivor would re-read them. THE RESIDUAL IS NAMED
+    //        RATHER THAN HIDDEN: the survivor's PRE-EXISTING children keep `Organization.*`
+    //        values that are now stale for a different reason — they read a parent whose merged
+    //        values they never saw. That is WR-02's open item, not this block's work.
+    //
+    //    (e) THE BUDGET IS A SECOND, INDEPENDENT FULL ONE, and the doubling is accepted rather
+    //        than concealed. `recalcReparentedChildren` documents ONE SHARED allowance across
+    //        every child as the property that matters, and this block departs from it: the
+    //        merge's post-commit worst case is now two full budgets. It is bounded, because the
+    //        survivor is ONE entity with `cascade: false`, so its evaluation count cannot exceed
+    //        its own formula count. The number is written at the call site so the departure
+    //        reads as a decision.
+    try {
+      const survivorChangedFields = [
+        // COLUMN names, which is what `scopeFormulasToChangedFields` looks up through
+        // `NATIVE_ATTRIBUTE_COLUMNS` to match an attribute ref like `{{Name}}`.
+        ...Object.keys(nativeValues).filter((key) => !Object.is(survivor[key], nativeValues[key])),
+        // BARE definition names, which is how a same-entity custom-field ref is spelled.
+        ...Object.keys(merged.customFields).filter(
+          (key) => !Object.is(survivorBlob[key], merged.customFields[key])
+        ),
+      ]
+
+      const survivorRecalc = await recalculateFormulas({
+        entityType,
+        entityId: survivorId,
+        changedFields: survivorChangedFields,
+        // Already the post-merge row, so the engine does not re-read what we just wrote.
+        row: outcome.survivorRow,
+        cascade: false,
+        budget: FORMULA_EVALUATION_BUDGET,
+      })
+
+      if (survivorRecalc.customFields) {
+        survivorRowForChildren = {
+          ...outcome.survivorRow,
+          customFields: survivorRecalc.customFields,
+        }
+      }
+    } catch (error) {
+      // D-05: formula machinery never blocks a write, and the merge has already committed.
+      log.error("dedup-merge", "post-merge survivor formula recalculation failed", { err: error })
+    }
+
+    // 2. Formula recalculation for the rows that moved.
     //
     //    IT CANNOT RUN INSIDE THE TRANSACTION: `recalculateFormulas` and its whole cascade use
     //    the module-level `db` and have no `tx` parameter, so calling it above would read a
@@ -641,7 +728,7 @@ export async function mergeRecordsMutation(input: MergeRecordsInput): Promise<Me
       await recalcReparentedChildren({
         entityType,
         survivorId,
-        survivorRow: outcome.survivorRow,
+        survivorRow: survivorRowForChildren,
         movedDeals: outcome.movedDeals,
         movedPeople: outcome.movedPeople,
       })
@@ -650,7 +737,7 @@ export async function mergeRecordsMutation(input: MergeRecordsInput): Promise<Me
       log.error("dedup-merge", "post-merge formula recalculation failed", { err: error })
     }
 
-    // 2. The bus emit for the loser's deletion.
+    // 3. The bus emit for the loser's deletion.
     //
     //    OUTSIDE AND AFTER THE TRANSACTION, ON PURPOSE, and a reader will otherwise assume it
     //    belongs inside. Two reasons, and only the first is about correctness: `crmBus` wraps a
