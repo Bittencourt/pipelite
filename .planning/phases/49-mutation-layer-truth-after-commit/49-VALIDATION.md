@@ -86,12 +86,95 @@ by criterion. The planner must carry each row onto a task and preserve the *type
 Three of the four criteria are provable only if these are still zero. If any is non-zero, the
 corresponding proof must be re-designed, not re-run.
 
-- [ ] `select count(*) from custom_field_definitions where type='formula' and deleted_at is null` → **expected 0** (measured 0)
-- [ ] `select count(*) from custom_field_definitions where type='file' and deleted_at is null` → **expected 0** (measured 0)
-- [ ] the count of records carrying a stored file descriptor in `customFields` → **expected 0**
+- [x] `select count(*) from custom_field_definitions where type='formula' and deleted_at is null` → **expected 0** — **RE-MEASURED 0** (plan 49-01 Task 1, 2026-08-26 08:34 -03)
+- [x] `select count(*) from custom_field_definitions where type='file' and deleted_at is null` → **expected 0** — **RE-MEASURED 0** (same run)
+- [x] the count of records carrying a stored file descriptor in `customFields` → **expected 0** — **RE-MEASURED 0** on both the `%storedName%` and the `%publicUrl%` probe, across all four CRM tables (188,619 rows)
 
 Query with `docker compose exec -T postgres psql -U pipelite -d pipelite -c "<sql>"`.
 Note the column is **`type`**, not `field_type`.
+
+### RE-MEASUREMENT of 2026-08-26, plan 49-01 Task 1 — verbatim
+
+The premise held. **No proof in this phase needs re-designing**; 49-05, 49-07 and 49-08 may proceed
+on the measured premise, and each of them must manufacture its own subject.
+
+**(a) The full live type distribution** — `formula` and `file` are visible as an *absence*, not
+asserted as a zero. Total **169** live, matching research exactly:
+
+```
+     type      | count
+---------------+-------
+ text          |    62
+ multi_select  |    56
+ single_select |    28
+ number        |    12
+ date          |    11
+(5 rows)
+
+ total_live | formula_live | file_live
+------------+--------------+-----------
+        169 |            0 |         0
+```
+
+**(b) + (c) The descriptor probes, including the A4 follow-up research named and did not run.**
+A4 warned that a descriptor written *without* a `storedName` key would evade probe (b). Both probes
+were run side by side; both are zero, so **A4 is resolved as measured, not assumed** — there is no
+hidden `publicUrl`-only descriptor shape, and SC-2 still has no live subject:
+
+```
+      tbl      | storedname | publicurl | rows_total
+---------------+------------+-----------+------------
+ people        |          0 |         0 |      38348
+ deals         |          0 |         0 |      25195
+ activities    |          0 |         0 |      79022
+ organizations |          0 |         0 |      46054
+(4 rows)
+```
+
+**(d) Retention settings, measured in this phase's own record** rather than cited from the ROADMAP
+amendment. `audit.retention_days = 90` confirms the corrected figure; the "indefinitely" claim stays
+retired:
+
+```
+         key          | value
+----------------------+-------
+ audit.retention_days | 90
+ trash.retention_days | 30
+(2 rows)
+```
+
+**(e) Storage configuration.** `printenv FILE_STORAGE` exits **1** — the variable is unset, which
+means `'local'`, so SC-1's local-only scope is the scope that matters here. `UPLOAD_DIR=/app/uploads`,
+and that directory is **empty** (`total 8`, only `.` and `..`), so nothing on disk pre-exists to
+confuse an SC-2 fixture.
+
+### The storage-failure injection seam — EXECUTED, not reasoned
+
+`49-RESEARCH.md` § Assumptions Log **A1** was flagged MEDIUM: `unlink` on a directory raising
+`EISDIR` "regardless of uid" was reasoned from POSIX and **not executed**. It has now been executed.
+
+**Research option (A) is LIVE, and its uid-independence claim holds.** Observed verbatim:
+
+```
+SEAM LIVE: code=EISDIR errno=-21 syscall=unlink msg=EISDIR: illegal operation on a directory, unlink '/tmp/seam-Dt6hCu/blob.pdf' uid=1000
+SEAM LIVE: code=EISDIR errno=-21 syscall=unlink uid=0
+```
+
+uid **1000** is the uid the vitest process actually runs as on the host
+(`node -e process.getuid()` → 1000, `vitest/4.1.11 node-v24.13.1`). uid **0** was exercised inside the
+container to test the claim at the one uid that breaks the alternative. **`errno=-21` is `EISDIR` and
+the prediction is confirmed at both uids** — so no fallback is required and plan **49-07 must use
+research option (A)**, not (C). The S3 branch remains unreachable behaviourally (SEC-49-A).
+
+**Negative control: research option (B) is DEAD as root, exactly as its caveat warned.** Executed so
+that (A)-over-(B) is a measurement rather than a preference:
+
+```
+OPTION B DEAD: unlink RESOLVED despite chmod 0500 parent, uid=0
+```
+
+A `chmod 0500` seam would therefore have produced a *successful* deletion inside a test named for a
+failure path — a gate that cannot fail. **49-07 must not use option (B).**
 
 **Why this is a validation concern and not trivia:** with zero `formula` definitions, an SC-4 test
 written against live definitions is green **before and after** the fix — `recalculateFormulas` only
