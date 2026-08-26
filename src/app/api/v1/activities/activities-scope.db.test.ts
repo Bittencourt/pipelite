@@ -103,11 +103,20 @@ import { NextRequest } from "next/server"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import { db } from "@/db"
-import { activities, activityTypes, apiKeys, auditLog, users } from "@/db/schema"
+import {
+  activities,
+  activityTypes,
+  apiKeys,
+  auditLog,
+  deals,
+  pipelines,
+  stages,
+  users,
+} from "@/db/schema"
 
 import { mintApiKey, type MintedApiKey } from "../__tests__/api-key-fixture"
-import { GET } from "./route"
-import { PUT } from "./[id]/route"
+import { GET, POST } from "./route"
+import { GET as GET_ONE, PUT } from "./[id]/route"
 
 /* ---------------------------------------------------------------------------
  * The environment guard — evaluated at module scope, so a wrong target aborts
@@ -168,6 +177,24 @@ const KEY_A = `${PREFIX}key-a`
 const KEY_B = `${PREFIX}key-b`
 const TYPE_ID = `${PREFIX}type-task`
 
+/* ---------------------------------------------------------------------------
+ * CR-01 — the ATTACHED relation
+ *
+ * `deal_id` is a caller-supplied foreign key on both POST and PUT, and until this fix nothing
+ * constrained it: the route validated the ACTIVITY's owner and wrote whatever deal id the body
+ * named. A deal needs a stage, and a stage needs a pipeline, so proving the refusal behaviourally
+ * means seeding all three for BOTH owners — one deal each, so the negative has a real second
+ * identity behind it rather than a missing row.
+ * ------------------------------------------------------------------------ */
+const PIPELINE_A = `${PREFIX}pipeline-a`
+const PIPELINE_B = `${PREFIX}pipeline-b`
+const STAGE_A = `${PREFIX}stage-a`
+const STAGE_B = `${PREFIX}stage-b`
+/** A deal owned by A. Linking it to A's own activity is legitimate and must stay a 200. */
+const DEAL_A = `${PREFIX}deal-a`
+/** A deal owned by B. This is the id an attacker plants; linking it must be refused. */
+const DEAL_B = `${PREFIX}deal-b`
+
 /**
  * THE THREE NUMBERS THIS PROOF TURNS ON, declared once and consumed by BOTH the seed and the
  * assertions, so the two cannot drift. Every one of them is a named literal rather than a value
@@ -209,7 +236,16 @@ const baseline: Record<string, number> = {}
  * leaked. `activity_types` is here because the `activities.type_id` foreign key is NOT NULL, so this
  * suite has to create one.
  */
-const TOUCHED_TABLES = ["users", "api_keys", "activity_types", "activities", "audit_log"] as const
+const TOUCHED_TABLES = [
+  "users",
+  "api_keys",
+  "activity_types",
+  "pipelines",
+  "stages",
+  "deals",
+  "activities",
+  "audit_log",
+] as const
 
 /**
  * How a leftover fixture row is RECOGNISED, per table.
@@ -223,6 +259,9 @@ const LEFTOVER_PREDICATE: Record<(typeof TOUCHED_TABLES)[number], ReturnType<typ
   users: sql`id like ${LIKE_PREFIX}`,
   api_keys: sql`id like ${LIKE_PREFIX}`,
   activity_types: sql`id like ${LIKE_PREFIX}`,
+  pipelines: sql`id like ${LIKE_PREFIX}`,
+  stages: sql`id like ${LIKE_PREFIX}`,
+  deals: sql`id like ${LIKE_PREFIX}`,
   activities: sql`id like ${LIKE_PREFIX}`,
   audit_log: sql`entity_id like ${LIKE_PREFIX} or actor_user_id like ${LIKE_PREFIX}`,
 }
@@ -247,7 +286,13 @@ async function removeFixtures(): Promise<void> {
   await db
     .delete(auditLog)
     .where(or(like(auditLog.entityId, LIKE_PREFIX), like(auditLog.actorUserId, LIKE_PREFIX)))
+  // `activities.deal_id` references `deals`, `deals.stage_id` references `stages` and
+  // `stages.pipeline_id` references `pipelines`, so this order is the foreign-key chain read
+  // leaf-first. Reversing any two of these lines is a `23503` at teardown, not a silent leak.
   await db.delete(activities).where(like(activities.id, LIKE_PREFIX))
+  await db.delete(deals).where(like(deals.id, LIKE_PREFIX))
+  await db.delete(stages).where(like(stages.id, LIKE_PREFIX))
+  await db.delete(pipelines).where(like(pipelines.id, LIKE_PREFIX))
   await db.delete(apiKeys).where(like(apiKeys.id, LIKE_PREFIX))
   await db.delete(activityTypes).where(like(activityTypes.id, LIKE_PREFIX))
   await db.delete(users).where(like(users.id, LIKE_PREFIX))
@@ -304,6 +349,21 @@ beforeAll(async () => {
 
   // `activities.type_id` is NOT NULL and references this table.
   await db.insert(activityTypes).values({ id: TYPE_ID, name: "Scope Task", isDefault: false })
+
+  // CR-01's fixture: one pipeline, one stage and one deal PER OWNER. Two owners is what makes the
+  // refusal below a genuine cross-user request rather than a lookup against a missing row.
+  await db.insert(pipelines).values([
+    { id: PIPELINE_A, name: `${PREFIX}pipeline A`, ownerId: USER_A },
+    { id: PIPELINE_B, name: `${PREFIX}pipeline B`, ownerId: USER_B },
+  ])
+  await db.insert(stages).values([
+    { id: STAGE_A, pipelineId: PIPELINE_A, name: `${PREFIX}stage A`, position: 1000 },
+    { id: STAGE_B, pipelineId: PIPELINE_B, name: `${PREFIX}stage B`, position: 1000 },
+  ])
+  await db.insert(deals).values([
+    { id: DEAL_A, title: `${PREFIX}deal A`, stageId: STAGE_A, ownerId: USER_A, notes: `${PREFIX}A-secret` },
+    { id: DEAL_B, title: `${PREFIX}deal B`, stageId: STAGE_B, ownerId: USER_B, notes: `${PREFIX}B-secret` },
+  ])
 
   const dueBase = Date.UTC(2026, 0, 1)
   const rows = SEED_PLAN.flatMap(({ userId, ids }) =>
@@ -627,5 +687,207 @@ describe("assumption A1 — a real PUT through the real handler writes only wher
         .from(activities)
         .where(and(like(activities.id, LIKE_PREFIX), isNull(activities.deletedAt))),
     ).toHaveLength(SEEDED_TOTAL)
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * CR-01 — the ATTACHED relation, proven behaviourally
+ *
+ * SEC-01 constrains the `activities` row. `deal_id` is chosen by the CALLER, and until this fix
+ * nothing constrained it: `PUT /api/v1/activities/<A's own activity>` with `{"deal_id": "<B's
+ * deal>"}` returned 200 and planted the link, and `?expand=deal` then serialized B's deal — title,
+ * value, notes, custom_fields, owner_id — plus B's organization and B's person.
+ *
+ * REJECTING THE WRITE IS THE FIX, and that is what these assertions read. An `?expand=deal` that
+ * came back empty could pass for the wrong reason (the expand silently broken, the relation never
+ * loaded, the row never linked); a 422 on the write with the stored `deal_id` UNCHANGED cannot.
+ *
+ * Every request below carries a REAL minted key through the REAL `withApiAuth`. Nothing is mocked.
+ * ------------------------------------------------------------------------ */
+
+/** The `deal_id` a row actually holds, straight from SQL rather than from a response body. */
+async function sqlDealIdOf(activityId: string): Promise<string | null> {
+  const rows = await db.execute(
+    sql`select deal_id from activities where id = ${activityId}`,
+  )
+
+  return (rows as unknown as { deal_id: string | null }[])[0].deal_id
+}
+
+function putRequest(authorization: string, id: string, body: unknown): NextRequest {
+  return new NextRequest(`http://localhost/api/v1/activities/${id}`, {
+    method: "PUT",
+    headers: { Authorization: authorization, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+}
+
+describe("CR-01 — the fixture the deal assertions rest on", () => {
+  it("holds one deal per owner, and each one's owner is who the seed says", async () => {
+    // The floor for everything below: a missing DEAL_B would make "A cannot link B's deal" pass by
+    // there being no such deal, which is the premise-as-conclusion failure this file exists to
+    // rule out.
+    const rows = await db
+      .select({ id: deals.id, ownerId: deals.ownerId })
+      .from(deals)
+      .where(like(deals.id, LIKE_PREFIX))
+
+    expect(rows.map((r) => r.id).sort()).toEqual([DEAL_A, DEAL_B].sort())
+    expect(rows.find((r) => r.id === DEAL_A)?.ownerId).toBe(USER_A)
+    expect(rows.find((r) => r.id === DEAL_B)?.ownerId).toBe(USER_B)
+  })
+})
+
+describe("CR-01 — PUT refuses a deal_id the caller does not own", () => {
+  it("A planting B's deal id on A's OWN activity is refused with 422, and the stored deal_id is unchanged", async () => {
+    const target = A_ACTIVITY_IDS[2]
+    const before = await sqlDealIdOf(target)
+
+    const response = await PUT(putRequest(keyA.authorizationHeader, target, { deal_id: DEAL_B }), {
+      params: Promise.resolve({ id: target }),
+    })
+
+    expect(response.status).toBe(422)
+
+    const problem = (await response.json()) as {
+      errors: { field: string; code: string }[]
+    }
+    expect(problem.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "deal_id", code: "invalid_reference" }),
+      ]),
+    )
+
+    // THE ASSERTION THAT WAS RED BEFORE THE FIX: the write did not land. Read by direct SQL, not
+    // from the response body, so a route that answered 422 while still writing would be caught.
+    expect(await sqlDealIdOf(target)).toBe(before)
+    expect(await sqlDealIdOf(target)).toBeNull()
+  })
+
+  it("A linking A's OWN deal to A's own activity still returns 200 and the link lands", async () => {
+    // The positive anchor, and it is load-bearing: without it the 422 above is satisfied by a route
+    // that refuses EVERY `deal_id`, which is a different defect wearing the same status code.
+    const target = A_ACTIVITY_IDS[3]
+
+    const response = await PUT(putRequest(keyA.authorizationHeader, target, { deal_id: DEAL_A }), {
+      params: Promise.resolve({ id: target }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(await sqlDealIdOf(target)).toBe(DEAL_A)
+  })
+
+  it("B planting A's deal id on B's own activity is refused too — the guard is not A-specific", async () => {
+    const target = B_ACTIVITY_IDS[0]
+
+    const response = await PUT(putRequest(keyB.authorizationHeader, target, { deal_id: DEAL_A }), {
+      params: Promise.resolve({ id: target }),
+    })
+
+    expect(response.status).toBe(422)
+    expect(await sqlDealIdOf(target)).toBeNull()
+  })
+})
+
+describe("CR-01 — POST refuses a deal_id the caller does not own", () => {
+  it("A creating an activity against B's deal is refused with 422, and no activity is created", async () => {
+    const before = await db
+      .select({ id: activities.id })
+      .from(activities)
+      .where(like(activities.id, LIKE_PREFIX))
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/v1/activities", {
+        method: "POST",
+        headers: {
+          Authorization: keyA.authorizationHeader,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: `${PREFIX}planted`,
+          type_id: TYPE_ID,
+          deal_id: DEAL_B,
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(422)
+
+    const problem = (await response.json()) as {
+      errors: { field: string; code: string }[]
+    }
+    expect(problem.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "deal_id", code: "invalid_reference" }),
+      ]),
+    )
+
+    // `createActivityMutation` generates its own UUID id, so a created row would NOT carry this
+    // file's prefix and the prefix sweep could not see it. The global count is therefore the
+    // assertion that catches it — and `afterAll`'s baseline re-assert catches it a second time.
+    const after = await db
+      .select({ id: activities.id })
+      .from(activities)
+      .where(like(activities.id, LIKE_PREFIX))
+    expect(after).toHaveLength(before.length)
+    expect(await countAll("activities")).toBe(baseline.activities + SEEDED_TOTAL)
+  })
+})
+
+describe("CR-01 — ?expand=deal does not serialize a deal the caller does not own", () => {
+  it("A reading an activity whose deal_id was planted by DIRECT SQL gets no deal in the body", async () => {
+    // The write guard makes a new foreign link impossible through the API, so the only way to
+    // produce the LEGACY shape — a row that already links to somebody else's deal — is to write it
+    // underneath the route. That is what this does, deliberately and only here: rows created before
+    // the guard existed, and rows created through the session-auth mutation path (which still
+    // validates existence only), both look exactly like this.
+    const target = A_ACTIVITY_IDS[4]
+    await db.update(activities).set({ dealId: DEAL_B }).where(eq(activities.id, target))
+    expect(await sqlDealIdOf(target)).toBe(DEAL_B)
+
+    const response = await GET_ONE(
+      new NextRequest(`http://localhost/api/v1/activities/${target}?expand=deal`, {
+        headers: { Authorization: keyA.authorizationHeader },
+      }),
+      { params: Promise.resolve({ id: target }) },
+    )
+
+    expect(response.status).toBe(200)
+
+    const body = (await response.json()) as { data: Record<string, unknown> }
+    // FLOOR: the activity itself came back, so the absence below is the guard working rather than
+    // the request failing.
+    expect(body.data.id).toBe(target)
+    expect(Object.keys(body.data)).not.toContain("deal")
+    // And B's own notes — a column `serializeDeal` projects — appear nowhere in the payload.
+    expect(JSON.stringify(body)).not.toContain(`${PREFIX}B-secret`)
+
+    // Restored, so the fixture the earlier describes assume is the one they left behind.
+    await db.update(activities).set({ dealId: null }).where(eq(activities.id, target))
+  })
+
+  it("A reading an activity linked to A's OWN deal DOES get the deal, notes and all", async () => {
+    // The positive anchor for the read half. Without it the absence above is satisfied by a route
+    // that stopped honouring `?expand=deal` altogether.
+    const target = A_ACTIVITY_IDS[5]
+    await db.update(activities).set({ dealId: DEAL_A }).where(eq(activities.id, target))
+
+    const response = await GET_ONE(
+      new NextRequest(`http://localhost/api/v1/activities/${target}?expand=deal`, {
+        headers: { Authorization: keyA.authorizationHeader },
+      }),
+      { params: Promise.resolve({ id: target }) },
+    )
+
+    expect(response.status).toBe(200)
+
+    const body = (await response.json()) as {
+      data: { deal?: { id: string; owner_id: string; notes: string | null } }
+    }
+    expect(body.data.deal?.id).toBe(DEAL_A)
+    expect(body.data.deal?.owner_id).toBe(USER_A)
+    expect(body.data.deal?.notes).toBe(`${PREFIX}A-secret`)
+
+    await db.update(activities).set({ dealId: null }).where(eq(activities.id, target))
   })
 })

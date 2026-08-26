@@ -7,7 +7,7 @@ import { serializeActivity, serializeDeal, serializeOrganization, serializePerso
 import { crmBus } from "@/lib/events"
 import type { CrmEventPayload } from "@/lib/events"
 import { db } from "@/db"
-import { activities, activityTypes, users } from "@/db/schema"
+import { activities, activityTypes, deals, users } from "@/db/schema"
 import type { CustomFieldDefinition, EntityType } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
 import { z } from "zod"
@@ -117,7 +117,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    if (expand.has("deal") && activity.deal) {
+    // CR-01, the READ half. The write guard in PUT makes a NEW foreign link impossible; this makes
+    // an EXISTING one unreadable. `activity.deal` is loaded through the relation by id alone, so a
+    // row that already carries a foreign `deal_id` — planted before that guard existed, or through
+    // the session-auth mutation path, which still validates existence only — would otherwise
+    // serialize another user's deal, organization (`website`, `industry`, `notes`, `custom_fields`)
+    // and person (`email`, `phone`, `notes`). The `owner_id` comparison is LOAD-BEARING, not
+    // belt-and-braces.
+    if (expand.has("deal") && activity.deal && activity.deal.ownerId === ctx.userId) {
       serialized.deal = {
         ...serializeDeal(activity.deal),
         ...(activity.deal.organization && { organization: serializeOrganization(activity.deal.organization) }),
@@ -190,6 +197,38 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           message: "owner_id cannot be reassigned through this endpoint",
         },
       ])
+    }
+
+    // CR-01: `deal_id` is a CALLER-SUPPLIED FOREIGN KEY, and SEC-01's ownership predicate constrains
+    // the `activities` ROW only — never the relation the caller chooses to attach to it. Before this
+    // guard the value went straight into `updateData` with no ownership check and no existence check,
+    // so `PUT` with a deal id belonging to another user answered 200, and
+    // `GET ...?expand=deal` then serialized that deal plus its organization and its person. THE WRITE
+    // IS THE DEFECT: this refuses it rather than sanitising the read.
+    //
+    // Same shape, same 422 and same `invalid_reference` code as the house pattern at
+    // `src/app/api/v1/deals/[id]/route.ts:226-256`, so the codebase keeps ONE convention for
+    // validating a caller-supplied foreign key rather than two.
+    //
+    // Two deliberate non-cases:
+    //   - `deal_id: null` DETACHES. It is not a reference, so it is not looked up.
+    //   - `type_id` gets no ownership guard because `activity_types` HAS no owner column
+    //     (`src/db/schema/activity-types.ts`) — it is a shared lookup table, so there is nothing to
+    //     compare `ctx.userId` against. Its EXISTENCE is a separate concern.
+    if (updates.deal_id) {
+      const deal = await db.query.deals.findFirst({
+        where: and(
+          eq(deals.id, updates.deal_id),
+          eq(deals.ownerId, ctx.userId),
+          isNull(deals.deletedAt)
+        ),
+      })
+
+      if (!deal) {
+        return Problems.validation([
+          { field: "deal_id", code: "invalid_reference", message: "Deal not found" },
+        ])
+      }
     }
 
     const now = new Date()

@@ -113,7 +113,10 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      if (expand.has("deal") && activity.deal) {
+      // CR-01, the READ half — see the twin comment in `[id]/route.ts`. The list expands the same
+      // relation, so a row already carrying a foreign `deal_id` would leak that deal, its
+      // organization and its person here too. The `owner_id` comparison is LOAD-BEARING.
+      if (expand.has("deal") && activity.deal && activity.deal.ownerId === ctx.userId) {
         serialized.deal = {
           ...serializeDeal(activity.deal),
           ...(activity.deal.organization && { organization: serializeOrganization(activity.deal.organization) }),
@@ -166,6 +169,31 @@ export async function POST(request: NextRequest) {
       return Problems.validation([
         { field: "owner_id", code: "forbidden", message: "owner_id cannot be set to another user" },
       ])
+    }
+
+    // CR-01: `deal_id` is a CALLER-SUPPLIED FOREIGN KEY and nothing constrained it.
+    // `createActivityMutation` validates that the deal EXISTS
+    // (`src/lib/mutations/activities.ts:140-151` — `eq(deals.id, dealId), isNull(deals.deletedAt)`)
+    // and never that the caller owns it, so a POST naming another user's deal reached 201 and
+    // `?expand=deal` then serialized that deal plus its organization and its person.
+    //
+    // THE GUARD BELONGS HERE, IN THE ROUTE, not in the mutation: the mutation is also the
+    // session-auth server-action path, where `input.userId` is already the established owner, so
+    // tightening it there is a separate change with a separate blast radius.
+    //
+    // Same shape, same 422 and same `invalid_reference` code as
+    // `src/app/api/v1/deals/[id]/route.ts:226-256`. Placed AFTER the `owner_id` refusal above so a
+    // caller who cannot create the row at all does not get a deal-existence oracle for free.
+    if (deal_id) {
+      const deal = await db.query.deals.findFirst({
+        where: and(eq(deals.id, deal_id), eq(deals.ownerId, ctx.userId), isNull(deals.deletedAt)),
+      })
+
+      if (!deal) {
+        return Problems.validation([
+          { field: "deal_id", code: "invalid_reference", message: "Deal not found" },
+        ])
+      }
     }
 
     // Determine owner - after the guard above, `owner_id` can only ever be the caller's own id,

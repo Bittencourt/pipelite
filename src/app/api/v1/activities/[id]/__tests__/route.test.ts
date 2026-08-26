@@ -45,10 +45,15 @@ type ApiRouteHandler = (
 
 // `update` is present on the db mock precisely so a test can prove the route NEVER calls it: both
 // the PUT write and the DELETE soft-delete go through `db.update`.
+//
+// `deals.findFirst` is here for CR-01: `deal_id` is a CALLER-SUPPLIED FOREIGN KEY, and the PUT has
+// to validate it against `eq(deals.ownerId, ctx.userId)` before it can be written. See
+// `dealsFindFirst` below for why that mock evaluates the predicate instead of resolving a fixed row.
 vi.mock("@/db", () => ({
   db: {
     query: {
       activities: { findFirst: vi.fn() },
+      deals: { findFirst: vi.fn() },
     },
     update: vi.fn(),
   },
@@ -77,13 +82,22 @@ vi.mock("@/lib/formula-recalc", () => ({
 }))
 
 import { db } from "@/db"
+import { PgDialect } from "drizzle-orm/pg-core"
+import { and, eq, type SQL } from "drizzle-orm"
+// A RUNTIME import, unlike the type-only `activitiesTable` above: `@/db/schema` is NOT mocked in
+// this file, and the deal-lookup self-test below needs the real column objects to build the same
+// expressions the route builds.
+import { deals } from "@/db/schema"
 import { crmBus } from "@/lib/events"
 import { getActiveFieldDefinitions } from "@/lib/custom-fields"
 import { recalculateFormulas, stripFormulaKeys } from "@/lib/formula-recalc"
 import { GET, PUT, DELETE } from "@/app/api/v1/activities/[id]/route"
 
 const mockDb = db as unknown as {
-  query: { activities: { findFirst: ReturnType<typeof vi.fn> } }
+  query: {
+    activities: { findFirst: ReturnType<typeof vi.fn> }
+    deals: { findFirst: ReturnType<typeof vi.fn> }
+  }
   update: ReturnType<typeof vi.fn>
 }
 
@@ -127,6 +141,77 @@ const foreignActivity: ActivityRow = {
   ...ownedActivity,
   id: "act-2",
   ownerId: FOREIGN_OWNER_ID,
+}
+
+/* ------------------------------------------------------------------------------------------ *
+ * CR-01 — `deal_id`, the caller-supplied foreign key
+ * ------------------------------------------------------------------------------------------ */
+
+/** A deal the CALLER owns. Linking it is legitimate and must stay a 200. */
+const OWNED_DEAL_ID = "deal-1"
+/** A deal `user-9` owns. This is the id an attacker plants; linking it must be refused. */
+const FOREIGN_DEAL_ID = "deal-9"
+
+type DealRow = { id: string; ownerId: string; deletedAt: Date | null }
+
+const DEALS: DealRow[] = [
+  { id: OWNED_DEAL_ID, ownerId: CALLER_ID, deletedAt: null },
+  { id: FOREIGN_DEAL_ID, ownerId: FOREIGN_OWNER_ID, deletedAt: null },
+]
+
+/** `"deals"."owner_id" = $2` — the column name and the 1-based bind index. */
+const EQUALITY_TERM = /"deals"\."(\w+)" = \$(\d+)/g
+/** `"deals"."deleted_at" is null` — a term with no bind parameter. */
+const IS_NULL_TERM = /"deals"\."(\w+)" is null/g
+
+/** snake_case as PostgreSQL sees it, back to the camelCase key on the row. */
+const COLUMN_TO_KEY: Record<string, keyof DealRow> = {
+  id: "id",
+  owner_id: "ownerId",
+  deleted_at: "deletedAt",
+}
+
+/**
+ * A PREDICATE-EVALUATING `deals.findFirst`, and the reason the CR-01 assertions below are evidence.
+ *
+ * The lazy mock would be `mockResolvedValue(undefined)` for the foreign deal — which encodes the
+ * conclusion ("the scoped query finds nothing") as the premise, the exact defect this file's own
+ * header records as having left `organizations/[id]/route.ts` green with all three of its ownership
+ * predicates deleted.
+ *
+ * So this compiles the `where` the route actually handed over, reads the equality and `is null`
+ * terms back out of the statement, and answers the way PostgreSQL would: a lookup scoped by `id`
+ * ALONE gets the foreign deal back, exactly as the database would hand it over. The refusal has to
+ * come from the route's predicate, never from this function. `dealsFindFirst` is itself asserted in
+ * both polarities in the self-test describe below, before any route assertion depends on it.
+ */
+function dealsFindFirst(args?: { where?: unknown }): Promise<unknown> {
+  if (args?.where === undefined) return Promise.resolve(DEALS[0])
+
+  const compiled = new PgDialect().sqlToQuery(args.where as SQL)
+  const params = compiled.params as unknown[]
+
+  const constraints: Array<(row: DealRow) => boolean> = []
+  for (const [, column, index] of compiled.sql.matchAll(EQUALITY_TERM)) {
+    const key = COLUMN_TO_KEY[column]
+    if (key === undefined) continue
+    const bound = params[Number(index) - 1]
+    constraints.push(row => row[key] === bound)
+  }
+  for (const [, column] of compiled.sql.matchAll(IS_NULL_TERM)) {
+    const key = COLUMN_TO_KEY[column]
+    if (key === undefined) continue
+    constraints.push(row => row[key] === null)
+  }
+
+  return Promise.resolve(DEALS.find(row => constraints.every(holds => holds(row))))
+}
+
+/** The `where` the route handed to the deal lookup on the most recent request. */
+const dealWhere = (): unknown => mockDb.query.deals.findFirst.mock.calls[0]?.[0]?.where
+const renderDealQuery = (): { sql: string; params: unknown[] } => {
+  const compiled = new PgDialect().sqlToQuery(dealWhere() as SQL)
+  return { sql: compiled.sql, params: compiled.params as unknown[] }
 }
 
 /* ------------------------------------------------------------------------------------------ *
@@ -189,6 +274,10 @@ beforeEach(() => {
   mockGetDefs.mockResolvedValue([])
   mockRecalc.mockResolvedValue({ customFields: {}, evaluations: 0 })
   mockStrip.mockImplementation((values: Record<string, unknown>) => values)
+  // Re-installed explicitly rather than relying on reset semantics: a `deals.findFirst` that had
+  // silently become predicate-BLIND would resolve a row for the foreign deal too and make every
+  // CR-01 assertion below vacuous.
+  mockDb.query.deals.findFirst.mockImplementation(dealsFindFirst)
   stubUpdate([{ ...ownedActivity }])
 })
 
@@ -315,6 +404,230 @@ describe("PUT /api/v1/activities/:id — per-record authorization (SC-1b)", () =
       expect(updatedValues).toBeDefined()
       expect(Object.keys(updatedValues as Record<string, unknown>)).not.toContain("ownerId")
     })
+  })
+})
+
+/* ------------------------------------------------------------------------------------------ *
+ * CR-01 — the ATTACHED relation, not the primary record
+ *
+ * SEC-01 constrains the `activities` row. `deal_id` is chosen by the CALLER and, before this fix,
+ * nothing constrained it: `PUT /api/v1/activities/<A's own activity>` with `{"deal_id": "<B's
+ * deal>"}` returned 200, and `?expand=deal` then serialized B's deal, B's organization and B's
+ * person. The write is the defect; rejecting it is the fix.
+ *
+ * The house pattern this matches is `src/app/api/v1/deals/[id]/route.ts:226-256` — validate every
+ * caller-supplied foreign key with `eq(<table>.ownerId, ctx.userId)` and answer 422
+ * `invalid_reference`. Same status, same `code`, same body shape, so the codebase keeps ONE
+ * convention for this.
+ * ------------------------------------------------------------------------------------------ */
+
+describe("the deals mock self-test — findFirst answers from the PREDICATE, not from a fixed row", () => {
+  // This comes before the route assertions for the same reason the stages suite's `with`-aware mock
+  // does: every CR-01 assertion below rests on the claim that this mock models a scoped query. An
+  // unasserted claim about a mock is how a suite ends up unable to fail.
+  it("returns a deal when the predicate binds both its id AND its owner", async () => {
+    const row = (await dealsFindFirst({
+      where: and(eq(deals.id, OWNED_DEAL_ID), eq(deals.ownerId, CALLER_ID)),
+    })) as { id: string } | undefined
+
+    expect(row?.id).toBe(OWNED_DEAL_ID)
+  })
+
+  it("returns nothing when the predicate binds the id and the WRONG owner", async () => {
+    const row = (await dealsFindFirst({
+      where: and(eq(deals.id, FOREIGN_DEAL_ID), eq(deals.ownerId, CALLER_ID)),
+    })) as { id: string } | undefined
+
+    expect(row).toBeUndefined()
+  })
+
+  it("HANDS THE FOREIGN DEAL BACK to an UNSCOPED lookup — the mock does not do the route's job", async () => {
+    // ⚠ The load-bearing cell. If this resolved `undefined`, every 422 below would pass against a
+    // route carrying no ownership term at all, because the MOCK would be refusing on its behalf.
+    // PostgreSQL answers `where id = 'deal-9'` with deal-9 no matter who asks, and so does this.
+    const row = (await dealsFindFirst({ where: eq(deals.id, FOREIGN_DEAL_ID) })) as
+      | { id: string; ownerId: string }
+      | undefined
+
+    expect(row?.id).toBe(FOREIGN_DEAL_ID)
+    expect(row?.ownerId).toBe(FOREIGN_OWNER_ID)
+  })
+})
+
+describe("GET /api/v1/activities/:id?expand=deal — the READ half (CR-01)", () => {
+  /** A full deal row, so `serializeDeal` has every field it projects. */
+  const dealRow = (id: string, ownerId: string) => ({
+    id,
+    title: "Big deal",
+    value: "5000",
+    stageId: "stage-1",
+    organizationId: null,
+    personId: null,
+    ownerId,
+    position: "10000",
+    expectedCloseDate: null,
+    notes: "confidential",
+    customFields: {},
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    updatedAt: new Date("2026-01-01T00:00:00Z"),
+    deletedAt: null,
+  })
+
+  it("does NOT serialize a deal owned by another user, even when the row already links to it", async () => {
+    // The write guard makes a new foreign link impossible. This is the LEGACY row: planted before
+    // that guard existed, or through the session-auth mutation path, which still validates existence
+    // only. The relation is loaded by id alone, so without the `owner_id` comparison in the
+    // projection this response carries B's title, value, notes and custom_fields.
+    mockDb.query.activities.findFirst.mockResolvedValue({
+      ...ownedActivity,
+      dealId: FOREIGN_DEAL_ID,
+      deal: dealRow(FOREIGN_DEAL_ID, FOREIGN_OWNER_ID),
+    })
+
+    const response = await GET(
+      new NextRequest("http://localhost:3000/api/v1/activities/act-1?expand=deal"),
+      routeParams("act-1")
+    )
+    const body = await response.json()
+
+    // FLOOR: the activity itself is still returned, so the absence below is the guard working
+    // rather than the whole request failing.
+    expect(response.status).toBe(200)
+    expect(body.data.id).toBe("act-1")
+    expect(Object.keys(body.data)).not.toContain("deal")
+    // And nothing of B's leaked through another key either.
+    expect(JSON.stringify(body)).not.toContain("confidential")
+  })
+
+  it("DOES serialize a deal the caller owns — the suppression is targeted", async () => {
+    // The positive anchor. Without it the assertion above is satisfied by a route that dropped
+    // `expand=deal` altogether, which would be a regression rather than a fix.
+    mockDb.query.activities.findFirst.mockResolvedValue({
+      ...ownedActivity,
+      dealId: OWNED_DEAL_ID,
+      deal: dealRow(OWNED_DEAL_ID, CALLER_ID),
+    })
+
+    const response = await GET(
+      new NextRequest("http://localhost:3000/api/v1/activities/act-1?expand=deal"),
+      routeParams("act-1")
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.data.deal.id).toBe(OWNED_DEAL_ID)
+    expect(body.data.deal.owner_id).toBe(CALLER_ID)
+  })
+})
+
+describe("PUT /api/v1/activities/:id — deal_id ownership (CR-01)", () => {
+  it("refuses a deal owned by another user with 422 naming deal_id, and writes nothing", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(ownedActivity)
+
+    const response = await PUT(
+      putRequest("act-1", { deal_id: FOREIGN_DEAL_ID }),
+      routeParams("act-1")
+    )
+    const problem = await response.json()
+
+    expect(response.status).toBe(422)
+    expect(problem.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "deal_id", code: "invalid_reference" }),
+      ])
+    )
+    // The write is the defect. An empty `?expand=deal` would be a weaker claim that could pass for
+    // the wrong reason; an absent `db.update` is the proof the link was never planted.
+    expect(mockDb.update).not.toHaveBeenCalled()
+    expect(mockEmit).not.toHaveBeenCalled()
+  })
+
+  it("looks the deal up under an OWNER-SCOPED predicate that binds the caller as a parameter", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(ownedActivity)
+
+    await PUT(putRequest("act-1", { deal_id: FOREIGN_DEAL_ID }), routeParams("act-1"))
+
+    expect(mockDb.query.deals.findFirst).toHaveBeenCalledTimes(1)
+    const { sql, params } = renderDealQuery()
+
+    // FLOOR FIRST: an empty render would satisfy the negative below for free.
+    expect(sql.length).toBeGreaterThan(0)
+    expect(sql).toContain('"owner_id"')
+    expect(sql).toContain('"deleted_at"')
+    expect(params).toContain(CALLER_ID)
+    expect(params).toContain(FOREIGN_DEAL_ID)
+    // The caller id reaches PostgreSQL bound, never spliced into the statement text.
+    expect(sql).not.toContain(CALLER_ID)
+  })
+
+  it("still accepts a deal the caller OWNS with 200 and writes the link — the refusal is targeted", async () => {
+    // The positive anchor. Without it the 422 above is satisfied by a route that refuses every
+    // `deal_id`, which would be a different bug wearing the same status code.
+    mockDb.query.activities.findFirst.mockResolvedValue(ownedActivity)
+
+    const response = await PUT(
+      putRequest("act-1", { deal_id: OWNED_DEAL_ID }),
+      routeParams("act-1")
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockDb.update).toHaveBeenCalledTimes(1)
+    expect(updatedValues?.dealId).toBe(OWNED_DEAL_ID)
+  })
+
+  it("accepts deal_id: null — detaching is not a reference and must not be looked up", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue({
+      ...ownedActivity,
+      dealId: OWNED_DEAL_ID,
+    })
+
+    const response = await PUT(putRequest("act-1", { deal_id: null }), routeParams("act-1"))
+
+    expect(response.status).toBe(200)
+    expect(mockDb.query.deals.findFirst).not.toHaveBeenCalled()
+    expect(updatedValues?.dealId).toBeNull()
+  })
+
+  it("does not look a deal up at all when the body omits deal_id", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(ownedActivity)
+
+    const response = await PUT(putRequest("act-1", { title: "renamed" }), routeParams("act-1"))
+
+    expect(response.status).toBe(200)
+    expect(mockDb.query.deals.findFirst).not.toHaveBeenCalled()
+  })
+
+  it("refuses a deal_id that exists for NOBODY with the same 422 — existence is not the test", async () => {
+    mockDb.query.activities.findFirst.mockResolvedValue(ownedActivity)
+
+    const response = await PUT(
+      putRequest("act-1", { deal_id: "deal-does-not-exist" }),
+      routeParams("act-1")
+    )
+    const problem = await response.json()
+
+    // Before this fix an unknown `deal_id` reached the UPDATE and produced a `23503` foreign-key
+    // violation — an unhandled 500 where the POST path already answered a clean 422 (WR-01 item 3).
+    expect(response.status).toBe(422)
+    expect(problem.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: "deal_id" })])
+    )
+    expect(mockDb.update).not.toHaveBeenCalled()
+  })
+
+  it("decides the ACTIVITY's ownership before it ever reads the body's deal_id", async () => {
+    // Ordering matters: a foreign caller's payload must not be parsed, let alone used to probe
+    // which deals exist. This is the same ordering `activities/[id]/route.ts:154-158` documents.
+    mockDb.query.activities.findFirst.mockResolvedValue(foreignActivity)
+
+    const response = await PUT(
+      putRequest("act-2", { deal_id: FOREIGN_DEAL_ID }),
+      routeParams("act-2")
+    )
+
+    expect(response.status).toBe(403)
+    expect(mockDb.query.deals.findFirst).not.toHaveBeenCalled()
+    expect(mockDb.update).not.toHaveBeenCalled()
   })
 })
 

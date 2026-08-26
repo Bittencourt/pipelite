@@ -52,7 +52,11 @@ vi.mock("@/lib/mutations/activities", () => ({
 import { db } from "@/db"
 import { createActivityMutation } from "@/lib/mutations/activities"
 import { PgDialect } from "drizzle-orm/pg-core"
-import type { SQL } from "drizzle-orm"
+import { and, eq, type SQL } from "drizzle-orm"
+// A RUNTIME import, unlike the type-only `activitiesTable` above: `@/db/schema` is NOT mocked in
+// this file, and the deal-lookup self-test below needs the real column objects to build the same
+// expressions the route builds.
+import { deals } from "@/db/schema"
 import { GET, POST } from "@/app/api/v1/activities/route"
 
 const mockDb = db as unknown as {
@@ -111,6 +115,74 @@ const fakeActivity: typeof activitiesTable.$inferSelect = {
   deletedAt: null,
 }
 
+/* ------------------------------------------------------------------------------------------ *
+ * CR-01 — `deal_id`, the caller-supplied foreign key on POST
+ *
+ * `createActivityMutation` validates that the deal EXISTS (`src/lib/mutations/activities.ts:140-151`,
+ * `eq(deals.id, dealId), isNull(deals.deletedAt)`) and never that the caller owns it, so
+ * `POST /api/v1/activities` with somebody else's `deal_id` reached 201 and `?expand=deal` then
+ * serialized that deal, its organization and its person. The guard belongs in the ROUTE: the mutation
+ * is also called from the session-auth server-action path, where the owner is already established.
+ * ------------------------------------------------------------------------------------------ */
+
+/** A deal the CALLER owns. Linking it is legitimate and must stay a 201. */
+const OWNED_DEAL_ID = "deal-1"
+/** A deal `user-9` owns. This is the id an attacker plants; linking it must be refused. */
+const FOREIGN_DEAL_ID = "deal-9"
+
+type DealRow = { id: string; ownerId: string; deletedAt: Date | null }
+
+const DEALS: DealRow[] = [
+  { id: OWNED_DEAL_ID, ownerId: "user-1", deletedAt: null },
+  { id: FOREIGN_DEAL_ID, ownerId: "user-9", deletedAt: null },
+]
+
+/** `"deals"."owner_id" = $2` — the column name and the 1-based bind index. */
+const EQUALITY_TERM = /"deals"\."(\w+)" = \$(\d+)/g
+/** `"deals"."deleted_at" is null` — a term with no bind parameter. */
+const IS_NULL_TERM = /"deals"\."(\w+)" is null/g
+
+const COLUMN_TO_KEY: Record<string, keyof DealRow> = {
+  id: "id",
+  owner_id: "ownerId",
+  deleted_at: "deletedAt",
+}
+
+/**
+ * A PREDICATE-EVALUATING `deals.findFirst`, twin of the one in
+ * `src/app/api/v1/activities/[id]/__tests__/route.test.ts`.
+ *
+ * `mockResolvedValue(undefined)` for the foreign deal would encode the conclusion ("the scoped query
+ * finds nothing") as the premise — the SEC-48-B failure mode this suite's sibling documents. This
+ * reads the compiled statement back and answers the way PostgreSQL would: a lookup scoped by `id`
+ * alone gets the FOREIGN deal handed to it, so the refusal can only come from the route's predicate.
+ * Asserted in both polarities in the self-test describe below.
+ */
+function dealsFindFirst(args?: { where?: unknown }): Promise<unknown> {
+  if (args?.where === undefined) return Promise.resolve(DEALS[0])
+
+  const compiled = new PgDialect().sqlToQuery(args.where as SQL)
+  const params = compiled.params as unknown[]
+
+  const constraints: Array<(row: DealRow) => boolean> = []
+  for (const [, column, index] of compiled.sql.matchAll(EQUALITY_TERM)) {
+    const key = COLUMN_TO_KEY[column]
+    if (key === undefined) continue
+    const bound = params[Number(index) - 1]
+    constraints.push(row => row[key] === bound)
+  }
+  for (const [, column] of compiled.sql.matchAll(IS_NULL_TERM)) {
+    const key = COLUMN_TO_KEY[column]
+    if (key === undefined) continue
+    constraints.push(row => row[key] === null)
+  }
+
+  return Promise.resolve(DEALS.find(row => constraints.every(holds => holds(row))))
+}
+
+/** The `where` the route handed to the deal lookup on the most recent request. */
+const dealWhere = (): unknown => mockDb.query.deals.findFirst.mock.calls[0]?.[0]?.where
+
 function listRequest(query = "") {
   return new NextRequest(`http://localhost:3000/api/v1/activities${query}`)
 }
@@ -127,7 +199,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockDb.query.activities.findMany.mockResolvedValue([])
   mockDb.query.activityTypes.findFirst.mockResolvedValue({ id: "type-1", name: "Call" })
-  mockDb.query.deals.findFirst.mockResolvedValue({ id: "deal-1" })
+  // Re-installed explicitly rather than relying on reset semantics: a `deals.findFirst` that had
+  // silently become predicate-BLIND would resolve a row for the foreign deal too and make every
+  // CR-01 assertion below vacuous.
+  mockDb.query.deals.findFirst.mockImplementation(dealsFindFirst)
   // The foreign owner EXISTS. The rejection under test must be about ownership, not existence.
   mockDb.query.users.findFirst.mockResolvedValue({
     id: "user-9",
@@ -241,5 +316,116 @@ describe("POST /api/v1/activities — create-as-another-user (SC-2b, T-48-02-02)
 
     expect(response.status).toBe(201)
     expect(mockCreateActivity.mock.calls[0][0].userId).toBe("user-1")
+  })
+})
+
+describe("the deals mock self-test — findFirst answers from the PREDICATE, not from a fixed row", () => {
+  // Proven before any CR-01 route assertion depends on it. An unasserted claim about a mock is how a
+  // suite ends up unable to fail.
+  it("returns a deal when the predicate binds both its id AND its owner", async () => {
+    const row = (await dealsFindFirst({
+      where: and(eq(deals.id, OWNED_DEAL_ID), eq(deals.ownerId, "user-1")),
+    })) as DealRow | undefined
+
+    expect(row?.id).toBe(OWNED_DEAL_ID)
+  })
+
+  it("returns nothing when the predicate binds the id and the WRONG owner", async () => {
+    const row = (await dealsFindFirst({
+      where: and(eq(deals.id, FOREIGN_DEAL_ID), eq(deals.ownerId, "user-1")),
+    })) as DealRow | undefined
+
+    expect(row).toBeUndefined()
+  })
+
+  it("HANDS THE FOREIGN DEAL BACK to an UNSCOPED lookup — the mock does not do the route's job", async () => {
+    // ⚠ The load-bearing cell. If this resolved `undefined`, every 422 below would pass against a
+    // route carrying no ownership term at all, because the MOCK would be refusing on its behalf.
+    const row = (await dealsFindFirst({ where: eq(deals.id, FOREIGN_DEAL_ID) })) as
+      | DealRow
+      | undefined
+
+    expect(row?.id).toBe(FOREIGN_DEAL_ID)
+    expect(row?.ownerId).toBe("user-9")
+  })
+})
+
+describe("POST /api/v1/activities — deal_id ownership (CR-01)", () => {
+  it("refuses a deal owned by another user with 422 naming deal_id, and creates nothing", async () => {
+    const response = await POST(
+      createRequest({ title: "x", type_id: "type-1", deal_id: FOREIGN_DEAL_ID })
+    )
+    const problem = await response.json()
+
+    expect(response.status).toBe(422)
+    expect(problem.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "deal_id", code: "invalid_reference" }),
+      ])
+    )
+    // Rejecting the WRITE is the fix. `createActivityMutation` is the only path to the insert, so
+    // an absent call is the proof no row was created carrying a foreign `deal_id`.
+    expect(mockCreateActivity).not.toHaveBeenCalled()
+  })
+
+  it("looks the deal up under an OWNER-SCOPED predicate that binds the caller as a parameter", async () => {
+    await POST(createRequest({ title: "x", type_id: "type-1", deal_id: FOREIGN_DEAL_ID }))
+
+    expect(mockDb.query.deals.findFirst).toHaveBeenCalledTimes(1)
+    const rendered = renderPredicate(dealWhere())
+    const params = renderParams(dealWhere())
+
+    // FLOOR FIRST: an empty render satisfies the negative below for free.
+    expect(rendered.length).toBeGreaterThan(0)
+    expect(rendered).toContain('"owner_id"')
+    expect(rendered).toContain('"deleted_at"')
+    expect(params).toContain("user-1")
+    expect(params).toContain(FOREIGN_DEAL_ID)
+    expect(rendered).not.toContain("user-1")
+  })
+
+  it("still accepts a deal the caller OWNS with 201 — the refusal is targeted", async () => {
+    // The positive anchor. Without it the 422 above is satisfied by a route that refuses every
+    // `deal_id`, which is a different bug wearing the same status code.
+    const response = await POST(
+      createRequest({ title: "x", type_id: "type-1", deal_id: OWNED_DEAL_ID })
+    )
+
+    expect(response.status).toBe(201)
+    expect(mockCreateActivity).toHaveBeenCalledTimes(1)
+    expect(mockCreateActivity.mock.calls[0][0].dealId).toBe(OWNED_DEAL_ID)
+  })
+
+  it("refuses a deal_id that exists for NOBODY with the same 422", async () => {
+    const response = await POST(
+      createRequest({ title: "x", type_id: "type-1", deal_id: "deal-does-not-exist" })
+    )
+
+    expect(response.status).toBe(422)
+    expect(mockCreateActivity).not.toHaveBeenCalled()
+  })
+
+  it("does not look a deal up at all when the body omits deal_id", async () => {
+    const response = await POST(createRequest({ title: "x", type_id: "type-1" }))
+
+    expect(response.status).toBe(201)
+    expect(mockDb.query.deals.findFirst).not.toHaveBeenCalled()
+  })
+
+  it("refuses the FOREIGN owner_id before it ever probes which deals exist", async () => {
+    // Ordering: the owner_id refusal already established by SC-2b must still come first, so a
+    // caller who cannot create the row at all does not get a deal-existence oracle for free.
+    const response = await POST(
+      createRequest({
+        title: "x",
+        type_id: "type-1",
+        owner_id: "user-9",
+        deal_id: OWNED_DEAL_ID,
+      })
+    )
+
+    expect(response.status).toBe(422)
+    expect(mockDb.query.deals.findFirst).not.toHaveBeenCalled()
+    expect(mockCreateActivity).not.toHaveBeenCalled()
   })
 })
