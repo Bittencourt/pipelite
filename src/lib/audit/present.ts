@@ -260,8 +260,20 @@ function toIsoString(value: unknown): string | null {
   return null
 }
 
-/** A stored file descriptor, as `file-field.tsx` writes them. */
-function isFileDescriptor(value: unknown): boolean {
+/**
+ * A stored file descriptor, as `file-field.tsx` writes them.
+ *
+ * EXPORTED for CR-02's merge exclusion (`src/lib/dedup/field-groups.ts`), which has to answer "is
+ * this custom field value a set of file descriptors?" and must answer it the same way this layer
+ * does. `src/lib/trash/collect-file-field-refs.ts` already names this predicate as the one that
+ * exists rather than re-inventing it; a third spelling in `field-groups.ts` would be the drift its
+ * doc comment warns about.
+ *
+ * The merge exclusion needs THIS shape rather than the narrower "a non-empty string `storedName`"
+ * that a deletion needs, and deliberately so: a MALFORMED descriptor must be refused by the merge
+ * too. Copying one onto the survivor points a live record at bytes nothing can name.
+ */
+export function isFileDescriptor(value: unknown): boolean {
   if (!isRecord(value)) return false
   if (typeof value.filename !== "string") return false
   return "storedName" in value || "path" in value || "size" in value || "mimeType" in value

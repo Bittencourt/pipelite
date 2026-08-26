@@ -1,6 +1,7 @@
 import {
   CUSTOM_FIELD_PREFIX,
   describeField,
+  isFileDescriptor,
   type AuditResolution,
   type FieldDescriptor,
 } from "@/lib/audit/present"
@@ -222,6 +223,83 @@ function comparedKeys(
   return keys
 }
 
+/**
+ * CR-02 — a compared custom key whose value on EITHER side is a set of stored file descriptors.
+ *
+ * ## The failure this closes
+ *
+ * A blob's on-disk location is `${UPLOAD_DIR}/${entityId}/${fieldName}/${storedName}`, where
+ * `entityId` is the record it was uploaded AGAINST (`src/app/api/upload/route.ts:92-101`). Every
+ * `customFields` key used to be a compared merge field, so the merge copied the descriptor object —
+ * `storedName`, `path` and `publicUrl` all naming the LOSER — onto the survivor and touched neither
+ * the bytes, nor the loser's own blob, nor the descriptor's `publicUrl`. Two live records then
+ * referenced one file.
+ *
+ * A purge collects its refs blindly from the row it is destroying (by design: see
+ * `src/lib/trash/collect-file-field-refs.ts` for why a definition-driven walk would MISS blobs)
+ * with no notion that another row holds the same `storedName`. So 30 days later the retention
+ * pruner unlinked, unattended, the bytes a LIVE record was still showing — and
+ * `deleted === expected` held, so the mismatch log stayed silent. The mirror image was equally bad:
+ * purging the SURVIVOR first built `${UPLOAD_DIR}/${survivorId}/…`, which never existed, and
+ * `delete-entity-files.ts` counts an already-absent file as deleted, so the purge reported full
+ * success while the loser's bytes remained forever.
+ *
+ * The merge was the ONLY way two CRM rows could come to share a `storedName`, so this is the single
+ * hole in the "a blob belongs to exactly one row" premise the whole SC-2 design rests on.
+ *
+ * ## WHY THE TEST IS THE VALUE SHAPE AND NOT THE DEFINITION TYPE
+ *
+ * The obvious fix is to ask the definition: `describeField` already resolves it, and a
+ * `type='file'` definition yields `descriptor.kind === "files"`. THAT FIX WOULD BE VACUOUS ON THE
+ * PATH THAT MATTERS. `mergeRecordsMutation` (`src/lib/mutations/dedup.ts:309-320`) calls
+ * `buildMergeFieldGroups` with a DELIBERATELY EMPTY `AuditResolution` — `customFieldTypes` is
+ * `new Map()` — because it needs the key set and the partitioning, not labels. So `describeField`
+ * returns `kind: "auto"` for every custom field there, and a type-based exclusion would never fire
+ * in the mutation. Measured: with the type test substituted for this one, five of the eight CR-02
+ * cells in `./field-groups.test.ts` redden, INCLUDING the one named for the mutation's call shape.
+ *
+ * Worse than vacuous: the merge SCREEN (`src/app/duplicates/[pairId]/page.tsx:373-377`) passes a
+ * REAL resolution, and under that same substitution its cell stays GREEN. A type-based exclusion
+ * would therefore fire on the screen and not in the mutation — the picker would stop offering the
+ * field while the mutation went on writing it from its `filledOnly` default. The screen and the
+ * mutation MUST agree on the compared key set, which they do today only because every rule in this
+ * module is resolution-independent. This one is too.
+ *
+ * It also closes a hole the type test could not: `getActiveFieldDefinitions` filters
+ * `isNull(deletedAt)`, so a definition that was soft-deleted or RETYPED no longer appears while its
+ * VALUES remain in the column. A definition-driven exclusion would wave those descriptors straight
+ * through.
+ *
+ * ## `.some`, not `.every`
+ *
+ * A `multi_select` stores an array of strings and can never satisfy `isFileDescriptor`, so `.some`
+ * has no false positive on any value the product produces. `.every` would let a MIXED array — one
+ * descriptor beside one string, which is a corrupted blob rather than an impossible one — carry a
+ * descriptor across. Refusing the whole key costs the survivor its own value for that key at worst,
+ * which is a choice a user can redo; adopting the descriptor is irreversible.
+ *
+ * ## The empty case is deliberately NOT excluded
+ *
+ * `null`, `undefined` and `[]` are the field being empty, and nothing about them says "file". Such
+ * a key falls through to the ordinary partitioning, lands in `identical` (both empty), and
+ * `applyMergeChoices` writes the survivor's own empty value. No descriptor can move, so there is
+ * nothing to refuse — and excluding it would need a definition read this module cannot make.
+ *
+ * ## What it costs, stated
+ *
+ * A MERGE NO LONGER MOVES ATTACHMENTS. The loser's files stay on the loser, which goes to Trash
+ * with them intact and restorable for the whole retention window; the survivor keeps its own. That
+ * is the honest trade against the two alternatives: re-homing the bytes puts filesystem I/O on the
+ * merge's critical path and, done post-commit best-effort, leaves the survivor pointing at the
+ * loser's directory whenever the copy fails — the same defect with a smaller window. Making the
+ * purge reference-aware keeps the bytes but leaves the survivor displaying an attachment that
+ * `findOwnedRecordById` refuses (the loser is trashed), i.e. a record still pointing at bytes it
+ * does not own.
+ */
+function isFileMergeValue(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0 && value.some(isFileDescriptor)
+}
+
 interface RankedMergeField {
   descriptor: FieldDescriptor
   field: MergeField
@@ -273,6 +351,24 @@ export function buildMergeFieldGroups(input: MergeFieldGroupsInput): MergeFieldG
     const descriptor = describeField(key, resolution)
     const survivorValue = readMergeValue(survivor, key)
     const loserValue = readMergeValue(loser, key)
+
+    // CR-02. A file value is REFUSED as a compared field outright: not offered in any group, so
+    // `applyMergeChoices` never emits the key and a choice map naming it writes nothing (the same
+    // property T-39-13 gives `MERGE_EXCLUDED_COLUMNS`). The survivor's blob is copied wholesale
+    // before anything is written to it, so its OWN file value stands untouched.
+    //
+    // Restricted to custom keys: no native column of either mergeable table can hold a descriptor,
+    // and narrowing the test is what keeps `name`/`website`/`notes` out of its reach entirely.
+    //
+    // See `isFileMergeValue` for why this is a value-shape test and why a definition-type test —
+    // the obvious fix, and the one the review suggested — would be vacuous in the mutation and
+    // divergent on the screen.
+    if (
+      key.startsWith(CUSTOM_FIELD_PREFIX) &&
+      (isFileMergeValue(survivorValue) || isFileMergeValue(loserValue))
+    ) {
+      continue
+    }
 
     const ranked: RankedMergeField = {
       descriptor,

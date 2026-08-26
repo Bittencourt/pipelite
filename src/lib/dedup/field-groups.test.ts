@@ -279,3 +279,139 @@ describe("buildMergeFieldGroups", () => {
     expect(JSON.stringify(loser)).toBe(loserBefore)
   })
 })
+
+/* -----------------------------------------------------------------------------------------
+ * CR-02 — a file value is not a compared merge field
+ * ----------------------------------------------------------------------------------------- */
+
+const ANEXOS_DEFINITION = "9c4e1b77-2a58-4d31-b0e6-5f7a8c9d0e1b"
+
+/** A descriptor in exactly the shape `src/app/api/upload/route.ts:102-110` writes. */
+function fileDescriptor(entityId: string, storedName: string) {
+  return {
+    id: storedName.replace(/\.[^.]+$/, ""),
+    filename: "Contrato assinado.pdf",
+    storedName,
+    path: `/app/uploads/${entityId}/Anexos/${storedName}`,
+    publicUrl: `/api/files/${entityId}/Anexos/${storedName}`,
+    size: 4096,
+    mimeType: "application/pdf",
+  }
+}
+
+const LOSER_FILE = fileDescriptor("org-B", "b1.pdf")
+const SURVIVOR_FILE = fileDescriptor("org-A", "a1.pdf")
+
+describe("buildMergeFieldGroups — CR-02: a file value is refused as a compared field", () => {
+  it("offers the key in NO group when only the loser holds files — the filledOnly default case", () => {
+    const groups = groupsOf(
+      { name: "Acme", customFields: {} },
+      { name: "Acme", customFields: { Anexos: [LOSER_FILE] } }
+    )
+
+    // The whole point: not in `filledOnly` (whose default is the LOSER), and not anywhere else
+    // either — `applyMergeChoices` writes exactly the keys these groups name.
+    expect(allKeys(groups)).not.toContain("customFields.Anexos")
+    // ANCHOR: the partition still ran and still saw a key. Without this the assertion above
+    // would pass on an empty partition.
+    expect(allKeys(groups)).toContain("name")
+  })
+
+  it("offers the key in NO group when only the survivor holds files", () => {
+    const groups = groupsOf(
+      { name: "Acme", customFields: { Anexos: [SURVIVOR_FILE] } },
+      { name: "Acme", customFields: {} }
+    )
+
+    expect(allKeys(groups)).not.toContain("customFields.Anexos")
+    expect(allKeys(groups)).toContain("name")
+  })
+
+  it("offers the key in NO group when BOTH hold different files — the conflicts case", () => {
+    const groups = groupsOf(
+      { name: "Acme", customFields: { Anexos: [SURVIVOR_FILE] } },
+      { name: "Acme", customFields: { Anexos: [LOSER_FILE] } }
+    )
+
+    expect(keysOf(groups.conflicts)).not.toContain("customFields.Anexos")
+    expect(allKeys(groups)).not.toContain("customFields.Anexos")
+    expect(allKeys(groups)).toContain("name")
+  })
+
+  it("refuses a MIXED array — one descriptor beside one string is a corrupted blob, not a list", () => {
+    // `.some(isFileDescriptor)`, not `.every`. `.every` would wave this through and let the
+    // descriptor cross onto the survivor.
+    const groups = groupsOf(
+      { name: "Acme", customFields: {} },
+      { name: "Acme", customFields: { Anexos: ["Inbound", LOSER_FILE] } }
+    )
+
+    expect(allKeys(groups)).not.toContain("customFields.Anexos")
+  })
+
+  /**
+   * THE ANTI-VACUITY CONTROL, and it is the one that decided the shape of the fix.
+   *
+   * `mergeRecordsMutation` calls `buildMergeFieldGroups` with a DELIBERATELY EMPTY
+   * `AuditResolution` (`src/lib/mutations/dedup.ts:309-320`), while the merge SCREEN passes a real
+   * one. An exclusion keyed on the definition TYPE — which is the obvious fix, and the one the
+   * review suggested — would therefore fire on the screen and never in the mutation: the picker
+   * would stop offering the field while the mutation went on writing it from its `filledOnly`
+   * default.
+   *
+   * So both cells below are the SAME assertion under the two resolutions the two call sites
+   * actually pass. A type-based implementation makes the first one red.
+   */
+  it("excludes the key with an EMPTY resolution — the mutation's call shape", () => {
+    const groups = groupsOf(
+      { name: "Acme", customFields: {} },
+      { name: "Acme", customFields: { Anexos: [LOSER_FILE] } },
+      resolution()
+    )
+
+    expect(groups.conflicts.length + groups.filledOnly.length + groups.identical.length)
+      .toBeGreaterThan(0)
+    expect(allKeys(groups)).not.toContain("customFields.Anexos")
+  })
+
+  it("excludes the key with a FULLY POPULATED resolution — the screen's call shape", () => {
+    const res = resolution({
+      customFieldNames: new Map([[ANEXOS_DEFINITION, "Anexos"]]),
+      customFieldTypes: new Map([[ANEXOS_DEFINITION, "file"]]),
+      customFieldPositions: new Map([[ANEXOS_DEFINITION, 3]]),
+    })
+
+    const groups = groupsOf(
+      { name: "Acme", customFields: {} },
+      { name: "Acme", customFields: { Anexos: [LOSER_FILE] } },
+      res
+    )
+
+    expect(allKeys(groups)).not.toContain("customFields.Anexos")
+  })
+
+  it("still compares a multi_select array — the exclusion is not 'any array'", () => {
+    // A `multi_select` stores strings and can never satisfy `isFileDescriptor`. If this key were
+    // excluded too, the fix would be silently dropping every list-valued custom field from every
+    // merge — a far larger regression than the one it fixes, and invisible without this cell.
+    const groups = groupsOf(
+      { name: "Acme", customFields: { Origem: [] } },
+      { name: "Acme", customFields: { Origem: ["Inbound", "Indicação"] } }
+    )
+
+    expect(keysOf(groups.filledOnly)).toContain("customFields.Origem")
+  })
+
+  it("still compares a file-typed key while BOTH sides are empty — nothing can move", () => {
+    // `null` / `[]` is the field being empty and says nothing about its type. Such a key falls
+    // through to the ordinary partitioning and lands in `identical`, where `applyMergeChoices`
+    // writes the survivor's own empty value. Pinned so a future widening of the predicate to
+    // "anything a file definition names" is a visible decision rather than a side effect.
+    const groups = groupsOf(
+      { name: "Acme", customFields: { Anexos: null } },
+      { name: "Acme", customFields: { Anexos: [] } }
+    )
+
+    expect(keysOf(groups.identical)).toContain("customFields.Anexos")
+  })
+})
