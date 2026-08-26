@@ -2011,6 +2011,8 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Activity'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /activities/{id}:
     get:
@@ -2037,6 +2039,8 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Activity'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     put:
@@ -2065,6 +2069,10 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Activity'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
     delete:
       summary: Delete activity
       operationId: deleteActivity
@@ -2078,6 +2086,8 @@ paths:
       responses:
         '204':
           description: Activity deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   # ========== Pipelines ==========
   /activities/{id}/notes:
@@ -2383,6 +2393,8 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Stage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     put:
@@ -2411,6 +2423,8 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Stage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     delete:
       summary: Delete stage
       operationId: deleteStage
@@ -2424,6 +2438,8 @@ paths:
       responses:
         '204':
           description: Stage deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   # ========== Custom Field Definitions ==========
   /custom-field-definitions:
