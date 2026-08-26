@@ -747,6 +747,15 @@ describe("DATA-02 — a 201's custom_fields equals a subsequent GET's, per entit
     })
     const read = await readVia(GET_ORGANIZATION, "/api/v1/organizations", created.data.id)
 
+    // THE PROOF, asserted FIRST so a failure prints both blobs side by side. Ordering it after
+    // the discriminators would make an ablation transcript read "expected [x] to include y",
+    // which names a symptom rather than showing the divergence.
+    expect(
+      created.data.custom_fields,
+      "the 201 body's custom_fields does not equal what GET /api/v1/organizations/{id} returns " +
+        "for the same record — the create response and a subsequent read disagree, which is DATA-02.",
+    ).toEqual(read.data.custom_fields)
+
     // DISCRIMINATOR 1: the derived key is PRESENT in both, BY NAME. "Equal" must not be satisfied
     // by two objects that both lack it.
     expect(Object.keys(created.data.custom_fields)).toContain(ORGANIZATION_FORMULA_NAME)
@@ -761,13 +770,6 @@ describe("DATA-02 — a 201's custom_fields equals a subsequent GET's, per entit
     // empty object, or the inserted row, or `undefined`, cannot pass this.
     expect(created.data.custom_fields).not.toEqual(sentCustomFields)
     expect(created.data.custom_fields[SENT_KEY]).toBe(SENT_VALUE)
-
-    // THE PROOF.
-    expect(
-      created.data.custom_fields,
-      "the 201 body's custom_fields does not equal what GET /api/v1/organizations/{id} returns " +
-        "for the same record — the create response and a subsequent read disagree, which is DATA-02.",
-    ).toEqual(read.data.custom_fields)
 
     // CROSS-CHECK, by a statement neither handler uses. Two bodies agreeing with each other while
     // both disagree with the stored row would satisfy SC-4 and still be wrong.
@@ -786,6 +788,12 @@ describe("DATA-02 — a 201's custom_fields equals a subsequent GET's, per entit
     })
     const read = await readVia(GET_PERSON, "/api/v1/people", created.data.id)
 
+    expect(
+      created.data.custom_fields,
+      "the 201 body's custom_fields does not equal what GET /api/v1/people/{id} returns for the " +
+        "same record — the create response and a subsequent read disagree, which is DATA-02.",
+    ).toEqual(read.data.custom_fields)
+
     expect(Object.keys(created.data.custom_fields)).toContain(PERSON_FORMULA_NAME)
     expect(Object.keys(read.data.custom_fields)).toContain(PERSON_FORMULA_NAME)
 
@@ -795,12 +803,6 @@ describe("DATA-02 — a 201's custom_fields equals a subsequent GET's, per entit
 
     expect(created.data.custom_fields).not.toEqual(sentCustomFields)
     expect(created.data.custom_fields[SENT_KEY]).toBe(SENT_VALUE)
-
-    expect(
-      created.data.custom_fields,
-      "the 201 body's custom_fields does not equal what GET /api/v1/people/{id} returns for the " +
-        "same record — the create response and a subsequent read disagree, which is DATA-02.",
-    ).toEqual(read.data.custom_fields)
 
     expect(await sqlCustomFields("people", created.data.id)).toEqual(created.data.custom_fields)
   })
@@ -816,6 +818,12 @@ describe("DATA-02 — a 201's custom_fields equals a subsequent GET's, per entit
     })
     const read = await readVia(GET_DEAL, "/api/v1/deals", created.data.id)
 
+    expect(
+      created.data.custom_fields,
+      "the 201 body's custom_fields does not equal what GET /api/v1/deals/{id} returns for the " +
+        "same record — the create response and a subsequent read disagree, which is DATA-02.",
+    ).toEqual(read.data.custom_fields)
+
     expect(Object.keys(created.data.custom_fields)).toContain(DEAL_FORMULA_NAME)
     expect(Object.keys(read.data.custom_fields)).toContain(DEAL_FORMULA_NAME)
 
@@ -823,12 +831,6 @@ describe("DATA-02 — a 201's custom_fields equals a subsequent GET's, per entit
 
     expect(created.data.custom_fields).not.toEqual(sentCustomFields)
     expect(created.data.custom_fields[SENT_KEY]).toBe(SENT_VALUE)
-
-    expect(
-      created.data.custom_fields,
-      "the 201 body's custom_fields does not equal what GET /api/v1/deals/{id} returns for the " +
-        "same record — the create response and a subsequent read disagree, which is DATA-02.",
-    ).toEqual(read.data.custom_fields)
 
     expect(await sqlCustomFields("deals", created.data.id)).toEqual(created.data.custom_fields)
   })
@@ -843,6 +845,12 @@ describe("DATA-02 — a 201's custom_fields equals a subsequent GET's, per entit
     })
     const read = await readVia(GET_ACTIVITY, "/api/v1/activities", created.data.id)
 
+    expect(
+      created.data.custom_fields,
+      "the 201 body's custom_fields does not equal what GET /api/v1/activities/{id} returns for " +
+        "the same record — the create response and a subsequent read disagree, which is DATA-02.",
+    ).toEqual(read.data.custom_fields)
+
     expect(Object.keys(created.data.custom_fields)).toContain(ACTIVITY_FORMULA_NAME)
     expect(Object.keys(read.data.custom_fields)).toContain(ACTIVITY_FORMULA_NAME)
 
@@ -852,12 +860,6 @@ describe("DATA-02 — a 201's custom_fields equals a subsequent GET's, per entit
 
     expect(created.data.custom_fields).not.toEqual(sentCustomFields)
     expect(created.data.custom_fields[SENT_KEY]).toBe(SENT_VALUE)
-
-    expect(
-      created.data.custom_fields,
-      "the 201 body's custom_fields does not equal what GET /api/v1/activities/{id} returns for " +
-        "the same record — the create response and a subsequent read disagree, which is DATA-02.",
-    ).toEqual(read.data.custom_fields)
 
     expect(await sqlCustomFields("activities", created.data.id)).toEqual(
       created.data.custom_fields,
