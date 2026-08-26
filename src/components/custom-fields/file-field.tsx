@@ -159,8 +159,52 @@ export function FileField({ definition, value, entityId, onSave, disabled }: Fil
     setIsSaving(true)
     try {
       // Delete from storage
-      await fetch(file.publicUrl, { method: 'DELETE' })
-      
+      const res = await fetch(file.publicUrl, { method: 'DELETE' })
+
+      // CR-03 — NEVER DROP THE REFERENCE ON A FAILED STORAGE DELETE.
+      //
+      // The response used to be discarded: no `res.ok`, no branch that aborts. The descriptor was
+      // then removed from local state and `onSave` rewrote the record's `customFields` without it,
+      // which `saveFieldValues` accepts. So the bytes stayed at
+      // `${UPLOAD_DIR}/${entityId}/${fieldName}/${storedName}` and THE ONLY RECORD THAT NAMED THEM
+      // NO LONGER DID — and a descriptor is the only thing in this system that can name a blob:
+      //
+      //   - the file route cannot serve it: `recordReferencesStoredName` no longer matches;
+      //   - the DELETE verb cannot remove it: same match, same refusal;
+      //   - `collectFileFieldRefs` cannot see it at purge time, so it survives the record's own
+      //     PERMANENT deletion with `deleted === expected` and no mismatch log.
+      //
+      // That is exactly the "the blob outlives both its row and its definition and nothing ever
+      // names it again" failure `src/lib/trash/collect-file-field-refs.ts:20-29` says the phase
+      // exists to close, re-created by this phase's own owner-scoped guard plus this un-updated
+      // caller.
+      //
+      // AND THE 404 IS REACHABLE BY AN ORDINARY USER, not a crafted request:
+      // `findOwnedRecordById` (`src/lib/api/file-access.ts:150-163`) carries
+      // `eq(source.ownerId, userId)`, while all four detail pages read with NO owner term — so any
+      // authenticated caller renders this field for any record. The uploader hits it too, after a
+      // BULK-03 owner reassign moves the record to someone else.
+      //
+      // Reconciling those two authorization models is NOT done here: it is a product decision
+      // about what "may see this record" means, it would either weaken SC-1 (proven at the byte
+      // level by plan 49-06) or narrow every detail page, and it is recorded as DEF-49-01. What is
+      // done here is the half that cannot be argued with — a refusal is not a deletion.
+      //
+      // The shape is `handleUpload`'s, twenty lines up, which has always checked `res.ok`. This
+      // function was the odd one out in its own component. The `alert` is hardcoded English to
+      // match every other user-facing string in this file; the component has no `next-intl`
+      // binding and introducing one here is a separate change.
+      if (!res.ok) {
+        // Status and identifiers only, never the filename or the URL (T-42-51).
+        log.error('components/custom-fields/file-field', 'Storage delete refused', {
+          status: res.status,
+          entityId,
+          fieldName: definition.name,
+        })
+        alert(`Could not delete this file (status ${res.status}). It was left in place.`)
+        return
+      }
+
       // Update local state
       const newFiles = files.filter(f => f.id !== fileId)
       setFiles(newFiles)

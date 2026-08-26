@@ -97,16 +97,23 @@ describe("CR-03 — file-field.tsx's handleDelete must not drop the descriptor o
   it("assigns the DELETE response instead of discarding it", () => {
     const body = handleDeleteBody()
 
-    // The defect, in one line: `await fetch(file.publicUrl, { method: 'DELETE' })` as a STATEMENT.
-    // A discarded response cannot be checked, so this is the shape that has to be gone.
+    // EVERY `fetch(` in this function must be bound to a name, expressed as: there is exactly one
+    // `fetch(` and it is the assigned one. Stated that way rather than as a negative regex over
+    // "an `await fetch` not preceded by `=`" — the first form of this cell was exactly that, and
+    // it stayed red against the FIXED code because `= await fetch` also has a non-`=` character
+    // immediately before `await`. A regex that cannot pass correct code is as useless as one that
+    // cannot fail incorrect code.
+    const fetches = body.match(/\bfetch\(/g) ?? []
+    expect(
+      fetches,
+      "handleDelete makes no fetch call at all — has the storage delete moved elsewhere?",
+    ).toHaveLength(1)
+
     expect(
       body,
       "the DELETE response is discarded. Nothing downstream can tell a 404 from a 200, so the " +
         "descriptor is removed either way and the bytes become permanently unreferenced.",
-    ).not.toMatch(/(^|[^.\w])await\s+fetch\(\s*file\.publicUrl[\s\S]*?\)\s*\n/)
-
-    // And the positive form: the response IS bound to a name.
-    expect(body).toMatch(/(const|let)\s+\w+\s*=\s*await\s+fetch\(\s*file\.publicUrl/)
+    ).toMatch(/(const|let)\s+\w+\s*=\s*await\s+fetch\(\s*file\.publicUrl/)
   })
 
   it("inspects `.ok` on that response", () => {
