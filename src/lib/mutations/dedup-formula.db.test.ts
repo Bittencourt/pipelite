@@ -982,3 +982,172 @@ describe("SC-3 — what the recalculation must NOT have changed", () => {
     expect(pair?.status).toBe("merged")
   })
 })
+
+/* ---------------------------------------------------------------------------
+ * WR-01 — the survivor adopts the loser's OUTPUT, not its input
+ * ------------------------------------------------------------------------ */
+
+/** The choice key for the FORMULA field itself, which is the whole point of the cells below. */
+const FORMULA_CHOICE_KEY = `${CUSTOM_FIELD_PREFIX}${FORMULA_FIELD}`
+
+/**
+ * WHAT THE THREE CELLS ABOVE PROVE, AND WHAT THEY DO NOT.
+ *
+ * 49-08 proved SC-3 for the case where the survivor adopts one of the loser's **INPUTS**: INPUT A
+ * moves, `survivorChangedFields` carries `"dedupfx-Input A"`, the formula's ref matches, and the
+ * engine recomputes `174`.
+ *
+ * THIS IS THE OTHER CASE: the survivor adopts the loser's **OUTPUT** while no input changes at all.
+ *
+ * `survivorChangedFields` is built from the values that changed, and
+ * `scopeFormulasToChangedFields` selects a formula only when one of its **refs** is in that set. A
+ * formula's OWN NAME being in `changedFields` selects nothing — there is no branch that looks for
+ * it. But the merge writes `customFields` WHOLESALE and a `formula`-typed key was a compared merge
+ * field like any other, so the merge could overwrite the survivor's derived value with the loser's
+ * while none of that formula's inputs moved, and block 1 would then correctly decide there was
+ * nothing to recompute.
+ *
+ * The result is a stored derived value the record's own inputs contradict — DATA-01, in the block
+ * written to close DATA-01 — and it is also a formula value the server did not compute, which is
+ * the T-34-04 invariant every other write path enforces through `stripFormulaKeys`.
+ *
+ * THE NUMBERS ARE THE EXISTING FIXTURE'S, and the floor cell above already asserts all three
+ * pairwise distinct, so nothing here rests on a new arithmetic claim:
+ *
+ *   - `SURVIVOR_STORED_BEFORE` = 122 = 11·2 + 100 — the correct value for the survivor's inputs,
+ *     which these cells do not change;
+ *   - `LOSER_STORED_BEFORE`    = 574 = 37·2 + 500 — the value the merge adopted;
+ *   - `CORRECT_AFTER_MERGE`    = 174 — the OTHER case's answer, named here only to exclude it.
+ */
+describe("WR-01 / SC-3 — a formula value adopted from the loser must not stand", () => {
+  it("recomputes rather than adopting, when the survivor has NO formula key and the loser does", async () => {
+    // THE `filledOnly` SHAPE, WHICH NEEDS NO CLICK AT ALL. A formula definition added after the
+    // survivor's last save leaves the survivor with no key for it; the loser, saved later, has
+    // one. `buildMergeFieldGroups` then puts the FORMULA key in `filledOnly`, whose default is the
+    // LOSER. This is the reviewer's `{Receita: 10, Score: 84}` scenario, with this file's numbers.
+    const blobWithoutFormula = {
+      [INPUT_A_FIELD]: SURVIVOR_INPUT_A,
+      [INPUT_B_FIELD]: SURVIVOR_INPUT_B,
+    }
+    await db
+      .update(organizations)
+      .set({ customFields: blobWithoutFormula })
+      .where(eq(organizations.id, SURVIVOR_ID))
+
+    // ANCHORS. The survivor really has no key, the loser really has a value, and the two inputs
+    // this cell keeps really are the survivor's.
+    const before = await readBlob(SURVIVOR_ID)
+    expect(
+      FORMULA_FIELD in before,
+      "the survivor must have NO formula key for this cell to be about adoption rather than " +
+        "about a conflict",
+    ).toBe(false)
+    expect((await readStoredFormula(LOSER_ID)).value).toBe(LOSER_STORED_BEFORE)
+
+    const result = await mergeAsUser({
+      entityType: "organization",
+      pairId: PAIR_ID,
+      survivorId: SURVIVOR_ID,
+      loserId: LOSER_ID,
+      // The SURVIVOR keeps INPUT A, so NOTHING the formula reads changes. That is the point: with
+      // an empty `changedFields` for every ref, the engine has no reason to run — and the adopted
+      // value would stand forever.
+      choices: { [INPUT_A_CHOICE_KEY]: "survivor" },
+    })
+    expect(result).toMatchObject({ success: true })
+
+    const after = await readBlob(SURVIVOR_ID)
+
+    // The inputs really did stay the survivor's, so the "correct" value below is not the other
+    // case's 174 by accident.
+    expect(after[INPUT_A_FIELD]).toBe(SURVIVOR_INPUT_A)
+    expect(after[INPUT_B_FIELD]).toBe(SURVIVOR_INPUT_B)
+
+    const stored = (after[FORMULA_FIELD] ?? {}) as StoredFormula
+
+    // THE CRITERION. Equal to a fresh computation from the survivor's POST-MERGE inputs.
+    expect(
+      stored.value,
+      "WR-01: the survivor permanently stores a derived value its own inputs contradict. It is " +
+        "also a formula value the server did not compute — the T-34-04 invariant every other " +
+        "write path enforces via `stripFormulaKeys`.",
+    ).toBe(SURVIVOR_INPUT_A * FACTOR + SURVIVOR_INPUT_B)
+    // Spelled a second way, against the named constant, so a red names the number a reader can
+    // look up in the floor cell above.
+    expect(stored.value).toBe(SURVIVOR_STORED_BEFORE)
+    // And the two exclusions the floor cell's pairwise-distinctness buys.
+    expect(stored.value).not.toBe(LOSER_STORED_BEFORE)
+    expect(stored.value).not.toBe(CORRECT_AFTER_MERGE)
+    expect(stored.error).toBe(null)
+  })
+
+  it("refuses an EXPLICIT choice of the loser's formula value — the server is the sole writer", async () => {
+    // THE `conflicts` SHAPE, ASKED FOR BY NAME. Both records hold a value, they differ, and the
+    // caller names the formula key and picks the loser. `stripFormulaKeys` stops a client doing
+    // this through `/api/custom-fields/save` and through every `/api/v1` route; the merge picker
+    // was the one write path with no equivalent.
+    const storedBefore = await readStoredFormula(SURVIVOR_ID)
+    expect(storedBefore.value, "anchor: the survivor starts on its own value").toBe(
+      SURVIVOR_STORED_BEFORE,
+    )
+    expect((await readStoredFormula(LOSER_ID)).value).toBe(LOSER_STORED_BEFORE)
+
+    const result = await mergeAsUser({
+      entityType: "organization",
+      pairId: PAIR_ID,
+      survivorId: SURVIVOR_ID,
+      loserId: LOSER_ID,
+      choices: {
+        // Inputs stay the survivor's, so nothing the formula reads changes.
+        [INPUT_A_CHOICE_KEY]: "survivor",
+        // And the derived value is demanded from the loser, explicitly.
+        [FORMULA_CHOICE_KEY]: "loser",
+      },
+    })
+    expect(result).toMatchObject({ success: true })
+
+    const after = await readBlob(SURVIVOR_ID)
+    expect(after[INPUT_A_FIELD]).toBe(SURVIVOR_INPUT_A)
+    expect(after[INPUT_B_FIELD]).toBe(SURVIVOR_INPUT_B)
+
+    const stored = (after[FORMULA_FIELD] ?? {}) as StoredFormula
+    expect(
+      stored.value,
+      "WR-01: a choice map set the survivor's derived value directly. No other write path in the " +
+        "product allows that.",
+    ).toBe(SURVIVOR_STORED_BEFORE)
+    expect(stored.value).not.toBe(LOSER_STORED_BEFORE)
+  })
+
+  it("still recomputes from a CHANGED input when the loser's formula value is adopted too", async () => {
+    // THE BARRIER, and it is the cell that stops the fix from being "never touch the formula key".
+    // Both are asked for from the loser: INPUT A *and* the derived value. The input genuinely
+    // changed, so the answer is neither record's stored value — it is 174, the MIXTURE. A fix that
+    // simply pinned the survivor's own formula value would leave 122 here and reintroduce the very
+    // staleness 49-08 removed.
+    const result = await mergeAsUser({
+      entityType: "organization",
+      pairId: PAIR_ID,
+      survivorId: SURVIVOR_ID,
+      loserId: LOSER_ID,
+      choices: {
+        [INPUT_A_CHOICE_KEY]: "loser",
+        [FORMULA_CHOICE_KEY]: "loser",
+      },
+    })
+    expect(result).toMatchObject({ success: true })
+
+    const after = await readBlob(SURVIVOR_ID)
+    expect(after[INPUT_A_FIELD], "anchor: INPUT A really did move").toBe(LOSER_INPUT_A)
+    expect(after[INPUT_B_FIELD]).toBe(SURVIVOR_INPUT_B)
+
+    const stored = (after[FORMULA_FIELD] ?? {}) as StoredFormula
+    expect(
+      stored.value,
+      "the fix must not become 'never touch the formula key': INPUT A moved, so the stored value " +
+        "has to be recomputed from the MIXTURE and not pinned to either record's own.",
+    ).toBe(CORRECT_AFTER_MERGE)
+    expect(stored.value).not.toBe(SURVIVOR_STORED_BEFORE)
+    expect(stored.value).not.toBe(LOSER_STORED_BEFORE)
+  })
+})
