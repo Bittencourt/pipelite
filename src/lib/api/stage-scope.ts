@@ -18,12 +18,23 @@
  *
  *     sql`${pipelines.id} IN ${pipelineIds}`
  *
- * `parsePagination` clamps `offset` at zero and imposes NO ceiling, so any `?offset=` at or past
- * the global stage count produced an empty page, therefore an empty array, therefore the statement
- * text `"pipelines"."id" IN ()` — which PostgreSQL rejects outright with
+ * At the time, `parsePagination` clamped `offset` at zero and imposed NO ceiling, so any `?offset=`
+ * at or past the global stage count produced an empty page, therefore an empty array, therefore the
+ * statement text `"pipelines"."id" IN ()` — which PostgreSQL rejects outright with
  * `42601 syntax error at or near ")"`. That was a live 500 reachable from the public API with a
  * single query parameter. The array is now gone entirely: ownership is a static join condition, so
  * there is no runtime-sized list to render into the statement and no empty case to guard.
+ *
+ * THE PAST TENSE IN THE PARAGRAPH ABOVE IS NEW, AND IT IS THE POINT (WR-09). Until this fix that
+ * sentence was written in the PRESENT tense and was still true: the empty-`IN ()` consequence it
+ * described had been removed, but the missing ceiling it named had NOT, and the SECOND consequence
+ * of the same gap was still live — `?offset=99999999999999999999` reached PostgreSQL as
+ * `"100000000000000000000"` and its `bigint` OFFSET refused it with
+ * `22003 value out of range for type bigint`, on this very route, as an unhandled framework 500.
+ * `parsePagination` now bounds `offset` above by `MAX_OFFSET`; see the block comment on that
+ * constant in `src/lib/api/pagination.ts`, and the WR-09 describe in `stages-scope.db.test.ts` for
+ * the measured before and after. A header that documents a gap while the gap stays open is a
+ * finding, not a note.
  *
  * A NOTE ON HOW FAR TO TAKE THAT. For NON-empty arrays drizzle expanded the values into
  * placeholders rather than splicing them, so the raw fragment was an availability and robustness
