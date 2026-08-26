@@ -987,6 +987,12 @@ describe("purgeDealMutation", () => {
      * of this describe, and `src/lib/trash/purge-blobs.db.test.ts` for the behavioural proof.
      */
     purgedRows: { id: string }[] = [{ id: "d1" }],
+    /**
+     * WR-03. What the transaction's `SELECT custom_fields … FOR UPDATE` yields. One row in the
+     * ordinary case; `[]` means the record left the trash before the lock was taken, which is
+     * mapped to the same NOT_IN_TRASH as a zero-row DELETE.
+     */
+    lockedRows: { customFields: Record<string, unknown> | null }[] = [{ customFields: null }],
   ) {
     // Annotated `ReturnType<typeof vi.fn>` — the same posture `mockDb` above uses — so
     // `mock.calls[n][0]` is readable. The arrow bodies take no parameters, so an inferred
@@ -1013,13 +1019,24 @@ describe("purgeDealMutation", () => {
     const insertValues: ReturnType<typeof vi.fn> = vi.fn(() => Promise.resolve(undefined))
     const txInsert: ReturnType<typeof vi.fn> = vi.fn(() => ({ values: insertValues }))
 
-    const tx = { delete: txDelete, update: txUpdate, insert: txInsert }
+        // WR-03. The purge now RE-READS `customFields` inside the transaction, under a row lock,
+    // and collects its blob refs from THAT copy — the pre-fetch above is too early, because
+    // `POST /api/custom-fields/save` reaches a trashed record and a descriptor appended in that
+    // window was never collected. `lockedRows` is what that `SELECT … FOR UPDATE` yields: one
+    // row in the ordinary case, `[]` when the record left the trash before the lock was taken.
+    const forUpdate: ReturnType<typeof vi.fn> = vi.fn(() => Promise.resolve(lockedRows))
+    const selectWhere: ReturnType<typeof vi.fn> = vi.fn(() => ({ for: forUpdate }))
+    const selectFrom: ReturnType<typeof vi.fn> = vi.fn(() => ({ where: selectWhere }))
+    const txSelect: ReturnType<typeof vi.fn> = vi.fn(() => ({ from: selectFrom }))
+
+    const tx = { select: txSelect, delete: txDelete, update: txUpdate, insert: txInsert }
     mockDb.transaction.mockImplementation(
       async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)
     )
 
     return {
       txDelete, deleteWhere, deleteReturning, txUpdate, updateSet, updateWhere, txInsert,
+      txSelect, forUpdate,
       insertValues,
     }
   }

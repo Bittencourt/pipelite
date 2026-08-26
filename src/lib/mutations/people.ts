@@ -16,6 +16,7 @@ import {
 } from "@/lib/formula-recalc"
 import { log } from "@/lib/log"
 import { collectFileFieldRefs } from "@/lib/trash/collect-file-field-refs"
+import type { BlobRef } from "@/lib/trash/collect-file-field-refs"
 import { deleteEntityFiles } from "@/lib/trash/delete-entity-files"
 // CR-01. One constant for all four purge mutations; the module's own header carries the full
 // reasoning, including why it is a throw rather than a flag returned out of the transaction.
@@ -596,14 +597,30 @@ export async function purgePersonMutation(
     return { success: false, error: "NOT_IN_TRASH" }
   }
 
-  // SEC-04 / SC-2 — the blobs this record's `customFields` references, COLLECTED BEFORE THE
-  // TRANSACTION from the row already pre-fetched above. No second read, and no read is possible
-  // later: after the commit there is no row left to read the column out of. The deletion itself is
-  // after the commit; see the block below the transaction for why.
-  const blobRefs = collectFileFieldRefs(id, person.customFields)
-
   try {
+    // WR-03 — DECLARED OUT HERE, ASSIGNED INSIDE THE TRANSACTION. The deletion still happens after
+    // the commit; only the COLLECTION moved in. See `purgeOrganizationMutation` in
+    // ./organizations.ts for the whole argument.
+    let blobRefs: BlobRef[] = []
+
     const detached = await db.transaction(async (tx) => {
+      // 0. WR-03 — the CURRENT blob, under a row lock. Collecting from the pre-fetch above missed
+      //    any descriptor written to this row afterwards, and `POST /api/custom-fields/save`
+      //    reaches a TRASHED record. `.for("update")` both reads the current value and serialises
+      //    that writer for the rest of the transaction. With CR-01's `.returning()` check at
+      //    step 4, this is what makes the purge's view the record's state at the moment it died.
+      const [locked] = await tx
+        .select({ customFields: people.customFields })
+        .from(people)
+        .where(and(eq(people.id, id), isNotNull(people.deletedAt)))
+        .for("update")
+
+      if (!locked) {
+        throw new Error(NOT_IN_TRASH_INSIDE_TRANSACTION)
+      }
+
+      blobRefs = collectFileFieldRefs(id, locked.customFields)
+
       // 1. Notes are polymorphic with NO foreign key, so nothing in the database enforces this
       //    and the rows would dangle forever. A purge takes the record and its notes.
       await tx
@@ -683,8 +700,11 @@ export async function purgePersonMutation(
     //     rethrow would report a purge that DID happen as a failure, the caller would retry a
     //     delete that already succeeded, and a blob nobody can remove would make a record
     //     un-purgeable forever. `deleteEntityFiles` never rejects; the `catch` is belt-and-braces.
-    //  2. THE REFS WERE COLLECTED BEFORE THE TRANSACTION, off the row this function already
-    //     pre-fetched. `customFields` costs nothing extra there and cannot be read here at all.
+    //  2. THE REFS WERE COLLECTED INSIDE THE TRANSACTION, from a `SELECT custom_fields … FOR
+    //     UPDATE` at step 0, and NOT from the pre-fetch above (WR-03 — a descriptor appended to a
+    //     trashed record in the pre-fetch window was never collected, and its bytes became an
+    //     orphan nothing could ever name again). The column still cannot be read out HERE, which is
+    //     why the list is declared outside the transaction and assigned within it.
     //  3. THE MISMATCH IS LOGGED, NOT RETURNED. `PurgeResult` (src/lib/trash/dispatch.ts:51-53) is
     //     read by eleven exact `toEqual({ success: true, detached: N })` assertions across the four
     //     mutation test files, and SC-2's criterion is a LOG rather than a return value. The line

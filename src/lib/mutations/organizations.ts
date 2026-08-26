@@ -16,6 +16,7 @@ import {
   CHANGED_FIELDS_CUSTOM_SENTINEL,
 } from "@/lib/formula-recalc"
 import { collectFileFieldRefs } from "@/lib/trash/collect-file-field-refs"
+import type { BlobRef } from "@/lib/trash/collect-file-field-refs"
 import { deleteEntityFiles } from "@/lib/trash/delete-entity-files"
 // CR-01. One constant for all four purge mutations; the module's own header carries the full
 // reasoning, including why it is a throw rather than a flag returned out of the transaction.
@@ -569,14 +570,46 @@ export async function purgeOrganizationMutation(
     return { success: false, error: "NOT_IN_TRASH" }
   }
 
-  // SEC-04 / SC-2 — the blobs this record's `customFields` references, COLLECTED BEFORE THE
-  // TRANSACTION from the row already pre-fetched above. No second read, and no read is possible
-  // later: after the commit there is no row left to read the column out of. The deletion itself is
-  // after the commit; see the block below the transaction for why.
-  const blobRefs = collectFileFieldRefs(id, organization.customFields)
-
   try {
+    // WR-03 — DECLARED OUT HERE, ASSIGNED INSIDE THE TRANSACTION. The deletion still happens after
+    // the commit (the block below the transaction says why that half is not negotiable), so the
+    // list has to outlive the transaction's scope; only the COLLECTION moved in.
+    let blobRefs: BlobRef[] = []
+
     const detached = await db.transaction(async (tx) => {
+      // 0. WR-03 — RE-READ `customFields` UNDER A ROW LOCK, and collect the refs from THIS copy
+      //    rather than from the pre-fetched row above.
+      //
+      //    The phase originally collected from the pre-fetch and recorded the reason ("after the
+      //    commit there is no row left to read the column out of") without recording the
+      //    consequence: any descriptor written to this row AFTER the pre-fetch was never collected.
+      //    `POST /api/custom-fields/save` reaches a TRASHED record, so a client appending a file to
+      //    a record already in the trash — in the window before this transaction opens — left bytes
+      //    that no route can serve, no verb can delete and no purge can ever collect, with
+      //    `deleted === expected` holding so nothing was logged.
+      //
+      //    `.for("update")` is doing TWO jobs and both are load-bearing. It reads the CURRENT blob,
+      //    which is the fix; and it takes the row lock for the rest of the transaction, so a
+      //    concurrent `saveFieldValues` UPDATE on this row BLOCKS here instead of interleaving —
+      //    and once this transaction commits, that UPDATE matches nothing. Serialising the writer
+      //    is what CLOSES the window rather than merely narrowing it.
+      //
+      //    Together with CR-01's `.returning()` check on the row DELETE at step 5, this is the pair
+      //    that makes the purge's view of the record its state AT THE MOMENT THE ROW DIED.
+      const [locked] = await tx
+        .select({ customFields: organizations.customFields })
+        .from(organizations)
+        .where(and(eq(organizations.id, id), isNotNull(organizations.deletedAt)))
+        .for("update")
+
+      // A miss here means what the DELETE's zero rowcount means, and it is mapped the same way:
+      // the record left the trash between the pre-fetch and this lock.
+      if (!locked) {
+        throw new Error(NOT_IN_TRASH_INSIDE_TRANSACTION)
+      }
+
+      blobRefs = collectFileFieldRefs(id, locked.customFields)
+
       // 1. Notes are polymorphic with NO foreign key, so nothing in the database enforces this
       //    and the rows would dangle forever. A purge takes the record and its notes.
       await tx
@@ -677,8 +710,13 @@ export async function purgeOrganizationMutation(
     //     rethrow would report a purge that DID happen as a failure, the caller would retry a
     //     delete that already succeeded, and a blob nobody can remove would make a record
     //     un-purgeable forever. `deleteEntityFiles` never rejects; the `catch` is belt-and-braces.
-    //  2. THE REFS WERE COLLECTED BEFORE THE TRANSACTION, off the row this function already
-    //     pre-fetched. `customFields` costs nothing extra there and cannot be read here at all.
+    //  2. THE REFS WERE COLLECTED INSIDE THE TRANSACTION, from a `SELECT custom_fields … FOR
+    //     UPDATE` at step 0, and NOT from the pre-fetch above. WR-03: the pre-fetch is too early —
+    //     `POST /api/custom-fields/save` reaches a trashed record, so a descriptor appended in the
+    //     window between the pre-fetch and this transaction was never collected and its bytes
+    //     became an orphan nothing could ever name again. The row lock also serialises that writer.
+    //     The column still cannot be read out HERE, which is why the list is declared outside the
+    //     transaction and assigned within it.
     //  3. THE MISMATCH IS LOGGED, NOT RETURNED. `PurgeResult` (src/lib/trash/dispatch.ts:51-53) is
     //     read by eleven exact `toEqual({ success: true, detached: N })` assertions across the four
     //     mutation test files, and SC-2's criterion is a LOG rather than a return value. The line

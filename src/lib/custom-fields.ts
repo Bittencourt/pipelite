@@ -264,9 +264,28 @@ export async function saveFieldValues(
   // `data`, and `data` is a full raw row at every other emit site in the codebase. Synthesising
   // it from `getFieldValues` alone would give a `{customFields}` stub that no diff could compare
   // against a full row.
+  //
+  // WR-03 / CR-03 — `isNull(table.deletedAt)` IS ON THIS READ AND ON THE WRITE BELOW.
+  //
+  // It was on neither, and the consequence was measured: a record already in the TRASH could still
+  // have its `customFields` written, because nothing on this path refuses one. A client appending a
+  // file descriptor to a trashed record in the window before its purge's transaction opened left
+  // bytes that no route could serve, no verb could delete and no purge could ever collect — with
+  // `deleted === expected` holding on the purge's side, so nothing was logged. The purge now
+  // re-reads the blob under `FOR UPDATE` (WR-03's primary fix, in the four purge mutations), and
+  // this guard is the other end of the same window: it refuses the write outright rather than
+  // racing it.
+  //
+  // AN OWNER TERM IS DELIBERATELY *NOT* ADDED HERE, and that is CR-03's second half declined with
+  // reasons rather than overlooked. See DEF-49-01: the session UI is not owner-scoped anywhere
+  // (all four detail pages read with no owner term, and the list pages treat owner as an optional
+  // FILTER), so an owner term would make every custom-field edit on a colleague's record fail —
+  // and, before the `.returning()` below existed, fail SILENTLY with `{ success: true }`, which is
+  // the CR-01 defect class reintroduced by the fix for CR-03. `deletedAt` carries no such
+  // ambiguity: a trashed record is not editable by anyone, which is why only this half lands here.
   const previousRowResult = await db.select()
     .from(table)
-    .where(eq(table.id, entityId))
+    .where(and(eq(table.id, entityId), isNull(table.deletedAt)))
     .limit(1)
   const previousRow = previousRowResult[0] as Record<string, unknown> | undefined
 
@@ -274,12 +293,22 @@ export async function saveFieldValues(
   // a few milliseconds later.
   const writtenAt = new Date()
 
-  await db.update(table)
+  // `.returning({ id })` AND THE COUNT IS READ, for the reason CR-01 exists: a predicate that
+  // refuses is only half a guard, and this `UPDATE` used to report success for a write that
+  // affected nothing. A trashed or absent target now returns a FAILURE instead of `{ success: true,
+  // values }` describing a blob no row holds.
+  const written = await db.update(table)
     .set({
       customFields: next,
       updatedAt: writtenAt,
     })
-    .where(eq(table.id, entityId))
+    .where(and(eq(table.id, entityId), isNull(table.deletedAt)))
+    .returning({ id: table.id })
+
+  if (written.length === 0) {
+    log.error("custom-fields", "custom field save matched no live row", { entityType, entityId })
+    return { success: false, error: "Record not found" }
+  }
 
   // CFUI-02: seeded with the blob actually written, so the caller always gets something
   // truthful to merge — including on the D-05 swallow path below, where no recalculation ran.

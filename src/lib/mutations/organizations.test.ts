@@ -44,6 +44,23 @@ const { RECALC_RESULT } = vi.hoisted(() => ({
   },
 }))
 
+// WR-03. Mocked so the blob refs the purge COLLECTED are directly observable.
+//
+// The indirect route does not work, and finding out why is itself the point: the real
+// `deleteEntityFiles` counts an ALREADY-ABSENT file as deleted
+// (`delete-entity-files.ts:129-132`), so against a directory holding nothing it returns
+// `deleted === expected` and the mismatch log — which would have carried `expected` —
+// never fires. That is the same already-absent branch the review names as CR-02's mirror
+// image. The refs themselves are what this file can assert; the BYTES are proven in
+// `src/lib/trash/purge-blobs.db.test.ts` against a real disk.
+const { collectedRefs } = vi.hoisted(() => ({ collectedRefs: { calls: [] as unknown[][] } }))
+
+vi.mock("@/lib/trash/delete-entity-files", () => ({
+  deleteEntityFiles: vi.fn(async (refs: unknown[]) => {
+    collectedRefs.calls.push(refs)
+    return { deleted: refs.length }
+  }),
+}))
 // Mock the field-definition read used by the T-34-04 strip. The real one hits the database.
 vi.mock("@/lib/custom-fields", () => ({
   getActiveFieldDefinitions: vi.fn(async () => []),
@@ -103,6 +120,7 @@ const renderSql = (predicate: unknown) => renderQuery(predicate).sql
 
 beforeEach(() => {
   vi.clearAllMocks()
+  collectedRefs.calls.length = 0
 })
 
 describe("createOrganizationMutation", () => {
@@ -926,6 +944,12 @@ describe("purgeOrganizationMutation", () => {
      * `src/lib/trash/purge-blobs.db.test.ts`.
      */
     purgedRows: { id: string }[] = [{ id: trashedOrg.id }],
+    /**
+     * WR-03. What the transaction's `SELECT custom_fields … FOR UPDATE` yields. One row in the
+     * ordinary case; `[]` means the record left the trash before the lock was taken, which is
+     * mapped to the same NOT_IN_TRASH as a zero-row DELETE.
+     */
+    lockedRows: { customFields: Record<string, unknown> | null }[] = [{ customFields: null }],
   ) {
     const deleteReturning = vi.fn().mockResolvedValue(purgedRows)
     // `.where(...)` has to be BOTH awaitable and `.returning()`-able, because the notes delete
@@ -953,13 +977,24 @@ describe("purgeOrganizationMutation", () => {
     const insertValues = vi.fn().mockResolvedValue(undefined)
     const txInsert = vi.fn().mockReturnValue({ values: insertValues })
 
-    const tx = { delete: txDelete, update: txUpdate, insert: txInsert }
+        // WR-03. The purge now RE-READS `customFields` inside the transaction, under a row lock,
+    // and collects its blob refs from THAT copy — the pre-fetch above is too early, because
+    // `POST /api/custom-fields/save` reaches a trashed record and a descriptor appended in that
+    // window was never collected. `lockedRows` is what that `SELECT … FOR UPDATE` yields: one
+    // row in the ordinary case, `[]` when the record left the trash before the lock was taken.
+    const forUpdate: ReturnType<typeof vi.fn> = vi.fn(() => Promise.resolve(lockedRows))
+    const selectWhere: ReturnType<typeof vi.fn> = vi.fn(() => ({ for: forUpdate }))
+    const selectFrom: ReturnType<typeof vi.fn> = vi.fn(() => ({ where: selectWhere }))
+    const txSelect: ReturnType<typeof vi.fn> = vi.fn(() => ({ from: selectFrom }))
+
+    const tx = { select: txSelect, delete: txDelete, update: txUpdate, insert: txInsert }
     mockDb.transaction.mockImplementation(
       async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)
     )
 
     return {
       txDelete, deleteWhere, deleteReturning, txUpdate, updateSet, updateWhere, updateReturning,
+      txSelect, selectWhere, forUpdate,
       txInsert, insertValues,
     }
   }
@@ -1172,6 +1207,92 @@ describe("purgeOrganizationMutation", () => {
       purgeRowIndex(tx.insertValues),
       "a `__purge` audit row was written for a purge whose DELETE removed nothing",
     ).toBe(-1)
+  })
+
+  /**
+   * WR-03 — the blob refs come from a `SELECT custom_fields … FOR UPDATE` INSIDE the transaction,
+   * not from the pre-fetch.
+   *
+   * The pre-fetch is too early: `POST /api/custom-fields/save` reaches a TRASHED record (nothing on
+   * that path refused one before this pass), so a descriptor appended in the window between the
+   * pre-fetch and the transaction was never collected, and its bytes became an orphan that no route
+   * can serve, no verb can delete and no purge can ever see — with `deleted === expected` holding,
+   * so nothing was logged.
+   *
+   * `.for("update")` is doing TWO jobs. It reads the CURRENT blob, and it holds the row lock for the
+   * rest of the transaction so a concurrent `saveFieldValues` UPDATE blocks rather than interleaves.
+   * The lock is what CLOSES the window rather than narrowing it; the behavioural proof is in
+   * `src/lib/trash/purge-blobs.db.test.ts`.
+   */
+  it("WR-03: locks and re-reads customFields inside the transaction, before the notes delete", async () => {
+    mockDb.query.organizations.findFirst.mockResolvedValue(trashedOrg)
+    const tx = stubTransaction()
+
+    await purgeOrganizationMutation("org1")
+
+    expect(tx.txSelect, "no SELECT was issued inside the transaction").toHaveBeenCalledTimes(1)
+    expect(tx.forUpdate, "the re-read did not take a row lock").toHaveBeenCalledTimes(1)
+    expect(tx.forUpdate.mock.calls[0][0]).toBe("update")
+
+    // ORDER: the lock is taken FIRST. Taking it after the notes delete would leave that statement
+    // outside the serialisation the lock provides.
+    expect(tx.txSelect.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.txDelete.mock.invocationCallOrder[0],
+    )
+
+    // The predicate is the trashed-row one, so the lock cannot be taken on a LIVE record.
+    // Rendered rather than assumed: `isNull` vs `isNotNull` is a one-character difference with the
+    // opposite meaning, and both compile.
+    const rendered = renderSql(tx.selectWhere.mock.calls[0][0])
+    expect(rendered).toContain("is not null")
+    expect(rendered).not.toMatch(/deleted_at" is null/)
+  })
+
+  /**
+   * WR-03 — the collection source, and this cell is what makes the one above more than a call
+   * count: the refs must come from the LOCKED row's blob and NOT from the pre-fetched row's.
+   *
+   * The two are given DIFFERENT `customFields` on purpose. `deleteEntityFiles` is real here and
+   * resolves `{ deleted: 0 }` against a temp directory that holds nothing, so what this asserts is
+   * the MISMATCH LOG's `expected` — which is `blobRefs.length`, i.e. exactly how many refs were
+   * collected and therefore which blob they came from.
+   */
+  it("WR-03: collects refs from the LOCKED blob, not from the pre-fetched one", async () => {
+    // The pre-fetch says ONE descriptor. The locked re-read says THREE.
+    mockDb.query.organizations.findFirst.mockResolvedValue({
+      ...trashedOrg,
+      customFields: { Anexos: [{ filename: "stale.pdf", storedName: "stale.pdf" }] },
+    })
+    const tx = stubTransaction([{ id: "d1" }], [{ id: "p1" }], [{ id: trashedOrg.id }], [
+      {
+        customFields: {
+          Anexos: [
+            { filename: "a.pdf", storedName: "a.pdf" },
+            { filename: "b.pdf", storedName: "b.pdf" },
+            { filename: "c.pdf", storedName: "c.pdf" },
+          ],
+        },
+      },
+    ])
+    void tx
+
+    const result = await purgeOrganizationMutation("org1")
+    expect(result).toEqual({ success: true, detached: 2 })
+
+    // THE OBSERVABLE: exactly which refs the post-commit deletion was handed.
+    expect(collectedRefs.calls, "the post-commit deletion never ran").toHaveLength(1)
+    const refs = collectedRefs.calls[0] as { storedName: string }[]
+
+    expect(
+      refs.map((ref) => ref.storedName).sort(),
+      "the purge collected refs from the PRE-FETCHED blob rather than from the locked re-read. " +
+        "Every descriptor written to the row after the pre-fetch is an orphan that no route can " +
+        "serve, no verb can delete and no purge can ever see.",
+    ).toEqual(["a.pdf", "b.pdf", "c.pdf"])
+
+    // And the stale name is NOT among them — the two-sided half, without which "three refs" could
+    // be satisfied by a blob that happened to have three.
+    expect(refs.map((ref) => ref.storedName)).not.toContain("stale.pdf")
   })
 })
 

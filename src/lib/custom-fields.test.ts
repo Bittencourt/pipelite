@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { readFileSync } from "node:fs"
+// WR-03 / CR-03: renders the write predicate so its `deleted_at` term is asserted, not assumed.
+import { PgDialect } from "drizzle-orm/pg-core"
 
 // Established mock shape (every DB-touching test file in this repo uses it).
 vi.mock("@/db", () => ({
@@ -110,6 +112,13 @@ interface Harness {
   setFn: ReturnType<typeof vi.fn>
   updateWhereFn: ReturnType<typeof vi.fn>
   selectFn: ReturnType<typeof vi.fn>
+  /**
+   * WR-03 / CR-03. `saveFieldValues`' `UPDATE` now carries `isNull(deletedAt)` and READS its
+   * rowcount through `.returning({ id })` — a predicate that refuses is only half a guard, and
+   * this statement used to report success for a write that affected nothing. Exposed so a cell can
+   * drive the zero-row case.
+   */
+  updateReturningFn: ReturnType<typeof vi.fn>
 }
 
 /**
@@ -120,7 +129,13 @@ interface Harness {
  */
 function captureUpdate(
   definitions: CustomFieldDefinition[] = DEFINITIONS,
-  stored: Record<string, unknown> = storedBlob()
+  stored: Record<string, unknown> = storedBlob(),
+  /**
+   * WR-03 / CR-03: what the `UPDATE`'s `.returning({ id })` yields. Defaults to one row, which is
+   * the ordinary case every cell below is about. `[]` is "the target is trashed or absent", and it
+   * has its own cell at the end of this file.
+   */
+  writtenRows: { id: string }[] = [{ id: "d1" }]
 ): Harness {
   const chain: Record<string, unknown> = {}
   chain.from = vi.fn(() => chain)
@@ -131,11 +146,12 @@ function captureUpdate(
   const selectFn = vi.fn(() => chain)
   mockDb.select.mockImplementation(selectFn)
 
-  const updateWhereFn = vi.fn(async () => undefined)
+  const updateReturningFn = vi.fn(async () => writtenRows)
+  const updateWhereFn = vi.fn(() => ({ returning: updateReturningFn }))
   const setFn = vi.fn(() => ({ where: updateWhereFn }))
   mockDb.update.mockImplementation(() => ({ set: setFn }))
 
-  return { setFn, updateWhereFn, selectFn }
+  return { setFn, updateWhereFn, updateReturningFn, selectFn }
 }
 
 /** The blob handed to `db.update(...).set(...)`. */
@@ -603,5 +619,87 @@ describe("custom-fields module — unchanged behaviour", () => {
     expect(source).not.toMatch(/formula-engine/)
     expect(source).toMatch(/recalculateFormulas/)
     expect(source).toMatch(/stripFormulaKeys/)
+  })
+})
+
+/* -------------------------------------------------------------------------------------- *
+ * WR-03 / CR-03 — a trashed or absent target is refused, not silently no-opped
+ * -------------------------------------------------------------------------------------- */
+
+/** Renders a drizzle predicate to SQL, so a term can be asserted rather than assumed present. */
+function renderPredicate(predicate: unknown): string {
+  return new PgDialect().sqlToQuery(predicate as Parameters<PgDialect["sqlToQuery"]>[0]).sql
+}
+
+describe("saveFieldValues — the write refuses a target that is not a LIVE row", () => {
+  /**
+   * WR-03's other end. The four purge mutations now re-read `customFields` under `FOR UPDATE`
+   * inside their transaction, which closes the window from the purge's side; this closes it from
+   * the writer's.
+   *
+   * `saveFieldValues` carried NO `deletedAt` term, so a record already in the Trash could still
+   * have its `customFields` written — nothing on the `POST /api/custom-fields/save` path refuses
+   * one. A client appending a file descriptor to a trashed record left bytes that no route could
+   * serve, no verb could delete and no purge could ever collect.
+   *
+   * AND THE ROWCOUNT IS READ, which is the half that makes the predicate a guard rather than a
+   * decoration. `db.update(...).where(...)` used to be awaited without `.returning()`, so a write
+   * that affected NOTHING still returned `{ success: true, values }` — a response describing a blob
+   * no row holds. That is CR-01's defect class at a different call site, and it is the specific
+   * reason an OWNER term is NOT added here (DEF-49-01): before this `.returning()` existed, an
+   * owner term would have made every edit on a colleague's record fail silently.
+   */
+  it("returns a failure when the UPDATE matches no live row", async () => {
+    const harness = captureUpdate(DEFINITIONS, storedBlob(), [])
+
+    const result = await saveFieldValues("deal", "d1", { Price: 200 }, ACTOR_USER_ID)
+
+    // The statement really ran and its rowcount really was read — without these the cell would
+    // pass on a function that refused before reaching the write at all.
+    expect(harness.setFn).toHaveBeenCalledTimes(1)
+    expect(harness.updateReturningFn).toHaveBeenCalledTimes(1)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe("Record not found")
+    // No `values` on a refusal: the caller must not merge a blob nothing persisted.
+    expect(result.values).toBeUndefined()
+  })
+
+  it("does NOT recalculate when the UPDATE matched no live row", async () => {
+    captureUpdate(DEFINITIONS, storedBlob(), [])
+
+    await saveFieldValues("deal", "d1", { Price: 200 }, ACTOR_USER_ID)
+
+    // Recomputing formulas against a row nothing wrote would persist derived values for a state
+    // that does not exist — and `recalculateFormulas` issues its OWN `db.update`, so this is a
+    // write refused rather than merely a computation skipped.
+    expect(mockRecalc).not.toHaveBeenCalled()
+  })
+
+  it("ANCHOR: the same call with one returned row succeeds — so the two cells above are not vacuous", async () => {
+    // Without this, every assertion above would also hold for a `saveFieldValues` that had simply
+    // stopped working. It is the same call, differing in ONE argument.
+    const harness = captureUpdate(DEFINITIONS, storedBlob())
+
+    const result = await saveFieldValues("deal", "d1", { Price: 200 }, ACTOR_USER_ID)
+
+    expect(harness.updateReturningFn).toHaveBeenCalledTimes(1)
+    expect(result.success).toBe(true)
+    expect(result.values).toBeDefined()
+    expect(mockRecalc).toHaveBeenCalledTimes(1)
+  })
+
+  it("carries a deleted_at IS NULL term on the write itself", async () => {
+    // Rendered, not assumed. The predicate is what refuses a trashed row; the rowcount check above
+    // is what notices that it refused. Both are needed and this is the one that is invisible in a
+    // behavioural assertion against a mocked driver.
+    const harness = captureUpdate()
+
+    await saveFieldValues("deal", "d1", { Price: 200 }, ACTOR_USER_ID)
+
+    const rendered = renderPredicate(harness.updateWhereFn.mock.calls[0][0])
+    expect(rendered).toContain("deleted_at")
+    expect(rendered).toContain("is null")
+    expect(rendered).toContain('"id" =')
   })
 })
