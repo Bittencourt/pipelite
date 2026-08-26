@@ -869,3 +869,78 @@ describe("WR-01 — a rejected write becomes a problem document, never an unhand
     expect(mockEmit).not.toHaveBeenCalled()
   })
 })
+
+/* ------------------------------------------------------------------------------------------ *
+ * WR-10 — an UPDATE that matches no rows, which WR-01's `try` could not see
+ *
+ * WR-01 wrapped the statement and annotated its result as NON-OPTIONAL:
+ *
+ *     let updatedActivity: typeof activities.$inferSelect
+ *     try {
+ *       const [row] = await db.update(activities)…returning()
+ *       updatedActivity = row                       // `row` is `T | undefined` at RUNTIME
+ *     } catch (error) { return mapWriteError(…) }
+ *
+ *     …updatedActivity.customFields…               // OUTSIDE the try
+ *
+ * `tsconfig.json` sets `strict: true` but NOT `noUncheckedIndexedAccess`, so the compiler believes
+ * `row` is the row while the runtime value is `undefined` whenever the UPDATE matches nothing. The
+ * dereference is after the `catch`, so the block written to stop an unhandled 500 has one of its own.
+ *
+ * REACHABLE on activities through a soft delete followed by `purgeActivityMutation`: the PUT's
+ * ownership read succeeds against the live row, the purge hard-deletes it, and the PUT's
+ * `UPDATE … WHERE id = …` matches 0 rows. The sibling case on stages is worse (they are HARD
+ * deleted with no trash step) and is asserted in `stages/[id]/__tests__/route.test.ts`.
+ *
+ * WHY THIS IS A MOCKED CELL. The condition is `returning()` resolving to `[]` — a driver-level fact
+ * about a statement that matched nothing, not a business rule. Reproducing it against real
+ * PostgreSQL needs a concurrent delete scheduled BETWEEN two statements inside one handler
+ * invocation, which nothing in this repository can arrange. `stubUpdate` already existed for WR-01,
+ * so this adds no new mocking surface.
+ *
+ * 404 is already declared on `PUT /activities/{id}` in `public/openapi.yaml` (WR-03), so this is not
+ * a contract change.
+ * ------------------------------------------------------------------------------------------ */
+
+describe("WR-10 — a PUT whose UPDATE matches no rows answers 404, not a framework 500", () => {
+  beforeEach(() => {
+    mockDb.query.activities.findFirst.mockResolvedValue(ownedActivity)
+  })
+
+  it("returns 404 with an ENTITY_NOT_FOUND problem document when `.returning()` resolves to []", async () => {
+    // The activity existed when the ownership read ran — `findFirst` returns the owner's live row —
+    // and was gone by the time the UPDATE ran.
+    stubUpdate([])
+
+    const response = await PUT(putRequest("act-1", { title: "renamed" }), routeParams("act-1"))
+    const problem = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(problem.type).toMatch(/\/ENTITY_NOT_FOUND$/)
+    // The write was ATTEMPTED: this is the "gone between check and write" case, not a refusal
+    // upstream of the statement.
+    expect(mockDb.update).toHaveBeenCalledTimes(1)
+  })
+
+  it("emits no CRM event for an update that matched nothing", async () => {
+    // A webhook announcing an update to a row that no longer exists is worse than the 500 this
+    // replaces.
+    stubUpdate([])
+
+    await PUT(putRequest("act-1", { title: "renamed" }), routeParams("act-1"))
+
+    expect(mockEmit).not.toHaveBeenCalled()
+  })
+
+  it("THE POSITIVE ANCHOR: a PUT whose UPDATE returns its row still answers 200 and still emits", async () => {
+    // Without this, both cells above are satisfied by a route that 404s every PUT.
+    stubUpdate([{ ...ownedActivity }])
+
+    const response = await PUT(putRequest("act-1", { title: "renamed" }), routeParams("act-1"))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.data.id).toBe("act-1")
+    expect(mockEmit).toHaveBeenCalledTimes(1)
+  })
+})

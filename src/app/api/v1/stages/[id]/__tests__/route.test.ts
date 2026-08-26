@@ -639,3 +639,65 @@ describe("WR-01 — a rejected write becomes a problem document, never an unhand
     expect(body.type).toMatch(/\/INTERNAL_ERROR$/)
   })
 })
+
+/* ---------------------------------------------------------------------------------------------
+ * WR-10 — an UPDATE that matches no rows, which the `try` above could not see
+ *
+ * WR-01 wrapped the statement and annotated its result as NON-OPTIONAL:
+ *
+ *     let updatedStage: typeof stages.$inferSelect
+ *     try {
+ *       const [row] = await db.update(stages)…returning()
+ *       updatedStage = row                          // `row` is `T | undefined` at RUNTIME
+ *     } catch (error) { return mapWriteError(…) }
+ *
+ *     return singleResponse(serializeStage(updatedStage))   // OUTSIDE the try
+ *
+ * `tsconfig.json` sets `strict: true` but NOT `noUncheckedIndexedAccess`, so `row` types as the row
+ * while the runtime value is `undefined` whenever the UPDATE matches nothing. The dereference is
+ * after the `catch`, so the block that exists to stop an unhandled 500 has one of its own.
+ *
+ * REACHABLE, not theoretical: stages are HARD deleted. An owner holding two API keys who issues
+ * `PUT /api/v1/stages/stage-1` and `DELETE /api/v1/stages/stage-1` concurrently gets a PUT whose
+ * `verifyStageOwnership` succeeded, whose DELETE then committed, and whose `UPDATE … WHERE id = …`
+ * matches 0 rows. `serializeStage(undefined)` throws `TypeError: Cannot read properties of
+ * undefined (reading 'id')` — out of an unwrapped `withApiAuth`, as a framework 500 with no problem
+ * document.
+ *
+ * WHY THIS IS A MOCKED CELL AND NOT A `.db.test.ts` ONE. The condition is `returning()` resolving
+ * to `[]`, which is a DRIVER-LEVEL fact about a statement that matched nothing — not a business
+ * rule. Producing it against real PostgreSQL requires interleaving a concurrent DELETE between two
+ * statements inside one handler invocation, which nothing in this repository can schedule. The mock
+ * expresses the exact state the race produces, and `writeState.updateRows` already existed for
+ * WR-01, so this adds no new mocking surface.
+ *
+ * 404 is already declared on both operations in `public/openapi.yaml` (WR-03), so this is not a
+ * contract change — `openapi-error-coverage.test.ts` needs no edit and gets none.
+ * ------------------------------------------------------------------------------------------ */
+
+describe("WR-10 — a PUT whose UPDATE matches no rows answers 404, not a framework 500", () => {
+  it("returns 404 with an ENTITY_NOT_FOUND problem document when `.returning()` resolves to []", async () => {
+    // The stage existed when `verifyStageOwnership` read it — `mockState.currentStage` is the
+    // owner's live stage, untouched — and was gone by the time the UPDATE ran.
+    writeState.updateRows = []
+
+    const response = await PUT(putStage("stage-1", { name: "Renamed" }), paramsFor("stage-1"))
+    const body = await response.json()
+
+    expect(response.status).toBe(404)
+    expect(body.type).toMatch(/\/ENTITY_NOT_FOUND$/)
+    // The write was ATTEMPTED — this is the "gone between check and write" case, not a refusal
+    // upstream of the statement. Without this the cell is satisfied by a route that 404s before
+    // ever touching the database, which is a different code path.
+    expect(db.update).toHaveBeenCalledTimes(1)
+  })
+
+  it("THE POSITIVE ANCHOR: a PUT whose UPDATE returns its row still answers 200", async () => {
+    // Without this, the 404 above is satisfied by a route that answers 404 to every PUT.
+    const response = await PUT(putStage("stage-1", { name: "Renamed" }), paramsFor("stage-1"))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.data.id).toBe("stage-1")
+  })
+})
