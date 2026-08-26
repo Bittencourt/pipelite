@@ -755,9 +755,36 @@ export async function importActivities(
         return { success: false, error: "No activity types found. Seed activity types first." }
       }
 
-      // Load deals for title matching
+      // Load THE IMPORTER'S deals for title matching.
+      //
+      // CR-03. This was `where: isNull(deals.deletedAt)` — every live deal in the database, every
+      // owner — matched by lowercased title with `Array.prototype.find`, and the result written as
+      // `dealId` on a row whose `ownerId` is `session.user.id` a few lines below. Two users each
+      // owning a deal titled `Renewal 2026` was enough: `find` returned whichever row the unordered
+      // scan emitted first, so A's imported activity could carry B's `deal_id` while A was told
+      // "imported, 0 warnings" — the `Deal "…" not found` branch is not taken, because a deal WAS
+      // found. `src/app/activities/[id]/page.tsx:41-52` then joins `deals`/`stages`/`pipelines` off
+      // that column with NO owner predicate and renders B's deal title, stage and pipeline name to
+      // A, so it is a confidentiality defect and not only an integrity one. No attacker is needed
+      // at any point.
+      //
+      // Every row this action writes is owned by the importer, so there is no legitimate reason to
+      // match against anybody else's deal and the scope costs nothing: a title that no longer
+      // matches falls into the warning branch, which is the honest answer.
+      //
+      // THE SIBLING LOOKUPS IN THIS FILE ARE DELIBERATELY UNCHANGED, and that is a decision rather
+      // than an oversight — see DEF-48-06. `importPeople`'s and `importDeals`'s `existingOrgs` /
+      // `existingPeople` reads are unscoped in the same way, but they feed FUZZY matching and
+      // AUTO-CREATION, so scoping them makes every import invent a per-owner duplicate of a shared
+      // organization. This deployment holds 46,054 organizations and an entire duplicate-detection
+      // subsystem (Phase 39) built because duplicates are expensive; changing what the importer
+      // matches against changes duplicate volume across that table and needs its own plan and its
+      // own measurement. `importDeals`'s `allStages` read is a third case with a third shape
+      // (stages are owned through `pipelines.ownerId`, and `getDefaultStage` would then disagree
+      // with it). Deals have no such subsystem and no auto-creation, which is why this one is
+      // contained and the others are not.
       const existingDeals = await db.query.deals.findMany({
-        where: isNull(deals.deletedAt),
+        where: and(isNull(deals.deletedAt), eq(deals.ownerId, actorUserId)),
         columns: { id: true, title: true },
       })
 
