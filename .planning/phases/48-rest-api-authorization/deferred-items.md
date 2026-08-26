@@ -165,26 +165,74 @@ performance-shaped fixture, not a correctness-shaped one, and is out of proporti
 
 ## DEF-48-05 — the workflow engine can still attach one of the caller's OWN records to another owner's record id
 
+> **CORRECTED IN PLACE 2026-08-26 by the iteration-3 review-fix pass. THIS ENTRY'S CENTRAL CLAIM
+> WAS FALSE IN BOTH DIRECTIONS, and it is corrected here rather than rewritten so the correction
+> stays visible — the same treatment DEF-48-03 got above.**
+>
+> The sentence *"So the engine can no longer **read**, **write**, delete or emit another owner's
+> row"* was **wrong on both halves**, and it was wrong in the one place that matters most, because
+> Phase 49 would have inherited it as a settled premise.
+>
+> - **WRITE — false.** `dealSchema` carried `ownerId: z.string().optional()` and both deal
+>   mutations honoured it (`src/lib/mutations/deals.ts:35`, `:232`, `:377-380`).
+>   `coerceFieldMapping` passes unknown keys through untouched and the call sites spread
+>   `{ ...interpolatedFields, userId }`, which protects `userId` but NOT `ownerId`. So
+>   `fieldMapping: { ownerId: "<victim>" }` on `entity: "deal"` **created a row in the victim's
+>   account** — visible in the victim's `GET /api/v1/deals` and their `/deals` UI, sitting on the
+>   attacker's stage in the attacker's pipeline — and the `update` variant **transferred** one of
+>   the caller's own rows to the victim after `assertCallerOwnsTarget` legitimately passed. That is
+>   strictly worse than the reference columns this entry tabulates: those attach a foreign FK to
+>   the caller's own row, `ownerId` moves the row itself across the boundary.
+>   **CR-04. NOW CLOSED** at the boundary this pass already chose — `FORBIDDEN_MAPPING_KEYS` in
+>   `src/lib/execution/actions/crm.ts` refuses `ownerId`, `id` and `deletedAt` on all four
+>   entities, above the switch so it covers create/update/delete and lands above all three dry-run
+>   gates. Proof: the CR-04 describe in `src/lib/execution/actions/crm-ownership.db.test.ts`,
+>   measured red first (`Tests 6 failed | 24 passed (30)`), asserting the DATABASE rather than the
+>   response code.
+> - **READ — false, and it had never been recorded anywhere.** `matchAndFireTriggers`
+>   (`src/lib/triggers/matcher.ts`) selected `from(workflows).where(eq(workflows.active, true))`
+>   with **no owner predicate at all**, so every active workflow in the deployment fired on every
+>   user's CRM write and received the victim's full row as `workflow_runs.trigger_data`, which
+>   `serializeRun` returns verbatim from `GET /api/v1/workflows/{id}/runs`. **CR-05. NOW CLOSED** —
+>   see **DEF-48-07** below, which is its full record.
+>
+> **`ownerId` was missing from the table below entirely**, which is how it survived two review-fix
+> passes: the table enumerates *reference* columns and nobody enumerated the *ownership* column.
+> Two more user-naming fields the CR-04 audit turned up are now in it as well.
+
 **Found during:** the CR-02 fix (iteration-2 code-review remediation pass). This is the surviving
 half of DEF-48-03, restated with a correct reproduction.
 
 **What is closed.** CR-02 closed the **target** of a `crm_action` node: `resolveIdByLookup` is now
 owner-scoped at the query and `assertCallerOwnsTarget` refuses a caller-authored `targetId` that is
 not one of the caller's own live records, for all four entities
-(`src/lib/execution/actions/crm.ts`). So the engine can no longer read, write, delete or emit
-another owner's row.
+(`src/lib/execution/actions/crm.ts`). ~~So the engine can no longer read, write, delete or emit
+another owner's row.~~ **That sentence was false — see the correction block above.** What CR-02
+closed is the **target of a node**, and nothing more: the node's own `fieldMapping` (CR-04) and the
+CRM event stream that feeds the engine in the first place (CR-05) were both still open, and both
+are closed now by separate fixes.
 
 **What is still open.** The node's `fieldMapping` carries **reference columns**, and those still
 reach the mutation layer unvalidated for ownership:
 
-| entity | reference key | mutation check today |
-|---|---|---|
-| `activity` | `dealId` | `and(eq(deals.id, …), isNull(deals.deletedAt))` — existence (`src/lib/mutations/activities.ts:141-151`, `:235-245`) |
-| `activity` | `assigneeId` | **none at all** |
-| `deal` | `organizationId` | existence (`src/lib/mutations/deals.ts:311-329`) |
-| `deal` | `personId` | existence (same) |
-| `deal` | `stageId` | existence only, and stages are owned through `pipelines.owner_id` |
-| `person` | `organizationId` | existence |
+| entity | reference key | mutation check today | status |
+|---|---|---|---|
+| `deal` | **`ownerId`** | **`validated.data.ownerId \|\| input.userId` on create; `updateData.ownerId = …` on update — HONOURED, no check** | **CLOSED by CR-04** — refused in `crm.ts` |
+| `activity` | `dealId` | `and(eq(deals.id, …), isNull(deals.deletedAt))` — existence (`src/lib/mutations/activities.ts:141-151`, `:235-245`) | open |
+| `activity` | `assigneeId` | **none at all** — `text('assignee_id') references users.id` | open |
+| `deal` | `assigneeIds` | **none at all** — `z.array(z.string())` → `deal_assignees.user_id`, for arbitrary user ids | open |
+| `deal` | `organizationId` | existence (`src/lib/mutations/deals.ts:311-329`) | open |
+| `deal` | `personId` | existence (same) | open |
+| `deal` | `stageId` | existence only, and stages are owned through `pipelines.owner_id` | open |
+| `person` | `organizationId` | existence | open |
+
+**Why `assigneeIds` / `assigneeId` are residuals here rather than refusals in `crm.ts`.** They name
+a USER, like `ownerId`, but they do NOT move the record: `GET /api/v1/deals` and
+`GET /api/v1/activities` both scope their lists by `owner_id` and never by assignee
+(`deals/route.ts:109`, `activities/route.ts:70`), so an assigned record does not appear in the
+assignee's account. Refusing them would break assigning work to a colleague from a workflow, which
+is a supported product behaviour. `deal.assigneeIds` additionally reaches `newAssigneeUserIds` and
+therefore a notification email, which is SEC-48-D's recipient question and not this one's.
 
 **Reproduction (three `/api/v1` requests, one API key, no id guessing needed beyond one read):**
 
@@ -266,3 +314,132 @@ half (a foreign FK that the session UI then renders) is real but the remedy is a
 decision.
 
 **Owner:** unassigned. Candidate for the same phase as the Phase 39 duplicate work.
+
+---
+
+## DEF-48-07 — CR-05: the CRM trigger matcher was unscoped, and it had never been recorded — **CLOSED 2026-08-26**
+
+**Found during:** the iteration-3 code review. **This item did not exist in `.planning/` in any
+form before this entry.** A search of the whole directory for `matchAndFireTriggers` returned one
+hit — a Phase 25 note in `STATE.md` about testability — so the single largest cross-owner READ on
+the `/api/v1` surface was never a recorded security item, while DEF-48-05 and BACKLOG SEC-48-C
+both asserted in writing that the engine could no longer read another owner's row.
+
+**What was open.** `src/lib/triggers/matcher.ts` selected
+
+```ts
+const activeWorkflows = await db.select().from(workflows).where(eq(workflows.active, true))
+```
+
+with no owner predicate of any kind. `matchesTrigger` compares only `entity` and `action`, and
+`fieldFilters` defaults to `[]` so the field check is skipped entirely. So **every active workflow
+in the deployment fired on every user's CRM write**, and received `payload.data` — the victim's full
+row, because every `crmBus.emit` in the mutation layer passes the post-write row and a delete
+carries it in `previous` — as `workflow_runs.trigger_data` (`create-run.ts`), which `serializeRun`
+returns **verbatim** (`src/lib/api/serialize.ts`) from `GET /api/v1/workflows/{id}/runs`.
+
+**Reproduction: two `/api/v1` requests and then waiting.**
+
+1. `POST /api/v1/workflows`
+   `{"name":"x","triggers":[{"type":"crm_event","entity":"deal","action":"updated"}],"nodes":[]}`
+   → 201 (`createWorkflow` sets `createdBy = context.userId`).
+2. `PUT /api/v1/workflows/{id}` `{"active":true}` → 200.
+3. Any other user edits any deal, through the UI or the API.
+4. `GET /api/v1/workflows/{id}/runs` → 200, and every element's `trigger_data` is another owner's
+   row: `title`, `value`, `notes`, `customFields`, `ownerId`, `stageId`, `organizationId`,
+   `personId`.
+
+`nodes: []` sufficed — the run row is persisted before any node runs. It never resolves a target id,
+so the CR-02 guard in `crm.ts` was not on this path at all. And unlike SEC-48-D there is no
+legitimate session-path equivalent: nothing else in this product lets an ordinary member read
+another member's deal row.
+
+**What was done.** The matcher resolves the **owner of the record the event describes** and scopes
+the workflow read to it:
+
+```ts
+const terms: SQL[] = [eq(workflows.active, true), eq(workflows.createdBy, ownerId)]
+.where(requireScopedPredicate(and(...terms), terms.length, "matchAndFireTriggers' owner scope"))
+```
+
+**The review suggested `eq(workflows.createdBy, payload.userId)` — the ACTING user — and that was
+rejected, with reasons, rather than applied:**
+
+- `payload.userId` **is not always a user id.** `src/lib/mutations/dedup.ts:672-685` emits
+  `<entity>.deleted` with `userId: actor?.userId ?? ""`. Scoping on it would silently stop every
+  merge from firing any trigger for anybody, with no error raised anywhere — a legitimate feature
+  lost to a security fix.
+- **Actor and owner genuinely diverge.** `src/app/deals/actions.ts:89,161,254,347,445,482` grant
+  admins a documented bypass, so an admin editing another member's deal emits with the ADMIN's id —
+  scoping on the actor would stop the OWNER's own automation from firing on the owner's own record.
+  `src/lib/import/pipedrive-api-import-actions.ts` writes rows owned by MAPPED users while the actor
+  is the importer, and diverges the same way.
+
+All four entities carry `owner_id text NOT NULL`, and every delete in this product is a SOFT delete
+(the merge loser included, `dedup.ts:485-488`), so the column is readable at match time for every
+event including the tombstones. It **fails closed**: an unresolvable owner fires nothing and logs at
+error level.
+
+**Whether CR-05 is closed across every consumer of the event stream, checked rather than assumed:**
+
+| consumer | verdict |
+|---|---|
+| `triggers/matcher.ts` (workflow triggers) | **was the hole. Fixed.** |
+| `events/subscribers/webhook.ts` | **already scoped** — `triggerWebhook(payload.userId, …)` → `eq(webhooks.userId, userId)` (`src/lib/api/webhooks/deliver.ts:49-51`). Scoped by ACTOR rather than owner, which is a divergence from the matcher but not a cross-owner read: outside the deals admin bypass no write path in this product lets a principal write a record they cannot read (`people/actions.ts:148,196`, `organizations/actions.ts`, `activities/actions.ts` all refuse on `ownerId !== session.user.id` with no role clause). |
+| `events/subscribers/audit.ts` | **not readable across the boundary** — it writes `audit_log`, and `GET /api/v1/audit` is admin-only via `authorizeAuditRead` → `resolveActorRole`, which denies an unresolvable actor. |
+| `events/subscribers/stage-history.ts` | one `deal_stage_history` row about the deal that moved; carries no other owner's data. |
+| `triggers/schedule-processor.ts` | also selects every active workflow, but its envelope is `{ scheduledAt }` and carries no record at all. |
+| `triggers/manual-trigger.ts` | the caller supplies its own `entityData`; the route (`workflows/[id]/run`) scopes the workflow by `getWorkflow(id, context.userId)`. |
+
+**STILL OPEN, and NOT fixed by this pass because it is explicitly out of scope:** `GET
+/api/v1/workflows/{id}/runs` and `.../runs/{runId}` do not check `workflows.createdBy` at all, so an
+API key can read **any** workflow's runs and run steps. That is **SEC-48-A** in `BACKLOG.md`, which
+has a deliberately inverted-polarity control asserting the detector still flags both routes. With
+the matcher scoped, a workflow only ever receives its own author's records — so the SEC-48-A route
+hole no longer aggregates other owners' CRM rows into one attacker-owned workflow, but it is still a
+cross-owner read of whatever the victim's OWN workflows recorded. Closing CR-05's read path
+completely means closing SEC-48-A.
+
+**Proof:** `src/lib/triggers/trigger-owner-scope.db.test.ts` (new) — real PostgreSQL, real
+mutations, real `crmBus`, real route handlers, real minted API keys; measured red first at
+`Tests 7 failed | 6 passed (13)`, and the negative is asserted twice per cell, by direct SQL AND
+from what the real `GET /api/v1/workflows/{id}/runs` handler serves. Plus four fail-closed cells in
+`src/lib/triggers/matcher.test.ts`.
+
+---
+
+## DEF-48-08 — the engine now enforces a STRICTER rule than the product does, for deals, on purpose
+
+**Found during:** the iteration-3 code review (WR-13). Recorded because it is a **behavioural
+change to a shipped feature** and nothing in `48-SUMMARY.md`, this file or `BACKLOG.md` mentioned
+it — the review was right that the divergence was real and right that it was undocumented.
+
+`assertCallerOwnsTarget` and `callerScope` (`src/lib/execution/actions/crm.ts`) are pure
+`eq(ownerColumn, userId)` with **no role read**. `src/app/deals/actions.ts:89,161,254,347,445,482`
+each read `deal.ownerId !== session.user.id && session.user.role !== "admin"` and then call
+`updateDealStageMutation(id, stageId, session.user.id)` / `deleteDealMutation(id, session.user.id)`
+with the **admin's** id. So an admin can do through the UI what the engine now refuses.
+
+**Concrete consequence.** An admin's workflow with a `deal.stage_changed` trigger and a
+`crm_action` node aimed at `{{trigger.data.id}}` used to update whichever deal moved. It now
+terminates `failed` with `No deal found with id '<uuid>'` for every deal the admin does not
+personally own — which is precisely the "turn a supported admin action into 'Deal not found'"
+outcome the iteration-2 fix pass cited as its reason for NOT editing `deleteDealMutation`. The same
+asymmetry, created in the opposite direction, one layer up.
+
+**THE DECISION: keep it. Do not add an admin bypass to the engine.** Failing closed is the right
+default here, and the alternative is actively dangerous: combined with what CR-05 was, an admin
+bypass in the engine would have turned one admin-authored workflow into a standing read of every
+record in the deployment. Activities, people and organizations have **no** admin bypass anywhere
+(zero `role !== "admin"` matches in their action files), so adding one to the engine would also make
+the four entities disagree in a way no single predicate expresses — which is DEF-48-05's problem
+restated.
+
+**What a future phase should do instead**, if an admin automation is wanted: give the engine an
+explicit role read (`select role from users where id = $userId`) that bypasses
+`assertCallerOwnsTarget` for `deal` ONLY, matching `deals/actions.ts` exactly, and gate it behind
+the CR-05 owner scope so an admin workflow still only fires on records it is entitled to. That is a
+product decision about what an admin automation may do, not a predicate to tighten.
+
+**Owner:** Phase 49 (Mutation-Layer Truth After Commit), alongside DEF-48-05 — the two are the same
+question asked from the two ends.

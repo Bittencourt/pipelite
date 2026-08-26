@@ -58,8 +58,10 @@ Status legend — **v1.4** promoted for scoping · **recorded** real but deliber
 | — | `40-UI-SPEC` V-9 names the wrong helper | **recorded** — doc drift |
 | **SEC-47-A** | SMTP certificate verification disabled unconditionally | **recorded** — larger than any allowlisted nodemailer advisory |
 | **SEC-47-B** | `matches_regex` runs a user-supplied regex unbounded on the request path | **recorded** — the only remaining unbounded engine on the execution path |
-| **SEC-48-C** | Workflow `fieldMapping` still plants a foreign FK on the caller's own row | **recorded** — owned by Phase 49; DEF-48-05 |
-| **SEC-48-D** | Any API key can mail any address from the app's sending domain | **recorded** — a recipient-policy decision, not a predicate |
+| **SEC-48-C** | Workflow `fieldMapping` still plants a foreign FK on the caller's own row | **recorded** — owned by Phase 49; DEF-48-05. Its "can no longer read/write another owner's row" claim was FALSE in both directions and is corrected in place |
+| **SEC-48-D** | Any API key can mail any address from the app's sending domain | **recorded** (relay half) — the directory-disclosure half is **disproven**: `/team` already publishes every address to every signed-in user |
+| **SEC-48-E** | CR-05 — every active workflow fired on every user's CRM write | **closed** 2026-08-26; DEF-48-07. Read path completes only when SEC-48-A closes |
+| **SEC-48-F** | The engine is stricter than the product for deals (no admin bypass) | **accepted** — recorded 2026-08-26; DEF-48-08 |
 | **TS-48-A** | `noUncheckedIndexedAccess` is off; WR-10 was the second bug it hid | **recorded** — whole-repo strictness change |
 | **IMP-48-A** | Three more unscoped lookups in the CSV importer | **recorded** — blocked on a duplicates decision; DEF-48-06 |
 | — | Soft-deleted users' private views are unreachable | **accepted** |
@@ -1505,19 +1507,43 @@ cannot. Step (d) is the point; (a)-(c) without it just resets the clock on the s
 
 ### SEC-48-C — the workflow engine can attach the caller's record to another owner's record id — **recorded, owned by Phase 49**
 
+> **CORRECTED IN PLACE 2026-08-26 by the iteration-3 review-fix pass.** This entry repeated
+> DEF-48-05's framing sentence verbatim — *"so the engine can no longer read, write, delete or emit
+> another owner's row"* — and it was **false in both the read and the write directions**. Corrected
+> here rather than rewritten, so the correction stays visible.
+>
+> - **WRITE — false.** `dealSchema` carried `ownerId: z.string().optional()`, both deal mutations
+>   honoured it, and `coerceFieldMapping` passed unknown keys through untouched, so
+>   `fieldMapping: { ownerId: "<victim>" }` created a row **in the victim's account** and the
+>   `update` variant **transferred** one of the caller's own rows to them. `ownerId` was absent from
+>   this entry's list and from DEF-48-05's table, because both enumerate *reference* columns and
+>   nobody enumerated the *ownership* column. **CR-04 — now CLOSED** (`FORBIDDEN_MAPPING_KEYS` in
+>   `src/lib/execution/actions/crm.ts`).
+> - **READ — false, and never recorded anywhere.** `matchAndFireTriggers` selected every ACTIVE
+>   workflow with no owner predicate, so every workflow in the deployment received every user's CRM
+>   write as `workflow_runs.trigger_data`, served verbatim by
+>   `GET /api/v1/workflows/{id}/runs`. **CR-05 — now CLOSED**; full record at
+>   `deferred-items.md` **DEF-48-07**, and see **SEC-48-E** below.
+>
+> Two more `fieldMapping` keys that name a USER were found by CR-04's audit and are now in
+> DEF-48-05's table: `deal.assigneeIds` and `activity.assigneeId`. Neither MOVES the record (both
+> `/api/v1` list routes scope by `owner_id`, never by assignee), so both stay residuals rather than
+> refusals — refusing them would break assigning work to a colleague from a workflow.
+
 **Full evidence:** `.planning/phases/48-rest-api-authorization/deferred-items.md` **DEF-48-05**
-(reproduction, the six affected reference columns, and why the mutation layer cannot take a blanket
+(reproduction, the affected reference columns, and why the mutation layer cannot take a blanket
 owner predicate). Registered here because a finding that lives only in a phase artifact is a finding
 nobody will read again — this file's own Phase 40 lesson.
 
 CR-02 closed the **target** of a `crm_action` node for all four entities
-(`src/lib/execution/actions/crm.ts`), so the engine can no longer read, write, delete or emit another
-owner's row. What is still open is the node's `fieldMapping` **reference columns** — `activity.dealId`
-and `assigneeId`, `deal.organizationId` / `personId` / `stageId`, `person.organizationId` — which the
-mutation helpers validate for EXISTENCE only (`assigneeId`: not at all). Three ordinary `/api/v1`
-requests plant a foreign FK on the caller's own row, and `src/app/activities/[id]/page.tsx:41-52`
-renders the foreign parent's title, stage and pipeline name because that join carries no owner
-predicate.
+(`src/lib/execution/actions/crm.ts`). ~~so the engine can no longer read, write, delete or emit
+another owner's row.~~ **That clause was false; see the correction block above.** What is still open
+is the node's `fieldMapping` **reference columns** — `activity.dealId` and `assigneeId`,
+`deal.assigneeIds` / `organizationId` / `personId` / `stageId`, `person.organizationId` — which the
+mutation helpers validate for EXISTENCE only (the two assignee fields: not at all). Three ordinary
+`/api/v1` requests plant a foreign FK on the caller's own row, and
+`src/app/activities/[id]/page.tsx:41-52` renders the foreign parent's title, stage and pipeline name
+because that join carries no owner predicate.
 
 **Why not fixed in the review-fix pass:** the remedy is the mutation layer's contract, and that
 contract cannot be a blanket owner predicate — `src/lib/bulk/dispatch.ts:20-34` records the
@@ -1532,7 +1558,50 @@ rewritten, so the correction stays visible.
 
 ---
 
-### SEC-48-D — any API key can send mail from the app's sending domain, to any address, with caller-authored copy — **recorded**
+### SEC-48-D — any API key can send mail from the app's sending domain, to any address, with caller-authored copy — **recorded (relay half); disclosure half DISPROVEN 2026-08-26**
+
+> **SPLIT AND CORRECTED IN PLACE 2026-08-26 by the iteration-3 review-fix pass.** The iteration-3
+> review disagreed with this entry's framing, arguing that the unscoped `users.email` read is a
+> genuine owner-boundary defect separable from the recipient-policy decision, because
+> `resolveRecipientEmails` returns the resolved addresses in the node `output`, those outputs are
+> persisted as `workflow_run_steps.output` and served by `serializeRunStep`, and under `_dryRun` the
+> addresses come back with NO MAIL SENT. It asked for one predicate:
+> `eq(users.id, context._workflowUserId)`.
+>
+> **THAT HALF IS A FALSE POSITIVE, and the predicate was NOT applied.** The premise does not hold in
+> this product. `src/app/team/page.tsx:18-22` reads
+>
+> ```ts
+> db.query.users.findMany({ where: isNull(users.deletedAt),
+>                           columns: { id: true, name: true, email: true } })
+> ```
+>
+> for **every** non-deleted user and hands the result to a client component, which renders the
+> address at `team-page-client.tsx:55,57`. `/team` has **no role gate**: `src/auth.config.ts:31-32`
+> lists only `/settings` and `/admin` as protected paths, and `/admin` is the admin-only one. So
+> every signed-in principal already holds the complete user directory *including email addresses*
+> from a single GET, and an API key belongs to such a principal. Resolving one user id to one address
+> inside a workflow node discloses **strictly less** than `/team` already does — it is not a
+> privilege gain, and this entry's original framing was right for this half too. Applying the
+> self-predicate would buy no confidentiality and would break the supported case of a workflow
+> notifying a colleague, which is the very product decision this entry is deferred on.
+>
+> **The review was right about the mechanics and wrong about the conclusion.** `_dryRun` does return
+> the addresses with no mail sent — asserted now, in `notification.test.ts` — and the two halves ARE
+> separable. It is just that the separable half turns out not to be a defect.
+>
+> **ONE REAL DEFECT WAS FOUND WHILE CHECKING, AND IS FIXED.** Both reads had **no `deletedAt`
+> predicate at all**, so the engine's user lookup was **WIDER** than the already-public directory: a
+> **soft-deleted** user — a departed employee — could still be resolved to their address and still be
+> mailed. `isNull(users.deletedAt)` is now carried on the statement in both
+> `src/lib/execution/actions/email.ts` and `.../notification.ts`, which makes the engine's read
+> exactly as wide as `/team`'s and no wider. Asserted by reading the captured `where` argument back
+> out, not by a source grep. Related to DEF-48-02.
+>
+> **WHAT REMAINS DEFERRED, unchanged:** the open-relay half. `{"type":"dynamic","value":"<any
+> address>"}` with caller-authored subject and body is still reachable by every authenticated
+> principal, and `deal.assigneeIds` reaches `newAssigneeUserIds` and therefore a notification to an
+> arbitrary user. That is a recipient-policy decision and still needs the plan described below.
 
 **Found during:** the CR-02 fix, while auditing the other five action handlers for the same
 `/api/v1`-reachable pattern.
@@ -1557,13 +1626,68 @@ introduced it.
 **Framed honestly:** this is NOT an owner-boundary defect of the kind CR-01/CR-02 are. Any
 signed-in user can already do the same through the workflow editor, so an API key is not gaining a
 privilege the session does not have. What is recorded is (a) that the app is an open mail relay from
-its own sending domain for every authenticated principal, and (b) that `users.email` is readable for
-an arbitrary user id, which is a directory-disclosure oracle. Both are product decisions about what
-a workflow may do, not a predicate to tighten, which is why nothing was changed.
+its own sending domain for every authenticated principal, and (b) ~~that `users.email` is readable
+for an arbitrary user id, which is a directory-disclosure oracle~~ — **(b) is DISPROVEN as a defect,
+2026-08-26: `/team` already publishes every non-deleted user's address to every signed-in principal
+with no role gate, so this read discloses strictly less. See the split block above.** (a) is a
+product decision about what a workflow may do, not a predicate to tighten, which is why nothing was
+changed there.
 
 **Suggested owner:** a plan that decides the recipient policy (self + explicitly shared users? a
 verified-domain allowlist for `dynamic`?) and measures what recipient configurations exist in the
 live `workflows` table before narrowing anything. Do not fold it into a security-predicate task.
+**Worth deciding at the same time:** whether `/team` should publish addresses at all. It is the
+reason (b) is not a defect, and narrowing it would make (b) become one.
+
+---
+
+### SEC-48-E — CR-05: every active workflow fired on every user's CRM write — **CLOSED 2026-08-26**
+
+**Full evidence:** `.planning/phases/48-rest-api-authorization/deferred-items.md` **DEF-48-07**
+(the two-request reproduction, why the predicate is the record's owner and not `payload.userId`, and
+the consumer-by-consumer verdict for the whole event stream).
+
+Registered here as a **closed** item and not omitted, for the reason this file's own header gives
+about phantom carry lists: before 2026-08-26 the single largest cross-owner READ on the `/api/v1`
+surface **appeared nowhere in `.planning/` in any form** — a search for `matchAndFireTriggers`
+returned one Phase 25 note about testability — while DEF-48-05 and SEC-48-C both asserted in writing
+that the engine could no longer read another owner's row. A finding that was never recorded cannot
+be checked, and a phase that closes it without recording it leaves the next phase with the same
+false premise it started from.
+
+`src/lib/triggers/matcher.ts` selected `from(workflows).where(eq(workflows.active, true))` with no
+owner predicate, so `POST /api/v1/workflows` + `PUT .../{id}` `{"active":true}` and then waiting
+gave an API key a standing read of every other user's deals, people, organizations and activities
+via `workflow_runs.trigger_data`, which `serializeRun` returns verbatim. Fixed by resolving the
+event record's `owner_id` and scoping `workflows.createdBy` to it, failing closed when the owner
+cannot be resolved.
+
+**Still open, and it is the reason this is not the whole read path:** **SEC-48-A** above —
+`GET /api/v1/workflows/{id}/runs` and `.../runs/{runId}` still carry no `workflows.createdBy` check,
+so an API key can read any workflow's runs and run steps. With the matcher scoped, those runs no
+longer aggregate other owners' CRM rows into one attacker-owned workflow, but reading a victim's own
+workflow runs is still a cross-owner read. **Closing CR-05's read path completely means closing
+SEC-48-A**, and SEC-48-A's inverted-polarity control will go red when someone does.
+
+---
+
+### SEC-48-F — the workflow engine is now STRICTER than the product for deals, deliberately — **accepted, recorded**
+
+**Full evidence:** `deferred-items.md` **DEF-48-08**.
+
+`assertCallerOwnsTarget` / `callerScope` in `src/lib/execution/actions/crm.ts` are pure
+`eq(ownerColumn, userId)` with no role read, while `src/app/deals/actions.ts` grants admins a
+documented bypass at six call sites. So an admin automation that used to update whichever deal moved
+now terminates `failed` with `No deal found with id '<uuid>'` for every deal the admin does not
+personally own. That is a behavioural change to a shipped feature, and it was **undocumented** until
+this entry — the iteration-3 review was right to flag it.
+
+**The decision is to KEEP it and NOT add an admin bypass to the engine.** Combined with what CR-05
+was, an engine-side admin bypass would have turned one admin-authored workflow into a standing read
+of every record in the deployment. Activities, people and organizations have zero `role !== "admin"`
+matches anywhere, so an engine bypass would also make the four entities disagree in a way no single
+predicate expresses. If an admin automation is wanted later, it needs an explicit role read scoped to
+`deal` only and gated behind the CR-05 owner scope — a product decision, not a predicate.
 
 ---
 
