@@ -766,7 +766,7 @@ mechanical fix. Address alongside the import wizard's terminal-stage handling.
 | 47. Suite Trust & Supply Chain | 14/14 | Complete   | 2026-08-25 |
 | 48. REST API Authorization | 10/10 | Complete    | 2026-08-26 |
 | 49. Mutation-Layer Truth After Commit | 9/9 | Complete    | 2026-08-26 |
-| 50. Export Authorization | 4/8 | In Progress|  |
+| 50. Export Authorization | 5/8 | In Progress|  |
 | 51. Board & List Volume | 0/? | Not started | - |
 | 52. 320px Reachability & Modal Keyboard Ownership | 0/? | Not started | - |
 | 53. Workflow Field Picker & the Suppressed Hooks | 0/? | Not started | - |

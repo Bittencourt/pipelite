@@ -168,3 +168,61 @@ otherwise.**
 Ablations 1 and 3 produce the *same* assertion output, so the affected cells detect that the
 count-versus-export equality is broken but **cannot diagnose which side moved.** Not a vacuity — the
 gate fires correctly — but a diagnosability gap worth knowing before someone debugs it under pressure.
+
+---
+
+## DEF-50-09 — a new refusal code can ship server-only and nothing reddens; the user sees "Failed to export"
+
+**Found by:** 50-05, when the plan's predicted pre-Task-2 red **did not exist** (fully green after
+Task 1).
+
+`tsc` does not enforce exhaustiveness on the refusal-code chain, because it ends in an unconditional
+fallback, and the wiring gate reads *source* rather than resolving the branch. So adding a refusal code
+and shipping only the server half **reddens nothing** — the user silently receives the generic
+"Failed to export" instead of the actionable message SC-3 requires. Threat T-50-05-09, realised.
+
+The only thing standing in the way today is the **hand-maintained `EXPORT_KEYS` array**.
+
+**Suggested owner:** a plan that makes the code→string mapping exhaustive by construction — a
+`Record<RefusalCode, MessageKey>` the compiler must complete, rather than a chain with a fallback.
+
+---
+
+## DEF-50-10 — four private copies of the id parser, under two different names
+
+**Found by:** 50-05, whose cell went red against correct code until the parser name became a per-site
+column rather than a constant.
+
+`parseIdList` in the organizations action; `parseBulkIds` in the other three. Same job, four
+implementations, two names. Not a defect today — noted because the next person to change id parsing
+will find three of the four.
+
+---
+
+## DEF-50-11 — the admin export's role refusal has exactly one detector, and 50-05 wrote it
+
+**Found by:** 50-05.
+
+Removing the role refusal from `src/app/admin/export/actions.ts` reddened **only** the cell 50-05
+added. Before this phase, nothing covered it. Worth knowing because that role gate is now load-bearing
+for the whole no-admin-branch decision: the view path is bounded for everyone precisely *because*
+admins have that separate gated path. If its guard regresses, the design's escape hatch opens to
+everyone.
+
+---
+
+## PROCESS-50-A — `git checkout -- <file>` after an ablation: four recorded losses and counting
+
+**Instances:** three in Phase 49 (plans 49-03, 49-04, and one more), one in Phase 50 (50-05) — the last
+despite a bold warning in the execution brief.
+
+The pattern is always the same: an executor ablates a **tracked** file to drive a red, then restores it
+with `git checkout -- <file>`, and loses whatever **uncommitted** work was in that file.
+
+**The rule is mechanical, not attitudinal** (50-05's phrasing, and it is right): *never restore a file
+whose new content is not already in a commit.* Sequence that works: write → **commit** → ablate →
+restore → re-run.
+
+**Warning executors about it has now failed four times.** The durable fix belongs in the plan
+templates' verify blocks, not in the orchestrator's prose — a plan that orders an ablation should order
+the commit immediately before it.
