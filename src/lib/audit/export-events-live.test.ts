@@ -14,10 +14,22 @@
  * imports, same "run it with" line.
  *
  * RUN IT WITH:
- *   DATABASE_URL="postgresql://pipelite:pipelite@localhost:5433/pipelite" \
- *     ./node_modules/.bin/vitest run src/lib/audit/export-events-live.test.ts
+ *   docker compose up -d          # Postgres, host 5433 -> container 5432
+ *   npm run test:live             # the FOURTH vitest project; runs this file and the formatters one
  *
- * Note the port: `.env.local` says 5432 but the Docker mapping is host 5433 -> container 5432.
+ *   # this file alone:
+ *   ./node_modules/.bin/vitest run --config vitest.live.config.ts \
+ *     src/lib/audit/export-events-live.test.ts
+ *
+ * CORRECTED BY PLAN 50-03, because the old instruction no longer works. It read
+ * `DATABASE_URL=… ./node_modules/.bin/vitest run src/lib/audit/export-events-live.test.ts` and
+ * relied on the BASE project collecting this file; `vitest.config.ts` now excludes the `-live` glob,
+ * so that command exits 1 with "No test files found". `vitest.live.config.ts` supplies `DATABASE_URL`
+ * from `.env:6` behind a loopback fence, so no connection string is passed by hand.
+ *
+ * These 4 tests had NEVER RUN before 50-03 — and they are the ONLY behavioural proof that
+ * `recordExport` writes a row real Postgres accepts, which makes them the only real proof of this
+ * phase's SC-5.
  *
  * UNLIKE `formatters-live.test.ts`, THIS FILE WRITES. It inserts audit rows and deletes exactly the
  * ones it inserted, matched on the uuid it reads back from its own probe — never on `entity_type`,

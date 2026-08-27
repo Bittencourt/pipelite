@@ -1642,7 +1642,7 @@ const PERMITTED_BACKSTOPS = [
   {
     file: "src/lib/export/formatters-live.test.ts",
     ms: 60000,
-    why: "an opt-in, entirely skipped live-database suite; a module graph plus real round trips does not fit the ambient budget",
+    why: "an opt-in live-database suite — RUN, not skipped, since plan 50-03 gave it a project (`npm run test:live`); a module graph plus real round trips over 46,054 organizations and 79,022 activities does not fit the ambient budget",
   },
 ] as const
 

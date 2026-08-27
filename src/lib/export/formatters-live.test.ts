@@ -3,18 +3,30 @@
  * mutates nothing and deletes nothing, and asserts as much at the end.
  *
  * WHY THE ENV GATE. `src/db/index.ts` throws `"DATABASE_URL environment variable is not set"`
- * at MODULE LOAD, and vitest does not populate `process.env.DATABASE_URL`. `vitest.config.ts`
- * collects `src/**\/*.test.ts`, so this file IS picked up by the default run and therefore has to
- * self-skip: the suite is gated on `describe.skipIf(!process.env.DATABASE_URL)` and both `@/db`
- * and `./formatters` are imported DYNAMICALLY inside `beforeAll`, which never runs for a skipped
- * suite. That keeps `npm test` hermetic while leaving this coverage one env var away.
+ * at MODULE LOAD, and vitest does not populate `process.env.DATABASE_URL`. So the suite is gated on
+ * `describe.skipIf(!process.env.DATABASE_URL)` and both `@/db` and `./formatters` are imported
+ * DYNAMICALLY inside `beforeAll`, which never runs for a skipped suite. That is what lets this file
+ * be evaluated without a database at all — by a tool, by a sweep, or by a project that does not
+ * supply the variable — without crashing.
  *
  * RUN IT WITH:
- *   DATABASE_URL="postgresql://pipelite:pipelite@localhost:5433/pipelite" \
- *     ./node_modules/.bin/vitest run src/lib/export/formatters-live.test.ts
+ *   docker compose up -d          # Postgres, host 5433 -> container 5432
+ *   npm run test:live             # the FOURTH vitest project; runs this file and the audit one
  *
- * Note the port: `.env.local` says 5432 but the Docker mapping is host 5433 -> container 5432,
- * so the connection string must be passed explicitly.
+ *   # this file alone:
+ *   ./node_modules/.bin/vitest run --config vitest.live.config.ts \
+ *     src/lib/export/formatters-live.test.ts
+ *
+ * CORRECTED BY PLAN 50-03, because the old instruction no longer works. This used to read
+ * `DATABASE_URL=… ./node_modules/.bin/vitest run src/lib/export/formatters-live.test.ts`, relying on
+ * the BASE project collecting this file. It no longer does: `vitest.config.ts` now excludes the
+ * `-live` glob, so that command exits 1 with "No test files found". `vitest.live.config.ts` supplies
+ * `DATABASE_URL` from `.env` behind a loopback fence, so no connection string is passed by hand —
+ * which is also why the old note about the port is gone; `.env:6` already names 5433.
+ *
+ * AND THE REASON THAT MATTERS: until 50-03 these 24 tests, plus the 4 in
+ * `src/lib/audit/export-events-live.test.ts`, had NEVER RUN — in any project, on any machine, other
+ * than one where somebody exported the variable by hand. They were 28 of the base suite's 32 skipped.
  *
  * WHY THIS FILE IS NOT OPTIONAL. Phase 37 shipped a malformed drizzle fragment — an interpolated
  * id list that expanded to the invalid `= ANY(($1,$2,$3))` — and a wholly-mocked suite passed it

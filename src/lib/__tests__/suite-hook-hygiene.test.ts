@@ -362,9 +362,24 @@ const UNTYPED_COMPILED_CARVE_OUT = [
  * DELIBERATELY EXCLUDED, carve-out 4 of 4 — a separate list with a separate reason, kept distinct
  * from the ones above and asserted disjoint from them.
  *
- * Both files are opt-in live-database suites gated on `describe.skipIf(!HAS_DB)`, so with
- * `DATABASE_URL` unset — the state of the base vitest project — the suite is skipped and neither
- * the hooks nor the test bodies run at all. They are also the in-repo proof of why `beforeAll` is
+ * Both files are opt-in live-database suites gated on `describe.skipIf(!HAS_DB)`.
+ *
+ * THE REASON, RESTATED BY PLAN 50-03 — the assertions below did not change, the topology did.
+ * These two files used to be collected by the BASE project and skipped there, because nothing
+ * supplied `DATABASE_URL`. Their 28 tests had therefore never executed anywhere. 50-03 added a
+ * FOURTH vitest project (`vitest.live.config.ts`, `npm run test:live`) which supplies the variable,
+ * and EXCLUDED the `-live` glob from the base project. So they are no longer skipped: they run, and
+ * they pass, against the real `pipelite` database.
+ *
+ * The carve-out is still required, and for a reason that never depended on project membership: the
+ * sweeps in this file read SOURCE off disk, so they see these two files regardless of which project
+ * collects them. And the property being exempted is still the right one: `src/db/index.ts` throws
+ * `"DATABASE_URL environment variable is not set"` at MODULE LOAD, so both files must keep the
+ * dynamic `import()` inside `beforeAll` in order to SKIP cleanly rather than crash whenever they are
+ * evaluated without the variable — which the live project's own fence does, deliberately, when
+ * `DATABASE_URL` is absent or names a non-loopback host.
+ *
+ * They are also the in-repo proof of why `beforeAll` is
  * not a relocation: both carry an explicit 60 000 ms hook timeout
  * (`export-events-live.test.ts:47`, `formatters-live.test.ts:93`) precisely because a module graph
  * plus real Postgres round-trips does not fit a 10 000 ms budget.

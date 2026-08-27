@@ -65,6 +65,17 @@ const CI_WORKFLOW = ".github/workflows/ci.yml"
 const COMPOSE_FILE = "docker-compose.yml"
 const BASE_CONFIG = "vitest.config.ts"
 const DB_CONFIG = "vitest.db.config.ts"
+/**
+ * The FOURTH vitest project (plan 50-03), gated here for the reason the header's last paragraph
+ * gives about SEC-05: this file already owns the parsed config and script readers, and the
+ * invariant is the SAME invariant — a project that talks to a real database must not be reachable
+ * from `npm test` or from CI. A second file would duplicate `configArrayEntries`,
+ * `packageScripts` and `readStrippedSource` to assert the same thing about a different config.
+ *
+ * Its name deliberately contains neither `test:db` nor `db.config`, so it cannot collide with the
+ * raw whole-file negatives above that scan ci.yml and every npm script for those two substrings.
+ */
+const LIVE_CONFIG = "vitest.live.config.ts"
 const PACKAGE_JSON = "package.json"
 const SETUP_SCRIPT = "scripts/dedup-db-test-setup.sh"
 const MIGRATION_CHECK_SCRIPT = "scripts/migrate-from-zero.mjs"
@@ -693,6 +704,189 @@ describe("the db project points at an isolated database, never the development o
     expect(setup).toContain("ON_ERROR_STOP=1")
   })
 
+})
+
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// THE FOURTH PROJECT (plan 50-03), gated exactly as the third one is.
+//
+// WHY IT IS IN THIS FILE and not one of its own: see the comment on LIVE_CONFIG above. Same
+// invariant, same readers. The three projects are now met in order — base, db, live.
+//
+// WHAT THE LIVE PROJECT IS. `vitest.live.config.ts` supplies DATABASE_URL so that
+// `src/lib/export/formatters-live.test.ts` (24 tests) and
+// `src/lib/audit/export-events-live.test.ts` (4) stop self-skipping. Those 28 tests had never
+// executed in any project on any machine; they were the base suite's ENTIRE skipped count of 32
+// alongside four `it.skip('… requires DB')` stubs. The files were NOT renamed to `*.db.test.ts`,
+// deliberately: `pipelite_dedup_test` starts empty, which would make their live-volume assertions
+// vacuous rather than passing, and four shipped gates name these two paths exactly.
+//
+// WHY THE STAKES ARE HIGHER HERE THAN FOR THE DB PROJECT. The db project points at an ISOLATED
+// database and this file's highest-consequence assertions are the ones keeping it there. The live
+// project points at `pipelite` — the operator's real records — on purpose, because the assertions
+// are coupled to live volumes. And one of its two files WRITES: it inserts audit_log rows and
+// deletes them again by id. So "unreachable from `npm test`" is not hygiene here, it is the only
+// thing standing between a contributor typing `npm test` and a suite mutating real audit records.
+//
+// DELIBERATELY NOT WRITTEN HERE: any assertion about `ci.yml`. Plan 50-07 owns the workflow half,
+// including the MIN_CI_STEPS bump, and the two must move in the SAME commit for the reason
+// MIN_CI_STEPS' own comment gives — a floor whose prose enumerates a step list the workflow does
+// not have yet is the exact half-state Phase 46 was burned by. A cell here asserting a `test:live`
+// step that 50-07 has not added yet would be red for a reason unrelated to the invariant; a cell
+// asserting its ABSENCE would have to be deleted by 50-07 the moment it lands. Neither is written.
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("the live vitest project is unreachable from `npm test`", () => {
+  it("`test:live` exists as its own opt-in script, so the live project is invocable at all", () => {
+    // THE ANTI-VACUITY ANCHOR for every negative below. Without this cell, deleting `test:live`
+    // outright satisfies all four of them perfectly, and the 28 tests go back to never running
+    // while this describe stays green — which is the precise defect the live project exists to
+    // remove, reproduced inside its own gate.
+    const scripts = packageScripts()
+    expect(
+      scripts["test:live"],
+      "package.json has no `test:live` script, so the 28 live-database tests are unrunnable and " +
+        "the negatives below describe a project nobody can reach"
+    ).toBeDefined()
+    expect(scripts["test:live"]).toContain("vitest run --config vitest.live.config.ts")
+  })
+
+  it("the `test` script names neither the live config nor the live script", () => {
+    const scripts = packageScripts()
+
+    // Anti-vacuity, in the same shape as the db project's: `test` must exist and must still run
+    // the two projects it is supposed to, or an emptied script satisfies the negatives.
+    expect(scripts.test, "package.json has no `test` script").toBeDefined()
+    expect(scripts.test).toContain("vitest run")
+    expect(scripts.test).toContain("vitest.rsc.config.ts")
+
+    expect(
+      scripts.test,
+      "`npm test` reaches the live vitest project. CI has no Docker and no populated database, so " +
+        "the required `ci` check would never pass and every pull request would become unmergeable " +
+        "— and locally, every contributor running `npm test` would be writing audit_log rows to " +
+        "the operator's real database."
+    ).not.toContain("test:live")
+    expect(scripts.test).not.toContain("vitest.live.config")
+  })
+
+  it("no other script chains the live project into a broader one", () => {
+    // The likeliest accidental route back into CI, and the reason the message names the
+    // consequence rather than the assertion: a developer running an aggregate script has no
+    // reason to expect a suite that WRITES to the operator's audit_log. `test:watch` and any
+    // future `test:all` must stay clear of it for exactly that reason.
+    const scripts = packageScripts()
+    for (const [name, body] of Object.entries(scripts)) {
+      if (name === "test:live") continue
+      expect(
+        body,
+        `script "${name}" reaches the live vitest project, which writes to the operator's real ` +
+          `audit_log. Nobody running "npm run ${name}" is expecting that.`
+      ).not.toContain("test:live")
+      expect(
+        body,
+        `script "${name}" reaches the live vitest project via its config path`
+      ).not.toContain("vitest.live.config")
+    }
+  })
+
+  it("`test:live` does NOT provision the db project's database", () => {
+    // scripts/dedup-db-test-setup.sh pg_dumps `pipelite` and DROPS and rebuilds every schema in
+    // `pipelite_dedup_test`. The live project has nothing to do with it: chaining it here would
+    // make a read-only export probe destroy another project's fixtures, and would do so silently
+    // because the live suite would still pass.
+    //
+    // THE `?? ""` IS THE FIX FOR A MEASURED DEFECT IN THIS CELL, not defensive noise. Driven as
+    // falsification 1 of plan 50-03 (delete `test:live` entirely), this cell went red — correctly —
+    // but with vitest's "the given combination of arguments (undefined and string) is invalid for
+    // this assertion" instead of anything about provisioning. A reader would have been sent to the
+    // wrong problem. The missing-script case is cell 1's job and its message says so; this cell
+    // should be SILENT about it rather than loud and wrong.
+    const scripts = packageScripts()
+    expect(
+      scripts["test:live"] ?? "",
+      "`test:live` runs the db project's provisioning script, which drops and rebuilds " +
+        "pipelite_dedup_test. Remove it — the live project needs no provisioning."
+    ).not.toContain("dedup-db-test-setup.sh")
+  })
+})
+
+describe("the live vitest project claims exactly the -live glob", () => {
+  const liveInclude = configArrayEntries(LIVE_CONFIG, "include")
+  const liveExclude = configArrayEntries(LIVE_CONFIG, "exclude")
+
+  it("includes NOTHING but -live.test files", () => {
+    // Measured under sabotage: widening this to `src/**/*.test.?(c|m)[jt]s?(x)` matches 204 files
+    // instead of 2, and 13 of them are `*.db.test.ts` whose own module-load fences then abort
+    // collection because DATABASE_URL names `pipelite` rather than `pipelite_dedup_test`. The
+    // widened form is loud today only because of THOSE fences; this cell is what makes it loud
+    // here, in the base project, in CI, where no database exists to refuse anything.
+    expect(
+      liveInclude,
+      `${LIVE_CONFIG}'s include must claim the -live glob and nothing else. Widened, this project ` +
+        `runs the whole mocked corpus against the operator's real database.`
+    ).toHaveLength(1)
+    for (const pattern of liveInclude) expect(pattern).toContain("-live.test")
+  })
+
+  it("spreads vitest's default exclude rather than replacing it", () => {
+    // Same trap the base config's own comment warns about: a bare array makes vitest walk
+    // node_modules and execute vendored test files.
+    expect(readStrippedSource(LIVE_CONFIG)).toContain("configDefaults.exclude")
+    expect(liveExclude.some((pattern) => pattern.includes(".next"))).toBe(true)
+  })
+
+  it("runs its files serially — one real database, and one of the two files writes", () => {
+    // Not a performance concession. `export-events-live.test.ts` reads audit_log's count, inserts,
+    // then asserts the count came back; a parallel file interleaving its own inserts would make
+    // that assertion measure the wrong table state.
+    const source = readStrippedSource(LIVE_CONFIG)
+    expect(source).toMatch(/fileParallelism\s*:\s*false/)
+    expect(source).toMatch(/sequence\s*:\s*\{\s*concurrent\s*:\s*false\s*\}/)
+  })
+
+  it("refuses a non-loopback DATABASE_URL at config load", () => {
+    // The fence, which has no analogue in the db project because the db project substitutes the
+    // database NAME instead. Here the development database is the intended target, so the only
+    // thing left to fence is the HOST — and a deleting suite one exported variable away from a
+    // remote host is a data-loss shape rather than a test failure. Driven as an ablation in plan
+    // 50-03: `DATABASE_URL=postgresql://u:p@db.example.com:5432/x npm run test:live` exits 1 with
+    // `LiveProjectRefusedNonLoopbackHost` before a single file is collected.
+    const source = readStrippedSource(LIVE_CONFIG)
+    expect(
+      source,
+      `${LIVE_CONFIG} no longer names its refusal. Without a THROW on a non-loopback host, this ` +
+        `project writes to whatever it is pointed at.`
+    ).toContain("LiveProjectRefusedNonLoopbackHost")
+    expect(source).toMatch(/throw new Error/)
+    // The permitted set, pinned so it cannot quietly grow a hostname.
+    expect(source).toMatch(/LOOPBACK_HOSTS\s*=\s*\[/)
+    expect(source).toContain("localhost")
+    expect(source).toContain("127.0.0.1")
+  })
+})
+
+describe("the base vitest project excludes the -live glob", () => {
+  const baseExclude = configArrayEntries(BASE_CONFIG, "exclude")
+
+  it("has a -live.test entry in test.exclude", () => {
+    // Measured: with this entry the base project reports 5735 passed / 4 skipped over 187 files;
+    // without it, 5735 passed / 32 skipped over 189. The `passed` count does not move either way,
+    // which is the whole point — those 28 were never passing, they were never running.
+    expect(
+      baseExclude.some((pattern) => pattern.includes("-live.test")),
+      `${BASE_CONFIG}'s test.exclude has no -live.test entry, so the two live files are collected ` +
+        `by the base project again. They self-skip today, so nothing goes red — that is exactly ` +
+        `why this is asserted here rather than left to the suite's own output.`
+    ).toBe(true)
+  })
+
+  it("still has its db.test and rsc.test entries — the anti-vacuity anchor for the array", () => {
+    // ADDITIVE, never a replacement. A rewritten `exclude` that dropped the incumbent globs would
+    // still "contain a -live.test entry" under a looser assertion.
+    expect(baseExclude.some((pattern) => pattern.includes("db.test"))).toBe(true)
+    expect(baseExclude.some((pattern) => pattern.includes("rsc.test"))).toBe(true)
+    expect(readStrippedSource(BASE_CONFIG)).toContain("configDefaults.exclude")
+  })
 })
 
 describe("no operational script aims a destructive statement at a database it may only read", () => {
