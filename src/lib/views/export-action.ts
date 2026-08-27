@@ -112,12 +112,19 @@ export async function exportViewResults(input: {
    *
    * ONE CONSEQUENCE, COMPUTED AND RECORDED SO IT IS NOT REDISCOVERED AS DEAD CODE. With a 0.40
    * fraction, `EXPORT_ROW_CAP = 50_000` is now UNREACHABLE from this path on current volumes: a set
-   * above 50,000 rows on the largest table (79,022 activities) is 63%+, so this refusal lands
+   * above 50,000 rows on the largest table (79,022 activities) is 63.3%+, so this refusal lands
    * first. The cap's one live branch today — activities `status=completed`, 74,857 rows, previously
-   * `too_many` — will now be refused as `too_broad`. THE CAP STAYS. It is defence in depth, it
-   * re-enters as soon as a table passes ~125,000 rows (`50,000 / 0.40`), it bounds the read even if
-   * the selectivity rule is ever loosened, and `view-filters.test.ts` asserts it in both
-   * directions.
+   * `too_many` — will now be refused as `too_broad` instead.
+   *
+   * THE CAP STAYS, and the threshold at which it re-enters is an EXACT integer rather than a round
+   * one, because this phase has already been bitten once by a rounded allowance (DEF-50-01, where a
+   * `Math.round` column stated 31,609 for an allowance that is 31,608). The cap fires when
+   * `matched >= 50,001`; selectivity refuses when `matched > floor(total × 0.40)`. So the cap
+   * reaches a request the selectivity rule would have admitted only once
+   * `floor(total × 0.40) >= 50,001`, i.e. `total >= 125,002.5`, i.e. **`total >= 125,003` rows** —
+   * the figure plan 50-01 measured, not the `50,000 / 0.40 = 125,000` the arithmetic suggests at a
+   * glance. Below that the cap is defence in depth: it still bounds the read if the selectivity rule
+   * is ever loosened or its count fails, and `view-filters.test.ts` asserts it in both directions.
    */
   const counts = await countExportMatches(input.entityType, guarded.filters)
   const selectivity = decideSelectivity(counts)
