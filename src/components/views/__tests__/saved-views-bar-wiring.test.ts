@@ -853,4 +853,60 @@ describe("V-40-5 — the saved-views-bar wiring gate", () => {
         `ids. views.export.tooMany is the key for a filter set that matches too many rows.`
     ).toBe(0)
   })
+
+  /**
+   * 15. SEC-03: THE `tooBroad` TOAST PASSES BOTH COUNTED NUMBERS.
+   *
+   * ADDED BY PLAN 50-05 AS A DEVIATION (Rule 2), because its own ablation 3 measured that dropping
+   * the values object is COMPLETELY SILENT and the plan asked for the outcome to be reported. It was
+   * worse than silent, so a detector was written rather than only a note.
+   *
+   * MEASURED with `t("export.tooBroad")` — the key referenced, both values dropped:
+   *
+   *   `tsc --noEmit`                          0 errors
+   *   the whole base suite                    187 files, 5,752 passed | 4 skipped — ALL GREEN
+   *   cell 14 above                           GREEN (it asserts the KEY is referenced, nothing more)
+   *
+   * AND WHAT THE USER WOULD HAVE SEEN, measured against `use-intl`'s own ESM builds rather than
+   * reasoned about — identical in the development AND production builds:
+   *
+   *   both values dropped   "This filter matches {matched} of {total} records — too many to
+   *                          export. Narrow it and try again."      ← the RAW TEMPLATE
+   *   ONE of two dropped    "views.export.tooBroad"                 ← the key path
+   *
+   * So the WORST mutation is the one nothing could see. Dropping one value degrades to a visibly
+   * broken key path; dropping BOTH renders a fluent, plausible English sentence with two literal
+   * braces in it, which is precisely the shape a reviewer skims past. SC-3 asks that a refused user
+   * be told WHY and by how much, and `{matched} of {total}` tells them neither.
+   *
+   * The assertion is over the ARGUMENTS of the call, extracted by `callArguments`, so it reads real
+   * code and not the prose above. Both of its reds are recorded in 50-05-SUMMARY.md: the values
+   * dropped entirely, and `total` replaced by a client-side literal.
+   */
+  it("15. SEC-03: the tooBroad toast passes matched and total from the action's payload", () => {
+    const source = read()
+    const calls = callArguments(source, "t").filter((args) => args.includes("export.tooBroad"))
+
+    // Exactly one. A second call is a second sentence to keep in step with the payload.
+    expect(
+      calls,
+      `${COMPONENT}: expected exactly one t("export.tooBroad", …) call. This is the only place the ` +
+        `bar can tell a refused user how broad their filter was — the button is ENABLED for them, ` +
+        `because the bar cannot know the cardinality without a query.`
+    ).toHaveLength(1)
+
+    const [args] = calls
+
+    // BOTH values, and both taken from the RESULT. The client cannot count rows: a number it
+    // derived locally would disagree with the one the rule actually decided on.
+    for (const field of ["matched", "total"] as const) {
+      expect(
+        args,
+        `${COMPONENT}: the tooBroad toast does not pass \`${field}\` from the action's result. ` +
+          `MEASURED: dropping both values throws nothing, fails no type check and reddens no other ` +
+          `test in 187 files — it renders the raw template, "This filter matches {matched} of ` +
+          `{total} records", to the user in both the development and production use-intl builds.`
+      ).toMatch(new RegExp(`${field}:\\s*result\\.${field}\\b`))
+    }
+  })
 })
