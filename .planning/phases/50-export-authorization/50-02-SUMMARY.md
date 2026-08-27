@@ -543,7 +543,7 @@ The orchestrator owns them. Suggested content:
     expected substring is quoting a red.
   - `OBS-50-02` — `untranslatedInBoth` is an AND over es-ES and pt-BR; a one-locale copy-paste is
     invisible to it. Two plan ablations were mis-specified on this basis.
-  - `DEF-50-01` — the `REQUIRED_VIEWS_KEYS` per-group tally is unenforced; the `:1246` comment claims
+  - `DEF-50-02` (minted as `DEF-50-01`; renumbered on merge — 50-01 minted the same id in the same wave) — the `REQUIRED_VIEWS_KEYS` per-group tally is unenforced; the `:1246` comment claims
     it prevents silent drift and it does not.
   - `DEF-50-02` — the refusal's counts are not locale-grouped; grouping requires extending
     `placeholders()` in `locale-parity.test.ts` in the same commit.
