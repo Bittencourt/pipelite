@@ -1037,7 +1037,21 @@ inherit nothing.**
 
 ---
 
-## Open Questions
+## Open Questions (ALL RESOLVED — carried into CONTEXT decisions and plan tasks)
+
+> **Resolution map, added after planning at the plan checker's instruction (Dimension 11).** All five
+> were answered in substance but none carried a literal `RESOLVED` marker, so the section read as open
+> work:
+> Q1 `MIN_EXPORT_ROWS` → **1,000**, a judgement not a measurement, and the code must say so (CONTEXT §2) ·
+> Q2 the three-filter refusal trade-off → **accepted**, shipped at `0.40` with the consequence named and
+> the `dateFrom`/`dateTo` escape hatch documented (CONTEXT §2) ·
+> Q3 Route A vs B → **Route B**, wired locally and proved locally, with the CI half written but
+> explicitly NOT claimed on the real runner (CONTEXT §3) ·
+> Q4 bulk-path audit scope → **out of scope for bounding**, stated per path by 50-08 rather than left to
+> read as covered ·
+> Q5 does `COUNT(*)` equal `findMany().length` under drizzle's `with:` → **not treated as a blocking
+> unknown; proved in-plan** by 50-04 Task 2's live equality assertion over three filter/entity
+> combinations plus a zero-match case.
 
 1. **`MIN_EXPORT_ROWS`'s value.**
    - Known: a floor is structurally necessary (§5); the live database cannot measure it (smallest table
