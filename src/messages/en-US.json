@@ -716,7 +716,8 @@
     "export": {
       "disabledReason": "Add a filter that narrows the results before exporting.",
       "tooMany": "This view matches more than {max} records. Narrow the filters and export again.",
-      "refused": "That export was refused because no filter was applied."
+      "refused": "That export was refused because no filter was applied.",
+      "tooBroad": "This filter matches {matched} of {total} records — too many to export. Narrow it and try again."
     }
   },
   "workflows": {

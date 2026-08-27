@@ -601,10 +601,11 @@ export const REQUIRED_DEDUP_KEYS: string[] = [
  * assertion below turns a string that skipped this list into a red suite rather than copy that ships
  * gated by nothing.
  *
- * 61 keys, every one of them inside the `views` namespace. Like `bulk` and `dedup`, and unlike
+ * 62 keys — 61 from phase 40, plus `views.export.tooBroad` from plan 50-02 — every one of them
+ * inside the `views` namespace. Like `bulk` and `dedup`, and unlike
  * `audit`, `trash` and `shell`, phase 40 adds NOTHING outside its own namespace — no `nav` entry, no
  * `admin.dashboard` tile — so `viewsKeys` below needs no `*_EXTRA_KEYS` sibling and the comparison
- * against this list is TOTAL: a 62nd `views` string that never made it into this array fails, which
+ * against this list is TOTAL: a 63rd `views` string that never made it into this array fails, which
  * is the half a missing-key check cannot see. `audit`, `trash` and `shell` each need an extras array
  * precisely because their contracts straddle a pre-existing namespace they must not swallow whole.
  *
@@ -695,12 +696,22 @@ export const REQUIRED_VIEWS_KEYS: string[] = [
   "views.delete.success",
   "views.delete.failed",
 
-  // Export — 3, and only what `bulk.*` cannot say. `disabledReason` is an advisory, never red (C-1):
+  // Export — 4, and only what `bulk.*` cannot say. `disabledReason` is an advisory, never red (C-1):
   // an unfiltered export is refused, and the refusal explains itself rather than leaving a control
   // dead with no reason given.
+  //
+  // `tooBroad` is the fourth, added by plan 50-02, and it is a SEPARATE key rather than a reword of
+  // either sibling because it belongs to a different moment. `disabledReason` is the PRE-submit
+  // advisory, computed client-side from `canExport`, which cannot know how many rows a filter
+  // matches; `tooBroad` is the POST-submit refusal, and it names the two counts the SERVER measured
+  // (`{matched}` of `{total}`) so a user who is refused can act on the number rather than guess.
+  // Phase 40's G-2 already had to reword `disabledReason` once — do not merge these two back
+  // together, and do not fold `tooBroad` into `tooMany`, which speaks about the absolute
+  // `EXPORT_ROW_CAP` and not about selectivity.
   "views.export.disabledReason",
   "views.export.tooMany",
   "views.export.refused",
+  "views.export.tooBroad",
 ]
 
 /**
@@ -1229,15 +1240,17 @@ describe("locale parity", () => {
     expect(new Set(REQUIRED_DEDUP_KEYS).size, "REQUIRED_DEDUP_KEYS lists a key twice").toBe(80)
   })
 
-  it("the checked-in views contract still lists exactly 61 keys", () => {
+  it("the checked-in views contract still lists exactly 62 keys", () => {
     // The dedup test above is the precedent, and the duplicate guard is carried for the same reason:
     // toHaveLength alone passes a list that repeats one dot-path and omits another, because the
     // exact-set comparison further down compares against a sorted array and a duplicate in the
     // contract would show up there as a confusing diff rather than as "you listed a key twice".
-    // The per-group comments in REQUIRED_VIEWS_KEYS say 18+22+13+5+3, and this is what stops that
-    // sum drifting silently when a group gains or loses an entry.
-    expect(REQUIRED_VIEWS_KEYS).toHaveLength(61)
-    expect(new Set(REQUIRED_VIEWS_KEYS).size, "REQUIRED_VIEWS_KEYS lists a key twice").toBe(61)
+    // The per-group comments in REQUIRED_VIEWS_KEYS say 18+22+13+5+4, and this is what stops that
+    // sum drifting silently when a group gains or loses an entry. The export group went 3 -> 4 in
+    // plan 50-02, which is where the POST-submit selectivity refusal got a sentence of its own
+    // rather than a reword of `disabledReason`'s PRE-submit advisory.
+    expect(REQUIRED_VIEWS_KEYS).toHaveLength(62)
+    expect(new Set(REQUIRED_VIEWS_KEYS).size, "REQUIRED_VIEWS_KEYS lists a key twice").toBe(62)
   })
 
   // Phase 40 adds one namespace and touches no other contract. This asserts that, because every
@@ -1322,7 +1335,7 @@ describe("locale parity", () => {
     }
 
     // Same exact-contract rule for views, and total for the same reason bulk's and dedup's are:
-    // 40-UI-SPEC adds no `views` string outside the namespace, so a 62nd key added without its
+    // 40-UI-SPEC adds no `views` string outside the namespace, so a 63rd key added without its
     // dot-path going into REQUIRED_VIEWS_KEYS fails here. Every UI plan in waves 3-5 of phase 40
     // consumes these keys, and a key that does not exist renders its own dot-path to the user (the
     // Phase 45 finding).
@@ -1508,10 +1521,13 @@ describe("locale parity", () => {
     expect.soft(placeholderDrift(REQUIRED_BULK_KEYS)).toEqual({})
     expect.soft(placeholderDrift(SHELL_CONTRACT_KEYS)).toEqual({})
     expect.soft(placeholderDrift(REQUIRED_DEDUP_KEYS)).toEqual({})
-    // Ten of the 61 views keys interpolate: views.ownedBy and views.manage.readOnly take {owner};
-    // views.save.nameTaken, views.save.targetUpdate, views.save.created, views.save.updated,
-    // views.delete.body and views.delete.success take {name}; views.save.targetNewOnly takes both;
-    // views.export.tooMany takes {max}.
+    // Eleven of the 62 views keys interpolate: views.ownedBy and views.manage.readOnly take
+    // {owner}; views.save.nameTaken, views.save.targetUpdate, views.save.created,
+    // views.save.updated, views.delete.body and views.delete.success take {name};
+    // views.save.targetNewOnly takes both; views.export.tooMany takes {max}; and
+    // views.export.tooBroad takes {matched} AND {total} — the only views key with two DISTINCT
+    // numeric arguments, which is why plan 50-02 also proves it RESOLVES rather than only that the
+    // brace names survive (see export-too-broad-copy.test.ts).
     expect.soft(placeholderDrift(REQUIRED_VIEWS_KEYS)).toEqual({})
     // Exactly one of the 23 workflows keys interpolates: workflows.replay.lineage takes {runId}
     // (41-UI-SPEC L-41-1 — this phase has one interpolation and no ICU plural). The brace name must
@@ -1546,8 +1562,10 @@ describe("locale parity", () => {
     // instead of twice passes every other assertion in this file while quietly dropping the second
     // half of the sentence's promise — that the loser is the record the user can restore.
     //
-    // Still the ONLY key in the catalog that does this, after phase 40. Not one of the 61 `views.*`
-    // strings repeats a placeholder — the ten that interpolate use each token exactly once (L-4) —
+    // Still the ONLY key in the catalog that does this, after phase 40 and after plan 50-02. Not
+    // one of the 62 `views.*` strings repeats a placeholder — the eleven that interpolate use each
+    // token exactly once (L-4), `views.export.tooBroad` included: it names {matched} once and
+    // {total} once, which is two distinct tokens and not one token twice —
     // so a `views` analogue of this assertion would be vacuous and is deliberately not written. If
     // a future views string ever names the same record twice, it earns its own block here.
     for (const locale of LOCALES) {
@@ -1581,8 +1599,10 @@ describe("locale parity", () => {
    * anti-vacuity half: one of the two promises was enforced and the other was not, and they sit two
    * lines apart in the catalog.
    *
-   * The key NAME is unchanged, so REQUIRED_VIEWS_KEYS stays at 61 and every parity assertion above
-   * still applies to it.
+   * The key NAME is unchanged, so WR-02 added no entry to REQUIRED_VIEWS_KEYS and every parity
+   * assertion above still applies to it. (Stated without a figure on purpose: the array's length is
+   * pinned in one place above, and repeating it here is how that number goes stale — it already had
+   * to move from 61 to 62 when plan 50-02 added `views.export.tooBroad`.)
    */
   describe("views.save.sharedHelp matches what canMutateView actually allows (WR-02)", () => {
     /** The word each locale uses for an administrator, lowercased. */
