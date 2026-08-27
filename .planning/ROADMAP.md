@@ -583,7 +583,32 @@ selectivity rule. `EXPORT_ROW_CAP = 50_000`. The bulk export actions from Phase 
 at all — only the view path is instrumented. `formatters-live.test.ts` (24 tests CI never runs) guards
 this same export path and is **recorded, not scoped**; if the phase can absorb making it runnable,
 `BACKLOG.md` says it pairs naturally here.
-**Plans**: TBD
+**Plans**: 8 plans in 7 waves. Re-measured at plan time (2026-08-27) against `localhost:5433`:
+organizations **46,054** / people **38,348** / deals **25,195** / activities **79,022**; `search=a`
+matches **44,254** organizations (96.09%) and `search=ltda` matches **13,355** (29.00%); `audit_log`
+holds **214** rows with **0** of `entity_type='export'`. The worst case is NOT the roadmap's example:
+`/deals` with `owner=ef4acac9-…` returns **25,195 of 25,195 = 100.00%** under the 50,000 cap, because
+every row in all four tables has one owner. The 28 unrun tests are `formatters-live.test.ts` (24) plus
+`export-events-live.test.ts` (4), and the latter is SC-5's only behavioural proof.
+
+- [ ] `50-01-PLAN.md` — SEC-03. Re-measure the live baseline; the pure `decideSelectivity` +
+      `MAX_EXPORT_FRACTION = 0.40` (measured) + `MIN_EXPORT_ROWS = 1,000` (a policy floor, not measured),
+      with the small-N cells no database here can reach. Wave 1.
+- [ ] `50-02-PLAN.md` — SEC-03. `views.export.tooBroad` in three locales, the six locale-contract edits
+      in one commit, and a rendered-string proof that the sentence carries both numbers. Wave 1.
+- [ ] `50-03-PLAN.md` — SEC-03. A fourth vitest project (`vitest.live.config.ts`, `test:live`) so the
+      28 never-run tests RUN; six isolation cells so it cannot be reached by accident. Wave 2.
+- [ ] `50-04-PLAN.md` — SEC-03. Extract `buildExportConditions` so the count and the export share one
+      predicate; re-anchor the 14-pair T-40-30 gate onto it; prove `matched` equals the export's own row
+      count against real data. Wave 3.
+- [ ] `50-05-PLAN.md` — SEC-03. Wire the refusal between the guard and the fetch, add the `too_broad`
+      payload and the toast branch, and pin the six `fetchFilteredData` call sites repo-wide. Wave 4.
+- [ ] `50-06-PLAN.md` — SEC-03. The behavioural proof at live scale: SC-1 (and the 100% worst case),
+      SC-2, SC-4's nine-step crossing, SC-5's first-ever export audit row. Wave 5.
+- [ ] `50-07-PLAN.md` — SEC-03. The CI half: an insert-only fenced seeder, one step on the required
+      check, and a from-empty local simulation — labelled NOT PROVED on the real runner. Wave 6.
+- [ ] `50-08-PLAN.md` — SEC-03. Sign-off: the negative-control register, three fresh falsifications, the
+      four-test vacuity hunt, five criterion verdicts and SC-5 answered per path. Wave 7.
 
 ### Phase 51: Board & List Volume
 
