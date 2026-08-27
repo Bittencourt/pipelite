@@ -794,9 +794,16 @@ describe("the live vitest project is unreachable from `npm test`", () => {
     // `pipelite_dedup_test`. The live project has nothing to do with it: chaining it here would
     // make a read-only export probe destroy another project's fixtures, and would do so silently
     // because the live suite would still pass.
+    //
+    // THE `?? ""` IS THE FIX FOR A MEASURED DEFECT IN THIS CELL, not defensive noise. Driven as
+    // falsification 1 of plan 50-03 (delete `test:live` entirely), this cell went red — correctly —
+    // but with vitest's "the given combination of arguments (undefined and string) is invalid for
+    // this assertion" instead of anything about provisioning. A reader would have been sent to the
+    // wrong problem. The missing-script case is cell 1's job and its message says so; this cell
+    // should be SILENT about it rather than loud and wrong.
     const scripts = packageScripts()
     expect(
-      scripts["test:live"],
+      scripts["test:live"] ?? "",
       "`test:live` runs the db project's provisioning script, which drops and rebuilds " +
         "pipelite_dedup_test. Remove it — the live project needs no provisioning."
     ).not.toContain("dedup-db-test-setup.sh")
