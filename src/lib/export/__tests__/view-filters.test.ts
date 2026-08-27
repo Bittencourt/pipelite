@@ -933,9 +933,101 @@ describe("guardExportInput refuses anything that would not narrow", () => {
   })
 })
 
+/**
+ * ── WHAT PHASE 50 ADDED TO THIS DESCRIBE, AND WHAT IT DELIBERATELY DID NOT ───────────────────────
+ *
+ * SEC-03 puts a SECOND, INDEPENDENT control between the guard and the fetch: `countExportMatches`
+ * (`src/lib/export/export-count.ts`) then `decideSelectivity`
+ * (`src/lib/export/export-selectivity.ts`), and a `too_broad` return when the verdict refuses. The
+ * guard asks "does this map narrow AT ALL?"; selectivity asks "does it narrow ENOUGH?". `search=a`
+ * passes the first and fails the second, which is the exposure the phase exists to close.
+ *
+ * THREE CELLS BELOW ARE NEW OR EXTENDED, and each has an observed red recorded in
+ * `.planning/phases/50-export-authorization/50-05-SUMMARY.md`:
+ *
+ *   - the ordering cell is EXTENDED to `authAt < guardAt < countAt < decideAt < fetchAt`. Both
+ *     original halves are still asserted. `guardAt < countAt` is a real invariant and not
+ *     bookkeeping: a count placed above the guard would buy two queries for every `{}` request the
+ *     guard already refuses for free, which is exactly the property
+ *     `view-export-guard.ts:18-19` was written to preserve.
+ *   - a CALL-COUNT cell: exactly one `countExportMatches(` and exactly one `decideSelectivity(`.
+ *     Without it, deleting the entire selectivity fix reddens NOTHING in this repository until
+ *     50-06's live cells exist — measured, not assumed (plan 50-05 ablation A1).
+ *   - a PAYLOAD cell: the `too_broad` return carries the DECISION'S OWN `matched` and `total` and
+ *     contains no literal `0`. A refusal reporting `0` of `0` satisfies any toast-text assertion
+ *     while telling the user nothing, and a `matched` re-derived from anything but the count is the
+ *     divergence `export-count.ts` exists to prevent.
+ *
+ * WHAT IS UNCHANGED, and each is unchanged for a stated reason rather than by omission:
+ *
+ *   - THE NO-ADMIN CELL. The bound applies to EVERY authenticated user, so no role branch was added
+ *     and none was needed. `src/app/admin/export/actions.ts` is already a separate role-gated
+ *     unbounded export, so admins keep the path they have. E-9 survives: export is still available
+ *     to every authenticated user, now BOUNDED rather than refused. Relocating an admin branch into
+ *     a helper module to keep this cell green is gate-laundering, and
+ *     `__tests__/export-selectivity.test.ts` asserts the same two negatives of the pure module so
+ *     the escape is closed from both sides.
+ *   - THE CAP CELL. `maxRows: EXPORT_ROW_CAP` is untouched. Threading a computed allowance through
+ *     `maxRows` instead of returning early was the rejected design: it reddens this cell and it
+ *     loses the exact `matched` the refusal message needs.
+ *   - THE `recordExport` CELL. The refusal returns BEFORE the fetch and therefore before
+ *     `recordExport`, so a refused export still writes no audit row — which is what keeps that cell
+ *     green and what makes the WR-04 limitation in `BACKLOG.md` unchanged rather than widened.
+ */
 describe("exportViewResults is guarded, capped and not admin-gated", () => {
   const ACTION_PATH = "src/lib/views/export-action.ts"
   const actionSource = readStrippedSource(ACTION_PATH)
+
+  /**
+   * Every `return { … }` object literal in the action, by brace matching over comment-stripped
+   * source.
+   *
+   * Written rather than reused because `source-scan.ts` matches PARENS (`callArguments`) and JSX
+   * (`elementRegion`); neither extracts a returned object. String-aware for the same reason
+   * `callArguments` is: a `}` inside a string literal must not close the object early.
+   */
+  function returnedObjects(source: string): string[] {
+    const out: string[] = []
+    const marker = "return {"
+    let from = 0
+
+    for (;;) {
+      const at = source.indexOf(marker, from)
+      if (at === -1) break
+
+      let i = at + marker.length
+      const start = i
+      let depth = 1
+      let quote: string | null = null
+
+      while (i < source.length && depth > 0) {
+        const ch = source[i]
+
+        if (quote) {
+          if (ch === "\\") {
+            i += 2
+            continue
+          }
+          if (ch === quote) quote = null
+          i += 1
+          continue
+        }
+
+        if (ch === '"' || ch === "'" || ch === "`") quote = ch
+        else if (ch === "{") depth += 1
+        else if (ch === "}") depth -= 1
+
+        i += 1
+      }
+
+      if (depth !== 0) throw new Error(`unterminated return object in ${ACTION_PATH}`)
+
+      out.push(source.slice(start, i - 1))
+      from = i
+    }
+
+    return out
+  }
 
   it("read the action source at all", () => {
     // Anti-vacuity for the negative assertions below, which would all pass on an empty string.
@@ -944,18 +1036,115 @@ describe("exportViewResults is guarded, capped and not admin-gated", () => {
     expect(actionSource).toContain("fetchFilteredData")
   })
 
-  it("authenticates, then guards, then queries — in that order", () => {
+  it("authenticates, then guards, then counts, then decides, then queries — in that order", () => {
     const authAt = actionSource.indexOf("await auth()")
     const guardAt = actionSource.indexOf("guardExportInput(")
+    const countAt = actionSource.indexOf("countExportMatches(")
+    const decideAt = actionSource.indexOf("decideSelectivity(")
     const fetchAt = actionSource.indexOf("fetchFilteredData(")
 
+    // ANTI-VACUITY, and the reason each index is checked before it is compared: `indexOf` returns
+    // -1 for a renamed or deleted call, and -1 is less than every real offset, so a chain of
+    // `toBeLessThan` alone would report a MISSING control as correct ordering.
     expect(authAt).toBeGreaterThan(-1)
     expect(guardAt).toBeGreaterThan(-1)
+    expect(countAt, `${ACTION_PATH} never calls countExportMatches`).toBeGreaterThan(-1)
+    expect(decideAt, `${ACTION_PATH} never calls decideSelectivity`).toBeGreaterThan(-1)
     expect(fetchAt).toBeGreaterThan(-1)
-    // Both controls precede the read. A guard that ran after the query would have already
-    // materialised the rows it was supposed to refuse.
+
+    // THE TWO ORIGINAL HALVES, kept verbatim. Both controls precede the read. A guard that ran
+    // after the query would have already materialised the rows it was supposed to refuse.
     expect(authAt).toBeLessThan(fetchAt)
     expect(guardAt).toBeLessThan(fetchAt)
+
+    // THE COUNT IS AFTER THE GUARD (SEC-03, and a DoS property in its own right). `{}`, a map of
+    // only non-whitelisted keys, a blank search, a crafted entityType and a deals view carrying
+    // nothing but its board all stop at `guardExportInput` having issued ZERO queries. Moving the
+    // count above it charges two round trips to every one of those requests.
+    expect(
+      guardAt,
+      `${ACTION_PATH} counts BEFORE it guards. Every request the guard already refuses for free — ` +
+        `an empty map, a blank search, a crafted entityType — would now cost two count queries ` +
+        `first. view-export-guard.ts:18-19 exists to keep that refusal database-free.`,
+    ).toBeLessThan(countAt)
+
+    // AND THE DECISION IS BEFORE THE READ. SEC-03 is about rows not leaving the product; a
+    // selectivity check placed after the fetch has already read the rows it was meant to refuse.
+    expect(countAt).toBeLessThan(decideAt)
+    expect(
+      decideAt,
+      `${ACTION_PATH} decides selectivity AFTER fetchFilteredData. The refusal must precede the ` +
+        `read, or the rows it refuses have already been materialised.`,
+    ).toBeLessThan(fetchAt)
+  })
+
+  /**
+   * THE SELECTIVITY FIX IS A PAIR OF CALLS, so its absence is the failure mode — the same shape as
+   * the `recordExport` cell below, and for a stronger reason.
+   *
+   * MEASURED, not assumed (plan 50-05 ablation A1): with the `decideSelectivity` call and the
+   * `too_broad` return deleted from the action, every other cell in this file stays GREEN — the
+   * no-admin cell, the cap cell, both original halves of the ordering cell and the `recordExport`
+   * cell. Without this cell, removing the entire SEC-03 control reddens NOTHING in the repository.
+   *
+   * `src/lib/export/__tests__/export-call-sites.test.ts` asserts the same pair independently, from
+   * the repo-walk side, so the sabotage now fails two gates rather than one.
+   */
+  it("calls countExportMatches exactly once and decideSelectivity exactly once", () => {
+    const counts = callArguments(actionSource, "countExportMatches")
+    const decisions = callArguments(actionSource, "decideSelectivity")
+
+    expect(
+      counts,
+      `${ACTION_PATH} does not call countExportMatches exactly once. SEC-03's bound is this call ` +
+        `plus decideSelectivity; deleting either removes the control silently, because nothing ` +
+        `else in the base suite reads this path.`,
+    ).toHaveLength(1)
+    expect(
+      decisions,
+      `${ACTION_PATH} does not call decideSelectivity exactly once.`,
+    ).toHaveLength(1)
+
+    // The count is asked about the GUARD'S filter map, never the caller's — the same property the
+    // cap cell and the `recordExport` cell assert about their own arguments. A count over
+    // `input.filters` would authorize against a map the query never saw.
+    expect(counts[0]).toContain("guarded.filters")
+    expect(counts[0]).not.toContain("input.filters")
+  })
+
+  /**
+   * THE REFUSAL HAS TO NAME NUMBERS (SC-3). `views.export.tooBroad` reads "This filter matches
+   * {matched} of {total} records", and a payload of `0`/`0` renders that sentence perfectly while
+   * telling the user nothing at all — and it would satisfy every toast-text assertion in
+   * `saved-views-bar-wiring.test.ts` and `export-too-broad-copy.test.ts`.
+   *
+   * Phase 40's G-2 is the precedent: `views.export.disabledReason` said "Choose at least one filter
+   * first" in the one case where the user HAD chosen one. A refusal that cannot explain itself is
+   * how that regression happens.
+   */
+  it("the too_broad refusal returns the DECISION'S matched and total, and no literal 0", () => {
+    const refusals = returnedObjects(actionSource).filter((body) => body.includes("too_broad"))
+
+    // Exactly one. A second `too_broad` return is a second refusal payload to keep in step.
+    expect(
+      refusals,
+      `${ACTION_PATH} has no single \`return { … error: "too_broad" … }\`. The refusal is what the ` +
+        `client turns into views.export.tooBroad; without it a broad export falls through to the ` +
+        `generic failure toast and the user is told the product is broken.`,
+    ).toHaveLength(1)
+
+    const [refusal] = refusals
+
+    // The values come from the DECISION, which got them from the COUNT. Never re-derived, never
+    // defaulted — the `filename` precedent at the top of the action.
+    expect(refusal).toMatch(/matched:\s*[A-Za-z_$][A-Za-z0-9_$]*\.matched\b/)
+    expect(refusal).toMatch(/total:\s*[A-Za-z_$][A-Za-z0-9_$]*\.total\b/)
+    expect(
+      /\b0\b/.test(refusal),
+      `${ACTION_PATH}'s too_broad payload contains a literal 0. "This filter matches 0 of 0 ` +
+        `records" is a refusal that explains nothing, and it would pass every message-text gate ` +
+        `in the phase.`,
+    ).toBe(false)
   })
 
   it("contains NO admin gate — E-9 is a deliberate, visible widening of a Phase 38 restriction", () => {
