@@ -1,10 +1,17 @@
 import { defineConfig, configDefaults } from 'vitest/config'
 import path from 'path'
 
-// The THIRD vitest project, and the only one in this repository that talks to a real
-// database. `npm test` runs the other two and deliberately never runs this one:
-//   "test":    "vitest run && vitest run --config vitest.rsc.config.ts"
-//   "test:db": "vitest run --config vitest.db.config.ts"     <- this project, opt-in only
+// The THIRD vitest project, and the first of the two that talk to a real database. `npm test` runs
+// the two mocked projects and deliberately never runs either of these:
+//   "test":      "vitest run && vitest run --config vitest.rsc.config.ts"
+//   "test:db":   "vitest run --config vitest.db.config.ts"     <- this project, opt-in only
+//   "test:live": "vitest run --config vitest.live.config.ts"   <- the FOURTH project, added by 50-03
+//
+// ONE PHRASE CORRECTED, NOTHING ELSE: this file used to say it was "the only one in this repository
+// that talks to a real database". Plan 50-03 added vitest.live.config.ts, which points at the
+// DEVELOPMENT database on purpose — see its header for why that is acceptable and what write
+// discipline makes it so. Everything below about THIS project's isolation is unchanged and still
+// true: `pipelite` remains the one database this config may never be aimed at.
 //
 // WHY IT EXISTS
 //   Every mutation test in this repository mocks `@/db` wholesale, and a mocked write
