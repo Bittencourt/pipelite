@@ -25,9 +25,48 @@
  * be resequencing — never relaxing the assertion.
  *
  * PARSED, NOT GREPPED (K-9). Comments are stripped before anything is matched, so a comment naming
- * a key cannot satisfy its own gate, and each fetcher's body is extracted by brace matching so
- * `fetchDeals` mentioning `stage` cannot satisfy `fetchActivities`'s row. Phase 39 was tripped five
- * times by raw-token greps that the explanatory comment itself satisfied.
+ * a key cannot satisfy its own gate, and each function's body is extracted by brace matching so
+ * `dealExportConditions` mentioning `stage` cannot satisfy `activityExportConditions`'s row. Phase 39
+ * was tripped five times by raw-token greps that the explanatory comment itself satisfied.
+ *
+ * ── RE-ANCHORED BY PLAN 50-04, DELIBERATELY, AND HERE IS THE OBSERVATION THAT JUSTIFIES IT ───────
+ *
+ * WHAT THIS GATE READ BEFORE. `FETCHER_BY_ENTITY` mapped each entity type to `fetchOrganizations`,
+ * `fetchPeople`, `fetchDeals`, `fetchActivities`, and every assertion below was made against those
+ * four brace-matched FETCHER bodies, because that is where the `conditions: SQL[]` arrays were built.
+ * The anti-vacuity anchor was `toContain("findMany")`.
+ *
+ * WHY IT MOVED. SEC-03 adds a minimum-selectivity rule that must COUNT the rows an export would
+ * return. A count computed from a hand-copied condition list authorizes on a number the export does
+ * not honour the moment one side is edited — so 50-04 pulled the four condition arrays out into four
+ * exported builders and both consumers now call the SAME one (`fetchFilteredData` reads,
+ * `countExportMatches` counts). That emptied the fetcher bodies of every predicate.
+ *
+ * WHAT WAS OBSERVED BETWEEN THE TWO STATES, MEASURED AND NOT ASSUMED. With the builders extracted
+ * and this file still pointed at the fetchers, `vitest run` reported **16 failed | 33 passed (49)**:
+ * ALL FOURTEEN exportable pairs red, plus the per-function discriminator, plus the `pipeline` cell.
+ * That is the evidence the gate was measuring something real rather than a property of the file's
+ * shape. A re-anchored gate with no recorded red is indistinguishable from a relaxed one, so the
+ * count is written here rather than in a commit message.
+ *
+ * WHAT IS UNCHANGED. The invariant, exactly: every key in `EXPORTABLE_FILTER_KEYS` is applied as a
+ * real SQL predicate for its entity type. `EXPORTABLE_PAIRS` is still asserted at 14, the `it.each`
+ * still covers all 14, the discriminator still proves the extraction is per-function, and the
+ * `pipeline` cell still holds the narrows-without-authorizing asymmetry. Nothing was removed and no
+ * key was dropped from `EXPORTABLE_FILTER_KEYS` — which that cell's own failure message forbids.
+ *
+ * WHY IT IS NOW STRONGER, not merely equivalent. One function feeds BOTH the read and the count, so
+ * a key that failed this gate would be invisible to the selectivity guard as well as to the query —
+ * the gate's blast radius grew with the seam. And two assertions became expressible that the old
+ * shape could not state at all: that no fetcher builds a condition of its own (below), and that the
+ * counter calls the shared builder rather than rebuilding the list (`export-count.ts`, plan 50-04
+ * Task 2).
+ *
+ * THE ANCHOR CHANGED WITH THE TARGET. `findMany` is not in a builder — a builder constructs
+ * predicates and runs no query — so the anti-vacuity anchor is now `isNull(` plus `conditions` plus
+ * `return conditions`, all three of which only a real builder has, plus the length floor, plus the
+ * NEGATIVE that a builder contains no `findMany`. That negative is not decoration: it is what stops
+ * this file being satisfied by re-pointing the map back at the fetchers.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { PgDialect } from "drizzle-orm/pg-core"
@@ -81,10 +120,28 @@ import {
 const FORMATTERS_PATH = "src/lib/export/formatters.ts"
 
 /**
- * Which fetcher answers for which entity type.
+ * WHICH CONDITION BUILDER ANSWERS FOR WHICH ENTITY TYPE — the gate's anchor after plan 50-04.
  *
  * A total `Record<ViewEntityType, string>`, so a fifth entity type is a compile error here rather
  * than an entity type that quietly has no gate.
+ *
+ * These four are the functions the export READ and the selectivity COUNT both call. Before 50-04
+ * this map named the fetchers; see the re-anchoring note in the header for what was observed red in
+ * between.
+ */
+const CONDITION_BUILDER_BY_ENTITY: Record<ViewEntityType, string> = {
+  organization: "organizationExportConditions",
+  person: "personExportConditions",
+  deal: "dealExportConditions",
+  activity: "activityExportConditions",
+}
+
+/**
+ * The four fetchers, kept ONLY so their bodies can be asserted to build NOTHING of their own.
+ *
+ * This map is not the predicate gate any more — `CONDITION_BUILDER_BY_ENTITY` is. It exists so the
+ * "no fetcher builds a condition of its own" cell below can read the same four bodies the old gate
+ * read, and prove the predicates really left rather than being duplicated.
  */
 const FETCHER_BY_ENTITY: Record<ViewEntityType, string> = {
   organization: "fetchOrganizations",
@@ -96,13 +153,13 @@ const FETCHER_BY_ENTITY: Record<ViewEntityType, string> = {
 /**
  * The body text of exactly one `function <name>(` declaration, brace-matched and string-aware.
  *
- * String-awareness is not decoration: `fetchDeals` contains a `sql` template literal holding
- * `IN (SELECT id FROM stages WHERE pipeline_id = ${...})`, whose `${` would otherwise be counted as
- * an opening brace and truncate the body at the wrong place. The parameter list is walked out of
- * first so a default value containing a brace cannot be mistaken for the body.
+ * String-awareness is not decoration: `dealExportConditions` contains a `sql` template literal
+ * holding `IN (SELECT id FROM stages WHERE pipeline_id = ${...})`, whose `${` would otherwise be
+ * counted as an opening brace and truncate the body at the wrong place. The parameter list is walked
+ * out of first so a default value containing a brace cannot be mistaken for the body.
  *
  * Throws — loudly and by name — if the declaration is absent or appears more than once, because a
- * renamed fetcher must fail this file rather than silently make its row vacuous.
+ * renamed builder must fail this file rather than silently make its row vacuous.
  */
 function functionBody(source: string, name: string): string {
   const marker = `function ${name}(`
@@ -111,7 +168,8 @@ function functionBody(source: string, name: string): string {
   if (occurrences !== 1) {
     throw new Error(
       `expected exactly one \`${marker}\` in ${FORMATTERS_PATH}, found ${occurrences}. ` +
-        `If a fetcher was renamed, update FETCHER_BY_ENTITY — do not delete its row.`,
+        `If a condition builder was renamed, update CONDITION_BUILDER_BY_ENTITY; if a fetcher was ` +
+        `renamed, update FETCHER_BY_ENTITY. Do not delete either row.`,
     )
   }
 
@@ -183,6 +241,14 @@ const source = readStrippedSource(FORMATTERS_PATH)
 const BODY_BY_ENTITY = Object.fromEntries(
   VIEW_ENTITY_TYPES.map((entityType) => [
     entityType,
+    functionBody(source, CONDITION_BUILDER_BY_ENTITY[entityType]),
+  ]),
+) as Record<ViewEntityType, string>
+
+/** The four fetcher bodies, for the no-local-push cell only. */
+const FETCHER_BODY_BY_ENTITY = Object.fromEntries(
+  VIEW_ENTITY_TYPES.map((entityType) => [
+    entityType,
     functionBody(source, FETCHER_BY_ENTITY[entityType]),
   ]),
 ) as Record<ViewEntityType, string>
@@ -191,21 +257,56 @@ const EXPORTABLE_PAIRS: [ViewEntityType, string][] = VIEW_ENTITY_TYPES.flatMap((
   EXPORTABLE_FILTER_KEYS[entityType].map((key) => [entityType, key] as [ViewEntityType, string]),
 )
 
-describe("every exportable key is a SQL predicate in its fetcher (T-40-30)", () => {
-  it("extracted a non-empty body for all four fetchers", () => {
+/**
+ * The length floor under every builder body, as a NAMED integer rather than an inline literal.
+ *
+ * MEASURED, not guessed — and the first draft of this comment guessed 505 and 1,142, both wrong,
+ * which is why it was measured. Comment-stripped body lengths, read off the tree:
+ *
+ *   organizationExportConditions   521      dealExportConditions       924
+ *   personExportConditions         534      activityExportConditions  1401
+ *
+ * 300 is therefore a real floor with headroom on the smallest builder and none whatever for an
+ * emptied one: a builder reduced to `return conditions` is ~25 characters and falls immediately.
+ * (For scale, the now-predicate-free `fetchOrganizations` body measures 343 — so the OLD floor of
+ * 100, written when this gate read the fetchers, was loose by more than 3x on the very bodies it
+ * was guarding. Re-anchoring TIGHTENED this cell rather than relaxing it.)
+ */
+const MIN_BUILDER_BODY_CHARS = 300
+
+describe("every exportable key is a SQL predicate in its condition builder (T-40-30)", () => {
+  it("extracted a real builder body for all four entity types", () => {
     // Anti-vacuity for every row below: an empty body would make nothing at all fail if the
     // extraction silently broke.
+    //
+    // RE-ANCHORED (50-04). `findMany` used to be the anchor, when this gate read the fetchers. A
+    // builder runs no query, so the anchor is now the three things only a real builder has — a base
+    // `isNull(` term, a `conditions` array, and a `return conditions` — plus the NEGATIVE that it
+    // does not query. That negative is what stops this file being satisfied by pointing
+    // CONDITION_BUILDER_BY_ENTITY back at the fetchers, which is the one edit that would make the
+    // 14 rows below vacuous while looking like a rename.
     for (const entityType of VIEW_ENTITY_TYPES) {
-      expect(BODY_BY_ENTITY[entityType].length).toBeGreaterThan(100)
-      expect(BODY_BY_ENTITY[entityType]).toContain("findMany")
+      const body = BODY_BY_ENTITY[entityType]
+
+      expect(body.length, `${CONDITION_BUILDER_BY_ENTITY[entityType]} body is too short`)
+        .toBeGreaterThan(MIN_BUILDER_BODY_CHARS)
+      expect(body).toContain("isNull(")
+      expect(body).toContain("conditions")
+      expect(body).toContain("return conditions")
+      expect(
+        body,
+        `${CONDITION_BUILDER_BY_ENTITY[entityType]} contains findMany, so this map is pointed at a ` +
+          `FETCHER rather than a builder and all 14 rows below would be measuring the pre-50-04 ` +
+          `shape.`,
+      ).not.toContain("findMany")
     }
   })
 
-  it("extracts PER FUNCTION, so one fetcher cannot satisfy another's row", () => {
+  it("extracts PER FUNCTION, so one builder cannot satisfy another's row", () => {
     // The discriminating property of the extraction. `filters?.stage` exists in the file, in
-    // fetchDeals only; `filters?.type` exists in fetchActivities only. If the extraction ever
-    // degraded to reading the whole file, both of these would pass and every row above would
-    // become unfalsifiable.
+    // dealExportConditions only; `filters?.type` exists in activityExportConditions only. If the
+    // extraction ever degraded to reading the whole file, both of these would pass and every row
+    // above would become unfalsifiable.
     expect(BODY_BY_ENTITY.deal).toMatch(guardPattern("stage"))
     expect(BODY_BY_ENTITY.activity).not.toMatch(guardPattern("stage"))
     expect(BODY_BY_ENTITY.activity).toMatch(guardPattern("type"))
@@ -215,21 +316,143 @@ describe("every exportable key is a SQL predicate in its fetcher (T-40-30)", () 
   it("covers every entity type and every exportable key — 14 pairs", () => {
     // Anti-vacuity for the table itself: deleting a row from EXPORTABLE_FILTER_KEYS must fail
     // here rather than silently shrink the gate to nothing.
+    expect(Object.keys(CONDITION_BUILDER_BY_ENTITY).sort()).toEqual([...VIEW_ENTITY_TYPES].sort())
     expect(Object.keys(FETCHER_BY_ENTITY).sort()).toEqual([...VIEW_ENTITY_TYPES].sort())
     expect(EXPORTABLE_PAIRS).toHaveLength(14)
   })
 
-  it.each(EXPORTABLE_PAIRS)("%s/%s is applied as a predicate by its fetcher", (entityType, key) => {
-    const fetcher = FETCHER_BY_ENTITY[entityType]
+  it.each(EXPORTABLE_PAIRS)("%s/%s is applied as a predicate by its builder", (entityType, key) => {
+    const builder = CONDITION_BUILDER_BY_ENTITY[entityType]
 
     expect(
       guardPattern(key).test(BODY_BY_ENTITY[entityType]),
-      `${fetcher} has no \`filters?.${key}\` guard, but hasExportableFilter("${entityType}", ` +
+      `${builder} has no \`filters?.${key}\` guard, but hasExportableFilter("${entityType}", ` +
         `{ ${key}: … }) returns true — so that key would AUTHORIZE an export while narrowing ` +
-        `nothing. That is the unbounded export 38-CONTEXT.md:110-116 forbids. Add the predicate ` +
-        `to ${fetcher}; do NOT remove ${key} from EXPORTABLE_FILTER_KEYS.${entityType} to make ` +
-        `this green.`,
+        `nothing. That is the unbounded export 38-CONTEXT.md:110-116 forbids. And since ` +
+        `countExportMatches counts over this SAME builder, the selectivity guard would not see the ` +
+        `missing predicate either: the export would be both unbounded AND reported as narrow. Add ` +
+        `the predicate to ${builder}; do NOT remove ${key} from ` +
+        `EXPORTABLE_FILTER_KEYS.${entityType} to make this green.`,
     ).toBe(true)
+  })
+})
+
+/**
+ * NO FETCHER BUILDS A CONDITION OF ITS OWN (plan 50-04, T-50-04-02).
+ *
+ * Only expressible after the extraction, and the reason the extraction was worth doing. A private
+ * predicate pushed inside a `fetch*` would narrow the READ and be invisible to `countExportMatches`,
+ * so the selectivity guard would authorize on a number larger than the export produces — a bound
+ * that is silently wrong in the permissive direction.
+ *
+ * A NOTE ON WHAT IS ASSERTED, because the obvious spelling is wrong. The plan text says to assert
+ * "no `and(` construction of its own", but every fetcher legitimately composes its array with
+ * `where: and(...conditions)` — a literal `and(`-absent assertion would be RED against correct code.
+ * So what is asserted is that `and(` appears EXACTLY ONCE per fetcher and that the one occurrence is
+ * the spread. That is the falsifiable form of the same property: a second `and(` is a locally built
+ * term, and a zero count means the array stopped reaching the query at all.
+ */
+describe("no fetcher builds a condition of its own — the count sees everything the read sees", () => {
+  it.each(VIEW_ENTITY_TYPES)("%s's fetcher obtains its array from the builder and nothing else", (
+    entityType,
+  ) => {
+    const fetcher = FETCHER_BY_ENTITY[entityType]
+    const builder = CONDITION_BUILDER_BY_ENTITY[entityType]
+    const body = FETCHER_BODY_BY_ENTITY[entityType]
+
+    // ANTI-VACUITY, first: the body must be real and must NAME its builder. Without this the three
+    // negatives below all pass on an empty string, and on a fetcher that has stopped filtering.
+    expect(body).toContain("findMany")
+    expect(
+      body,
+      `${fetcher} does not call ${builder}, so whatever predicate it applies is not the one ` +
+        `countExportMatches counts.`,
+    ).toContain(`${builder}(filters)`)
+
+    // No local push. This is the assertion that stops a private predicate coming back.
+    expect(
+      body,
+      `${fetcher} pushes a condition of its own. Every predicate must live in ${builder}, because ` +
+        `that is the only array countExportMatches can see — a term pushed here narrows the export ` +
+        `while the selectivity guard authorizes on the wider count.`,
+    ).not.toContain("conditions.push")
+
+    // No local array construction either: reassigning `conditions` to a fresh literal would satisfy
+    // the no-push check while discarding the builder's output entirely.
+    expect(body).not.toContain("conditions: SQL[]")
+    expect(body).not.toContain("SQL[] = [")
+
+    // EXACTLY ONE `and(`, and it is the spread. See the describe comment for why this is the
+    // falsifiable form. Two means a locally composed term; zero means the array never reaches the
+    // query, which would make every fetcher unfiltered.
+    expect(
+      body.split("and(").length - 1,
+      `${fetcher} has more than one \`and(\`, so it composes a term locally rather than only ` +
+        `spreading the builder's array.`,
+    ).toBe(1)
+    expect(body).toContain("and(...conditions)")
+  })
+
+  /**
+   * THE OTHER SIDE OF THE SAME SEAM (plan 50-04 Task 2, T-50-04-01).
+   *
+   * The cells above prove the READ builds nothing privately. This one proves the COUNT does not
+   * either — that `countExportMatches` obtains its predicate from the shared builder rather than
+   * assembling an equivalent-looking list of its own. A hand-copied list is correct exactly until one
+   * side is edited, and then the guard authorizes on a number the export does not honour.
+   *
+   * EXACTLY ONCE, not merely present: two `buildExportConditions(` calls in this module would mean
+   * `matched` and something else were counted over separately-built arrays, which is the divergence
+   * in a subtler dress.
+   */
+  it("export-count.ts counts over the SHARED builder and builds no predicate of its own", () => {
+    const counterSource = readStrippedSource("src/lib/export/export-count.ts")
+
+    // ANTI-VACUITY: an unreadable or renamed file must fail here rather than satisfy the negatives.
+    expect(counterSource).toContain("countExportMatches")
+    expect(counterSource.length).toBeGreaterThan(MIN_BUILDER_BODY_CHARS)
+
+    expect(
+      counterSource.split("buildExportConditions(").length - 1,
+      `export-count.ts must call buildExportConditions EXACTLY ONCE. Zero means it builds its own ` +
+        `predicate and the count no longer measures what the export returns; two or more means two ` +
+        `separately-built arrays, which is the same divergence one layer in.`,
+    ).toBe(1)
+
+    expect(
+      counterSource,
+      `export-count.ts pushes a condition of its own. The count must be taken over the SAME array ` +
+        `the fetcher uses — that equivalence is the whole reason the builders were extracted.`,
+    ).not.toContain("conditions.push")
+
+    // ── THE DENOMINATOR, AND WHY THIS HALF HAS TO BE STRUCTURAL ─────────────────────────────────
+    //
+    // MEASURED, and it is the reason this cell exists in this form: ALL FOUR live tables hold ZERO
+    // soft-deleted rows (organizations 46,054/0, people 38,348/0, deals 25,195/0, activities
+    // 79,022/0, read by raw SQL 2026-08-27). So `count(*)` and `count(*) where deleted_at is null`
+    // return the SAME number on every one of them, and NO behavioural cell on this database can tell
+    // whether `total` carries the base predicate at all.
+    //
+    // Driven as plan 50-04's ablation 2 — `total` counted with the soft-delete term DELETED — and
+    // `npm run test:live` stayed fully GREEN at 47 passed. The plan expected those cells to redden
+    // "with both numbers recorded"; there are no two numbers to record. So the live file's
+    // base-predicate cells are green-by-DATA on this term, and THIS assertion is the only detector
+    // there can be until the tables hold a soft-deleted row.
+    for (const table of ["organizations", "people", "deals", "activities"]) {
+      expect(
+        counterSource,
+        `export-count.ts's denominator does not carry isNull(${table}.deletedAt). A total counted ` +
+          `over the whole table INCLUDING soft-deleted rows would inflate the denominator, raise ` +
+          `the allowance and admit broader exports than the rule intends. This cannot be caught ` +
+          `behaviourally here: all four live tables hold ZERO soft-deleted rows, so the count is ` +
+          `identical either way and the live file stays green. This is the detector.`,
+      ).toContain(`isNull(${table}.deletedAt)`)
+    }
+
+    // No viewer term either. There is no viewer scoping anywhere in the export read path, and that
+    // absence is the exposure SEC-03 bounds — not something to encode into the denominator.
+    expect(counterSource).not.toContain("session")
+    expect(counterSource).not.toContain("ownerId")
   })
 })
 
@@ -241,8 +464,10 @@ describe("E-2: the pipeline divergence, asserted where its consequence lands", (
     expect(hasExportableFilter("deal", { pipeline: "p1" })).toBe(false)
     expect(EXPORTABLE_FILTER_KEYS.deal).not.toContain("pipeline")
 
-    // ...and yet the fetcher DOES apply it. A reader who removes this predicate "because pipeline
-    // isn't exportable" would silently widen every deals export to every board.
+    // ...and yet the BUILDER does apply it. A reader who removes this predicate "because pipeline
+    // isn't exportable" would silently widen every deals export to every board — and, since
+    // `countExportMatches` counts over this same builder, would widen the count identically, so the
+    // selectivity guard could not notice either.
     expect(BODY_BY_ENTITY.deal).toMatch(guardPattern("pipeline"))
   })
 
