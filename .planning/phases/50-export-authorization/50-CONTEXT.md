@@ -79,6 +79,81 @@ the ROADMAP's own history note was inaccurate.** Corrected in place in `.plannin
 can misdescribe its own history in the direction of drama, so check a history claim at source before
 building a phase on it.
 
+### Decisions taken AFTER research (2026-08-27) — one SUPERSEDES a decision above
+
+**1. NO ADMIN BRANCH. Bound the view export for EVERY authenticated user.**
+This **supersedes** the "Admins are unaffected" line in the selectivity decision above, which was an
+assumption imported rather than a criterion requirement — all five success criteria are phrased about
+non-admins.
+
+The research found a **shipped gate that forbids the admin branch**:
+`src/lib/export/__tests__/view-filters.test.ts:736-747` asserts, over comment-stripped source of
+`export-action.ts`, that `/["']admin["']/` and `/\brole\b/` are both ABSENT — with a message stating
+that an admin gate there "would silently un-widen a recorded widening, and it would do so invisibly,
+**because this deployment's two admin accounts would still pass every test**." The gate's author
+anticipated exactly this move.
+
+The resolution needs no gate change at all, because **`src/app/admin/export/actions.ts` is already a
+separate role-gated admin export** (`role !== "admin"` → "Not authorized", then `fetchFilteredData`
+unbounded). So: bound the view path for everyone; admins keep unbounded export through the path they
+already have. The shipped gate stays **green and unmodified**, the recorded widening is preserved
+(export remains available to every authenticated user, now *bounded* rather than *refused*), and no
+second admin-export surface is created. **Do not add a `role` or `admin` token to
+`export-action.ts`, and do not rewrite that gate.**
+
+**2. The thresholds, and which is measured.**
+- `MAX_EXPORT_FRACTION = **0.40**` — **measured.** It sits inside a **12.66 pp gap** between the widest
+  structured filter it admits (`search=ltda`, 29.00%) and the narrowest it refuses
+  (`stage=FlyWheel`, 41.66%). `0.50` was rejected because it sits **1.02 pp** below `search=u`
+  (51.02%). The three real filters 0.40 refuses are a deliberate consequence, with the
+  `dateFrom`/`dateTo` escape hatch documented.
+- `MIN_EXPORT_ROWS = **1,000**` — **a judgement, NOT a measurement, and it must say so in the code.**
+  No measurement exists: the smallest live table is 25,195 rows. Its purpose is a fresh or small
+  install, where the fraction alone admits everything and there is nothing to protect. On today's data
+  the fraction dominates everywhere (46,054 × 0.40 = 18,421).
+- **Express the allowance as `max(MIN_EXPORT_ROWS, floor(total × FRACTION))`, as a MULTIPLICATION**, so
+  `total = 0` needs no special case. A division yields `NaN`, and a pure fraction at `total = 0` gives
+  allowance 0 with `0 > 0` false — admitting everything.
+
+**3. The 28 tests: wire locally, prove locally, write the CI half and DO NOT claim it.**
+The count is **28, not the roadmap's 24**: `formatters-live.test.ts` (24) + `export-events-live.test.ts`
+(4). Those 28 plus four `it.skip('requires DB')` stubs account for the suite's 32 skipped exactly.
+
+**The 4-test file is the ONLY behavioural proof that `recordExport` writes to real Postgres — so SC-5's
+only real proof is currently among the unrun tests.** CI already gained a `postgres:16-alpine` service
+in Phase 46 (`ci.yml:61-78`), so the infrastructure Phase 40 deferred already landed. Prove all 28 green
+locally and write the CI wiring, but **record explicitly that the CI half is NOT proved on the real
+runner**, because `origin/master` sits at `a58b9e1`, four phases behind with ~150 commits unpushed.
+Phase 47 shipped a control marked "DELIVERED LOCALLY and NOT DELIVERED on the real runner" and was
+stronger for it — match that.
+
+**4. Two measured facts that change how the criteria must be proven.**
+- **`search=a` at 96.1% is NOT the worst case.** Every row in all four tables is owned by one admin
+  user, and `owner` is an exportable key for deals — so **`/deals` with `owner=<that uuid>` returns
+  25,195 of 25,195 = 100.00%, under the cap.** SC-1 should name the worst case, not the roadmap's
+  example.
+- **`assignee` matches ZERO rows** on both deals and activities (`deal_assignees` is empty,
+  `activities.assignee_id` all NULL). **An SC-2 proof built on `assignee` or `owner` passes on an empty
+  or a whole set** — the exact vacuity this milestone keeps finding. Build SC-2 on something else.
+- **SC-5's audit row has NEVER fired.** `audit_log` holds 214 rows and **zero** with
+  `entity_type='export'` (verified independently). So SC-5 needs a fresh **positive** observation
+  (214 → 215); an "unchanged count" assertion passes today and proves nothing.
+
+**5. Free findings worth keeping.**
+- **SC-4's boundary walk is free and deterministic.** All 79,022 activities have a `due_date` spanning
+  2022→2030 and `dateTo` is an exportable key — a strictly-nested, daily-resolution widening knob over
+  fixed live data. At 0.40 the bracket is **last admitted 31,530 (39.90%) → first refused 31,612
+  (40.00%)**.
+- **Two separate counts (46.1 ms + 13.0 ms) are FASTER than one combined `count(*) FILTER (WHERE …)`
+  aggregate (93.5 ms)** — the FILTER form loses the scan's short-circuit. Measured. Use two counts,
+  per attempt, uncached.
+- **`guardExportInput` has exactly ONE production caller** (`export-action.ts:62`). `fetchFilteredData`
+  has six, enumerated in RESEARCH with each one's guard, cap and audit status — only the view path lets
+  a filter map reach the read; the four bulk paths are `ids`-only at `BULK_MAX_IDS = 100`, and
+  `/admin/export` is role-gated.
+- **`pipelite_dedup_test` starts EMPTY**, so any selectivity assertion placed in the db project without
+  seeding passes vacuously. The floor is provable only by unit cells on the pure function.
+
 ### Claude's Discretion
 
 - Where the selectivity check lives relative to `guardExportInput` (it is currently a **synchronous
@@ -120,11 +195,21 @@ cardinality check. `search=a` is a filter, so it passes.
 
 The figure is unchanged from what Phase 40 recorded, so SC-1's scale claim still holds.
 
-### `EXPORT_ROW_CAP = 50_000` is a VACUOUS GUARD and has never fired
+### `EXPORT_ROW_CAP = 50_000` is vacuous for THREE of four entities — not all four
 
-`src/lib/export/view-export-guard.ts:45`. Organizations are 46,054 and people 38,348 — the cap sits
-**above every entity's entire table**, so it cannot fire for any of them. It is a guard that cannot
-fail, sitting in the file this phase is about. Name it; do not quietly rely on it.
+`src/lib/export/view-export-guard.ts:45`. **Corrected after research; my discuss-time claim that it
+"sits above every entity's entire table" was WRONG.** Measured 2026-08-27:
+
+| entity | live rows | cap fires? |
+|---|---|---|
+| activities | **79,022** | **YES — the cap really fires here** |
+| organizations | 46,054 | no |
+| people | 38,348 | no |
+| deals | 25,195 | no |
+
+`view-filters.test.ts:772` even asserts the vacuity for organizations in both directions. So the cap
+is a partly-vacuous guard, not a wholly vacuous one — state it that way. For activities,
+`status=completed` matches 74,857 (94.73%) and **is refused today**.
 
 ### Established patterns to reuse
 
