@@ -716,7 +716,8 @@
     "export": {
       "disabledReason": "Añade un filtro que acote los resultados antes de exportar.",
       "tooMany": "Esta vista coincide con más de {max} registros. Restringe los filtros y exporta de nuevo.",
-      "refused": "Se rechazó esa exportación porque no había ningún filtro aplicado."
+      "refused": "Se rechazó esa exportación porque no había ningún filtro aplicado.",
+      "tooBroad": "Este filtro coincide con {matched} de {total} registros — demasiados para exportar. Acótalo e inténtalo de nuevo."
     }
   },
   "workflows": {
