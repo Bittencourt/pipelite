@@ -324,14 +324,30 @@ export function exportToJSON(
 // THE SAVED-VIEW PREDICATES (Phase 40, VIEW-03) AND THEIR INVARIANT
 //
 // Every key listed in `EXPORTABLE_FILTER_KEYS` (`src/lib/views/url-params.ts`) is applied below
-// as a REAL SQL predicate by the fetcher for its entity type. That is not a convention — it is
-// the claim the export guard rests on. `hasExportableFilter` decides whether a filter map may
+// as a REAL SQL predicate by the CONDITION BUILDER for its entity type. That is not a convention —
+// it is the claim the export guard rests on. `hasExportableFilter` decides whether a filter map may
 // authorize an export at all, and it is only a meaningful gate if the keys it counts provably
 // narrow the query. A key that authorizes while narrowing nothing is an unbounded export wearing
 // a filter's clothes (T-40-30, 40-CONTEXT amendment A8).
 //
-// `src/lib/export/__tests__/view-filters.test.ts` enforces it structurally, per fetcher, over
+// `src/lib/export/__tests__/view-filters.test.ts` enforces it structurally, per builder, over
 // comment-stripped source. Adding a key to that table without a predicate here fails that gate.
+//
+// WHY THE PREDICATES ARE IN FOUR EXPORTED BUILDERS RATHER THAN INSIDE THE FETCHERS (plan 50-04).
+// Until 50-04 each `fetch*` built its `conditions: SQL[]` privately, in its own body. SEC-03 adds a
+// minimum-selectivity rule that must COUNT the rows an export would return and refuse when that
+// count is too large a fraction of the table — and a count computed from a *copy* of these
+// conditions is correct exactly until one side is edited, at which point the guard authorizes on a
+// number the export does not honour. Silently, because both halves still "work".
+//
+// So the predicates live in ONE function per entity type and both consumers call it:
+// `fetchFilteredData` (the read) and `countExportMatches` (`./export-count.ts`, the count). The
+// in-repo precedent is `src/app/api/v1/organizations/route.ts:29-38`, which builds one `whereClause`
+// and hands it to both `count()` and `findMany`; this is the same shape one layer down.
+//
+// The fetchers therefore push NOTHING of their own, and `view-filters.test.ts` asserts that
+// structurally over every `fetch*` body — so a private predicate the counter cannot see cannot come
+// back by accident.
 //
 // Each predicate MIRRORS the list page it must match, so the export and the list agree about what
 // the view means: `organizations/page.tsx:29-31`, `people/page.tsx:28-31`, `deals/page.tsx:113-115`
@@ -348,11 +364,12 @@ function rowLimit(maxRows: number | undefined): { limit?: number } {
   return maxRows === undefined ? {} : { limit: maxRows + 1 }
 }
 
-async function fetchOrganizations(
-  filters: ExportFilters | undefined,
-  includeCustomFields: boolean,
-  maxRows?: number
-) {
+/**
+ * THE ORGANIZATIONS PREDICATE. Base term first, then one term per present filter key.
+ *
+ * Exported because `countExportMatches` must count with EXACTLY this array — see the block above.
+ */
+export function organizationExportConditions(filters: ExportFilters | undefined): SQL[] {
   const conditions: SQL[] = [isNull(organizations.deletedAt)]
 
   if (filters?.owner) {
@@ -372,22 +389,11 @@ async function fetchOrganizations(
     conditions.push(inArray(organizations.id, filters.ids))
   }
 
-  const rows = await db.query.organizations.findMany({
-    where: and(...conditions),
-    with: {
-      owner: { columns: { id: true, name: true, email: true } },
-    },
-    ...rowLimit(maxRows),
-  })
-
-  return rows.map((r) => flattenOrganization(r as OrgRow, includeCustomFields))
+  return conditions
 }
 
-async function fetchPeople(
-  filters: ExportFilters | undefined,
-  includeCustomFields: boolean,
-  maxRows?: number
-) {
+/** THE PEOPLE PREDICATE. Exported for the counter, same reason as above. */
+export function personExportConditions(filters: ExportFilters | undefined): SQL[] {
   const conditions: SQL[] = [isNull(people.deletedAt)]
 
   if (filters?.owner) {
@@ -408,23 +414,11 @@ async function fetchPeople(
     conditions.push(inArray(people.id, filters.ids))
   }
 
-  const rows = await db.query.people.findMany({
-    where: and(...conditions),
-    with: {
-      organization: { columns: { id: true, name: true } },
-      owner: { columns: { id: true, name: true, email: true } },
-    },
-    ...rowLimit(maxRows),
-  })
-
-  return rows.map((r) => flattenPerson(r as PersonRow, includeCustomFields))
+  return conditions
 }
 
-async function fetchDeals(
-  filters: ExportFilters | undefined,
-  includeCustomFields: boolean,
-  maxRows?: number
-) {
+/** THE DEALS PREDICATE. Exported for the counter, same reason as above. */
+export function dealExportConditions(filters: ExportFilters | undefined): SQL[] {
   const conditions: SQL[] = [isNull(deals.deletedAt)]
 
   if (filters?.owner) {
@@ -467,25 +461,11 @@ async function fetchDeals(
     conditions.push(inArray(deals.id, filters.ids))
   }
 
-  const rows = await db.query.deals.findMany({
-    where: and(...conditions),
-    with: {
-      stage: { columns: { id: true, name: true } },
-      organization: { columns: { id: true, name: true } },
-      person: { columns: { id: true, firstName: true, lastName: true } },
-      owner: { columns: { id: true, name: true, email: true } },
-    },
-    ...rowLimit(maxRows),
-  })
-
-  return rows.map((r) => flattenDeal(r as DealRow, includeCustomFields))
+  return conditions
 }
 
-async function fetchActivities(
-  filters: ExportFilters | undefined,
-  includeCustomFields: boolean,
-  maxRows?: number
-) {
+/** THE ACTIVITIES PREDICATE. Exported for the counter, same reason as above. */
+export function activityExportConditions(filters: ExportFilters | undefined): SQL[] {
   const conditions: SQL[] = [isNull(activities.deletedAt)]
 
   if (filters?.owner) {
@@ -507,7 +487,7 @@ async function fetchActivities(
     )
   }
   if (filters?.status) {
-    // WHY THIS PREDICATE IS THE ONE THAT MATTERS ON THIS FETCHER.
+    // WHY THIS PREDICATE IS THE ONE THAT MATTERS ON THIS BUILDER.
     // `hasExportableFilter("activity", { status: "overdue" })` is `true`. Without a real predicate
     // here that would authorize an export of ALL 79,022 live activities — the guard satisfied by a
     // control that filters nothing, which is the exact failure mode E-2 exists to prevent and which
@@ -552,6 +532,106 @@ async function fetchActivities(
   if (filters?.ids) {
     conditions.push(inArray(activities.id, filters.ids))
   }
+
+  return conditions
+}
+
+/**
+ * THE PREDICATE FOR ONE ENTITY TYPE, dispatched. The single seam both consumers cross.
+ *
+ * TOTAL over `ExportEntityType` and deliberately WITHOUT a permissive default: a fifth entity type
+ * is a COMPILE error at the `never` assignment below, and an unrecognised value at runtime THROWS by
+ * name. It must never fall through to `[]`, because an empty condition list is not "no filter" — it
+ * is `and()`, which drizzle renders as no WHERE clause at all, i.e. THE WHOLE TABLE. A counter that
+ * received `[]` for a typo'd entity type would report `matched === total` and be believed.
+ */
+export function buildExportConditions(
+  entityType: ExportEntityType,
+  filters: ExportFilters | undefined
+): SQL[] {
+  switch (entityType) {
+    case "organization":
+      return organizationExportConditions(filters)
+    case "person":
+      return personExportConditions(filters)
+    case "deal":
+      return dealExportConditions(filters)
+    case "activity":
+      return activityExportConditions(filters)
+    default: {
+      const unreachable: never = entityType
+      throw new Error(
+        `buildExportConditions: unknown entityType ${JSON.stringify(unreachable)}. Returning an ` +
+          `empty condition list here would mean "the whole table", so this throws instead.`
+      )
+    }
+  }
+}
+
+async function fetchOrganizations(
+  filters: ExportFilters | undefined,
+  includeCustomFields: boolean,
+  maxRows?: number
+) {
+  const conditions = organizationExportConditions(filters)
+
+  const rows = await db.query.organizations.findMany({
+    where: and(...conditions),
+    with: {
+      owner: { columns: { id: true, name: true, email: true } },
+    },
+    ...rowLimit(maxRows),
+  })
+
+  return rows.map((r) => flattenOrganization(r as OrgRow, includeCustomFields))
+}
+
+async function fetchPeople(
+  filters: ExportFilters | undefined,
+  includeCustomFields: boolean,
+  maxRows?: number
+) {
+  const conditions = personExportConditions(filters)
+
+  const rows = await db.query.people.findMany({
+    where: and(...conditions),
+    with: {
+      organization: { columns: { id: true, name: true } },
+      owner: { columns: { id: true, name: true, email: true } },
+    },
+    ...rowLimit(maxRows),
+  })
+
+  return rows.map((r) => flattenPerson(r as PersonRow, includeCustomFields))
+}
+
+async function fetchDeals(
+  filters: ExportFilters | undefined,
+  includeCustomFields: boolean,
+  maxRows?: number
+) {
+  const conditions = dealExportConditions(filters)
+
+  const rows = await db.query.deals.findMany({
+    where: and(...conditions),
+    with: {
+      stage: { columns: { id: true, name: true } },
+      organization: { columns: { id: true, name: true } },
+      person: { columns: { id: true, firstName: true, lastName: true } },
+      owner: { columns: { id: true, name: true, email: true } },
+    },
+    ...rowLimit(maxRows),
+  })
+
+  return rows.map((r) => flattenDeal(r as DealRow, includeCustomFields))
+}
+
+async function fetchActivities(
+  filters: ExportFilters | undefined,
+  includeCustomFields: boolean,
+  maxRows?: number
+) {
+  const conditions = activityExportConditions(filters)
 
   const rows = await db.query.activities.findMany({
     where: and(...conditions),
