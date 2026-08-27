@@ -554,11 +554,30 @@ decision is the work.
 
 **Open decision — required before planning, three candidates, all stated in `BACKLOG.md`**: a minimum
 selectivity rule (refuse when a result exceeds some fraction of the table), a lower row cap for
-non-admins, or restoring Phase 38's admin gate. This is a decision, not a patch. Note the history:
-Phase 38 gated this behind admin; Phase 40 Decision 2 replaced the gate with a refuse-empty-filters
-rule, which a filter that narrows nothing satisfies; the Phase 40 verifier wrote that this should
-block milestone close and the v1.3 audit overrode that. **Confirm the override was deliberate as part
-of the decision.**
+non-admins, or restoring Phase 38's admin gate. **DECIDED 2026-08-27 (user): a MINIMUM SELECTIVITY RULE.** Refuse when the result
+exceeds a fraction of the live table. It is the only one of the three candidates that satisfies SC-1
+and SC-2 together, because it is the only one that distinguishes a narrow export from a broad one —
+and **SC-2 rules the pure admin gate out**, since that removes the feature for non-admins rather than
+bounding it. `MAX_EXPORT_FRACTION` must be a tunable with a recorded measurement behind it, not a guess.
+
+**The history note above was itself inaccurate, and the correction is recorded rather than the claim
+repeated.** The roadmap said "the Phase 40 verifier wrote that this should block milestone close and
+the v1.3 audit overrode that." Read at source, that is not what happened:
+
+- **Phase 40's verifier did NOT call the export exposure blocking.** Its G-3 reads: "G-3 asked for
+  them to be *tracked somewhere a later reader will look*, not fixed — that is satisfied. WR-04
+  remains a real open exposure." (`.planning/milestones/v1.3-phases/40-saved-views-shared-filters/40-VERIFICATION.md`)
+- The blocking-flavoured language belonged to a **different** item — the unrun
+  `formatters-live.test.ts` — and even there the verifier explicitly declined to block: "NOT fixed
+  here: giving CI a database is an infrastructure decision, not a drive-by edit on the last day of a
+  milestone."
+- **The v1.3 audit enumerated both at ship time, with the measurement**, as known gaps 2 and 3:
+  "WR-04 export authorization — a non-admin can still export 44,254 of 46,054 organizations (96.1%)
+  under the 50,000 cap. Open, tracked, unchanged." (`.planning/milestones/v1.3-MILESTONE-AUDIT.md:67-68`)
+
+So the v1.3 close was a **knowing, documented acceptance on both sides — not an override of a
+blocking finding.** No re-litigation of v1.3 is owed. What IS owed is this phase, and the note that a
+roadmap can misdescribe its own history in the direction of drama.
 **Notes for planning**: `src/lib/export/view-export-guard.ts` is 139 lines with no admin branch and no
 selectivity rule. `EXPORT_ROW_CAP = 50_000`. The bulk export actions from Phase 38 write no audit row
 at all — only the view path is instrumented. `formatters-live.test.ts` (24 tests CI never runs) guards
