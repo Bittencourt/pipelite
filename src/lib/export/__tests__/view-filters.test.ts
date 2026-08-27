@@ -392,6 +392,44 @@ describe("no fetcher builds a condition of its own — the count sees everything
     ).toBe(1)
     expect(body).toContain("and(...conditions)")
   })
+
+  /**
+   * THE OTHER SIDE OF THE SAME SEAM (plan 50-04 Task 2, T-50-04-01).
+   *
+   * The cells above prove the READ builds nothing privately. This one proves the COUNT does not
+   * either — that `countExportMatches` obtains its predicate from the shared builder rather than
+   * assembling an equivalent-looking list of its own. A hand-copied list is correct exactly until one
+   * side is edited, and then the guard authorizes on a number the export does not honour.
+   *
+   * EXACTLY ONCE, not merely present: two `buildExportConditions(` calls in this module would mean
+   * `matched` and something else were counted over separately-built arrays, which is the divergence
+   * in a subtler dress.
+   */
+  it("export-count.ts counts over the SHARED builder and builds no predicate of its own", () => {
+    const counterSource = readStrippedSource("src/lib/export/export-count.ts")
+
+    // ANTI-VACUITY: an unreadable or renamed file must fail here rather than satisfy the negatives.
+    expect(counterSource).toContain("countExportMatches")
+    expect(counterSource.length).toBeGreaterThan(MIN_BUILDER_BODY_CHARS)
+
+    expect(
+      counterSource.split("buildExportConditions(").length - 1,
+      `export-count.ts must call buildExportConditions EXACTLY ONCE. Zero means it builds its own ` +
+        `predicate and the count no longer measures what the export returns; two or more means two ` +
+        `separately-built arrays, which is the same divergence one layer in.`,
+    ).toBe(1)
+
+    expect(
+      counterSource,
+      `export-count.ts pushes a condition of its own. The count must be taken over the SAME array ` +
+        `the fetcher uses — that equivalence is the whole reason the builders were extracted.`,
+    ).not.toContain("conditions.push")
+
+    // And the denominator is the base predicate alone: a viewer or filter term in `total` would
+    // inflate it, raise the allowance, and admit broader exports than the rule intends.
+    expect(counterSource).toContain("isNull(")
+    expect(counterSource).not.toContain("session")
+  })
 })
 
 describe("E-2: the pipeline divergence, asserted where its consequence lands", () => {
