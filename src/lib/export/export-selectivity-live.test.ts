@@ -288,9 +288,23 @@ describe("countExportMatches equals the export's own row count, against live dat
   }, 300_000)
 
   // ── `total` IS THE BASE PREDICATE, AND NOTHING ELSE ───────────────────────────────────────────
+  //
+  // WHAT THESE TWO CELLS DO AND DO NOT PROVE — labelled honestly, because the obvious reading is
+  // stronger than the truth. They prove `total` carries NO EXTRA term: a viewer scope, an `ids`
+  // scope or a filter leaking into the denominator would change the number and redden them.
+  //
+  // They do NOT prove `total` carries the SOFT-DELETE term. MEASURED: all four live tables hold ZERO
+  // soft-deleted rows (46,054/0 · 38,348/0 · 25,195/0 · 79,022/0), so `count(*)` and
+  // `count(*) where deleted_at is null` are the same number and the raw-SQL comparison below is
+  // satisfied either way. Plan 50-04's ablation 2 deleted the term and `npm run test:live` stayed
+  // GREEN at 47 passed — recorded rather than glossed.
+  //
+  // The detector for that half is STRUCTURAL and lives in
+  // `__tests__/view-filters.test.ts`'s counter cell, which asserts all four `isNull(<table>.deletedAt)`
+  // appear in `export-count.ts`. Do not read these two cells as covering it.
 
   it.each(Object.keys(LIVE_VOLUME) as ExportEntityType[])(
-    "%s: total equals the raw-SQL `deleted_at is null` count, with no other term",
+    "%s: total carries no term beyond the base predicate (see the note above on soft deletes)",
     async (entityType) => {
       const { table, total: expected } = LIVE_VOLUME[entityType]
       const raw = await rawCount(`${table} where deleted_at is null`)

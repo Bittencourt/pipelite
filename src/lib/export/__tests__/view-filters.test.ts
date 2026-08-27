@@ -425,10 +425,34 @@ describe("no fetcher builds a condition of its own — the count sees everything
         `the fetcher uses — that equivalence is the whole reason the builders were extracted.`,
     ).not.toContain("conditions.push")
 
-    // And the denominator is the base predicate alone: a viewer or filter term in `total` would
-    // inflate it, raise the allowance, and admit broader exports than the rule intends.
-    expect(counterSource).toContain("isNull(")
+    // ── THE DENOMINATOR, AND WHY THIS HALF HAS TO BE STRUCTURAL ─────────────────────────────────
+    //
+    // MEASURED, and it is the reason this cell exists in this form: ALL FOUR live tables hold ZERO
+    // soft-deleted rows (organizations 46,054/0, people 38,348/0, deals 25,195/0, activities
+    // 79,022/0, read by raw SQL 2026-08-27). So `count(*)` and `count(*) where deleted_at is null`
+    // return the SAME number on every one of them, and NO behavioural cell on this database can tell
+    // whether `total` carries the base predicate at all.
+    //
+    // Driven as plan 50-04's ablation 2 — `total` counted with the soft-delete term DELETED — and
+    // `npm run test:live` stayed fully GREEN at 47 passed. The plan expected those cells to redden
+    // "with both numbers recorded"; there are no two numbers to record. So the live file's
+    // base-predicate cells are green-by-DATA on this term, and THIS assertion is the only detector
+    // there can be until the tables hold a soft-deleted row.
+    for (const table of ["organizations", "people", "deals", "activities"]) {
+      expect(
+        counterSource,
+        `export-count.ts's denominator does not carry isNull(${table}.deletedAt). A total counted ` +
+          `over the whole table INCLUDING soft-deleted rows would inflate the denominator, raise ` +
+          `the allowance and admit broader exports than the rule intends. This cannot be caught ` +
+          `behaviourally here: all four live tables hold ZERO soft-deleted rows, so the count is ` +
+          `identical either way and the live file stays green. This is the detector.`,
+      ).toContain(`isNull(${table}.deletedAt)`)
+    }
+
+    // No viewer term either. There is no viewer scoping anywhere in the export read path, and that
+    // absence is the exposure SEC-03 bounds — not something to encode into the denominator.
     expect(counterSource).not.toContain("session")
+    expect(counterSource).not.toContain("ownerId")
   })
 })
 
