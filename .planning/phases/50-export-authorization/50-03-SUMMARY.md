@@ -670,3 +670,14 @@ use with the measurement that motivated it (§8, F1).
 None. No network endpoint, auth path, file-access pattern or schema change was introduced. The one new
 trust boundary — a vitest project reachable to the real `pipelite` database — is the plan's declared
 subject and is covered by T-50-03-01 through T-50-03-09, all of which were driven and observed.
+
+## Self-Check: PASSED
+
+Verified at HEAD `efb56f0`:
+
+- `vitest.live.config.ts` exists on disk AND in the commit (`git cat-file -e HEAD:vitest.live.config.ts`)
+- `50-03-SUMMARY.md` exists on disk AND in the commit
+- all four commits present in `git log --all`: `a3598f2`, `823da55`, `68433bb`, `efb56f0`
+- `git diff --exit-code` clean, no untracked files
+- `.github/workflows/ci.yml` absent from `git diff --name-only 3e88d6b..HEAD`
+- `STATE.md` and `ROADMAP.md` absent from the same list
