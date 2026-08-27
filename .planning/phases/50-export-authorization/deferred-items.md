@@ -111,3 +111,60 @@ constant stays.
 **`STATE.md:30`'s suite baseline is stale.** Both plans measured it independently: the true figures at
 wave 1's dispatch were 5,696 base over 185 files and 299 db at EXIT 0, against STATE's older numbers.
 The orchestrator owns STATE.md and updates it per wave.
+
+---
+
+## DEF-50-06 — the two-counts justification cites a measurement that does not reproduce
+
+**Found by:** 50-04, which measured rather than inheriting.
+
+`50-RESEARCH.md` states that one combined `count(*) FILTER (WHERE …)` aggregate takes **93.5 ms** against
+two separate counts at 46.1 + 13.0 ms, on the reasoning that the FILTER form "loses the scan's
+short-circuit". Re-measured, three runs each: filtered **~47 ms**, unfiltered **~12.9 ms**, combined
+**~47 ms**. The combined form is therefore **~13 ms FASTER**, not 34 ms slower, and the stated mechanism
+describes neither query plan.
+
+**Two counts were KEPT** — constraint 5 locks them and the decision is not reopened here — but 50-04
+refused to write the false justification into the source. `export-count.ts` §2 carries the measured
+figures and names the error.
+
+**Suggested owner:** whoever next touches the count path. Either re-justify two counts on a true
+measurement, or switch to the combined form. Do not repeat the 93.5 ms figure.
+
+---
+
+## DEF-50-07 — there are ZERO soft-deleted rows in the whole database, so every `deleted_at` predicate is behaviourally untestable
+
+**Found by:** 50-04, while trying to drive an ablation that turned out undrivable. **Verified
+independently by the orchestrator, 2026-08-27:**
+
+| table | soft-deleted | total |
+|---|---|---|
+| organizations | **0** | 46,054 |
+| people | **0** | 38,348 |
+| deals | **0** | 25,195 |
+| activities | **0** | 79,022 |
+
+**Consequence, and it generalises far past the export path.** `count(*)` and
+`count(*) where deleted_at is null` return the same number on every one of these tables, so **dropping
+an `isNull(deletedAt)` term from any predicate leaves a live-data proof fully green.** Any test that
+claims to verify soft-delete filtering against this database is vacuous — it passes because the
+distinguishing rows do not exist, not because the code is right.
+
+50-04's response is the correct pattern: it added a **structural** detector that can fire, and
+relabelled its live cells so they stop reading as coverage they do not provide.
+
+**Suggested owner:** this is a fixture/seed question, not a code defect — either seed soft-deleted rows
+into the live development database, or accept that `deleted_at` behaviour is provable only structurally
+or in an isolated database that seeds them. **Phases 51-54 will write live tests and must not assume
+otherwise.**
+
+---
+
+## DEF-50-08 — two ablations produce identical failure signatures
+
+**Found by:** 50-04.
+
+Ablations 1 and 3 produce the *same* assertion output, so the affected cells detect that the
+count-versus-export equality is broken but **cannot diagnose which side moved.** Not a vacuity — the
+gate fires correctly — but a diagnosability gap worth knowing before someone debugs it under pressure.
