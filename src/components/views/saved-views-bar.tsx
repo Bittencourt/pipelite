@@ -254,6 +254,20 @@ function SavedViewsBarInner({
    * about a selection of ids ("{count} are selected") and would read as nonsense over a filter set
    * nobody selected, which is why `views.export.tooMany` exists.
    *
+   * THE FOURTH OUTCOME (SEC-03): `too_broad`, when the filter matches too large a fraction of the
+   * table. It is a `views.*` key rather than a reused `bulk.*` one for the SAME reason `tooMany` is
+   * — `bulk.error.tooMany` speaks about a SELECTION of ids the user made, and there is no selection
+   * here, only a filter set that turned out to match more than the rule allows.
+   * `saved-views-bar-wiring.test.ts` enforces that with a zero-occurrence assertion on
+   * `tBulk("error.tooMany"`.
+   *
+   * IT MUST NOT FALL THROUGH TO `bulk.error.exportFailed`, and that is the whole point of the branch
+   * rather than a nicety. A deliberate refusal rendered as "Failed to export" tells the user the
+   * product is broken and gives them nothing to do; `views.export.tooBroad` names the two numbers
+   * the server counted and asks them to narrow. Both values come from the action's payload — the
+   * client cannot count rows and a number it invented would disagree with the one the rule decided
+   * on.
+   *
    * The filename comes from the SERVER and is never translated (E-6): a locale-dependent name on disk
    * is unsupportable, and a server-generated name cannot disagree with the row count beside it.
    */
@@ -264,6 +278,11 @@ function SavedViewsBarInner({
       if (!result.success) {
         if (result.error === "too_many") {
           toast.error(t("export.tooMany", { max: result.max }))
+          return
+        }
+
+        if (result.error === "too_broad") {
+          toast.error(t("export.tooBroad", { matched: result.matched, total: result.total }))
           return
         }
 
