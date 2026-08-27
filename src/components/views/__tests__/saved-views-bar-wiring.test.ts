@@ -169,8 +169,26 @@ const BAR_KEYS = [
   "degraded",
 ]
 
-/** The three `views.export.*` keys — the two the `bulk` namespace cannot say, plus E-3's reason. */
-const EXPORT_KEYS = ["export.disabledReason", "export.tooMany", "export.refused"]
+/**
+ * The four `views.export.*` keys — the three the `bulk` namespace cannot say, plus E-3's reason.
+ *
+ * `export.tooBroad` (SEC-03, plan 50-02's copy) is the POST-submit refusal and carries the two
+ * numbers the server counted: "This filter matches {matched} of {total} records". It is distinct
+ * from `export.disabledReason`, which is the PRE-submit advisory on a disabled button and names no
+ * numbers because there is nothing yet to count. Both must exist: a user whose filter is too broad
+ * sees an ENABLED button — the bar cannot know the cardinality without a query — so the only place
+ * that sentence can be said is after the action refuses.
+ *
+ * The loop in cell 14 asserts the COMPONENT references each of these. That is the whole point of
+ * the list: an unreferenced key is a sentence that was written, translated into three locales, and
+ * then never shown to anybody.
+ */
+const EXPORT_KEYS = [
+  "export.disabledReason",
+  "export.tooMany",
+  "export.refused",
+  "export.tooBroad",
+]
 
 /** REUSED VERBATIM from a namespace this phase does not own (E-7, E-8). Zero new keys. */
 const BULK_KEYS = ["exported", "error.exportFailed"]
@@ -794,7 +812,7 @@ describe("V-40-5 — the saved-views-bar wiring gate", () => {
     }
   })
 
-  it("14. K-4: the eighteen bar keys, the three export keys, and the two REUSED bulk keys", () => {
+  it("14. K-4: the eighteen bar keys, the four export keys, and the two REUSED bulk keys", () => {
     const source = read()
 
     for (const namespace of ["views", "bulk"]) {
