@@ -42,13 +42,15 @@ Refuse when the result exceeds a fraction of the live table.
   found `views.export.disabledReason` said "Choose at least one filter first. An unfiltered export
   isn't allowed." in the one case the narrowing exists for, and G-2 was closed by rewording. Do not
   regress that.
-- **Admins are unaffected**, which is what makes SC-2 provable at all: the same broad export that a
-  non-admin is refused must still complete for an admin, or the rule is a feature removal wearing a
-  guard's clothes.
+- ~~**Admins are unaffected**, which is what makes SC-2 provable at all…~~ **SUPERSEDED after research
+  — see "Decisions taken AFTER research" §1 below. There is NO admin branch:** a shipped gate forbids
+  an `admin`/`role` token in `export-action.ts`, and `/admin/export` is already a separate role-gated
+  unbounded export, so the view path is bounded for everyone and admins keep the path they have.
 
 ### Absorb `formatters-live.test.ts` (user decision, 2026-08-27)
 
-Make its 24 tests runnable in CI as part of this phase.
+Make its tests runnable in CI as part of this phase. **The count is 28, not 24** — corrected after
+research; see §3 below.
 
 - They guard the exact path this phase changes. A phase that bounds exports while leaving its own
   formatter tests unrun proves less than it could.
