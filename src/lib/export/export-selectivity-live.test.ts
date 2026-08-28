@@ -1,15 +1,124 @@
 /**
- * THE COUNT EQUALS THE FILE. Proven against the real `pipelite` database, not a fixture.
+ * THE COUNT EQUALS THE FILE, AND THE BOUND HOLDS AT LIVE SCALE. Proven against the real `pipelite`
+ * database, not a fixture.
  *
- * `countExportMatches` produces the number the selectivity guard will authorize on.
- * `fetchFilteredData` produces the file the user receives. If those two numbers can differ, the
- * bound is bypassable — and the bypass is silent, because both halves keep "working". This file is
- * the observation that they are the same number, for three real filters on three entity types plus a
- * zero-match case, plus the no-filter case which is the exposure itself.
+ * Two halves, landed by two plans:
+ *
+ *   - **50-04's half.** `countExportMatches` produces the number the selectivity guard will
+ *     authorize on. `fetchFilteredData` produces the file the user receives. If those two numbers
+ *     can differ, the bound is bypassable — and the bypass is silent, because both halves keep
+ *     "working". Those cells are the observation that they are the same number, for three real
+ *     filters on three entity types plus a zero-match case, plus the no-filter case which is the
+ *     exposure itself.
+ *   - **50-06's half (SC-1, SC-2, SC-4, SC-5).** The whole decision driven END TO END through
+ *     `exportViewResults` as a real, asserted, non-admin `member`: the near-whole-table export
+ *     REFUSED with both numbers in the refusal, the real worst case refused, the narrow export still
+ *     COMPLETING with a parsed CSV, the threshold approached and crossed over nine widening steps,
+ *     and the audit row observed going 0 → 1 and removed again.
  *
  * They are the same number BY CONSTRUCTION after plan 50-04: both sides obtain their predicate from
  * `buildExportConditions`. This file is what turns that from a claim about the code's shape into a
  * measurement.
+ *
+ * ── WHAT IS MOCKED, AND WHY IT IS THE MINIMUM ───────────────────────────────────────────────────
+ *
+ * `@/auth`. ONLY `@/auth`. `exportViewResults` opens with `await auth()`, which reads an Auth.js JWT
+ * out of request headers that an in-process call does not have, so without the mock every cell below
+ * would return `unauthenticated` and prove nothing about SEC-03. `session.user.id` is also the
+ * identity the audit row attributes to, which is why it must be a REAL user id — `actor_user_id` is
+ * a genuine foreign key.
+ *
+ * Everything that DECIDES the outcome under test is real, and each is named here the way
+ * `src/app/api/files/__tests__/files-route-ownership.db.test.ts` names its own minimum:
+ *
+ *   - `@/db` — real. The queries run against 46,054 organizations, 38,348 people, 25,195 deals and
+ *     79,022 activities.
+ *   - `export-count.ts` — real. The `matched`/`total` pair is measured, never supplied.
+ *   - `export-selectivity.ts` — real. The admit/refuse decision is the module's own.
+ *   - `formatters.ts` — real. The predicate, the flattening, the custom fields and the papaparse
+ *     serialisation are the ones the user gets.
+ *   - `view-export-guard.ts` — real. Both the whitelist guard and `EXPORT_ROW_CAP`.
+ *   - `recordExport` — real, and it really inserts into `audit_log` (see the write discipline below).
+ *
+ * A mocked count or a mocked fetch would make every cell in this file decorative: it would be
+ * asserting that a stub returned what the test told it to.
+ *
+ * ── WHY THE ACTOR IS A `member`, WHY THE ROLE IS ASSERTED, AND WHY THERE IS NO ADMIN CELL ───────
+ *
+ * SC-1 is "a non-admin cannot export substantially the whole table". This deployment has TEN users,
+ * TWO of them admins, so a proof of that criterion run as an admin proves nothing at all — and the
+ * failure would be invisible, because the refusal it observed would be the same refusal. So the
+ * actor is READ from the database (`role = 'member' AND status = 'approved' AND deleted_at IS NULL`,
+ * lowest email) and its `role` is ASSERTED to be `'member'` in a pre-flight cell before any other
+ * cell uses it.
+ *
+ * NOTE, AGAINST 50-06-PLAN's INTERFACES SECTION: the plan states that query resolves to
+ * `emily.davis@pipelite.local`. It does not. `emily.davis@pipelite.local` IS soft-deleted
+ * (`deleted_at IS NOT NULL`), along with five of the seven `pipelite.local` members, so the
+ * `deleted_at IS NULL` term the plan's own SQL carries excludes it. It resolves to
+ * `pedrobittencourt87@gmail.com`. The query is right; the plan's predicted answer was not. Reading
+ * the row rather than hard-coding the uuid is exactly what made the difference visible.
+ *
+ * AND THERE IS DELIBERATELY NO ADMIN CELL HERE, for three reasons, stated so the absence reads as a
+ * decision rather than an omission:
+ *
+ *   1. THERE IS NO ADMIN BRANCH TO EXERCISE. The bound applies to EVERY authenticated user.
+ *      `export-action.ts` contains no role check at all.
+ *   2. NOTHING IS LOST BY THAT. `src/app/admin/export/actions.ts` is already a separate, role-gated,
+ *      unbounded export, so admins keep the path they have.
+ *   3. THE ABSENCE IS GATED. `__tests__/view-filters.test.ts` asserts, over comment-stripped source,
+ *      that `export-action.ts` contains neither an `'admin'` string nor a bare `role` token. An
+ *      admin cell here would be describing a branch the repository forbids.
+ *
+ * `50-RESEARCH.md` recommended additionally proving "the same broad export still completes for an
+ * admin". `50-CONTEXT.md`'s post-research decision superseded that recommendation, and this file
+ * follows the DECISION, not the research.
+ *
+ * ── WHY `owner` AND `assignee` APPEAR IN NO ADMITTED CASE ───────────────────────────────────────
+ *
+ * Both would make a cell pass on a degenerate set — the shape T-50-04-07 and T-50-06-03 name.
+ * Measured (50-MEASUREMENTS §4, §5; re-confirmed by direct SQL at the start of 50-06):
+ *
+ *   deal `owner=ef4acac9…`             25,195 of 25,195 = 100.00%   — the WHOLE table
+ *   activity `owner=ef4acac9…`         79,022 of 79,022 = 100.00%   — the WHOLE table
+ *   `deal_assignees`                   0 rows                       — EMPTY
+ *   activity `assignee_id IS NOT NULL` 0 of 79,022                  — EMPTY
+ *
+ * A "narrow export still completes" proof on `owner` would pass on the whole table; the same proof
+ * on `assignee` would pass on the empty set. Both are vacuous, in opposite directions. So SC-2 uses
+ * `search=ltda` (13,355 = 29.00%) and activity `type=meeting` (2,993), and neither key appears in an
+ * admitted cell.
+ *
+ * `owner` DOES appear — once, on the REFUSED side, because that is where its 100.00% is the point.
+ *
+ * ── WHAT THE WORST CASE ACTUALLY IS, AND IT IS NOT THE ROADMAP'S EXAMPLE ────────────────────────
+ *
+ * The roadmap's illustration is `search=a`: 44,254 of 46,054 organizations, 96.09%. Loud, but not
+ * the worst. Every deal in this deployment is owned by ONE user — `select count(distinct owner_id)
+ * from deals where deleted_at is null` is exactly 1 — and `owner` is on `EXPORTABLE_FILTER_KEYS.deal`.
+ * So `/deals` + `owner=ef4acac9-e860-4e71-9db5-ddaa2808cb9f` is **25,195 of 25,195 = 100.00%, under
+ * `EXPORT_ROW_CAP`**: a member exporting every deal in the business, all of them belonging to the
+ * admin `prbitt@gmail.com`, through a whitelisted key, with the pre-phase cap never firing. That is
+ * the worst live instance of WR-04, and it is proven refused below alongside the loud one.
+ *
+ * ── THE WRITE DISCIPLINE, AND IT HAS CHANGED SINCE 50-04 ────────────────────────────────────────
+ *
+ * 50-04's cells were READ-ONLY and this header said so. That is NO LONGER TRUE, and pretending
+ * otherwise would be the kind of stale comment this milestone keeps deleting.
+ *
+ * An ADMITTED export calls `recordExport`, which INSERTS one `audit_log` row. So every admitted cell
+ * below writes exactly one row and then takes it back out — matched on the id READ BACK from the
+ * probe, plus `actor_user_id = <this file's member>`, and **NEVER on `entity_type` alone**, which
+ * would destroy a real export's evidence if a person exported something while the suite ran.
+ * `afterAll` deletes any id this file recorded and re-asserts both counts. `audit_log` is
+ * append-only with the retention pruner as its only other deleter, so a test that left rows behind
+ * would be corrupting the one record this control produces.
+ *
+ * SC-5 is the POSITIVE half of that: `audit_log` held 214 rows and ZERO with `entity_type='export'`
+ * — no view export had ever been recorded on this deployment — and the SC-5 cell observes 214 → 215
+ * and 0 → 1, asserts the row's contents, and removes it. An "unchanged count" assertion would have
+ * passed today while proving nothing whatever, which is precisely why SC-5 needed an observation
+ * rather than an assertion.
  *
  * ── WHY THERE IS NO `describe.skipIf` HERE, ON PURPOSE ───────────────────────────────────────────
  *
@@ -25,7 +134,8 @@
  * file CONTAINS `describe.skipIf(`, so adding a file without one would redden it.
  *
  * What replaces the skip is the PRE-FLIGHT block: `DATABASE_URL` set, loopback, named `pipelite`,
- * and the four live volumes equal to the integers this file asserts against. A wrong database fails
+ * the four live volumes equal to the integers this file asserts against, an actor whose role is
+ * `member`, and a cell proving the session mock is LIVE. A wrong database, or a wrong actor, fails
  * LOUDLY and by name rather than passing confusingly.
  *
  * RUN IT WITH:
@@ -36,48 +146,45 @@
  *   ./node_modules/.bin/vitest run --config vitest.live.config.ts \
  *     src/lib/export/export-selectivity-live.test.ts
  *
- * ── THIS FILE WRITES NOTHING, AND ASSERTS AS MUCH ───────────────────────────────────────────────
- *
- * It issues `select count(*)` and `fetchFilteredData` reads. No insert, no update, no delete. The
- * final cell re-reads `audit_log`'s count and asserts it is unchanged — and note what that assertion
- * is and is not worth: `audit_log` holds 214 rows with ZERO `entity_type='export'`, so an "unchanged"
- * assertion is weak evidence on its own. It is here because the alternative — not checking — is how a
- * read-only claim rots. SC-5's positive proof (214 -> 215, 0 -> 1) belongs to plan 50-06.
- *
- * ── WHY `owner` AND `assignee` APPEAR IN NO CASE BELOW ──────────────────────────────────────────
- *
- * Both would make an equality cell pass on a degenerate set, which is the shape T-50-04-07 names.
- * Measured (50-MEASUREMENTS §4, §5):
- *
- *   deal `owner=ef4acac9…`             25,195 of 25,195 = 100.00%   — the WHOLE table
- *   activity `owner=ef4acac9…`         79,022 of 79,022 = 100.00%   — the WHOLE table
- *   `deal_assignees`                   0 rows                       — EMPTY
- *   activity `assignee_id IS NOT NULL` 0 of 79,022                  — EMPTY
- *
- * An equality proved on the whole table cannot distinguish a correct predicate from no predicate at
- * all, and one proved on the empty set cannot distinguish a correct predicate from a broken one.
- * `search=ltda` (13,355 = 29.00%), activity `type=meeting` (2,993) and deal `stage=Base Fria - Lead`
- * (3,466) are none of those things.
- *
  * ── NO CLOCK, ANYWHERE ──────────────────────────────────────────────────────────────────────────
  *
- * No `Date.now()`, no `performance.now()`, no elapsed-time assertion, no timing threshold. The query
- * costs are recorded in `export-count.ts`'s header and in the SUMMARY, never in an assertion.
+ * No `Date.now()`, no `performance.now()`, no elapsed-time assertion, no timing threshold. The
+ * per-test timeouts below are LIVENESS BACKSTOPS against a hang, never margins. Query costs are
+ * recorded in `export-count.ts`'s header and in the SUMMARYs, never in an assertion.
  * `suite-timing-hygiene.test.ts` propagates clock taint by variable NAME rather than by scope, so a
  * single elapsed number here would convert the SQL count floors below into reported timing
  * thresholds one file over.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest"
-import { sql } from "drizzle-orm"
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest"
+import { and, desc, eq, inArray, sql } from "drizzle-orm"
+import Papa from "papaparse"
+
+/**
+ * THE ONE MOCK. `vi.hoisted` so the factory can reach it, and mutable so a single cell can clear
+ * the session and prove the mock is the thing supplying identity.
+ *
+ * `null` rather than a session with an empty id when `userId` is `""`: that is what an
+ * unauthenticated `auth()` actually returns, and the difference is what the "mock is live" cell
+ * below turns into evidence.
+ */
+const authState = vi.hoisted(() => ({ userId: "" }))
+
+vi.mock("@/auth", () => ({
+  auth: vi.fn(async () => (authState.userId ? { user: { id: authState.userId } } : null)),
+}))
+
 import { db } from "@/db"
+import { auditLog } from "@/db/schema"
+import { exportViewResults } from "@/lib/views/export-action"
 import { fetchFilteredData } from "./formatters"
 import { countExportMatches } from "./export-count"
 import { decideSelectivity, exportAllowance } from "./export-selectivity"
+import { EXPORT_ROW_CAP } from "./view-export-guard"
 import type { ExportEntityType, ExportFilters } from "./types"
 
 /**
  * THE LIVE VOLUMES, as named integers, re-measured 2026-08-27 (50-MEASUREMENTS §1) and re-confirmed
- * at the start of plan 50-04's execution.
+ * at the start of plan 50-04's execution and again at the start of 50-06's.
  *
  * Table name -> `count(*) where deleted_at is null`.
  */
@@ -100,6 +207,25 @@ const MEETING_MATCHED = 2_993
 const BASE_FRIA_LEAD_MATCHED = 3_466
 
 /**
+ * THE SOLE DEAL OWNER, and the reason SC-1's worst case exists. Every one of the 25,195 live deals
+ * carries this `owner_id` — `select count(distinct owner_id) …` is 1, asserted in a pre-flight cell
+ * rather than trusted. The user is `prbitt@gmail.com`, an ADMIN, which is what makes a member
+ * exporting all of them through `owner` the sharpest live instance of WR-04.
+ */
+const SOLE_DEAL_OWNER_ID = "ef4acac9-e860-4e71-9db5-ddaa2808cb9f"
+/** deal `owner=<the sole owner>` — 25,195 of 25,195 = 100.00%, and UNDER the 50,000 cap. */
+const DEAL_OWNER_MATCHED = 25_195
+/** The allowance on deals: `max(1000, floor(25195 * 0.40))`. */
+const DEAL_ALLOWANCE = 10_078
+
+/**
+ * activity `status=completed` — 74,857 of 79,022. THE CAP'S ONE LIVE BRANCH BEFORE THIS PHASE: it is
+ * above `EXPORT_ROW_CAP = 50_000`, so the same request used to be refused as `too_many`. It is now
+ * refused as `too_broad`, and that handover is asserted rather than assumed.
+ */
+const ACTIVITY_COMPLETED_MATCHED = 74_857
+
+/**
  * THE ACTIVITIES ALLOWANCE — 31,608, NOT 31,609. `DEF-50-01` / `50-MEASUREMENTS` DELTA D-1.
  *
  * `50-RESEARCH.md:774` computed its allowance column with `Math.round` and therefore states 31,609.
@@ -110,6 +236,15 @@ const BASE_FRIA_LEAD_MATCHED = 3_466
  */
 const ACTIVITY_ALLOWANCE = 31_608
 const ACTIVITY_SMALLEST_REFUSED = 31_609
+
+/**
+ * `audit_log` AT THE START, as named integers. 214 rows, and ZERO with `entity_type='export'` — no
+ * view export has ever been recorded on this deployment, verified independently five times across
+ * phase 50 and deliberately left untouched by plans 50-01 through 50-05 so that the 0 → 1
+ * transition would be OBSERVED here rather than asserted away.
+ */
+const AUDIT_LOG_TOTAL_AT_START = 214
+const EXPORT_AUDIT_ROWS_AT_START = 0
 
 const csvOptions = (entityType: ExportEntityType, filters?: ExportFilters) => ({
   entityType,
@@ -136,16 +271,70 @@ async function exportedCount(
   return result.count
 }
 
-describe("countExportMatches equals the export's own row count, against live data", () => {
-  /** Raw SQL, so every truth is read independently of the predicate under test. */
-  async function rawCount(whereSql: string): Promise<number> {
-    const rows = (await db.execute(
-      sql.raw(`select count(*)::int as n from ${whereSql}`)
-    )) as unknown as { n: number }[]
+/** Raw SQL, so every truth is read independently of the predicate under test. */
+async function rawCount(whereSql: string): Promise<number> {
+  const rows = (await db.execute(
+    sql.raw(`select count(*)::int as n from ${whereSql}`)
+  )) as unknown as { n: number }[]
 
-    return rows[0].n
+  return rows[0].n
+}
+
+/** The actor every end-to-end cell runs as, READ from the database rather than hard-coded. */
+type Actor = { id: string; email: string; role: string; status: string }
+
+async function resolveMemberActor(): Promise<Actor | undefined> {
+  const rows = (await db.execute(
+    sql.raw(
+      `select id, email, role, status from users
+        where role = 'member' and status = 'approved' and deleted_at is null
+        order by email
+        limit 1`
+    )
+  )) as unknown as Actor[]
+
+  return rows[0]
+}
+
+/** Every `audit_log` id this file caused, for the `afterAll` safety net. */
+const auditRowIdsCreated: string[] = []
+
+/**
+ * READ BACK, then DELETE BY THE IDS READ BACK, every export audit row this file's actor caused.
+ *
+ * THE PREDICATE IS DELIBERATELY NARROWER THAN `entity_type = 'export'`. A delete matched on
+ * `entity_type` would also remove a row a person's real export wrote while the suite ran, which
+ * would both destroy evidence and MASK A LEAK — the suite would report a clean table it had itself
+ * emptied. So the read is scoped to `entity_type='export' AND actor_user_id = <this file's member>`,
+ * and the delete matches the ids that read produced. The residual collision is one real export by
+ * that same member during the run; it is stated rather than hidden, and the row contents asserted by
+ * the SC-5 cell would catch it.
+ */
+async function takeExportAuditRows(actorUserId: string) {
+  const rows = await db
+    .select()
+    .from(auditLog)
+    .where(and(eq(auditLog.entityType, "export"), eq(auditLog.actorUserId, actorUserId)))
+    .orderBy(desc(auditLog.createdAt))
+
+  if (rows.length > 0) {
+    const ids = rows.map((row) => row.id)
+
+    auditRowIdsCreated.push(...ids)
+    await db.delete(auditLog).where(inArray(auditLog.id, ids))
   }
 
+  return rows
+}
+
+/** `changes` is JSONB; this is the shape `recordExport` writes. */
+type ExportChanges = {
+  exportedEntityType: { from: null; to: string }
+  rowCount: { from: null; to: number }
+  filters: { from: null; to: string }
+}
+
+describe("countExportMatches equals the export's own row count, against live data", () => {
   let auditLogAtStart: number
   let meetingTypeId: string
   let baseFriaLeadStageId: string
@@ -167,11 +356,6 @@ describe("countExportMatches equals the export's own row count, against live dat
     meetingTypeId = types[0]?.id
     baseFriaLeadStageId = stages[0]?.id
   }, 120_000)
-
-  afterAll(async () => {
-    // Without this the postgres-js pool keeps the vitest worker alive.
-    await db.$client.end({ timeout: 5 })
-  })
 
   // ── PRE-FLIGHT ────────────────────────────────────────────────────────────────────────────────
 
@@ -388,26 +572,413 @@ describe("countExportMatches equals the export's own row count, against live dat
     })
   })
 
-  // ── AND IT WROTE NOTHING ──────────────────────────────────────────────────────────────────────
+  // ── AND THESE CELLS WROTE NOTHING ─────────────────────────────────────────────────────────────
 
-  it("WROTE NOTHING: audit_log's count is unchanged", async () => {
+  it("THIS SUITE WROTE NOTHING: audit_log's count is unchanged by the count-equality cells", async () => {
     const auditLogAtEnd = await rawCount("audit_log")
 
     expect(
       auditLogAtEnd,
-      "this file inserted or deleted audit_log rows. It is READ-ONLY: counts and exports only."
+      "the count-equality cells inserted or deleted audit_log rows. They are READ-ONLY: counts and " +
+        "`fetchFilteredData` reads only. `fetchFilteredData` is BELOW `recordExport` in the call " +
+        "graph — only `exportViewResults` records — so a change here means something else moved."
     ).toBe(auditLogAtStart)
 
     // ANTI-VACUITY, and an honest one: an "unchanged" assertion on a table with zero export rows is
-    // weak evidence, so the anchor states what was actually observed. SC-5's POSITIVE proof
-    // (214 -> 215, 0 -> 1) is plan 50-06's, not this file's.
+    // weak evidence, which is why the SC-5 suite below makes a POSITIVE 0 -> 1 observation instead.
+    expect(auditLogAtStart).toBe(AUDIT_LOG_TOTAL_AT_START)
     expect(auditLogAtStart).toBeGreaterThan(0)
+
     const exportRows = await rawCount(`audit_log where entity_type = 'export'`)
 
     expect(
       exportRows,
-      "an export audit row exists. This file writes none, so either another process wrote it or " +
-        "50-06 has landed and this anchor needs updating."
-    ).toBe(0)
+      "an export audit row exists at the end of the count-equality suite. Those cells write none, " +
+        "and the SC-5 suite below has not run yet, so either another process wrote it or an " +
+        "earlier suite failed to remove its own row."
+    ).toBe(EXPORT_AUDIT_ROWS_AT_START)
   }, 120_000)
 })
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════════════════════════
+ * SC-1 AND SC-2, END TO END THROUGH `exportViewResults`, AS AN ASSERTED NON-ADMIN MEMBER.
+ * ════════════════════════════════════════════════════════════════════════════════════════════════
+ *
+ * Everything above is `countExportMatches` and `decideSelectivity` composed by the TEST. Everything
+ * below is the ACTION composing them itself, at live scale, for a real user — which is the only
+ * shape that can distinguish "the rule is correct" from "the rule is wired in".
+ *
+ * A FIRST-RUN GREEN HERE PROVES NOTHING ON ITS OWN. The fix landed in 50-05, so every cell below
+ * passed on its first execution. What makes these cells evidence rather than description is the six
+ * ablations recorded in `50-06-SUMMARY.md`: delete `decideSelectivity` and the `too_broad` return and
+ * SC-1's cells go red; set the fraction to 0.99 and they go red while SC-2's stay green; set it to
+ * 0.01 and SC-2's go red while SC-1's stay green; zero the refusal payload and the exact-number
+ * assertions go red while "is refused" stays green.
+ */
+describe("SEC-03 end to end: exportViewResults as a real member, at live scale", () => {
+  let actor: Actor | undefined
+
+  beforeAll(async () => {
+    actor = await resolveMemberActor()
+    // The mock reads this on every `auth()` call, so setting it here is what makes every cell below
+    // run as that member.
+    authState.userId = actor?.id ?? ""
+  }, 120_000)
+
+  afterAll(async () => {
+    // THE SAFETY NET. Any id this file recorded, removed by id, then both counts re-asserted. It
+    // runs even if a cell above threw part-way through an admitted export.
+    if (auditRowIdsCreated.length > 0) {
+      await db.delete(auditLog).where(inArray(auditLog.id, auditRowIdsCreated))
+    }
+
+    const remaining = await rawCount(`audit_log where entity_type = 'export'`)
+    const total = await rawCount("audit_log")
+
+    expect(
+      remaining,
+      "this file left an export audit row behind. audit_log is append-only with the retention " +
+        "pruner as its only other deleter, so a leftover row is a corruption of the one record " +
+        "this control produces."
+    ).toBe(EXPORT_AUDIT_ROWS_AT_START)
+    expect(total).toBe(AUDIT_LOG_TOTAL_AT_START)
+  }, 120_000)
+
+  // ── PRE-FLIGHT: THE ACTOR, AND THE MOCK ───────────────────────────────────────────────────────
+
+  it("PRE-FLIGHT: the actor is a real, approved, non-deleted `member` — asserted, not assumed", () => {
+    expect(
+      actor,
+      "no `member` / `approved` / not-soft-deleted user exists. Every cell below would then run " +
+        "as `unauthenticated` and prove nothing about SEC-03."
+    ).toBeTruthy()
+    if (!actor) throw new Error("unreachable — asserted above")
+
+    // THE ASSERTION THAT MAKES SC-1 MEAN WHAT IT SAYS. A "a non-admin cannot export the whole
+    // table" proof run as one of this deployment's two admins would observe the same refusal and
+    // prove nothing, because there is no admin branch to differ on.
+    expect(
+      actor.role,
+      `the export is being driven as \`${actor.role}\`, not \`member\`. SC-1 is about a NON-ADMIN.`
+    ).toBe("member")
+    expect(actor.status).toBe("approved")
+    expect(actor.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    // Recorded in 50-06-SUMMARY.md: `pedrobittencourt87@gmail.com`. NOT
+    // `emily.davis@pipelite.local`, which 50-06-PLAN predicted and which is soft-deleted.
+    expect(actor.email).toContain("@")
+  })
+
+  it("PRE-FLIGHT: the deployment really has admins, so acting as a member is a CHOICE", async () => {
+    // ANTI-VACUITY for the cell above. If every user were a `member`, "we ran as a member" would be
+    // a tautology rather than a decision. There are two admins, and the actor is neither.
+    const admins = await rawCount(`users where role = 'admin' and deleted_at is null`)
+
+    expect(admins).toBeGreaterThan(0)
+    expect(admins).toBe(2)
+  }, 120_000)
+
+  it("PRE-FLIGHT: the session mock is LIVE — an empty map is `refused`, not `unauthenticated`", async () => {
+    // WITHOUT THIS CELL THE WHOLE SUITE COULD BE PROVING `auth()`. If the mock were inert, every
+    // call below would stop at `if (!session?.user?.id)` and return `unauthenticated` — a refusal,
+    // superficially the right shape, that says nothing whatever about the selectivity bound. That
+    // distinction is the difference between proving SEC-03 and proving the auth guard.
+    const authenticated = await exportViewResults({ entityType: "organization", filters: {} })
+
+    // `refused` is `guardExportInput`'s pre-existing verdict on an empty filter map, reached THROUGH
+    // an authenticated session. It is a different literal from `unauthenticated`.
+    expect(
+      authenticated,
+      "an empty filter map returned something other than `refused`. If it returned " +
+        "`unauthenticated` the session mock is inert and every refusal in this suite is the WRONG " +
+        "refusal."
+    ).toEqual({ success: false, error: "refused" })
+
+    // AND THE OTHER HALF: clear the session and the SAME call returns a DIFFERENT literal. So the
+    // mock is not merely present, it is the thing supplying identity, and the two refusals are
+    // distinguishable rather than one indistinguishable "false".
+    authState.userId = ""
+    const anonymous = await exportViewResults({ entityType: "organization", filters: {} })
+
+    // Restored BEFORE the assertion, so a failure here cannot leave the suite unauthenticated.
+    authState.userId = actor?.id ?? ""
+
+    expect(anonymous).toEqual({ success: false, error: "unauthenticated" })
+    expect(
+      await exportViewResults({ entityType: "organization", filters: {} })
+    ).toEqual({ success: false, error: "refused" })
+  }, 120_000)
+
+  it("PRE-FLIGHT: audit_log is at 214 rows with ZERO entity_type='export'", async () => {
+    // The floor SC-5 needs, snapshotted before any admitted export runs. Named integers, because
+    // "some number of rows" would let a leak hide inside a moving baseline.
+    expect(await rawCount("audit_log")).toBe(AUDIT_LOG_TOTAL_AT_START)
+    expect(
+      await rawCount(`audit_log where entity_type = 'export'`),
+      "an export audit row already exists, so this deployment's 0 -> 1 transition cannot be " +
+        "observed. Check for a leftover row from an interrupted run before relaxing this."
+    ).toBe(EXPORT_AUDIT_ROWS_AT_START)
+  }, 120_000)
+
+  it("PRE-FLIGHT: every live deal has the SAME owner — the worst case's premise, measured", async () => {
+    // ANTI-VACUITY for the worst-case cell. `owner=<uuid>` matching the whole table is only the
+    // worst case BECAUSE there is exactly one owner; if there were fifty, the same filter would be
+    // a legitimately narrow export and the cell below would be proving something else entirely.
+    const distinctOwners = await rawCount(
+      `(select distinct owner_id from deals where deleted_at is null) o`
+    )
+    const ownedBySole = await rawCount(
+      `deals where deleted_at is null and owner_id = '${SOLE_DEAL_OWNER_ID}'`
+    )
+
+    expect(distinctOwners).toBe(1)
+    expect(ownedBySole).toBe(DEAL_OWNER_MATCHED)
+    expect(ownedBySole).toBe(LIVE_VOLUME.deal.total)
+  }, 120_000)
+
+  // ── SC-1: THE WHOLE TABLE IS REFUSED, WITH BOTH NUMBERS IN THE REFUSAL ────────────────────────
+
+  it("SC-1: organization + search=a is REFUSED, carrying exactly 44,254 of 46,054", async () => {
+    const result = await exportViewResults({
+      entityType: "organization",
+      filters: { search: "a" },
+    })
+
+    // ALL THREE FIELDS, EXACTLY, and by `toEqual` rather than by property — an extra key would be a
+    // payload that had drifted from what `views.export.tooBroad` renders.
+    expect(result).toEqual({
+      success: false,
+      error: "too_broad",
+      matched: SEARCH_A_MATCHED,
+      total: LIVE_VOLUME.organization.total,
+    })
+
+    // NO CSV WAS SERIALISED. The refusal precedes `fetchFilteredData`, so the 44,254 rows were never
+    // read, never flattened and never formatted. A `data` field here would mean SEC-03 had been
+    // satisfied AFTER the rows had already left the database.
+    expect("data" in result).toBe(false)
+    expect("filename" in result).toBe(false)
+    expect("count" in result).toBe(false)
+
+    // AND THE SCALE IS THE POINT: this is 96.09% of the customer table, more than twice the
+    // allowance, refused for an ordinary authenticated member with no admin branch anywhere.
+    expect(SEARCH_A_MATCHED).toBeGreaterThan(ORG_ALLOWANCE)
+    expect(SEARCH_A_MATCHED).toBeGreaterThan(2 * ORG_ALLOWANCE)
+  }, 300_000)
+
+  it("SC-1: a REFUSED export writes NO audit row — the known WR-04 LIMITATION, not a win", async () => {
+    const totalBefore = await rawCount("audit_log")
+    const exportRowsBefore = await rawCount(`audit_log where entity_type = 'export'`)
+
+    expect(exportRowsBefore).toBe(EXPORT_AUDIT_ROWS_AT_START)
+
+    const result = await exportViewResults({
+      entityType: "organization",
+      filters: { search: "a" },
+    })
+
+    expect(result.success).toBe(false)
+    expect(await rawCount("audit_log")).toBe(totalBefore)
+    expect(await rawCount(`audit_log where entity_type = 'export'`)).toBe(exportRowsBefore)
+
+    // AND WHAT THAT IS WORTH, STATED PLAINLY SO NOBODY READS IT AS A FEATURE. `export-action.ts`
+    // returns `too_broad` BEFORE `recordExport`, so refused, capped and guard-refused attempts all
+    // write nothing. `audit_log` is therefore evidence of exports that COMPLETED and NOT of probing:
+    // an attacker sweeping filters to find the widest admissible one leaves no trace at all. That is
+    // the WR-04 residual exposure, it stays OPEN in BACKLOG.md, and it is not closed by this phase.
+    expect(totalBefore).toBe(AUDIT_LOG_TOTAL_AT_START)
+  }, 300_000)
+
+  it("SC-1, THE WORST CASE: deal + owner is refused at 25,195 of 25,195 — 100.00%, UNDER the cap", async () => {
+    // THIS, NOT `search=a`, IS THE WORST LIVE INSTANCE OF WR-04, and the roadmap's example is merely
+    // the loudest. `owner` is on `EXPORTABLE_FILTER_KEYS.deal`, every live deal carries the same
+    // `owner_id` (asserted in the pre-flight cell above), and that owner is the ADMIN
+    // `prbitt@gmail.com` — so before this phase a member could export every deal in the business,
+    // all of them someone else's, through a whitelisted key, and the cap would never have fired
+    // because 25,195 is well under 50,000.
+    const result = await exportViewResults({
+      entityType: "deal",
+      filters: { owner: SOLE_DEAL_OWNER_ID },
+    })
+
+    expect(result).toEqual({
+      success: false,
+      error: "too_broad",
+      matched: DEAL_OWNER_MATCHED,
+      total: LIVE_VOLUME.deal.total,
+    })
+    expect("data" in result).toBe(false)
+
+    // 100.00%, EXACTLY — not "nearly all". The numerator IS the denominator.
+    expect(DEAL_OWNER_MATCHED).toBe(LIVE_VOLUME.deal.total)
+    // UNDER THE CAP, which is the half that makes it worse than the headline: `EXPORT_ROW_CAP` was
+    // the only pre-phase control on this path and it does not reach this request.
+    expect(DEAL_OWNER_MATCHED).toBeLessThan(EXPORT_ROW_CAP)
+    // And far above the deals allowance, so the refusal is not a near-miss.
+    expect(exportAllowance(LIVE_VOLUME.deal.total)).toBe(DEAL_ALLOWANCE)
+    expect(DEAL_OWNER_MATCHED).toBeGreaterThan(DEAL_ALLOWANCE)
+  }, 300_000)
+
+  it("SC-1, THE CAP'S FORMER BRANCH: activity + status=completed is `too_broad`, NOT `too_many`", async () => {
+    // THE HANDOVER, ASSERTED. `status=completed` matches 74,857 of 79,022 activities — above
+    // `EXPORT_ROW_CAP = 50_000`, so before this phase this exact request was refused as `too_many`
+    // by the cap. It is now refused as `too_broad` by the selectivity rule, which fires first
+    // because the rule is checked before the fetch and the cap inside it.
+    const result = await exportViewResults({
+      entityType: "activity",
+      filters: { status: "completed" },
+    })
+
+    expect(result).toEqual({
+      success: false,
+      error: "too_broad",
+      matched: ACTIVITY_COMPLETED_MATCHED,
+      total: LIVE_VOLUME.activity.total,
+    })
+    if (result.success) throw new Error("unreachable — asserted above")
+
+    expect(
+      result.error,
+      "the cap refused this request instead of the selectivity rule. The refusal is still safe, " +
+        "but `too_many` carries only `max` — the user is told a limit, not that their filter " +
+        "matches 74,857 of 79,022 records — and SC-3's numbered refusal is lost."
+    ).not.toBe("too_many")
+
+    // THE CAP IS ABOVE THIS COUNT, so the fact that it did not fire is the handover rather than an
+    // accident of ordering.
+    expect(ACTIVITY_COMPLETED_MATCHED).toBeGreaterThan(EXPORT_ROW_CAP)
+    expect(ACTIVITY_COMPLETED_MATCHED).toBeGreaterThan(ACTIVITY_ALLOWANCE)
+
+    // THE CAP STAYS, DELIBERATELY, as defence in depth if the selectivity rule is ever loosened or
+    // its count fails. It RE-ENTERS at `total >= 125,003` rows — the exact integer, because
+    // `floor(total × 0.40) >= 50,001` requires `total >= 125,002.5`, not the `50,000 / 0.40 =
+    // 125,000` the arithmetic suggests at a glance (the same rounding trap as DEF-50-01). On 79,022
+    // activities it is unreachable from this path.
+    expect(exportAllowance(125_003)).toBeGreaterThan(EXPORT_ROW_CAP)
+    expect(exportAllowance(125_002)).toBeLessThanOrEqual(EXPORT_ROW_CAP)
+  }, 300_000)
+
+  // ── SC-2: THE NARROW EXPORT STILL COMPLETES — A BOUND, NOT A REMOVAL ─────────────────────────
+
+  it("SC-2: organization + search=ltda COMPLETES, and its CSV parses to exactly 13,355 data rows", async () => {
+    const result = await exportViewResults({
+      entityType: "organization",
+      filters: { search: "ltda" },
+    })
+
+    expect(
+      result.success,
+      `the narrow export was refused (${result.success ? "" : result.error}). SC-2: the bound must ` +
+        `BOUND the feature, not remove it. 13,355 of 46,054 is 29.00%, comfortably under the 40% ` +
+        `allowance, and it is the export a real user actually runs.`
+    ).toBe(true)
+    if (!result.success) throw new Error("unreachable — asserted above")
+
+    expect(result.count).toBe(LTDA_MATCHED)
+
+    // PARSED, NOT LINE-COUNTED: notes fields contain embedded newlines inside quoted cells, so
+    // `data.split("\n").length` would over-count and a cell built on it would pass for the wrong
+    // reason.
+    const parsed = Papa.parse<Record<string, string>>(result.data, {
+      header: true,
+      skipEmptyLines: true,
+    })
+
+    expect(parsed.errors).toEqual([])
+    expect(
+      parsed.data.length,
+      "the CSV's own data-row count disagrees with the count the action reported, so the number in " +
+        "the success toast is not the number of records the user received."
+    ).toBe(LTDA_MATCHED)
+
+    // THE FILENAME IS SERVER-GENERATED AND NEVER TRANSLATED — `<plural>-<YYYY-MM-DD>.csv`, built
+    // from the entity type the action was given rather than from anything the caller sent. Matched
+    // as a SHAPE, because asserting the date would mean reading a clock.
+    expect(result.filename).toMatch(/^organizations-\d{4}-\d{2}-\d{2}\.csv$/)
+
+    // FLOORS: strictly between the empty set and the whole table, against the named total.
+    expect(result.count).toBeGreaterThan(0)
+    expect(result.count).toBeLessThan(LIVE_VOLUME.organization.total)
+    expect(result.count).toBeLessThan(ORG_ALLOWANCE)
+
+    // AND IT WROTE EXACTLY ONE AUDIT ROW, which comes straight back out. The row's CONTENTS are
+    // asserted by the SC-5 cell; here the point is only that an admitted export is a WRITE, and this
+    // file cleans up after itself.
+    const written = await takeExportAuditRows(actor?.id ?? "")
+
+    expect(written).toHaveLength(1)
+    expect(await rawCount(`audit_log where entity_type = 'export'`)).toBe(
+      EXPORT_AUDIT_ROWS_AT_START
+    )
+  }, 300_000)
+
+  it("SC-2, A SECOND SURFACE: activity + type=Meeting COMPLETES with 2,993 rows", async () => {
+    // SC-2 must not rest on one entity type — a bound that admitted organizations and refused every
+    // activity would satisfy a single-surface proof. NOT `assignee` (0 rows on activities:
+    // `assignee_id` is NULL for all 79,022) and NOT `owner` (79,022 of 79,022 = 100%): an admitted
+    // cell on either would pass on the empty set or the whole table respectively.
+    const types = (await db.execute(
+      sql.raw(`select id from activity_types where name = 'Meeting' limit 1`)
+    )) as unknown as { id: string }[]
+    const meetingTypeId = types[0]?.id
+
+    expect(meetingTypeId, "no activity_type named `Meeting`").toBeTruthy()
+
+    const result = await exportViewResults({
+      entityType: "activity",
+      filters: { type: meetingTypeId },
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) throw new Error(`refused: ${result.error}`)
+
+    expect(result.count).toBe(MEETING_MATCHED)
+
+    const parsed = Papa.parse<Record<string, string>>(result.data, {
+      header: true,
+      skipEmptyLines: true,
+    })
+
+    expect(parsed.errors).toEqual([])
+    expect(parsed.data.length).toBe(MEETING_MATCHED)
+    expect(result.filename).toMatch(/^activities-\d{4}-\d{2}-\d{2}\.csv$/)
+    expect(result.count).toBeGreaterThan(0)
+    expect(result.count).toBeLessThan(LIVE_VOLUME.activity.total)
+
+    const written = await takeExportAuditRows(actor?.id ?? "")
+
+    expect(written).toHaveLength(1)
+    expect((written[0].changes as ExportChanges).rowCount.to).toBe(MEETING_MATCHED)
+  }, 300_000)
+
+  it("SC-2, THE EMPTY CASE: organization + search=zzzz COMPLETES with 0 rows", async () => {
+    // A bound that REFUSED an empty result would be refusing on the wrong axis entirely — the rule
+    // is about breadth, and 0 of 46,054 is as narrow as a filter gets. This is also the cell that
+    // catches a rule inverted into `matched < allowance`.
+    const result = await exportViewResults({
+      entityType: "organization",
+      filters: { search: "zzzz" },
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) throw new Error(`refused: ${result.error}`)
+
+    expect(result.count).toBe(0)
+    expect(result.data).toBe("")
+
+    // Even a zero-row export is a completed export, so it too writes an audit row — with
+    // `rowCount: 0`. Recorded, and removed.
+    const written = await takeExportAuditRows(actor?.id ?? "")
+
+    expect(written).toHaveLength(1)
+    expect((written[0].changes as ExportChanges).rowCount.to).toBe(0)
+    expect((written[0].changes as ExportChanges).filters.to).toBe("search=zzzz")
+  }, 300_000)
+})
+
+// THE POOL, CLOSED ONCE FOR THE WHOLE FILE. `db.$client.end` cannot live in a per-suite `afterAll`
+// any more: there is more than one suite here now, and the first one to finish would close the pool
+// under the next one's feet.
+afterAll(async () => {
+  await db.$client.end({ timeout: 5 })
+}, 30_000)
