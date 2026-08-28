@@ -226,3 +226,51 @@ restore → re-run.
 **Warning executors about it has now failed four times.** The durable fix belongs in the plan
 templates' verify blocks, not in the orchestrator's prose — a plan that orders an ablation should order
 the commit immediately before it.
+
+---
+
+## DEF-50-12 — `rtk` can filter merge commits out of `git log`, and only `rtk proxy git` is truthful
+
+**Observed by:** 50-06's continuation executor, in a **worktree**. `git rev-parse HEAD` reported
+`1d6b530` while `git log` showed `01a7ae4` on top, and `git log -n1 1d6b530` printed `01a7ae4`'s `%H`.
+**This nearly produced a false "wrong base" abort** in the worktree branch check — an executor that
+trusts `git log` there can conclude its base is wrong when it is right, and reset away good work.
+
+**The orchestrator could NOT reproduce it on the main tree** (plain `git log --oneline -1` and
+`rtk proxy git log --oneline -1` agreed). So it is context-dependent, not universal — most likely
+worktree-specific. Recorded as observed rather than generalised.
+
+**Practical rule for executors:** the worktree branch check already uses `git rev-parse` and
+`git merge-base`, which were truthful in both contexts. **Do not add a `git log` cross-check to it**,
+and if a base check disagrees with itself, believe `rev-parse`/`merge-base` and confirm with
+`rtk proxy git` before resetting anything.
+
+---
+
+## DEF-50-13 — ablating a *writing* live suite leaks `audit_log` rows its own safety nets cannot recover
+
+**Observed by:** 50-06. Ablations 1 and 2 each left **2** rows behind. The test file's own teardown
+deletes the ids it recorded, but an ablation that changes *what gets written* produces rows the file
+never recorded and therefore cannot clean up. 50-06 removed them by id.
+
+**Consequence for any future plan that ablates a suite touching `audit_log` (or any live table):** the
+suite's cleanup is not sufficient. Measure the table before and after the ablation and delete the delta
+**by id**, never by `entity_type` — a type-wide delete would also remove rows a concurrent process
+wrote and would mask a leak.
+
+---
+
+## DEF-50-14 — the plan's ablation-1 contrast is wrong, and a cited line range is stale
+
+**Observed by:** 50-06. The plan predicted `view-filters.test.ts` stays green under ablation 1; in fact
+**three cells there redden**, plus two in `export-call-sites.test.ts` (base suite 5,758 passed / 5
+failed). The plan's cited range `736-812` is stale — the export-action `describe` now sits at
+approximately `1032-1230` after this phase's additions.
+
+Not a defect in the code; a defect in the plan's prediction and its line citation. Recorded so 50-08
+does not treat the plan's stated contrast as the expected result.
+
+**Also corrected here — an orchestrator error:** the dispatch brief gave the `test:live` baseline as
+**85** (adding 47 + 38). Task 1's 38 was that file's **total after replacing cells**, not an addition.
+The true figure is **65 across 3 files** (4 + 37 + 24), independently re-verified. A verifier comparing
+against 85 would have wrongly concluded cells had vanished.
