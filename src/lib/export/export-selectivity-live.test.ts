@@ -976,6 +976,459 @@ describe("SEC-03 end to end: exportViewResults as a real member, at live scale",
   }, 300_000)
 })
 
+/**
+ * ════════════════════════════════════════════════════════════════════════════════════════════════
+ * SC-4: THE THRESHOLD IS APPROACHED AND CROSSED, ON PURPOSE, IN BOTH DIRECTIONS.
+ * ════════════════════════════════════════════════════════════════════════════════════════════════
+ *
+ * SC-4 is the criterion most likely to be faked, and it says so itself: *"widen a filter step by
+ * step until it trips, and observe the refusal at the boundary. A guard whose threshold nobody has
+ * crossed on purpose is not a guard."* A single at-the-boundary assertion is EXPLICITLY not the
+ * criterion, so this suite walks nine steps.
+ *
+ * THE KNOB IS `dateTo` ON ACTIVITIES, and it was chosen because it is free, total and strictly
+ * nested. All 79,022 activities carry a NON-NULL `due_date` (measured: zero nulls) spanning
+ * 2022-01-13 → 2030-05-07; `dateTo` is on `EXPORTABLE_FILTER_KEYS.activity`; and
+ * `activityExportConditions` applies `lt(dueDate, endOfDayExclusive(dateTo))`, which
+ * `date-range.ts` implements as `due_date < (dateTo + 1 day)` in UTC. So every widening of `dateTo`
+ * is a strict SUPERSET of the previous one and no row escapes the knob — the walk is a widening in
+ * the set-theoretic sense, not merely a sequence of increasing numbers.
+ *
+ * THE FREE FINDING BEHIND THE LADDER'S SHAPE. 2023-06-09, 2023-06-10 AND 2023-06-11 ALL RETURN
+ * EXACTLY 31,530 — three consecutive daily widenings that add ZERO rows. A "step" that changes no
+ * count is not a step: a ladder containing one would pass identically against a rule that ignored
+ * `dateTo` between those dates, which is the unfalsifiable shape this milestone keeps finding. The
+ * ladder below therefore takes exactly ONE date out of that flat run, and takes the LAST one —
+ * 2023-06-11, the true date boundary — so that the bracket is two ADJACENT DAYS and every step
+ * strictly adds rows.
+ *
+ * NOTE, AGAINST `50-MEASUREMENTS.md` §7's "strictly-increasing ladder" TABLE: that table is EIGHT
+ * steps and ends `2023-06-09` (31,530) → `2023-06-12` (31,612). `50-06-PLAN.md`'s interfaces table
+ * is NINE steps and uses `2023-06-11` (31,530) in that slot, plus a ninth step at `2023-06-13`
+ * (31,679). Both are strictly increasing and both bracket the same 31,530 → 31,612 crossing; the
+ * plan's is used here because 06-11 is the LAST admitted date, which makes the bracket two adjacent
+ * calendar days rather than a three-day skip. MEASUREMENTS' instruction "do not insert 2023-06-10 or
+ * 2023-06-11 BETWEEN the last two" is honoured — nothing is inserted between them; 06-11 REPLACES
+ * 06-09 and the flat run still contributes exactly one step.
+ *
+ * WHAT IS DRIVEN END TO END, AND WHAT IS NOT — stated rather than left to be assumed:
+ *
+ *   - the NINE-STEP WALK below is `countExportMatches` + `decideSelectivity`. It is the count and
+ *     the arithmetic, not the action. Nine CSVs of up to 31,679 activities each would cost minutes
+ *     and prove nothing the two bracket cells do not.
+ *   - the TWO BRACKET STEPS are driven END TO END through `exportViewResults`, in both directions:
+ *     06-11 must come back `success: true` with 31,530 rows of real CSV, and 06-12 must come back
+ *     `too_broad` with 31,612 / 79,022. That is the crossing, observed through the action a user
+ *     reaches.
+ */
+
+/**
+ * THE NINE STEPS, with the `matched` each returns as a named integer. Re-measured by direct SQL at
+ * the start of 50-06 Task 2 against the live database, independently of `countExportMatches`:
+ *
+ *   select count(*) from activities
+ *    where deleted_at is null and due_date < (d + interval '1 day')
+ */
+const ACTIVITY_DATE_LADDER: readonly { dateTo: string; matched: number }[] = [
+  { dateTo: "2023-01-18", matched: 22_111 },
+  { dateTo: "2023-02-09", matched: 23_683 },
+  { dateTo: "2023-03-10", matched: 26_200 },
+  { dateTo: "2023-04-15", matched: 28_942 },
+  { dateTo: "2023-05-15", matched: 30_117 },
+  { dateTo: "2023-06-08", matched: 31_479 },
+  { dateTo: "2023-06-11", matched: 31_530 },
+  { dateTo: "2023-06-12", matched: 31_612 },
+  { dateTo: "2023-06-13", matched: 31_679 },
+]
+
+/**
+ * THE DELTAS, as named integers rather than as `> 0`.
+ *
+ * `every(d => d > 0)` alone would be satisfied by a ladder whose steps had drifted to entirely
+ * different counts, so the increments themselves are pinned. The last three are the ones that
+ * matter: +51, +82, +67 — the walk is at daily resolution by the time it reaches the boundary.
+ */
+const ACTIVITY_LADDER_DELTAS = [1_572, 2_517, 2_742, 1_175, 1_362, 51, 82, 67]
+
+/**
+ * THE INDEX OF THE FIRST REFUSAL, 0-based, and the single most important integer in this suite.
+ *
+ * Seven admissions (indices 0..6) then two refusals (7, 8). WITHOUT THIS ASSERTION any sequence
+ * containing both outcomes anywhere would pass, which is precisely the "a guard whose threshold
+ * nobody crossed" failure SC-4 names. Ablation 6 in `50-06-SUMMARY.md` moves the flip by one step
+ * and reddens this and nothing else.
+ */
+const LADDER_FLIP_INDEX = 7
+const LADDER_ADMITTED_STEPS = 7
+const LADDER_REFUSED_STEPS = 2
+
+/** The bracket: the last ADMITTED count and the first REFUSED one, two adjacent calendar days. */
+const BRACKET_LAST_ADMITTED = { dateTo: "2023-06-11", matched: 31_530 }
+const BRACKET_FIRST_REFUSED = { dateTo: "2023-06-12", matched: 31_612 }
+/** 31,608 − 31,530. The admit side clears the allowance by 78 rows. */
+const BRACKET_ADMIT_MARGIN = 78
+/** 31,612 − 31,608. The refuse side exceeds it by 4. A 0.10 pp window, crossed. */
+const BRACKET_REFUSE_MARGIN = 4
+
+describe("SC-4: the allowance is approached over nine widening steps and crossed exactly once", () => {
+  let actor: Actor | undefined
+
+  beforeAll(async () => {
+    actor = await resolveMemberActor()
+    authState.userId = actor?.id ?? ""
+  }, 120_000)
+
+  afterAll(async () => {
+    // The 06-11 bracket cell is an ADMITTED export, so it writes one audit row. Safety net, by id.
+    if (auditRowIdsCreated.length > 0) {
+      await db.delete(auditLog).where(inArray(auditLog.id, auditRowIdsCreated))
+    }
+
+    expect(await rawCount(`audit_log where entity_type = 'export'`)).toBe(
+      EXPORT_AUDIT_ROWS_AT_START
+    )
+    expect(await rawCount("audit_log")).toBe(AUDIT_LOG_TOTAL_AT_START)
+  }, 120_000)
+
+  it("PRE-FLIGHT: the actor is still an asserted `member`, and no due_date is null", async () => {
+    // The ladder is only TOTAL — every row reachable by the knob — because there are no nulls. A
+    // single null `due_date` would sit outside every step and make "widening" a claim about a
+    // subset rather than about the table.
+    expect(actor?.role, "SC-4's bracket cells run end to end; they must run as a member").toBe(
+      "member"
+    )
+
+    const nullDueDates = await rawCount(
+      `activities where deleted_at is null and due_date is null`
+    )
+
+    expect(
+      nullDueDates,
+      "some activities have a NULL due_date, so `dateTo` no longer partitions the whole table and " +
+        "the ladder's steps are not nested supersets of one another."
+    ).toBe(0)
+  }, 120_000)
+
+  it("THE WALK: nine steps, strictly increasing, a constant denominator, and ONE flip at index 7", async () => {
+    const observed: { dateTo: string; matched: number; total: number; admitted: boolean }[] = []
+
+    for (const step of ACTIVITY_DATE_LADDER) {
+      const counts = await countExportMatches("activity", { dateTo: step.dateTo })
+
+      observed.push({
+        dateTo: step.dateTo,
+        matched: counts.matched,
+        total: counts.total,
+        admitted: decideSelectivity(counts).ok,
+      })
+    }
+
+    // ONE `toEqual` OVER THE WHOLE SEQUENCE, so a failure prints the entire ladder rather than
+    // stopping at the first bad step — which is what makes this a walk in the transcript too.
+    expect(observed.map(({ dateTo, matched }) => ({ dateTo, matched }))).toEqual(
+      ACTIVITY_DATE_LADDER.map(({ dateTo, matched }) => ({ dateTo, matched }))
+    )
+
+    // STRICTLY INCREASING, and by the measured increments. A widening that did not widen is not a
+    // step; this is the assertion that says so.
+    const deltas = observed.slice(1).map((step, i) => step.matched - observed[i].matched)
+
+    expect(
+      deltas.every((delta) => delta > 0),
+      `the ladder is not strictly increasing. Deltas: ${JSON.stringify(deltas)}. A step that adds ` +
+        `zero rows would pass identically against a rule that ignored \`dateTo\` between those two ` +
+        `dates — 2023-06-09/-06-10/-06-11 are exactly such a run and only ONE of them is used here.`
+    ).toBe(true)
+    expect(deltas).toEqual(ACTIVITY_LADDER_DELTAS)
+
+    // THE DENOMINATOR DOES NOT MOVE WHILE THE NUMERATOR DOES. That is what makes the FRACTION the
+    // thing being crossed: if `total` drifted, a flip could come from the allowance moving rather
+    // than from the filter widening.
+    const totals = [...new Set(observed.map((step) => step.total))]
+
+    expect(totals).toEqual([LIVE_VOLUME.activity.total])
+
+    // EXACTLY ONE FLIP, AND ITS INDEX.
+    const verdicts = observed.map((step) => step.admitted)
+    const flips = verdicts.filter((verdict, i) => i > 0 && verdict !== verdicts[i - 1]).length
+
+    expect(
+      flips,
+      `the decision flipped ${flips} times across the ladder: ${JSON.stringify(verdicts)}. More ` +
+        `than one flip would mean the rule is not monotone in \`matched\`; zero would mean the ` +
+        `threshold was never crossed and the "walk" observed nothing.`
+    ).toBe(1)
+
+    // `indexOf(false)` is -1 when nothing was ever refused, which reddens here rather than
+    // silently reporting a flip that did not happen.
+    expect(
+      verdicts.indexOf(false),
+      `the first refusal is at index ${verdicts.indexOf(false)}, not ${LADDER_FLIP_INDEX}. ` +
+        `WITHOUT THIS ASSERTION any sequence containing both outcomes anywhere would pass.`
+    ).toBe(LADDER_FLIP_INDEX)
+    expect(verdicts.filter(Boolean)).toHaveLength(LADDER_ADMITTED_STEPS)
+    expect(verdicts.filter((verdict) => !verdict)).toHaveLength(LADDER_REFUSED_STEPS)
+
+    // AND THE FLIP IS BETWEEN THE TWO DATES THE MEASUREMENT NAMES, on adjacent calendar days.
+    expect(observed[LADDER_FLIP_INDEX - 1].dateTo).toBe(BRACKET_LAST_ADMITTED.dateTo)
+    expect(observed[LADDER_FLIP_INDEX].dateTo).toBe(BRACKET_FIRST_REFUSED.dateTo)
+
+    // THE MARGINS, so the boundary is a measured window rather than a coincidence.
+    expect(observed[LADDER_FLIP_INDEX - 1].matched).toBe(BRACKET_LAST_ADMITTED.matched)
+    expect(observed[LADDER_FLIP_INDEX].matched).toBe(BRACKET_FIRST_REFUSED.matched)
+    expect(ACTIVITY_ALLOWANCE - BRACKET_LAST_ADMITTED.matched).toBe(BRACKET_ADMIT_MARGIN)
+    expect(BRACKET_FIRST_REFUSED.matched - ACTIVITY_ALLOWANCE).toBe(BRACKET_REFUSE_MARGIN)
+    // The allowance really does sit strictly inside the bracket, against the LIVE total.
+    expect(exportAllowance(LIVE_VOLUME.activity.total)).toBe(ACTIVITY_ALLOWANCE)
+    expect(ACTIVITY_ALLOWANCE).toBeGreaterThanOrEqual(BRACKET_LAST_ADMITTED.matched)
+    expect(ACTIVITY_ALLOWANCE).toBeLessThan(BRACKET_FIRST_REFUSED.matched)
+  }, 300_000)
+
+  it("THE CROSSING, ADMIT SIDE, END TO END: dateTo=2023-06-11 COMPLETES with 31,530 rows", async () => {
+    // The generous timeout is a LIVENESS BACKSTOP against a hang, never a margin: 31,530 activities
+    // are flattened with their custom fields and serialised by papaparse. No elapsed time is read
+    // and none is asserted.
+    const result = await exportViewResults({
+      entityType: "activity",
+      filters: { dateTo: BRACKET_LAST_ADMITTED.dateTo },
+    })
+
+    expect(
+      result.success,
+      `the last ADMITTED step of the ladder was refused (${result.success ? "" : result.error}). ` +
+        `31,530 of 79,022 is 39.90%, ${BRACKET_ADMIT_MARGIN} rows UNDER the 31,608 allowance.`
+    ).toBe(true)
+    if (!result.success) throw new Error("unreachable — asserted above")
+
+    expect(result.count).toBe(BRACKET_LAST_ADMITTED.matched)
+
+    // PARSED, not line-counted: activity notes carry embedded newlines inside quoted cells.
+    const parsed = Papa.parse<Record<string, string>>(result.data, {
+      header: true,
+      skipEmptyLines: true,
+    })
+
+    expect(parsed.errors).toEqual([])
+    expect(parsed.data.length).toBe(BRACKET_LAST_ADMITTED.matched)
+    expect(result.filename).toMatch(/^activities-\d{4}-\d{2}-\d{2}\.csv$/)
+    expect(result.count).toBeLessThanOrEqual(ACTIVITY_ALLOWANCE)
+    expect(result.count).toBeLessThan(LIVE_VOLUME.activity.total)
+
+    // An admitted export is a WRITE. Straight back out, by the ids read back.
+    const written = await takeExportAuditRows(actor?.id ?? "")
+
+    expect(written).toHaveLength(1)
+    expect((written[0].changes as ExportChanges).rowCount.to).toBe(BRACKET_LAST_ADMITTED.matched)
+    expect((written[0].changes as ExportChanges).filters.to).toBe(
+      `dateTo=${BRACKET_LAST_ADMITTED.dateTo}`
+    )
+  }, 900_000)
+
+  it("THE CROSSING, REFUSE SIDE, END TO END: dateTo=2023-06-12 is `too_broad` at 31,612 / 79,022", async () => {
+    // ONE DAY LATER than the cell above. 82 more rows, and the decision is different — which is the
+    // whole of SC-4 in a single pair of calls.
+    const totalBefore = await rawCount("audit_log")
+
+    const result = await exportViewResults({
+      entityType: "activity",
+      filters: { dateTo: BRACKET_FIRST_REFUSED.dateTo },
+    })
+
+    expect(result).toEqual({
+      success: false,
+      error: "too_broad",
+      matched: BRACKET_FIRST_REFUSED.matched,
+      total: LIVE_VOLUME.activity.total,
+    })
+    expect("data" in result).toBe(false)
+
+    // Refused BY THE SELECTIVITY RULE and not by the cap: 31,612 is well under `EXPORT_ROW_CAP`, so
+    // this refusal cannot be the cap firing under another name.
+    expect(BRACKET_FIRST_REFUSED.matched).toBeLessThan(EXPORT_ROW_CAP)
+    expect(BRACKET_FIRST_REFUSED.matched).toBeGreaterThan(ACTIVITY_ALLOWANCE)
+
+    // AND IT WROTE NOTHING — the refusal returns before `recordExport`.
+    expect(await rawCount("audit_log")).toBe(totalBefore)
+    expect(await rawCount(`audit_log where entity_type = 'export'`)).toBe(
+      EXPORT_AUDIT_ROWS_AT_START
+    )
+  }, 300_000)
+})
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════════════════════════
+ * SC-5: THE FIRST EXPORT AUDIT ROW THIS DEPLOYMENT HAS EVER HELD.
+ * ════════════════════════════════════════════════════════════════════════════════════════════════
+ *
+ * `audit_log` holds 214 rows and ZERO with `entity_type='export'`. No view export has ever been
+ * recorded here — verified independently six times across phase 50, and plans 50-01 through 50-05
+ * were each told to leave the table alone so that the 0 → 1 transition would be OBSERVED HERE.
+ *
+ * WHY AN "UNCHANGED COUNT" ASSERTION WOULD HAVE BEEN WORTHLESS. With zero export rows in the table,
+ * `expect(exportRows).toBe(0)` after an export passes if `recordExport` works, passes if
+ * `recordExport` is deleted, and passes if `recordExport` throws. It is the exact shape of check
+ * that cannot fail. So this cell makes a POSITIVE observation: 214 → 215 and 0 → 1, with the row's
+ * contents read back and asserted, and `rowCount` cross-checked against the CSV's OWN count from
+ * the same call.
+ *
+ * AND WHY NOTHING ELSE IN THE REPOSITORY CAN SEE THIS. `recordExport` SWALLOWS ITS OWN FAILURE by
+ * decision (`export-events.ts:106-115` — failing a completed export because its audit row failed
+ * would report a lie about the user's own data). So a `recordExport` that RUNS AND SILENTLY FAILS
+ * is invisible to every structural gate, to `tsc`, and to the action's own return value. The only
+ * instrument that can detect it is one that READS THE ROW BACK, which is this cell and nothing
+ * else. Ablation 5 in `50-06-SUMMARY.md` records exactly what the structural gate can and cannot
+ * see.
+ *
+ * THE DELETE IS BY ID, NEVER BY `entity_type`. A delete matched on `entity_type='export'` would
+ * also remove a row a real export wrote while the suite ran — destroying evidence AND masking a
+ * leak, because the suite would then report a clean table it had itself emptied.
+ */
+describe("SC-5: audit_log goes 0 -> 1 for entity_type='export', then back", () => {
+  let actor: Actor | undefined
+
+  beforeAll(async () => {
+    actor = await resolveMemberActor()
+    authState.userId = actor?.id ?? ""
+  }, 120_000)
+
+  afterAll(async () => {
+    if (auditRowIdsCreated.length > 0) {
+      await db.delete(auditLog).where(inArray(auditLog.id, auditRowIdsCreated))
+    }
+
+    expect(
+      await rawCount(`audit_log where entity_type = 'export'`),
+      "SC-5 left an export audit row behind. `audit_log` is append-only with the retention pruner " +
+        "as its only other deleter, so a leftover row corrupts the one record this control produces."
+    ).toBe(EXPORT_AUDIT_ROWS_AT_START)
+    expect(await rawCount("audit_log")).toBe(AUDIT_LOG_TOTAL_AT_START)
+  }, 120_000)
+
+  it("THE POSITIVE OBSERVATION: 214 -> 215 total, 0 -> 1 export, contents asserted, deleted by id", async () => {
+    expect(actor?.role, "the audit row's actor must be the asserted member").toBe("member")
+
+    const actorId = actor?.id ?? ""
+
+    // ── THE FLOOR, FIRST, AS NAMED INTEGERS ─────────────────────────────────────────────────────
+    const totalBefore = await rawCount("audit_log")
+    const exportRowsBefore = await rawCount(`audit_log where entity_type = 'export'`)
+
+    expect(
+      exportRowsBefore,
+      "an export audit row already exists, so this deployment's 0 -> 1 transition cannot be " +
+        "observed at all. THIS IS A POSITIVE OBSERVATION ON PURPOSE: an `unchanged count` " +
+        "assertion would pass today against a DELETED `recordExport` call and prove nothing."
+    ).toBe(EXPORT_AUDIT_ROWS_AT_START)
+    expect(totalBefore).toBe(AUDIT_LOG_TOTAL_AT_START)
+
+    // ── THE ADMITTED EXPORT ─────────────────────────────────────────────────────────────────────
+    const result = await exportViewResults({
+      entityType: "organization",
+      filters: { search: "ltda" },
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) throw new Error(`refused: ${result.error}`)
+
+    expect(result.count).toBe(LTDA_MATCHED)
+
+    // ── 0 -> 1 AND 214 -> 215, BEFORE ANYTHING IS DELETED ───────────────────────────────────────
+    const totalAfter = await rawCount("audit_log")
+    const exportRowsAfter = await rawCount(`audit_log where entity_type = 'export'`)
+
+    expect(
+      exportRowsAfter,
+      "the admitted export produced no `entity_type='export'` audit row. `recordExport` swallows " +
+        "its own errors, so the action still returned `success: true` — this read is the ONLY " +
+        "instrument in the repository that can see the difference."
+    ).toBe(EXPORT_AUDIT_ROWS_AT_START + 1)
+    expect(totalAfter).toBe(AUDIT_LOG_TOTAL_AT_START + 1)
+    expect(totalAfter - totalBefore).toBe(1)
+    expect(exportRowsAfter - exportRowsBefore).toBe(1)
+
+    // ── THE ROW'S CONTENTS ──────────────────────────────────────────────────────────────────────
+    // Read back and removed in one step, scoped to `entity_type='export' AND actor_user_id =
+    // <this file's member>`, with the DELETE matching the ids that read produced.
+    const rows = await takeExportAuditRows(actorId)
+
+    expect(rows).toHaveLength(1)
+
+    const row = rows[0]
+
+    expect(row.entityType).toBe("export")
+    expect(row.action).toBe("created")
+    expect(row.actorKind).toBe("user")
+    expect(
+      row.actorUserId,
+      "the export was attributed to someone other than the member who ran it. `actor_user_id` is " +
+        "a real foreign key and `recordExport` is passed `session.user.id` explicitly rather than " +
+        "reading `getCurrentActor()`, which would attribute every export to `system`."
+    ).toBe(actorId)
+    expect(row.entityId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    )
+    expect(row.workflowRunId).toBeNull()
+    expect(row.importSessionId).toBeNull()
+
+    const changes = row.changes as ExportChanges
+
+    expect(changes.exportedEntityType).toEqual({ from: null, to: "organization" })
+    expect(changes.filters).toEqual({ from: null, to: "search=ltda" })
+
+    // THE CROSS-CHECK THAT MAKES THE ROW EVIDENCE RATHER THAN DECORATION: the number recorded in
+    // the audit row is the number of rows the user actually received, from the SAME call — not a
+    // constant this file supplied to both sides.
+    const parsed = Papa.parse<Record<string, string>>(result.data, {
+      header: true,
+      skipEmptyLines: true,
+    })
+
+    expect(parsed.errors).toEqual([])
+    expect(changes.rowCount.from).toBeNull()
+    expect(
+      changes.rowCount.to,
+      "the audit row's `rowCount` disagrees with the CSV the export produced, so the record of " +
+        "what left the product is not a record of what left the product."
+    ).toBe(result.count)
+    expect(changes.rowCount.to).toBe(parsed.data.length)
+    expect(changes.rowCount.to).toBe(LTDA_MATCHED)
+
+    // ── AND BACK TO 214 / 0, BY ID ──────────────────────────────────────────────────────────────
+    expect(
+      await rawCount(`audit_log where entity_type = 'export'`),
+      "the probe row was not removed. It was deleted by the id read back, never by `entity_type` " +
+        "— a delete on `entity_type` would also destroy a real export's evidence."
+    ).toBe(EXPORT_AUDIT_ROWS_AT_START)
+    expect(await rawCount("audit_log")).toBe(AUDIT_LOG_TOTAL_AT_START)
+
+    // The absence of THAT id specifically, not merely of the class.
+    const byId = await db.select().from(auditLog).where(eq(auditLog.id, row.id))
+
+    expect(byId).toHaveLength(0)
+  }, 600_000)
+
+  it("THE NEGATIVE HALF: a REFUSED export writes NO row — the WR-04 limitation, restated", async () => {
+    // Recorded as a LIMITATION and not as a property to celebrate. `export-action.ts` returns
+    // `too_broad` BEFORE `recordExport`, so refused, capped and guard-refused attempts write
+    // nothing at all: an attacker sweeping filters to find the widest admissible one leaves no
+    // trace. `audit_log` is evidence of exports that COMPLETED, never of probing. Open in
+    // BACKLOG.md under WR-04 and NOT closed by this phase.
+    const totalBefore = await rawCount("audit_log")
+
+    const result = await exportViewResults({
+      entityType: "organization",
+      filters: { search: "a" },
+    })
+
+    expect(result.success).toBe(false)
+    expect(await rawCount("audit_log")).toBe(totalBefore)
+    expect(await rawCount(`audit_log where entity_type = 'export'`)).toBe(
+      EXPORT_AUDIT_ROWS_AT_START
+    )
+    expect(totalBefore).toBe(AUDIT_LOG_TOTAL_AT_START)
+  }, 300_000)
+})
+
 // THE POOL, CLOSED ONCE FOR THE WHOLE FILE. `db.$client.end` cannot live in a per-suite `afterAll`
 // any more: there is more than one suite here now, and the first one to finish would close the pool
 // under the next one's feet.
