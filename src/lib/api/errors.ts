@@ -70,6 +70,19 @@ export const Problems = {
   conflict: (detail: string) =>
     problemResponse("CONFLICT", "Conflict", 409, detail),
 
+  /**
+   * A workflow with run history cannot be deleted — run history is preserved
+   * (issue #11). Typed separately from the generic CONFLICT so clients can
+   * branch on it (e.g. offer "purge run history first" flows).
+   */
+  workflowHasRuns: () =>
+    problemResponse(
+      "WORKFLOW_HAS_RUNS",
+      "Workflow Has Run History",
+      409,
+      "Workflow has run history and cannot be deleted. Run history is preserved; delete is only available for workflows with no runs."
+    ),
+
   rateLimited: (retryAfter: number) => {
     const problem: ProblemDetail = {
       type: `${API_BASE}RATE_LIMITED`,

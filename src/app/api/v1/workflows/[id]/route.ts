@@ -98,6 +98,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       const result = await deleteWorkflow(id)
 
       if (!result.success) {
+        // Run history is preserved (issue #11): this is an expected state, so it
+        // answers a typed 409 — never the generic 500 an unhandled FK violation
+        // used to produce when the mutation attempted a cascade.
+        if (result.hasRuns) {
+          return Problems.workflowHasRuns()
+        }
         return Problems.notFound("Workflow")
       }
 
