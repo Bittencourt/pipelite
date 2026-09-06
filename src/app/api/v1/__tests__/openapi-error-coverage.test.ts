@@ -226,11 +226,21 @@ const REQUIRE_404_OPERATIONS = [
  *   - `stages/route.ts:163`      (POST)   — 23505 on the unique `(pipeline_id, name)` index
  *   - `stages/[id]/route.ts:185` (PUT)    — the same collision, on rename
  *   - `stages/[id]/route.ts:220` (DELETE) — 23503, a stage that still has deals
+ *
+ * THE FOURTH: issue #11, 2026-09-06. `DELETE /workflows/{id}` used to answer an unhandled 500
+ * whenever the workflow had run history: the mutation's in-code cascade never cleared
+ * `audit_log.workflow_run_id`'s FK to `workflow_runs`, so the runs delete raised PG 23503 and the
+ * route fell through to `Problems.internalError`. The fix preserves run history and answers a
+ * typed `WORKFLOW_HAS_RUNS` 409 instead — a new response on the wire, so declaring it is the same
+ * not-catch-up logic as the first three.
+ *
+ *   - `workflows/[id]/route.ts`  (DELETE) — run history exists; `Problems.workflowHasRuns()`
  */
 const REQUIRE_409_OPERATIONS = [
   { path: "/stages", method: "post" },
   { path: "/stages/{id}", method: "put" },
   { path: "/stages/{id}", method: "delete" },
+  { path: "/workflows/{id}", method: "delete" },
 ] as const
 
 /**
@@ -278,7 +288,7 @@ const MUST_NOT_DECLARE_403_OPERATIONS = [
 const EXPECTED_403_SUBJECTS = 6
 const EXPECTED_422_SUBJECTS = 4
 const EXPECTED_404_SUBJECTS = 9
-const EXPECTED_409_SUBJECTS = 3
+const EXPECTED_409_SUBJECTS = 4
 const EXPECTED_NEGATIVE_403_SUBJECTS = 5
 
 /**
@@ -331,8 +341,13 @@ const EXPECTED_NEGATIVE_403_SUBJECTS = 5
  * touched" means. The wider drift across the document — 401 declared on 22 of 59 operations, 429
  * on 12, 403 on 8, and 36 route files against what was 27 documented path items — remains
  * DOC-48-01. Two path items moved that last figure to 29; the item is not closed by it.
+ *
+ * WAS 12, IS 13 — ISSUE #11, 2026-09-06. `DELETE /workflows/{id}` joined by the same test the
+ * tenth subject passed: its fix (typed `WORKFLOW_HAS_RUNS` 409, run history preserved) put a
+ * response class on the wire that did not exist there before, so leaving it undeclared would be
+ * fresh drift introduced by the fix itself.
  */
-const EXPECTED_GATED_OPERATIONS = 12
+const EXPECTED_GATED_OPERATIONS = 13
 
 type ResponseEntry = { $ref?: unknown } | null | undefined
 type Operation = { responses?: Record<string, ResponseEntry> }
