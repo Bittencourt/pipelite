@@ -1,6 +1,6 @@
 import { db } from "@/db"
-import { workflows, workflowRuns, workflowRunSteps } from "@/db/schema/workflows"
-import { eq, desc, count, inArray, and } from "drizzle-orm"
+import { workflows, workflowRuns } from "@/db/schema/workflows"
+import { eq, desc, count, and } from "drizzle-orm"
 import { z } from "zod"
 import type { Workflow } from "@/db/schema/workflows"
 import { generateWebhookSecret } from "@/lib/triggers/webhook-secret"
@@ -38,7 +38,7 @@ type UpdateResult =
 
 type DeleteResult =
   | { success: true }
-  | { success: false; error: string }
+  | { success: false; error: string; hasRuns?: true }
 
 // --- Node config validation ---
 
@@ -197,16 +197,23 @@ export async function deleteWorkflow(id: string): Promise<DeleteResult> {
     return { success: false, error: "Workflow not found" }
   }
 
-  // Cascade delete: steps -> runs -> workflow
+  // Run history is PRESERVED (issue #11): a workflow with one or more runs is
+  // never deleted. The caller answers 409 WORKFLOW_HAS_RUNS so clients can offer
+  // a recovery path instead of a dead-end 500 — the old in-code cascade
+  // (steps -> runs -> workflow) never cleared `audit_log.workflow_run_id`'s FK to
+  // `workflow_runs`, so the runs delete raised PG 23503 and surfaced as a 500.
   const runs = await db
     .select({ id: workflowRuns.id })
     .from(workflowRuns)
     .where(eq(workflowRuns.workflowId, id))
+    .limit(1)
 
   if (runs.length > 0) {
-    const runIds = runs.map((r) => r.id)
-    await db.delete(workflowRunSteps).where(inArray(workflowRunSteps.runId, runIds))
-    await db.delete(workflowRuns).where(eq(workflowRuns.workflowId, id))
+    return {
+      success: false,
+      error: "Workflow has run history and cannot be deleted",
+      hasRuns: true,
+    }
   }
 
   await db.delete(workflows).where(eq(workflows.id, id))

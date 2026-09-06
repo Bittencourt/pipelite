@@ -18,7 +18,6 @@ vi.mock("@/db", () => {
 })
 
 import { db } from "@/db"
-import { workflows, workflowRuns, workflowRunSteps } from "@/db/schema/workflows"
 import {
   createWorkflow,
   updateWorkflow,
@@ -43,22 +42,6 @@ const mockDb = db as unknown as {
 beforeEach(() => {
   vi.clearAllMocks()
 })
-
-/**
- * Pull the bound parameter values out of a drizzle SQL clause (e.g. `inArray(col, ids)`),
- * so a where() clause captured by a mock can be asserted on. Bound values are `Param`
- * chunks (they carry an `encoder`); literal SQL text chunks are not.
- */
-function boundParamValues(clause: unknown): unknown[] {
-  const chunks = (clause as { queryChunks?: unknown[] }).queryChunks ?? []
-  return chunks
-    .flat()
-    .filter(
-      (chunk): chunk is { value: unknown; encoder: unknown } =>
-        typeof chunk === "object" && chunk !== null && "value" in chunk && "encoder" in chunk
-    )
-    .map((chunk) => chunk.value)
-}
 
 describe("createWorkflow", () => {
   it("creates workflow with valid input and returns success", async () => {
@@ -467,7 +450,9 @@ describe("deleteWorkflow", () => {
     // No runs, so the cascade branch is skipped and only the workflow is deleted.
     mockDb.select.mockReturnValue({
       from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
       }),
     })
     mockDb.delete.mockReturnValue({
@@ -479,12 +464,14 @@ describe("deleteWorkflow", () => {
     expect(result).toEqual({ success: true })
   })
 
-  it("cascades to run steps and runs before deleting the workflow", async () => {
+  it("refuses with hasRuns when run history exists, deleting nothing", async () => {
     mockDb.query.workflows.findFirst.mockResolvedValue({ id: "wf-1" })
-    // Two runs exist, so `runs.length > 0` is entered.
+    // One run exists — the refusal branch, not a cascade (issue #11).
     mockDb.select.mockReturnValue({
       from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ id: "run-1" }, { id: "run-2" }]),
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ id: "run-1" }]),
+        }),
       }),
     })
     const deleteWhere = vi.fn().mockResolvedValue(undefined)
@@ -492,18 +479,12 @@ describe("deleteWorkflow", () => {
 
     const result = await deleteWorkflow("wf-1")
 
-    expect(result).toEqual({ success: true })
-    // The order is load-bearing: Postgres rejects the workflowRuns delete while
-    // workflowRunSteps rows still reference those runs via the runId FK. Asserting the
-    // table arguments (not just the call count) is what makes a swap fail this test.
-    const deletedTables = mockDb.delete.mock.calls.map((call) => call[0])
-    expect(deletedTables).toHaveLength(3)
-    expect(deletedTables[0]).toBe(workflowRunSteps)
-    expect(deletedTables[1]).toBe(workflowRuns)
-    expect(deletedTables[2]).toBe(workflows)
-    // Every where() is awaited, and the step cascade must cover both run ids, not just the first.
-    expect(deleteWhere).toHaveBeenCalledTimes(3)
-    expect(boundParamValues(deleteWhere.mock.calls[0][0])).toEqual(["run-1", "run-2"])
+    expect(result.success).toBe(false)
+    expect(result).toHaveProperty("hasRuns", true)
+    expect(result).toHaveProperty("error")
+    // Run history is preserved: no table is deleted at all.
+    expect(mockDb.delete).not.toHaveBeenCalled()
+    expect(deleteWhere).not.toHaveBeenCalled()
   })
 
   it("returns error for non-existent workflow", async () => {
